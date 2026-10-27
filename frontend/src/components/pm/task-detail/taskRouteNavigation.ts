@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react';
+import { isPlainLeftClick } from '@/lib/utils';
 import { clearTaskSearchParam, useTaskPanelStore } from '@/stores/taskPanelStore';
 
 export interface TaskOverlayLocationLike {
@@ -67,7 +68,7 @@ export function openTaskRoute(
  * link. Modified clicks keep the link, so a new tab still gets the task page.
  */
 export function openTaskPanelFromLink(event: MouseEvent, taskId: string) {
-  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (!isPlainLeftClick(event)) return;
   event.preventDefault();
   if (useTaskPanelStore.getState().shouldSuppressOpen(taskId)) return;
   useTaskPanelStore.getState().openTask(taskId);

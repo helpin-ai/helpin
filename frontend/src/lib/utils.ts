@@ -40,3 +40,8 @@ export function timeAgo(isoOrDate: string | Date): string {
   if (isThisYear(date)) return format(date, 'MMM d, h:mm a');
   return format(date, 'MMM d, yyyy');
 }
+
+/** A plain left click; Cmd, Ctrl, Shift, Alt and middle clicks keep a link's own behavior. */
+export function isPlainLeftClick(event: { button: number; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+}
