@@ -1362,6 +1362,7 @@ export interface SupportInboxSettings {
   triage_daily_budget: number;
   triage_skip_spam_conversations: boolean;
   triage_deduplicate_first_message: boolean;
+  ai_priority_enabled: boolean;
   business_hours_enabled: boolean;
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;

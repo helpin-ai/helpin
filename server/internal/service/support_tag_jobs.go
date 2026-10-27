@@ -15,18 +15,31 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-// SupportTagJobService processes automatic tags independently of routing and replies.
+// SupportTagJobService assesses each customer reply for automatic tags and a
+// raised priority, independently of routing and replies.
 type SupportTagJobService struct {
 	jobs          *repository.SupportTagJobRepository
 	messages      *repository.SupportMessageRepository
 	conversations *repository.SupportConversationRepository
+	installations *repository.SupportInboxInstallationRepository
 	jev           *SupportJevService
 	entitlements  EntitlementPolicy
 }
 
 // NewSupportTagJobService binds the existing classifier and current entitlement policy.
-func NewSupportTagJobService(jobs *repository.SupportTagJobRepository, messages *repository.SupportMessageRepository, conversations *repository.SupportConversationRepository, jev *SupportJevService, entitlements EntitlementPolicy) *SupportTagJobService {
-	return &SupportTagJobService{jobs: jobs, messages: messages, conversations: conversations, jev: jev, entitlements: entitlements}
+func NewSupportTagJobService(jobs *repository.SupportTagJobRepository, messages *repository.SupportMessageRepository, conversations *repository.SupportConversationRepository, installations *repository.SupportInboxInstallationRepository, jev *SupportJevService, entitlements EntitlementPolicy) *SupportTagJobService {
+	return &SupportTagJobService{jobs: jobs, messages: messages, conversations: conversations, installations: installations, jev: jev, entitlements: entitlements}
+}
+
+// supportTagJobPolicy is the classifier policy a job's decisions were made under.
+type supportTagJobPolicy struct {
+	tagsMode, priorityMode          string
+	tagThreshold, priorityThreshold float64
+}
+
+func (s *SupportTagJobService) policy() supportTagJobPolicy {
+	c := s.jev.config
+	return supportTagJobPolicy{tagsMode: c.TagsMode, priorityMode: c.PriorityMode, tagThreshold: c.TagThreshold, priorityThreshold: c.PriorityThreshold}
 }
 
 // Run drains bounded batches until shutdown. Unfinished leases survive restarts.
@@ -77,7 +90,7 @@ func (s *SupportTagJobService) ProcessNext(ctx context.Context) (bool, error) {
 }
 
 func (s *SupportTagJobService) allowed(ctx context.Context, workspaceID string) bool {
-	return s.jev.enabled(workspaceID) && s.jev.config.TagsMode != "off" &&
+	return s.jev.enabled(workspaceID) && (s.jev.config.TagsMode != "off" || s.jev.config.PriorityMode != "off") &&
 		(s.entitlements == nil || s.entitlements.RequireFeature(ctx, workspaceID, EntitlementFeatureAIConversationRouting) == nil)
 }
 
@@ -103,15 +116,20 @@ func (s *SupportTagJobService) process(ctx context.Context, job model.SupportTag
 	if !supportTagJobEligible(job, conversation, message, history) {
 		return complete("ineligible")
 	}
-	state := supportJevTagState(message, history)
-	mode, threshold := s.jev.config.TagsMode, s.jev.config.TagThreshold
-	tags, err := s.jev.selectConversationTags(ctx, job.WorkspaceID, job.ConversationID, message, history)
+	askPriority, err := s.priorityWanted(ctx, conversation, history)
 	if err != nil {
 		return err
 	}
-	if !s.allowed(ctx, job.WorkspaceID) || mode != s.jev.config.TagsMode || threshold != s.jev.config.TagThreshold {
+	state := supportJevTagState(message, history)
+	policy := s.policy()
+	assessment, err := s.jev.assessCustomerReply(ctx, job.WorkspaceID, job.ConversationID, message, history, askPriority)
+	if err != nil {
+		return err
+	}
+	if !s.allowed(ctx, job.WorkspaceID) || policy != s.policy() {
 		return complete("policy_changed")
 	}
+	tags := assessment.Tags
 	var notes []*model.SupportMessage
 	err = s.jobs.Finalize(ctx, job, func(tx *gorm.DB) (string, error) {
 		var current model.SupportConversation
@@ -155,6 +173,15 @@ func (s *SupportTagJobService) process(ctx context.Context, job model.SupportTag
 				notes = append(notes, note)
 			}
 		}
+		if assessment.Priority != "" {
+			note, err := s.applyPriority(ctx, tx, &current, latest, assessment.Priority)
+			if err != nil {
+				return "", err
+			}
+			if note != nil {
+				notes = append(notes, note)
+			}
+		}
 		return "assessed", nil
 	})
 	if err == nil {
@@ -163,6 +190,24 @@ func (s *SupportTagJobService) process(ctx context.Context, job model.SupportTag
 		}
 	}
 	return err
+}
+
+// priorityWanted reports whether Jev should also judge this conversation's priority.
+func (s *SupportTagJobService) priorityWanted(ctx context.Context, conversation *model.SupportConversation, history []model.SupportMessage) (bool, error) {
+	if s.jev.config.PriorityMode == "off" || !supportAIPriorityEligible(conversation, history) {
+		return false, nil
+	}
+	return supportAIPriorityEnabled(ctx, s.installations, conversation.WorkspaceID)
+}
+
+// applyPriority rechecks the setting and teammate changes under the job's
+// conversation lock before raising the priority.
+func (s *SupportTagJobService) applyPriority(ctx context.Context, tx *gorm.DB, conversation *model.SupportConversation, latest []model.SupportMessage, priority string) (*model.SupportMessage, error) {
+	enabled, err := supportAIPriorityEnabled(ctx, repository.NewSupportInboxInstallationRepository(tx), conversation.WorkspaceID)
+	if err != nil || !enabled || !supportAIPriorityEligible(conversation, latest) {
+		return nil, err
+	}
+	return raiseConversationPriority(ctx, tx, s.messages, conversation, priority)
 }
 
 func supportTagJobEligible(job model.SupportTagJob, conversation *model.SupportConversation, message *model.SupportMessage, history []model.SupportMessage) bool {

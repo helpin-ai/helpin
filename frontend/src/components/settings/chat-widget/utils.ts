@@ -20,6 +20,7 @@ export type ChatSettingsDraft = Omit<
   | 'triage_daily_budget'
   | 'triage_skip_spam_conversations'
   | 'triage_deduplicate_first_message'
+  | 'ai_priority_enabled'
   | 'portal_enabled'
   | 'portal_requests_only'
   | 'portal_intake_enabled'
@@ -180,6 +181,7 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
     triage_daily_budget,
     triage_skip_spam_conversations,
     triage_deduplicate_first_message,
+    ai_priority_enabled,
     portal_enabled,
     portal_requests_only,
     portal_intake_enabled,
@@ -197,6 +199,7 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
   void triage_daily_budget;
   void triage_skip_spam_conversations;
   void triage_deduplicate_first_message;
+  void ai_priority_enabled;
   void portal_enabled;
   void portal_requests_only;
   void portal_intake_enabled;

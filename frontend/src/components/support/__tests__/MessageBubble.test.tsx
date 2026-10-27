@@ -1788,3 +1788,17 @@ it.each(['tag_added', 'tag_removed', 'ai_escalated', 'resolved'] as const)('uses
  try { expect(rendered.container.querySelector('[data-support-system-callout] .ask-agent-avatar')).not.toBeNull(); }
  finally { rendered.cleanup(); }
 });
+
+it('shows a priority raised by Helpin AI with the Ask Agent avatar', () => {
+ const rendered = renderBubble({
+  id: 'ai-priority', workspace_id: 'ws-1', conversation_id: 'conv-1',
+  sender_type: 'ai', sender_display_name: 'Helpin AI', message_type: 'system',
+  system_event_type: 'priority_changed', content: 'Helpin AI changed the priority from Medium to Urgent.', is_internal: true,
+  created_at: '2026-10-27T10:00:00Z', updated_at: '2026-10-27T10:00:00Z',
+ });
+ try {
+  const callout = rendered.container.querySelector('[data-support-system-callout]');
+  expect(callout?.textContent).toContain('Helpin AI changed the priority from Medium to Urgent.');
+  expect(callout?.querySelector('.ask-agent-avatar')).not.toBeNull();
+ } finally { rendered.cleanup(); }
+});

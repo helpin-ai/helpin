@@ -91,6 +91,8 @@ type Config struct {
 	JevTagThreshold             float64
 	JevRoutingMode              string
 	JevTagsMode                 string
+	JevPriorityMode             string
+	JevPriorityThreshold        float64
 	JevTimeoutMS                int
 	JevWorkspaceIDs             string
 	JevDailyLimit               int
@@ -480,6 +482,8 @@ func Load() (*Config, error) {
 		JevFollowUpThreshold:                   parseJevProbability(os.Getenv("JEV_FOLLOW_UP_THRESHOLD"), .95),
 		JevRoutingMode:                         strings.TrimSpace(os.Getenv("JEV_ROUTING_MODE")),
 		JevTagsMode:                            strings.TrimSpace(os.Getenv("JEV_TAGS_MODE")),
+		JevPriorityMode:                        strings.TrimSpace(os.Getenv("JEV_PRIORITY_MODE")),
+		JevPriorityThreshold:                   parseJevProbability(os.Getenv("JEV_PRIORITY_THRESHOLD"), .95),
 		JevTimeoutMS:                           parsePositiveIntEnv(os.Getenv("JEV_TIMEOUT_MS"), 1000),
 		JevWorkspaceIDs:                        os.Getenv("JEV_WORKSPACE_IDS"),
 		JevDailyLimit:                          parsePositiveIntEnv(os.Getenv("JEV_DAILY_LIMIT"), 1000),

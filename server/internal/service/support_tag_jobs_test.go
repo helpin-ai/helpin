@@ -19,7 +19,7 @@ func queueSupportTagJob(t *testing.T, f *supportTriageTestFixture, msg *model.Su
 	if err := f.db.Create(&job).Error; err != nil {
 		t.Fatal(err)
 	}
-	return NewSupportTagJobService(repository.NewSupportTagJobRepository(f.db), f.messageRepo, f.conversationRepo, f.triageSvc.jev, nil)
+	return NewSupportTagJobService(repository.NewSupportTagJobRepository(f.db), f.messageRepo, f.conversationRepo, repository.NewSupportInboxInstallationRepository(f.db), f.triageSvc.jev, nil)
 }
 
 func runSupportTagJob(t *testing.T, f *supportTriageTestFixture, msg *model.SupportMessage) {
@@ -236,7 +236,7 @@ func TestSupportTagJobAuditFailureRollsBackAndReusesDecision(t *testing.T) {
 	mustExec(t, f.db, "DROP TRIGGER reject_tag_note")
 	mustExec(t, f.db, "UPDATE support_tag_jobs SET available_at = ?", time.Now().Add(-time.Second))
 	// A new worker has only persisted state, including the successful decision.
-	s = NewSupportTagJobService(repository.NewSupportTagJobRepository(f.db), f.messageRepo, f.conversationRepo, f.triageSvc.jev, nil)
+	s = NewSupportTagJobService(repository.NewSupportTagJobRepository(f.db), f.messageRepo, f.conversationRepo, repository.NewSupportInboxInstallationRepository(f.db), f.triageSvc.jev, nil)
 	if _, err := s.ProcessNext(f.ctx); err != nil {
 		t.Fatal(err)
 	}
