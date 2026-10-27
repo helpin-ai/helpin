@@ -11,6 +11,7 @@ import {
 } from './serverRedirects.mjs'
 import {
   collectSitemapEntries,
+  renderLlmsTxt,
   renderRobotsTxt,
   renderSitemapXml,
   resolvePublicUrlParts,
@@ -223,6 +224,7 @@ function isHtmlRequest(request, url) {
     url.pathname.startsWith('/assets/') ||
     url.pathname === '/robots.txt' ||
     url.pathname === '/sitemap.xml' ||
+    url.pathname === '/llms.txt' ||
     url.pathname === '/healthz'
   ) {
     return false
@@ -616,6 +618,39 @@ async function handleSitemapXml(_request, response, hcContext) {
   }
 }
 
+async function handleLlmsTxt(_request, response, hcContext) {
+  const unavailable = () => {
+    response.statusCode = 503
+    response.setHeader('Cache-Control', 'no-store')
+    response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    response.end('llms.txt unavailable')
+  }
+  try {
+    const { subdomain } = hcContext
+    const apiBase = process.env.INTERNAL_API_URL
+    if (!apiBase || !subdomain) return unavailable()
+    const config = await fetchHelpCenterConfig(apiBase, subdomain)
+    const multilingual = config.enabled_locales?.length > 1
+    const locale = config.default_locale || 'en'
+    const prefix = multilingual ? `/hc/${subdomain}/${locale}` : `/hc/${subdomain}`
+    const spacesRes = await fetch(`${apiBase}${prefix}/spaces`)
+    if (!spacesRes.ok) return unavailable()
+    const spaces = []
+    for (const space of await spacesRes.json()) {
+      const navRes = await fetch(`${apiBase}${prefix}/spaces/${encodeURIComponent(space.slug)}/navigation`)
+      spaces.push({ name: space.name, navigation: navRes.ok ? await navRes.json() : [] })
+    }
+    const body = renderLlmsTxt({ publicUrl: resolvePublicUrlParts(hcContext, config), config, spaces })
+    response.statusCode = 200
+    response.setHeader('Cache-Control', 'public, max-age=3600')
+    response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    response.end(body)
+  } catch (error) {
+    console.error('failed to generate llms.txt', error)
+    unavailable()
+  }
+}
+
 /**
  * Strip the resolved basepath from a pathname so we can match top-level routes
  * like /sitemap.xml or /robots.txt. Hosted and custom-domain help centers use
@@ -721,6 +756,11 @@ async function handleRequest(request, response) {
 
     if (internalPath === '/sitemap.xml') {
       await handleSitemapXml(request, response, hcContext)
+      return
+    }
+
+    if (internalPath === '/llms.txt') {
+      await handleLlmsTxt(request, response, hcContext)
       return
     }
 

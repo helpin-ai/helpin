@@ -1877,6 +1877,10 @@ func main() {
 	// Lazy chunk backfill for workspaces whose help center predates
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
+	// An explicitly configured answer model replaces the shared route default.
+	if strings.TrimSpace(cfg.HelpcenterAnswerModel) != "" {
+		helpcenterAISearchService.SetAnswerModelOverride(helpcenterAnswerProvider, helpcenterAnswerModel)
+	}
 	customerPortalService.SetKnowledgeSearch(helpcenterAISearchService)
 	supportInboxService.SetKnowledgeSearch(helpcenterAISearchService)
 	// Help assistant: answers help center and portal visitors in lightweight

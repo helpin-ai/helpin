@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Menu, Sparkles } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { useArticle, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useScrollSpy } from '@/hooks/useScrollSpy'
@@ -13,7 +13,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { getArticlePager } from '@/lib/navigation'
-import { openAskAI } from '@/lib/askAI'
+import { ArticleActions } from '@/components/article/ArticleActions'
 
 interface ArticleRouteViewProps {
   locale: string
@@ -26,7 +26,7 @@ export function ArticleRouteView({
   articleKey,
   multilingualEnabled,
 }: ArticleRouteViewProps) {
-  const { subdomain, config } = useDocsContext()
+  const { subdomain } = useDocsContext()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
   const { data: article, isLoading, error } = useArticle(
@@ -118,16 +118,7 @@ export function ArticleRouteView({
           pager={pager}
           multilingualEnabled={multilingualEnabled}
         >
-          {config.ai_assistant_enabled && (
-            <button
-              type="button"
-              onClick={() => openAskAI({ pageArticleId: article.id, pageTitle: article.title })}
-              className="mb-6 inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Sparkles size={13} style={{ color: config.brand_color || undefined }} aria-hidden="true" />
-              Ask AI about this page
-            </button>
-          )}
+          <ArticleActions articleId={article.id} title={article.title} />
           <ArticleContent html={article.content_html} />
         </ArticleShell>
       </div>

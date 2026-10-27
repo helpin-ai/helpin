@@ -572,10 +572,15 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
+			// Writes share the /widget limiter: a message can start an AI turn.
+			sdkWrite := chi.Chain(h.SupportInboxWidget.RequireOrigin)
+			if h.WidgetRateLimit != nil {
+				sdkWrite = chi.Chain(h.WidgetRateLimit, h.SupportInboxWidget.RequireOrigin)
+			}
 			r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
-			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+			r.With(sdkWrite...).Post("/session", h.SupportInboxWidget.CreateSession)
 			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.With(sdkWrite...).Post("/messages", h.SupportInboxWidget.SendMessage)
 			if h.WidgetRateLimit != nil {
 				r.With(h.WidgetRateLimit, h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
 			} else {

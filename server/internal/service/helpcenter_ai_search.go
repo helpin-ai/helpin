@@ -101,14 +101,28 @@ type HelpcenterAISearchService struct {
 	llmProvider       llm.Provider
 	answerProvider    string
 	answerModel       string
-	redis             *redis.Client
-	autoIndexer       helpcenterAutoIndexer
+	// answerRoute pins the answer model when an operator configured one;
+	// otherwise the shared completion routes pick it.
+	answerRoute *AICompletionRoute
+	redis       *redis.Client
+	autoIndexer helpcenterAutoIndexer
 }
 
 // helpcenterAutoIndexer backfills chunk indexing for a workspace's help
 // center spaces; *DocsEmbeddingService satisfies it.
 type helpcenterAutoIndexer interface {
 	QueueHelpcenterAutoIndex(ctx context.Context, workspaceID string) error
+}
+
+// SetAnswerModelOverride pins the model for grounded answers, as configured
+// by HELPCENTER_ANSWER_PROVIDER and HELPCENTER_ANSWER_MODEL.
+func (s *HelpcenterAISearchService) SetAnswerModelOverride(provider, model string) {
+	provider, model = strings.TrimSpace(provider), strings.TrimSpace(model)
+	if provider == "" || model == "" {
+		s.answerRoute = nil
+		return
+	}
+	s.answerRoute = &AICompletionRoute{Provider: provider, Model: model}
 }
 
 // SetAutoIndexer wires the lazy chunk-backfill used when a workspace has
@@ -559,6 +573,7 @@ Return JSON only.`
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureHelpcenterAnswer,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureHelpcenterAnswer, cacheKey),
+		PreferredRoute: s.answerRoute,
 		Chat: llm.ChatRequest{
 			SystemPrompt: systemPrompt,
 			Messages: []llm.Message{{

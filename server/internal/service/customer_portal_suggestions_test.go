@@ -185,3 +185,15 @@ func TestRelevantChunksDropsLooseNeighbours(t *testing.T) {
 		t.Fatalf("relevant chunks = %+v", got)
 	}
 }
+
+func TestHelpcenterAnswerModelOverride(t *testing.T) {
+	svc := &HelpcenterAISearchService{}
+	svc.SetAnswerModelOverride("openai", "")
+	if svc.answerRoute != nil {
+		t.Fatal("a provider without a model pinned a route")
+	}
+	svc.SetAnswerModelOverride(" openai ", " gpt-test ")
+	if svc.answerRoute == nil || svc.answerRoute.Provider != "openai" || svc.answerRoute.Model != "gpt-test" {
+		t.Fatalf("route = %+v", svc.answerRoute)
+	}
+}
