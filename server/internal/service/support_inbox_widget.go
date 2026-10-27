@@ -1403,7 +1403,7 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 		limit = 8
 	}
 
-	found, err := s.searchWidgetHelp(ctx, inst.WorkspaceID, locale, query, allowedSpaces, limit)
+	found, err := s.searchWidgetHelp(ctx, "widget_help", inst.WorkspaceID, locale, query, allowedSpaces, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1456,18 +1456,19 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 	return results, nil
 }
 
-// searchWidgetHelp searches the widget's allowed help center spaces with the
-// shared knowledge search, as the help center and portal do. Per-space full
-// text remains the floor: it runs when the shared search is not connected or
-// finds nothing in the allowed spaces, so results never regress.
-func (s *SupportInboxService) searchWidgetHelp(ctx context.Context, workspaceID, locale, query string, spaces []model.WidgetHelpSpace, limit int) ([]model.PublicSearchResultResponse, error) {
+// searchWidgetHelp searches the help spaces chosen for customers, which the
+// Messenger help tab and portal suggestions share, with the shared knowledge
+// search. Per-space full text remains the floor: it runs when the shared
+// search is not connected or finds nothing in those spaces, so results never
+// regress. surface names the caller for metering.
+func (s *SupportInboxService) searchWidgetHelp(ctx context.Context, surface, workspaceID, locale, query string, spaces []model.WidgetHelpSpace, limit int) ([]model.PublicSearchResultResponse, error) {
 	if s.knowledgeSearch != nil {
 		allowed := make(map[string]bool, len(spaces))
 		for _, space := range spaces {
 			allowed[space.Slug] = true
 		}
 		// Ask for the most results, since some may be in spaces the widget hides.
-		found, err := s.knowledgeSearch.Search(WithKnowledgeSurface(ctx, "widget_help"), workspaceID, locale, "", query, "", 20)
+		found, err := s.knowledgeSearch.Search(WithKnowledgeSurface(ctx, surface), workspaceID, locale, "", query, "", 20)
 		if err != nil {
 			return nil, err
 		}

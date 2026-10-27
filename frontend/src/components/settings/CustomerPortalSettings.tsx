@@ -6,10 +6,13 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useChatSettings, useCustomerPortalAccessSummary, useSupportAgents, useUpdateCustomerPortalSettings } from '@/hooks/queries/useSupport';
+import { useDocsSpaces } from '@/hooks/queries';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
 import type { CustomerPortalAccessMode, CustomerPortalAccessSummary, SupportInboxSettings } from '@/lib/pmTypes';
 import { serializeQueryFilterGroup } from '@/lib/queryBuilder';
+import { HelpSpacesPicker } from './HelpSpacesPicker';
+import { toggleHelpSpaceId } from './helpSpaces';
 import { SettingsAutosaveGuard } from './SettingsAutosaveGuard';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { SettingsSaveStatus } from './SettingsSaveStatus';
@@ -17,7 +20,7 @@ import { SettingsSaveStatus } from './SettingsSaveStatus';
 type PortalSettingsDraft = Pick<
   SupportInboxSettings,
   'portal_enabled' | 'portal_intake_enabled' | 'portal_anonymous_intake_enabled'
-> & { portal_access_mode: CustomerPortalAccessMode; portal_ai_mode: 'off' | 'internal_note'; portal_ai_agent_id: string };
+> & { widget_help_space_ids: string[] } & { portal_access_mode: CustomerPortalAccessMode; portal_ai_mode: 'off' | 'internal_note'; portal_ai_agent_id: string };
 
 const accessModes: { value: CustomerPortalAccessMode; label: string; description: string }[] = [
   {
@@ -64,6 +67,7 @@ export function CustomerPortalSettings({ workspaceId, workspaceSlug, editable }:
     // The retired customer-reply mode became private suggestions on the server.
     portal_ai_mode: settings.portal_ai_mode === 'off' || !settings.portal_ai_mode ? 'off' : 'internal_note',
     portal_ai_agent_id: settings.portal_ai_agent_id ?? '',
+    widget_help_space_ids: settings.widget_help_space_ids ?? [],
   };
   return <CustomerPortalSettingsEditor key={workspaceId} workspaceId={workspaceId} workspaceSlug={workspaceSlug} editable={editable} initialDraft={initialDraft} sharedAgentId={settings.ai_agent_id} />;
 }
@@ -78,6 +82,7 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
   const update = useUpdateCustomerPortalSettings(workspaceId);
   const summary = useCustomerPortalAccessSummary(workspaceId, editable);
   const { data: supportAgents = [] } = useSupportAgents(workspaceId);
+  const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
   const [draft, setDraft] = useState<PortalSettingsDraft>(initialDraft);
 	const effectiveAgentId = draft.portal_ai_agent_id || sharedAgentId;
 
@@ -182,6 +187,21 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
         )}
         {draft.portal_anonymous_intake_enabled && !draft.portal_intake_enabled && (
           <p className="mt-3 text-sm text-muted-foreground">Requests without sign-in become available when new requests are enabled.</p>
+        )}
+      </section>
+
+      <section className="border-b border-border/70 pb-7" aria-labelledby="portal-articles-heading">
+        <h2 id="portal-articles-heading" className="text-base font-semibold">Help articles</h2>
+        <p className="mt-1 mb-4 text-sm text-muted-foreground">While a customer writes a new request, the portal suggests articles from these spaces.</p>
+        <HelpSpacesPicker
+          spaces={docsSpaces}
+          loading={docsSpacesLoading}
+          selectedIds={draft.widget_help_space_ids}
+          disabled={!editable}
+          onToggle={(spaceId, enabled) => setDraft((current) => ({ ...current, widget_help_space_ids: toggleHelpSpaceId(current.widget_help_space_ids, spaceId, enabled) }))}
+        />
+        {!docsSpacesLoading && draft.widget_help_space_ids.length === 0 && (
+          <p className="mt-3 text-sm text-muted-foreground">No help spaces selected — article suggestions are off.</p>
         )}
       </section>
 

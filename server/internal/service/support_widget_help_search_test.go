@@ -33,7 +33,7 @@ func TestWidgetHelpSearchUsesSharedSearchWithinAllowedSpaces(t *testing.T) {
 		{ID: "c", Title: "API", SpaceSlug: "api"},
 	}}
 	svc := &SupportInboxService{knowledgeSearch: search}
-	got, err := svc.searchWidgetHelp(context.Background(), "ws", "en", "export", []model.WidgetHelpSpace{{Slug: "guides"}, {Slug: "api"}}, 8)
+	got, err := svc.searchWidgetHelp(context.Background(), "widget_help", "ws", "en", "export", []model.WidgetHelpSpace{{Slug: "guides"}, {Slug: "api"}}, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestWidgetHelpSearchUsesSharedSearchWithinAllowedSpaces(t *testing.T) {
 func TestWidgetHelpSearchFallsBackToSpaceFullText(t *testing.T) {
 	search := &fakeKnowledgeSearch{results: []model.PublicSearchResultResponse{{ID: "b", SpaceSlug: "runbooks"}}}
 	svc := &SupportInboxService{knowledgeSearch: search, docsSearchRepo: repository.NewDocsSearchRepository(newEmptySQLite(t))}
-	if _, err := svc.searchWidgetHelp(context.Background(), "ws", "en", "export", []model.WidgetHelpSpace{{Slug: "guides"}}, 8); err == nil {
+	if _, err := svc.searchWidgetHelp(context.Background(), "widget_help", "ws", "en", "export", []model.WidgetHelpSpace{{Slug: "guides"}}, 8); err == nil {
 		t.Fatal("full-text fallback did not run")
 	}
 }

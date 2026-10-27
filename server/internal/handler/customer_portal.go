@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -274,6 +275,10 @@ func (h *CustomerPortalHandler) Suggestions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	suggestions, err := h.portal.SuggestArticles(r.Context(), ws, r.URL.Query().Get("q"))
+	if errors.Is(err, context.Canceled) {
+		// The portal cancels a search when the customer keeps typing.
+		return
+	}
 	if err != nil {
 		writePortalError(w, r, ws.ID, err, "unable to suggest articles")
 		return

@@ -16,6 +16,12 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useCustomerPortalAccessSummary: (_workspaceId: string, enabled: boolean) => (enabled ? mocks.summary() : { isLoading: false, isError: false }),
   useSupportAgents: () => ({ data: [{ id: 'echo', name: 'Echo' }] }),
 }));
+vi.mock('@/hooks/queries', () => ({
+  useDocsSpaces: () => ({ data: [
+    { id: 'space-public', name: 'Guides', slug: 'guides', type: 'external_capable' },
+    { id: 'space-internal', name: 'Runbooks', slug: 'runbooks', type: 'internal' },
+  ], isLoading: false }),
+}));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, search, className }: { children: React.ReactNode; search?: Record<string, string>; className?: string }) => (
     <a className={className} data-search={JSON.stringify(search ?? {})}>{children}</a>
@@ -92,7 +98,19 @@ describe('CustomerPortalSettings', () => {
       portal_access_mode: 'approved_contacts',
       portal_ai_mode: 'off',
       portal_ai_agent_id: '',
+      widget_help_space_ids: [],
     });
+  });
+
+  it('shares the help space selection with the chat widget and says when suggestions are off', async () => {
+    await act(async () => root.render(<CustomerPortalSettings workspaceId="ws" workspaceSlug="acme" editable />));
+    expect(container.textContent).toContain('article suggestions are off');
+    expect(container.querySelector('[aria-label="Offer Runbooks to customers"]')).toBeNull();
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Offer Guides to customers"]');
+    await act(async () => toggle?.click());
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ widget_help_space_ids: ['space-public'] }));
+    expect(container.textContent).not.toContain('article suggestions are off');
   });
 
   it('defaults to approved contacts and saves a changed access mode', async () => {

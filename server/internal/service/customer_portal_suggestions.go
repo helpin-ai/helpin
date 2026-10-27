@@ -34,10 +34,11 @@ func (s *CustomerPortalService) SetKnowledgeSearch(search *HelpcenterAISearchSer
 }
 
 // SuggestArticles returns up to five published help center articles for the
-// text of a request being written. Text too short to search returns none, as
-// does a portal that takes no requests or a workspace without a published
-// help center. Only articles with a public address are suggested, so every
-// suggestion can be opened.
+// text of a request being written, from the help spaces chosen for customers:
+// the same selection as the Messenger help tab. Text too short to search
+// returns none, as does a portal that takes no requests, a workspace without
+// a published help center, or one with no help spaces selected. Only articles
+// with a public address are suggested, so every suggestion can be opened.
 func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalWorkspace, text string) ([]PortalArticleSuggestion, error) {
 	suggestions := []PortalArticleSuggestion{}
 	query, ok := portalSuggestionQuery(text)
@@ -52,9 +53,16 @@ func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalW
 	if cfg == nil || !cfg.IsPublished {
 		return suggestions, nil
 	}
-	results, err := s.knowledge.Search(WithKnowledgeSurface(ctx, "portal_intake"), ws.ID, defaultHelpcenterLocale(cfg), "", query, "", portalSuggestionLimit)
+	spaces, err := s.inbox.resolveWidgetHelpSpaces(ctx, ws.ID, ws.Settings.WidgetHelpSpaceIDs)
+	if err != nil || len(spaces) == 0 {
+		return suggestions, err
+	}
+	results, err := s.inbox.searchWidgetHelp(ctx, "portal_intake", ws.ID, defaultHelpcenterLocale(cfg), query, spaces, portalSuggestionLimit)
 	if err != nil || len(results) == 0 {
 		return suggestions, err
+	}
+	if len(results) > portalSuggestionLimit {
+		results = results[:portalSuggestionLimit]
 	}
 	ids := make([]string, 0, len(results))
 	for _, result := range results {
