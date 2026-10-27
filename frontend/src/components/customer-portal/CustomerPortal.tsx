@@ -861,11 +861,7 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         <>
           <ol className="mt-6 border-t border-quiet-divider-strong pt-3" aria-label="Messages">
             {request.messages.map((message) => <PortalMessage key={message.id} message={message} supportName={configuration?.branding.name || 'Support'} />)}
-            {request.ai_processing ? (
-              <PortalActivityRow label={`${configuration?.branding.assistant_name || 'The AI assistant'} is working on your request…`} />
-            ) : typing ? (
-              <PortalActivityRow label={`${configuration?.branding.name || 'Support'} is replying…`} />
-            ) : null}
+            {typing ? <PortalActivityRow label={`${configuration?.branding.name || 'Support'} is replying…`} /> : null}
           </ol>
           {error ? <PortalError className="mt-4">{error}</PortalError> : null}
           {request.can_rate ? (

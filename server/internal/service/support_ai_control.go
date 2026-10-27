@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,12 +11,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"gorm.io/gorm"
 )
+
+// ErrPortalRequestsHumanOwned rejects handing a portal request to AI: people
+// answer portal requests, and AI may only draft private suggestions for them.
+var ErrPortalRequestsHumanOwned = errors.New("portal requests are answered by your team; AI can only suggest replies privately")
 
 // ChangeConversationAIControl explicitly pauses AI or returns human ownership to AI.
 func (s *SupportInboxService) ChangeConversationAIControl(ctx context.Context, workspaceID, conversationID, actorID string, req model.SupportAIControlRequest) error {
-	runNow := req.Action == "run_now"
 	if strings.TrimSpace(actorID) == "" {
 		return fmt.Errorf("a teammate is required")
 	}
@@ -26,16 +29,14 @@ func (s *SupportInboxService) ChangeConversationAIControl(ctx context.Context, w
 	if conv == nil {
 		return fmt.Errorf("conversation not found")
 	}
-	if req.Action != "pause" && req.Action != "return" && !runNow {
-		return fmt.Errorf("action must be pause, return, or run_now")
+	if req.Action != "pause" && req.Action != "return" {
+		return fmt.Errorf("action must be pause or return")
 	}
-	if runNow {
-		if conv.Channel != "portal" || !conv.PortalVisible {
-			return fmt.Errorf("only a visible portal request can be sent to AI now")
-		}
+	if req.Action == "return" && strings.EqualFold(conv.Channel, "portal") {
+		return ErrPortalRequestsHumanOwned
 	}
 	var settings model.SupportInboxSettings
-	if req.Action == "return" || runNow {
+	if req.Action == "return" {
 		inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 		if err != nil {
 			return err
@@ -45,9 +46,6 @@ func (s *SupportInboxService) ChangeConversationAIControl(ctx context.Context, w
 		}
 		settings = parseSettings(inst.Settings)
 		settings = effectiveSupportAISettings(settings, conv)
-		if runNow && settings.PortalAIMode != "ai_first" {
-			return fmt.Errorf("automatic portal replies must be enabled to ask AI to handle a request")
-		}
 		if !shouldAutomaticallyProcessSupportAI(settings) || strings.TrimSpace(derefString(settings.AIAgentID)) == "" {
 			return fmt.Errorf("support AI is not enabled")
 		}
@@ -72,20 +70,13 @@ func (s *SupportInboxService) pauseForTeammate(ctx context.Context, conv *model.
 }
 
 func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, conv *model.SupportConversation, actorID string, req *model.SupportAIControlRequest, settings model.SupportInboxSettings, extra map[string]any, reason string) error {
-	runNow := req != nil && req.Action == "run_now"
-	returning := req != nil && (req.Action == "return" || runNow)
+	returning := req != nil && req.Action == "return"
 	actorName := s.lookupUserName(ctx, actorID)
 	if actorName == "" {
 		actorName = "A teammate"
 	}
 	var note *model.SupportMessage
-	var hook func(*gorm.DB) error
-	if runNow {
-		hook = func(tx *gorm.DB) error {
-			return repository.EnqueueLatestPortalCustomerMessageTx(ctx, tx, conv.WorkspaceID, conv.ID, settings.PortalAIMode)
-		}
-	}
-	previousRun, changed, err := s.conversationRepo.ChangeAIControlWithHook(ctx, conv.WorkspaceID, conv.ID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
+	previousRun, changed, err := s.conversationRepo.ChangeAIControl(ctx, conv.WorkspaceID, conv.ID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
 		now := time.Now().UTC()
 		if current.AnonymizedAt != nil {
 			return nil, nil, fmt.Errorf("this conversation is read-only because its customer was deleted")
@@ -107,7 +98,7 @@ func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, c
 			if current.CustomerRequestedHumanAt != nil && !req.ConfirmHumanRequest {
 				return nil, nil, fmt.Errorf("confirm returning to AI: the customer requested a human")
 			}
-			if !model.SupportAIConversationBlocked(current) && derefString(current.AssignedAgentID) == derefString(settings.AIAgentID) && derefString(current.AIState) == "pending" && !runNow {
+			if !model.SupportAIConversationBlocked(current) && derefString(current.AssignedAgentID) == derefString(settings.AIAgentID) && derefString(current.AIState) == "pending" {
 				return nil, nil, nil
 			}
 			fields["human_takeover"] = false
@@ -121,15 +112,9 @@ func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, c
 			fields["handoff_state"] = nil
 			fields["flow_state"] = model.SupportConversationFlowStateAIHandling
 			fields["ai_resumed_at"] = now
-			if runNow {
-				fields["ai_resumed_at"] = nil
-			}
 			fields["ai_paused_at"] = nil
 			fields["ai_paused_by_user_id"] = nil
 			activity := actorName + " returned the conversation to AI. AI will respond to the next customer message."
-			if runNow {
-				activity = actorName + " asked AI to answer the latest customer message."
-			}
 			note = supportControlActivity(current, actorID, actorName, model.SystemEventAIReturned, activity, "returned_by_teammate", now)
 			if current.CustomerRequestedHumanAt != nil {
 				note.Content += "\n\nA teammate explicitly confirmed this return after the customer requested a human."
@@ -167,7 +152,7 @@ func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, c
 			}
 		}
 		return fields, note, nil
-	}, hook)
+	})
 	if err != nil {
 		return err
 	}

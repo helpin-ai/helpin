@@ -1389,7 +1389,7 @@ export interface SupportInboxSettings {
   portal_anonymous_intake_enabled: boolean;
   portal_intake_enabled: boolean;
   portal_access_mode?: CustomerPortalAccessMode;
-  portal_ai_mode?: 'off' | 'internal_note' | 'ai_first';
+  portal_ai_mode?: 'off' | 'internal_note';
   portal_ai_agent_id?: string | null;
   csat_enabled: boolean;
   file_uploads_enabled: boolean;

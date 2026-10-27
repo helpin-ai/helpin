@@ -52,6 +52,15 @@ Company visibility is deliberately conservative:
 - Each time a member opens a colleague's request, the portal audit log records a `company_request_viewed` event. It records at most one per member and request each hour.
 - The conversation sidebar tells teammates how many colleagues besides the requester can read the conversation in the portal.
 
+## AI on portal requests
+
+People answer portal requests. **Settings → Customer portal → AI suggestions** is either off or **Private suggestions**: a support agent drafts a private note for the teammate on new unassigned requests. Customers never see it.
+- AI replies to customers are not available on the portal. The chat Messenger and email keep their own AI settings.
+- Teammates cannot hand a portal request to AI.
+- The portal never shows AI drafting as "Support is replying".
+
+Workspaces that used the retired customer-reply mode were moved to private suggestions on October 27, 2026. Their open requests still waiting on AI went to the team queue.
+
 ## Limitations
 
 - Colleagues receive no email notifications for each other's requests. They follow them in the portal, where live updates cover company requests. Participants and CC managed from the portal are planned separately.

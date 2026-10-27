@@ -12,8 +12,9 @@ func effectiveSupportAISettings(settings model.SupportInboxSettings, conv *model
 	if conv == nil || !strings.EqualFold(conv.Channel, "portal") {
 		return settings
 	}
-	settings.AIEnabled = settings.PortalEnabled && (settings.PortalAIMode == "ai_first" || settings.PortalAIMode == "internal_note")
-	settings.AIResponseMode = settings.PortalAIMode
+	// Portal AI only drafts private suggestions; it never replies to customers.
+	settings.AIEnabled = settings.PortalAIDraftsEnabled()
+	settings.AIResponseMode = model.SupportPortalAIModeInternalNote
 	if settings.PortalAIAgentID != nil && strings.TrimSpace(*settings.PortalAIAgentID) != "" {
 		settings.AIAgentID = settings.PortalAIAgentID
 	}

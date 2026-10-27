@@ -41,7 +41,6 @@ type PortalRequestDetail struct {
 	Status         string    `json:"status"`
 	LastActivityAt time.Time `json:"last_activity_at"`
 	CanReply       bool      `json:"can_reply"`
-	AIProcessing   bool      `json:"ai_processing"`
 	// CanRate is true when the customer may rate the resolved request.
 	CanRate  bool                      `json:"can_rate"`
 	CSAT     *model.SupportCSATSummary `json:"csat,omitempty"`
@@ -57,8 +56,10 @@ type portalReplyAuditKey struct{}
 type portalReplyAudit struct{ IdentityID, SessionID string }
 type portalReplyAIKey struct{}
 
+// portalAIQueueAllowed reports whether a new portal message gets a private
+// AI suggestion: drafts are on and nobody owns the request yet.
 func portalAIQueueAllowed(settings model.SupportInboxSettings, ownerID *string) bool {
-	if !settings.PortalEnabled || (settings.PortalAIMode != "ai_first" && settings.PortalAIMode != "internal_note") {
+	if !settings.PortalAIDraftsEnabled() {
 		return false
 	}
 	return ownerID == nil || strings.TrimSpace(*ownerID) == ""
@@ -204,10 +205,6 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	if portalAIQueueAllowed(access.Workspace.Settings, draft.OwnerID) {
 		draft.DispatchAIMode = access.Workspace.Settings.PortalAIMode
 	}
-	if draft.DispatchAIMode == "ai_first" {
-		flow := model.SupportConversationFlowStateAIHandling
-		draft.FlowState = &flow
-	}
 	conversation, request, err := s.repo.CreateRequest(ctx, draft)
 	if err != nil {
 		return nil, err
@@ -253,9 +250,6 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 		detail.RequesterName = s.portalRequesterName(ctx, conv)
 		s.auditCompanyView(ctx, access, conv)
 	}
-	detail.AIProcessing = conv.FlowState != nil && *conv.FlowState == model.SupportConversationFlowStateAIHandling &&
-		!supportConversationHumanOwned(conv) && conv.LastCustomerMessageID != nil &&
-		conv.LastPublicMessageID != nil && *conv.LastPublicMessageID == *conv.LastCustomerMessageID
 	// Only the requester rates their request.
 	if request.Own && access.Workspace.Settings.CSATEnabled && conv.AnonymizedAt == nil {
 		canRate, err := s.inbox.conversationAcceptsCSAT(ctx, access.Workspace.ID, conv)

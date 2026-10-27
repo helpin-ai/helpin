@@ -1228,10 +1228,10 @@ func (s *SupportInboxService) validatePortalSettings(ctx context.Context, worksp
 	if merged.PortalAccessMode != model.SupportPortalAccessModeApprovedContacts && merged.PortalAccessMode != model.SupportPortalAccessModeAnyVerifiedEmail {
 		return fmt.Errorf("unsupported portal access mode")
 	}
-	if merged.PortalAIMode != "off" && merged.PortalAIMode != "internal_note" && merged.PortalAIMode != "ai_first" {
-		return fmt.Errorf("portal_ai_mode must be off, internal_note, or ai_first")
+	if merged.PortalAIMode != model.SupportPortalAIModeOff && merged.PortalAIMode != model.SupportPortalAIModeInternalNote {
+		return fmt.Errorf("portal_ai_mode must be off or internal_note: people answer portal requests, and AI can only suggest replies privately")
 	}
-	if merged.PortalAIMode != "off" {
+	if merged.PortalAIMode != model.SupportPortalAIModeOff {
 		agentID := strings.TrimSpace(derefString(merged.PortalAIAgentID))
 		if agentID == "" {
 			agentID = strings.TrimSpace(derefString(merged.AIAgentID))

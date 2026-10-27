@@ -59,6 +59,20 @@ afterEach(() => {
 });
 
 describe('CustomerPortalSettings', () => {
+  it('offers only private AI suggestions and keeps a retired customer-reply mode as suggestions', async () => {
+    mocks.query.mockReturnValue({
+      data: { settings: { portal_enabled: true, portal_ai_mode: 'ai_first', ai_agent_id: 'echo' } },
+      isError: false,
+      refetch: vi.fn(),
+    });
+    await act(async () => root.render(<CustomerPortalSettings workspaceId="ws" workspaceSlug="acme" editable />));
+    const trigger = container.querySelector<HTMLElement>('[aria-label="Portal AI response mode"]');
+    expect(trigger?.textContent).toContain('Private suggestions');
+    expect(container.textContent).toContain('Your team answers portal requests');
+    expect(container.textContent).toContain('Customers never see them');
+    expect(container.textContent).not.toContain('Reply to customers');
+  });
+
   it('saves only portal fields and keeps the current portal address visible', async () => {
     await act(async () => root.render(<CustomerPortalSettings workspaceId="workspace-1" workspaceSlug="acme" editable />));
     const link = container.querySelector<HTMLAnchorElement>('a[href$="/portal/acme"]');

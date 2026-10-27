@@ -29,6 +29,11 @@ const (
 	SupportPortalAccessModeApprovedContacts = "approved_contacts"
 	SupportPortalAccessModeAnyVerifiedEmail = "any_verified_email"
 
+	// Portal AI modes. People answer portal requests; AI may only draft a
+	// private suggestion for the teammate.
+	SupportPortalAIModeOff          = "off"
+	SupportPortalAIModeInternalNote = "internal_note"
+
 	// Portal roles decide what a contact sees in a company that uses the
 	// portal: requesters see their own requests, members see every request
 	// from the company. A company's default role applies unless the contact
@@ -173,4 +178,10 @@ type PortalSenderAvatar struct {
 	Seed            *string `json:"seed,omitempty" gorm:"column:avatar_seed"`
 	BackgroundMode  *string `json:"background_mode,omitempty" gorm:"column:avatar_background_mode"`
 	BackgroundColor *string `json:"background_color,omitempty" gorm:"column:avatar_background_color"`
+}
+
+// PortalAIDraftsEnabled reports whether AI drafts private suggestions for new
+// portal requests. It never replies to portal customers.
+func (s SupportInboxSettings) PortalAIDraftsEnabled() bool {
+	return s.PortalEnabled && s.PortalAIMode == SupportPortalAIModeInternalNote
 }

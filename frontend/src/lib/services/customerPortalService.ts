@@ -87,7 +87,6 @@ export interface CustomerPortalRequest {
 
 export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   can_reply: boolean
-  ai_processing?: boolean
   /** The customer may rate this resolved request. */
   can_rate?: boolean
   csat?: { rating: number; comment?: string | null; submitted_at: string } | null
