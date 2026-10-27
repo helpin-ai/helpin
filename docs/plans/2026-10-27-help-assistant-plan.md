@@ -1,5 +1,7 @@
 # Help assistant: a conversational agent for the help center and portal
 
+Status: built on `feat/company-portal`. As built, a turn's run targets its pending answer (`help_assistant_turn`) rather than the session, and the conversation logic is shared by both apps in `packages/shared/src/help-assistant.ts`. See [Help assistant](../help-assistant.md).
+
 Date: 2026-10-27. Follows [the portal intake plan](2026-10-27-portal-intake-deflection-plan.md), whose "help center and portal assistant" section this replaces, and [private help spaces](2026-10-27-portal-private-help-spaces-plan.md).
 
 Customers who are reading the help center or the portal can ask questions in a conversation. Answers come from published articles and cite them. When an answer does not help, the customer can contact support with the conversation already attached. It is modelled on [Mintlify's assistant](https://www.mintlify.com/docs/ai/assistant).
