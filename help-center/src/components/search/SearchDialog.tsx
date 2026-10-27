@@ -6,7 +6,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useSearchArticles } from '@/hooks/queries'
+import { useSemanticSearchArticles } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { buildCanonicalSearchPath } from '@/lib/locale'
@@ -35,7 +35,9 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
       : ''
   const isDebouncing =
     open && normalizedQuery.length >= 2 && normalizedQuery !== debouncedQuery
-  const { data: results, isLoading } = useSearchArticles(
+  // Semantic search with the server's full-text fallback, like the portal and
+  // the chat widget. Query embeddings are cached, so retyping costs nothing.
+  const { data: results, isLoading } = useSemanticSearchArticles(
     subdomain,
     locale,
     searchQuery,

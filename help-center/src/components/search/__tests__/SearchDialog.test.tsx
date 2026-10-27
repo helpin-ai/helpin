@@ -6,11 +6,11 @@ import { DocsProvider } from '@/contexts/DocsContext'
 import type { HelpCenterConfig } from '@/lib/types'
 
 const hooks = vi.hoisted(() => ({
-  useSearchArticles: vi.fn(),
+  useSemanticSearchArticles: vi.fn(),
 }))
 
 vi.mock('@/hooks/queries', () => ({
-  useSearchArticles: hooks.useSearchArticles,
+  useSemanticSearchArticles: hooks.useSemanticSearchArticles,
 }))
 
 const mockConfig: HelpCenterConfig = {
@@ -58,7 +58,7 @@ function renderWithDocsContext(ui: ReactNode) {
 describe('SearchDialog', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    hooks.useSearchArticles.mockReturnValue({ data: [], isLoading: false })
+    hooks.useSemanticSearchArticles.mockReturnValue({ data: [], isLoading: false })
   })
 
   afterEach(() => {
@@ -72,18 +72,18 @@ describe('SearchDialog', () => {
     const input = screen.getByPlaceholderText('Search documentation...')
     fireEvent.change(input, { target: { value: 'start' } })
 
-    expect(hooks.useSearchArticles.mock.calls.map((call) => call[2])).not.toContain('start')
+    expect(hooks.useSemanticSearchArticles.mock.calls.map((call) => call[2])).not.toContain('start')
 
     act(() => {
       vi.advanceTimersByTime(299)
     })
 
-    expect(hooks.useSearchArticles.mock.calls.map((call) => call[2])).not.toContain('start')
+    expect(hooks.useSemanticSearchArticles.mock.calls.map((call) => call[2])).not.toContain('start')
 
     act(() => {
       vi.advanceTimersByTime(1)
     })
 
-    expect(hooks.useSearchArticles.mock.calls.map((call) => call[2])).toContain('start')
+    expect(hooks.useSemanticSearchArticles.mock.calls.map((call) => call[2])).toContain('start')
   })
 })
