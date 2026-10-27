@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   pathname: '/portal/acme/callback',
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   exchangeMagicLink: vi.fn(),
   requests: vi.fn(),
   suggestions: vi.fn(),
+  helpArticles: vi.fn(),
   signOut: vi.fn(),
   navigate: vi.fn(),
   outlet: null as (() => React.ReactNode) | null,
@@ -44,6 +45,10 @@ async function settle() {
 describe('CustomerPortalProvider', () => {
   let container: HTMLDivElement
   let root: Root
+
+  beforeEach(() => {
+    mocks.helpArticles.mockResolvedValue([])
+  })
 
   afterEach(async () => {
     await act(async () => root?.unmount())
@@ -232,5 +237,24 @@ describe('CustomerPortalProvider', () => {
     await settle()
     expect(container.querySelector('[role="tab"]')).toBeNull()
     expect(mocks.requests).toHaveBeenCalledWith('acme', 'all', { kind: 'mine' })
+    expect(container.textContent).not.toContain('Help articles')
+  })
+
+  it('links to help articles when the team shares some with signed-in customers', async () => {
+    window.sessionStorage.clear()
+    mocks.pathname = '/portal/acme'
+    mocks.configuration.mockResolvedValue(config)
+    mocks.session.mockResolvedValue({ ...customer, companies: [] })
+    mocks.requests.mockResolvedValue([])
+    mocks.helpArticles.mockResolvedValueOnce([{ id: 'renewal', title: 'Renewal pricing', space_name: 'Customer guides', published_at: '2026-10-27T00:00:00Z' }])
+    mocks.outlet = () => <CustomerPortalHome />
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root.render(<CustomerPortalProvider slug="acme" />))
+    await settle()
+    await settle()
+    expect(mocks.helpArticles).toHaveBeenCalledWith('acme')
+    expect(Array.from(container.querySelectorAll('a')).map((link) => link.textContent)).toContain('Help articles')
   })
 })

@@ -153,12 +153,12 @@ func (r *CustomerPortalRepository) PublishCompanyRequests(ctx context.Context, w
 
 // PortalCompanyContact is a company contact's portal state for support admins.
 type PortalCompanyContact struct {
-	ID                  string     `json:"id"`
-	FirstName           string     `json:"first_name"`
-	LastName            *string    `json:"last_name,omitempty"`
-	Email               *string    `json:"email,omitempty"`
-	PortalAccess        *string    `json:"portal_access"`
-	PortalRole          *string    `json:"portal_role"`
+	ID           string  `json:"id"`
+	FirstName    string  `json:"first_name"`
+	LastName     *string `json:"last_name,omitempty"`
+	Email        *string `json:"email,omitempty"`
+	PortalAccess *string `json:"portal_access"`
+	PortalRole   *string `json:"portal_role"`
 	// Member is true when a support admin gave the contact company access.
 	Member              bool       `json:"member"`
 	SharedEmailContacts int64      `json:"shared_email_contacts"`

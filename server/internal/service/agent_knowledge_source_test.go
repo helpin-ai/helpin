@@ -168,6 +168,7 @@ func newAgentKnowledgeSourceTestDB(t *testing.T) *gorm.DB {
 			updated_at datetime
 		)`,
 		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			name text NOT NULL,

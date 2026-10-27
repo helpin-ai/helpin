@@ -38,6 +38,7 @@ import { PortalAttachmentTray } from './PortalAttachmentTray'
 import { pastedFiles, usePortalFileDrop } from './portalFileDrop'
 import { usePortalAttachmentUploads } from './usePortalAttachmentUploads'
 import { PortalArticleSuggestions } from './PortalArticleSuggestions'
+import { PortalHelpArticleView, PortalHelpList } from './PortalHelp'
 import { usePortalArticleSuggestions } from './usePortalArticleSuggestions'
 import { clearPortalDrafts, usePortalDraft } from './usePortalDraft'
 import {
@@ -380,7 +381,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
           <PortalField id="intake-message" label="How can we help?">
             <QuietUnderlineTextarea id="intake-message" required rows={4} className="max-h-none min-h-24" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} />
           </PortalField>
-          <PortalArticleSuggestions articles={suggestions.articles} onOpen={suggestions.recordOpened} />
+          <PortalArticleSuggestions slug={slug} articles={suggestions.articles} onOpen={suggestions.recordOpened} />
           <PortalDropCue visible={dragging} />
           {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
           {error ? <PortalError>{error}</PortalError> : null}
@@ -584,7 +585,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         <PortalField id="request-message" label="How can we help?">
           <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
         </PortalField>
-        <PortalArticleSuggestions className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
+        <PortalArticleSuggestions slug={slug} className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
         <PortalDropCue visible={dragging} />
         {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
         {error ? <PortalError>{error}</PortalError> : null}
@@ -593,7 +594,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
           <QuietTextAction type="button" onClick={() => { clearDraft(); onCancel() }}>Cancel</QuietTextAction>
         </div>
       </form>
-      <PortalArticleSuggestions className="hidden pt-3 lg:block" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
+      <PortalArticleSuggestions slug={slug} className="hidden pt-3 lg:block" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
     </div>
   )
 }
@@ -610,6 +611,17 @@ export function CustomerPortalHome() {
   const scopeKey = requestScope.key
 
   usePortalLiveUpdates(slug, status === 'authenticated', { onChange: refresh })
+
+  // The Help link shows only when the team shares articles with signed-in customers.
+  const [hasHelp, setHasHelp] = useState(false)
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    let active = true
+    customerPortalService.helpArticles(slug)
+      .then((articles) => { if (active) setHasHelp(articles.length > 0) })
+      .catch((error) => { if (active) handleSessionError(error) })
+    return () => { active = false }
+  }, [handleSessionError, slug, status])
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -637,10 +649,19 @@ export function CustomerPortalHome() {
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
         title={companyName ? `${companyName} requests` : 'Your requests'}
-        actions={configuration?.intake_enabled ? (
-          <QuietPrimaryAction asChild>
-            <Link to="/portal/$slug/new" params={{ slug }}>New request</Link>
-          </QuietPrimaryAction>
+        actions={hasHelp || configuration?.intake_enabled ? (
+          <>
+            {hasHelp ? (
+              <QuietTextAction asChild>
+                <Link to="/portal/$slug/help" params={{ slug }}>Help articles</Link>
+              </QuietTextAction>
+            ) : null}
+            {configuration?.intake_enabled ? (
+              <QuietPrimaryAction asChild>
+                <Link to="/portal/$slug/new" params={{ slug }}>New request</Link>
+              </QuietPrimaryAction>
+            ) : null}
+          </>
         ) : null}
       />
 
@@ -704,6 +725,42 @@ export function CustomerPortalNewRequestPage() {
       ) : (
         <QuietEmptyState className="mt-8" title="New requests are turned off" description="Contact support through your usual channel." action={<QuietTextAction onClick={backToRequests}>All requests</QuietTextAction>} />
       )}
+    </PortalShell>
+  )
+}
+
+// ── Help articles for signed-in customers ──────────────────────────────
+
+export function CustomerPortalHelpPage() {
+  const { handleSessionError, slug, status } = usePortal()
+  const navigate = useNavigate()
+  if (status !== 'authenticated') return null
+  const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
+  return (
+    <PortalShell account={<PortalAccount />}>
+      <QuietPageHeader
+        navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to all requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
+        title="Help articles"
+        description="Guides your support team shares with signed-in customers."
+      />
+      <PortalHelpList slug={slug} onSessionError={handleSessionError} />
+    </PortalShell>
+  )
+}
+
+export function CustomerPortalHelpArticlePage({ articleId }: { articleId: string }) {
+  const { handleSessionError, slug, status } = usePortal()
+  const navigate = useNavigate()
+  const [title, setTitle] = useState('')
+  if (status !== 'authenticated') return null
+  const backToHelp = () => void navigate({ to: '/portal/$slug/help', params: { slug } })
+  return (
+    <PortalShell account={<PortalAccount />}>
+      <QuietPageHeader
+        navigation={<QuietBreadcrumbs onBack={backToHelp} backLabel="Back to help articles" items={[{ id: 'help', label: 'Help articles', onClick: backToHelp }]} />}
+        title={title || 'Help article'}
+      />
+      <PortalHelpArticleView slug={slug} articleId={articleId} onSessionError={handleSessionError} onTitle={setTitle} />
     </PortalShell>
   )
 }

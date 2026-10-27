@@ -545,7 +545,7 @@ func (h *DocsHandler) UnpublishDocument(w http.ResponseWriter, r *http.Request) 
 
 	// If externally published, unpublish first.
 	art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID)
-	if art != nil && art.PublicPublishedAt != nil {
+	if art.LivePublishedAt() != nil {
 		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 	}
 
@@ -563,7 +563,7 @@ func (h *DocsHandler) ArchiveDocument(w http.ResponseWriter, r *http.Request) {
 
 	// If externally published, unpublish first.
 	art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID)
-	if art != nil && art.PublicPublishedAt != nil {
+	if art.LivePublishedAt() != nil {
 		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 	}
 

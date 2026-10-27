@@ -1237,7 +1237,8 @@ func (s *SupportInboxService) resolveWidgetHelpSpaces(ctx context.Context, works
 
 	byID := make(map[string]model.DocsSpace, len(spaces))
 	for _, space := range spaces {
-		if space.Type == model.SpaceTypeExternalCapable {
+		// Spaces for signed-in portal customers never reach the widget.
+		if space.Type == model.SpaceTypeExternalCapable && space.HelpcenterAudience == model.HelpcenterAudiencePublic {
 			byID[space.ID] = space
 		}
 	}

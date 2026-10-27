@@ -64,7 +64,7 @@ func (s *InternalCommandService) executeDocsLifecycle(ctx context.Context, meta 
 			if err != nil {
 				return nil, err
 			}
-			if article != nil && article.PublicPublishedAt != nil {
+			if article.LivePublishedAt() != nil {
 				return nil, fmt.Errorf("document is live in the Help Center; unpublish it in Helpin before archiving")
 			}
 		}

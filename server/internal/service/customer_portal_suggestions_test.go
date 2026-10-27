@@ -81,7 +81,7 @@ func TestSuggestArticlesGuards(t *testing.T) {
 		{"no knowledge search", ws, "Export fails on Safari"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := svc.SuggestArticles(context.Background(), tt.ws, tt.text)
+			got, err := svc.SuggestArticles(context.Background(), tt.ws, tt.text, false)
 			if err != nil || got.Articles == nil || len(got.Articles) != 0 || got.SearchCompleted {
 				t.Fatalf("SuggestArticles = %v, %v; want an empty list", got, err)
 			}
@@ -102,7 +102,7 @@ func TestPortalSuggestionsWithoutHelpSpacesDoNotCompleteSearch(t *testing.T) {
 		inbox:     &SupportInboxService{docsHelpcenterRepo: repository.NewDocsHelpcenterRepository(db)},
 	}
 	ws := &PortalWorkspace{ID: "ws", Settings: model.SupportInboxSettings{PortalIntakeEnabled: true}}
-	got, err := svc.SuggestArticles(context.Background(), ws, "Export fails on Safari")
+	got, err := svc.SuggestArticles(context.Background(), ws, "Export fails on Safari", false)
 	if err != nil || got.SearchCompleted || len(got.Articles) != 0 {
 		t.Fatalf("suggestions without help spaces = %+v, %v", got, err)
 	}

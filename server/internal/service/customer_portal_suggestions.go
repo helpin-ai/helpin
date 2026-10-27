@@ -24,7 +24,10 @@ type PortalArticleSuggestion struct {
 	Title     string `json:"title"`
 	SpaceName string `json:"space_name,omitempty"`
 	Snippet   string `json:"snippet,omitempty"`
-	URL       string `json:"url"`
+	// URL is the public help center address. Articles for signed-in
+	// customers have none; they open in the portal by PortalArticleID.
+	URL             string `json:"url,omitempty"`
+	PortalArticleID string `json:"portal_article_id,omitempty"`
 }
 
 // PortalArticleSuggestions distinguishes completed searches from skipped ones.
@@ -45,7 +48,9 @@ func (s *CustomerPortalService) SetKnowledgeSearch(search *HelpcenterAISearchSer
 // returns none, as does a portal that takes no requests, a workspace without
 // a published help center, or one with no help spaces selected. Only articles
 // with a public address are suggested, so every suggestion can be opened.
-func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalWorkspace, text string) (PortalArticleSuggestions, error) {
+// A signed-in customer also gets articles of help spaces for signed-in
+// customers, ahead of public ones.
+func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalWorkspace, text string, signedIn bool) (PortalArticleSuggestions, error) {
 	suggestions := PortalArticleSuggestions{Articles: []PortalArticleSuggestion{}}
 	query, ok := portalSuggestionQuery(text)
 	intake := ws.Settings.PortalIntakeEnabled || ws.Settings.PortalAnonymousIntakeEnabled
@@ -59,11 +64,28 @@ func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalW
 	if cfg == nil || !cfg.IsPublished {
 		return suggestions, nil
 	}
+	if signedIn {
+		private, err := s.searchCustomerHelp(ctx, ws, "portal_intake", query, portalSuggestionLimit)
+		if err != nil {
+			return suggestions, err
+		}
+		for _, article := range private {
+			suggestions.Articles = append(suggestions.Articles, PortalArticleSuggestion{
+				ID: article.documentID, Title: article.Title, SpaceName: article.SpaceName,
+				Snippet: article.Snippet, PortalArticleID: article.ID,
+			})
+		}
+		suggestions.SearchCompleted = true
+	}
 	spaces, err := s.inbox.resolveWidgetHelpSpaces(ctx, ws.ID, ws.Settings.WidgetHelpSpaceIDs)
 	if err != nil || len(spaces) == 0 {
 		return suggestions, err
 	}
-	results, err := s.inbox.searchWidgetHelp(ctx, "portal_intake", ws.ID, defaultHelpcenterLocale(cfg), query, spaces, portalSuggestionLimit)
+	remaining := portalSuggestionLimit - len(suggestions.Articles)
+	if remaining <= 0 {
+		return suggestions, nil
+	}
+	results, err := s.inbox.searchWidgetHelp(ctx, "portal_intake", ws.ID, defaultHelpcenterLocale(cfg), query, spaces, remaining)
 	if err != nil {
 		return suggestions, err
 	}
@@ -71,8 +93,8 @@ func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalW
 	if len(results) == 0 {
 		return suggestions, nil
 	}
-	if len(results) > portalSuggestionLimit {
-		results = results[:portalSuggestionLimit]
+	if len(results) > remaining {
+		results = results[:remaining]
 	}
 	ids := make([]string, 0, len(results))
 	for _, result := range results {

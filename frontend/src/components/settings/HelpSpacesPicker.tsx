@@ -14,7 +14,10 @@ export function HelpSpacesPicker({ spaces, loading, selectedIds, onToggle, disab
   onToggle: (spaceId: string, enabled: boolean) => void;
   disabled?: boolean;
 }) {
-  const external = spaces.filter((space) => space.type === 'external_capable');
+  // Spaces for signed-in customers are never offered here: the widget is
+  // anonymous, and the portal shows them in its own Help tab.
+  const external = spaces.filter((space) => space.type === 'external_capable' && space.helpcenter_audience !== 'customers');
+  const privateCount = spaces.filter((space) => space.type === 'external_capable' && space.helpcenter_audience === 'customers').length;
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Shared by the chat widget's Help tab and the customer portal's article suggestions. Changing it here changes both.</p>
@@ -37,6 +40,11 @@ export function HelpSpacesPicker({ spaces, loading, selectedIds, onToggle, disab
             />
           </div>
         ))
+      )}
+      {privateCount > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {privateCount === 1 ? 'One space is' : `${privateCount} spaces are`} for signed-in customers only. Customers find {privateCount === 1 ? 'it' : 'them'} in the portal's Help tab and in suggestions after signing in.
+        </p>
       )}
     </div>
   );

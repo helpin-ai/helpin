@@ -1,11 +1,13 @@
 /**
  * The portal has two addresses. In the app it lives at /portal/{slug}
  * (/portal/{slug}/requests/{reference}); on a workspace's help center it is
- * mounted at /requests with short paths (/requests/{reference}). These map a
+ * mounted at /requests with short paths (/requests/{reference}). Help pages
+ * keep their paths (/help, /help/{article}). These map a
  * page between the two; the router always works with the app paths.
  */
 
-const PAGES = new Set(['/new', '/sign-in', '/callback'])
+const PAGES = new Set(['/new', '/sign-in', '/callback', '/help'])
+const HELP_ARTICLE = /^\/help\/[^/]+$/
 
 function appPrefix(slug: string) {
   return `/portal/${encodeURIComponent(slug)}`
@@ -20,7 +22,7 @@ export function portalMountedPath(appPath: string, slug: string) {
   if (appPath === prefix || appPath === `${prefix}/`) return ''
   if (!appPath.startsWith(`${prefix}/`)) return null
   const rest = appPath.slice(prefix.length)
-  if (PAGES.has(rest)) return rest
+  if (PAGES.has(rest) || HELP_ARTICLE.test(rest)) return rest
   const reference = /^\/requests\/([^/]+)$/.exec(rest)
   return reference ? `/${reference[1]}` : null
 }
@@ -30,7 +32,7 @@ export function portalAppPath(mountedPath: string, slug: string) {
   const prefix = appPrefix(slug)
   const rest = mountedPath.replace(/\/+$/, '')
   if (rest === '') return prefix
-  if (PAGES.has(rest)) return `${prefix}${rest}`
+  if (PAGES.has(rest) || HELP_ARTICLE.test(rest)) return `${prefix}${rest}`
   if (/^\/[^/]+$/.test(rest)) return `${prefix}/requests${rest}`
   return null
 }

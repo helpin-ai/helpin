@@ -1529,7 +1529,8 @@ export interface CustomerPortalConversationContext {
   company: CustomerPortalCompanyAudience | null;
   /** Help center articles the customer saw while writing the request. */
   intake: {
-    opened_articles: Array<{ id: string; title: string; space_name?: string; url: string }>;
+    /** Public articles carry their help center url; articles for signed-in customers carry portal_article_id instead. */
+    opened_articles: Array<{ id: string; title: string; space_name?: string; url?: string; portal_article_id?: string }>;
     suggested_count: number;
   } | null;
 }

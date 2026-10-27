@@ -116,7 +116,25 @@ export interface CustomerPortalArticleSuggestion {
   title: string
   space_name?: string
   snippet?: string
-  url: string
+  /** The public help center address; articles for signed-in customers have none. */
+  url?: string
+  /** Set for articles for signed-in customers, which open in the portal. */
+  portal_article_id?: string
+}
+
+/** A help article for signed-in customers, read in the portal. */
+export interface CustomerPortalHelpArticle {
+  id: string
+  title: string
+  excerpt?: string
+  snippet?: string
+  space_name: string
+  collection_name?: string
+  published_at: string
+}
+
+export interface CustomerPortalHelpArticleDetail extends CustomerPortalHelpArticle {
+  content_html: string
 }
 
 export type CustomerPortalRequestFilter = 'all' | CustomerPortalRequest['status']
@@ -232,6 +250,12 @@ export const customerPortalService = {
     portalRequest<void>(slug, '/suggestions/events', { method: 'POST', body: JSON.stringify(event) }),
   suggestions: (slug: string, text: string, signal?: AbortSignal) =>
     portalRequest<{ articles: CustomerPortalArticleSuggestion[]; search_completed: boolean }>(slug, `/suggestions?q=${encodeURIComponent(text)}`, { signal }),
+  helpArticles: (slug: string) =>
+    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, '/help').then((result) => result.articles),
+  searchHelpArticles: (slug: string, query: string, signal?: AbortSignal) =>
+    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, `/help/search?q=${encodeURIComponent(query)}`, { signal }).then((result) => result.articles),
+  helpArticle: (slug: string, articleId: string) =>
+    portalRequest<CustomerPortalHelpArticleDetail>(slug, `/help/articles/${encodeURIComponent(articleId)}`),
   requestDetail: (slug: string, reference: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
   reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>

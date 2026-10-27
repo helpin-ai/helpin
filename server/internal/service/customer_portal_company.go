@@ -359,12 +359,24 @@ func (s *CustomerPortalService) portalArticles(ctx context.Context, workspaceID 
 	if err != nil {
 		return nil, err
 	}
+	// Articles for signed-in customers have no public address; teammates
+	// open them in Docs.
+	private, err := s.inbox.docsHelpcenterRepo.ListCustomerHelpArticles(ctx, workspaceID, defaultHelpcenterLocale(cfg))
+	if err != nil {
+		return nil, err
+	}
+	privateByID := make(map[string]repository.CustomerHelpArticle, len(private))
+	for _, article := range private {
+		privateByID[article.DocumentID] = article
+	}
 	for _, id := range ids {
-		ref, ok := refs[id]
-		if !ok || urls[id] == "" {
+		if ref, ok := refs[id]; ok && urls[id] != "" {
+			articles = append(articles, PortalArticleSuggestion{ID: id, Title: ref.Title, SpaceName: ref.SpaceName, URL: urls[id]})
 			continue
 		}
-		articles = append(articles, PortalArticleSuggestion{ID: id, Title: ref.Title, SpaceName: ref.SpaceName, URL: urls[id]})
+		if article, ok := privateByID[id]; ok {
+			articles = append(articles, PortalArticleSuggestion{ID: id, Title: article.Title, SpaceName: article.SpaceName, PortalArticleID: article.PublicID})
+		}
 	}
 	return articles, nil
 }

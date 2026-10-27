@@ -541,7 +541,7 @@ export function DocsRailNav({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold tracking-tight">{activeSpace.name}</span>
                 <span className="block truncate text-[11px] text-muted-foreground">
-                  {documents.length} {documents.length === 1 ? 'doc' : 'docs'} · {activeSpace.type === 'external_capable' ? 'external' : 'team'}
+                  {documents.length} {documents.length === 1 ? 'doc' : 'docs'} · {activeSpace.type !== 'external_capable' ? 'team' : activeSpace.helpcenter_audience === 'customers' ? 'signed-in customers' : 'external'}
                 </span>
               </span>
               <ArrowDown01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

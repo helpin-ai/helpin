@@ -25,6 +25,25 @@ type DocsSpaceService struct {
 	helpcenterRepo   *repository.DocsHelpcenterRepository
 	apiReferenceRepo *repository.DocsAPIReferenceRepository
 	wsPublisher      *websocket.Publisher
+	helpcenterSync   spaceHelpcenterSync
+}
+
+// spaceHelpcenterSync keeps a space's live help center articles consistent
+// with its type and audience. It is implemented by DocsHelpcenterService.
+type spaceHelpcenterSync interface {
+	UnpublishSpace(ctx context.Context, spaceID string) error
+	MoveSpaceAudience(ctx context.Context, spaceID, audience string) error
+}
+
+// SetHelpcenterSync wires the help center publication updates that type and
+// audience changes require.
+func (s *DocsSpaceService) SetHelpcenterSync(sync spaceHelpcenterSync) {
+	s.helpcenterSync = sync
+}
+
+// validHelpcenterAudience reports whether audience is a known value.
+func validHelpcenterAudience(audience string) bool {
+	return audience == model.HelpcenterAudiencePublic || audience == model.HelpcenterAudienceCustomers
 }
 
 // NewDocsSpaceService creates a new DocsSpaceService.
@@ -152,6 +171,12 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 	if req.Type != model.SpaceTypeInternal && req.Type != model.SpaceTypeExternalCapable {
 		return nil, fmt.Errorf("invalid space type: %s", req.Type)
 	}
+	if req.HelpcenterAudience == "" {
+		req.HelpcenterAudience = model.HelpcenterAudiencePublic
+	}
+	if !validHelpcenterAudience(req.HelpcenterAudience) {
+		return nil, fmt.Errorf("invalid help center audience: %s", req.HelpcenterAudience)
+	}
 	normalizedIcon, err := iconcatalog.NormalizeNew(req.Icon)
 	if err != nil {
 		return nil, fmt.Errorf("icon: %w", err)
@@ -166,16 +191,17 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 	}
 
 	space := &model.DocsSpace{
-		WorkspaceID:       workspaceID,
-		TeamID:            req.TeamID,
-		Name:              req.Name,
-		Slug:              req.Slug,
-		Icon:              req.Icon,
-		Visibility:        req.Visibility,
-		Type:              req.Type,
-		Position:          nextPos,
-		DefaultReviewDays: req.DefaultReviewDays,
-		CreatedBy:         userID,
+		WorkspaceID:        workspaceID,
+		TeamID:             req.TeamID,
+		Name:               req.Name,
+		Slug:               req.Slug,
+		Icon:               req.Icon,
+		Visibility:         req.Visibility,
+		Type:               req.Type,
+		HelpcenterAudience: req.HelpcenterAudience,
+		Position:           nextPos,
+		DefaultReviewDays:  req.DefaultReviewDays,
+		CreatedBy:          userID,
 	}
 	created, err := s.spaceRepo.Create(ctx, space)
 	if err != nil {
@@ -365,6 +391,7 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 
 	updates := map[string]interface{}{}
 	originalType := space.Type
+	originalAudience := space.HelpcenterAudience
 	shouldRefreshTranslations := originalType == model.SpaceTypeExternalCapable
 	if req.Name != nil {
 		updates["name"] = *req.Name
@@ -397,6 +424,13 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 			shouldRefreshTranslations = true
 		}
 	}
+	if req.HelpcenterAudience != nil {
+		if !validHelpcenterAudience(*req.HelpcenterAudience) {
+			return nil, fmt.Errorf("invalid help center audience: %s", *req.HelpcenterAudience)
+		}
+		updates["helpcenter_audience"] = *req.HelpcenterAudience
+		shouldRefreshTranslations = true
+	}
 	if req.Visibility != nil {
 		updates["visibility"] = *req.Visibility
 	}
@@ -412,6 +446,9 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 			if err := s.spaceRepo.NormalizeSection(ctx, space.WorkspaceID, originalType); err != nil {
 				return nil, err
 			}
+		}
+		if err := s.syncHelpcenterPublications(ctx, space, originalType, originalAudience); err != nil {
+			return nil, err
 		}
 	}
 
@@ -429,6 +466,22 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 	}
 
 	return s.withTeams(ctx, space)
+}
+
+// syncHelpcenterPublications takes a space's articles off the help center
+// when it stops being external, and moves them between the public and the
+// signed-in customer audience when that changes.
+func (s *DocsSpaceService) syncHelpcenterPublications(ctx context.Context, space *model.DocsSpace, originalType, originalAudience string) error {
+	if s.helpcenterSync == nil || space == nil {
+		return nil
+	}
+	if originalType == model.SpaceTypeExternalCapable && space.Type != model.SpaceTypeExternalCapable {
+		return s.helpcenterSync.UnpublishSpace(ctx, space.ID)
+	}
+	if space.Type == model.SpaceTypeExternalCapable && space.HelpcenterAudience != originalAudience {
+		return s.helpcenterSync.MoveSpaceAudience(ctx, space.ID, space.HelpcenterAudience)
+	}
+	return nil
 }
 
 // Delete permanently deletes a space when permanent-delete dependencies are

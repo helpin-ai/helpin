@@ -20,6 +20,7 @@ vi.mock('@/hooks/queries', () => ({
   useDocsSpaces: () => ({ data: [
     { id: 'space-public', name: 'Guides', slug: 'guides', type: 'external_capable' },
     { id: 'space-internal', name: 'Runbooks', slug: 'runbooks', type: 'internal' },
+    { id: 'space-private', name: 'Customer guides', slug: 'customer-guides', type: 'external_capable', helpcenter_audience: 'customers' },
   ], isLoading: false }),
 }));
 vi.mock('@tanstack/react-router', () => ({
@@ -105,7 +106,10 @@ describe('CustomerPortalSettings', () => {
   it('shares the help space selection with the chat widget and says when suggestions are off', async () => {
     await act(async () => root.render(<CustomerPortalSettings workspaceId="ws" workspaceSlug="acme" editable />));
     expect(container.textContent).toContain('article suggestions are off');
-    expect(container.querySelector('[aria-label="Offer Runbooks to customers"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Offer Runbooks to customers"]')).toBeNull()
+    // Spaces for signed-in customers never reach the anonymous widget.
+    expect(container.querySelector('[aria-label="Offer Customer guides to customers"]')).toBeNull()
+    expect(container.textContent).toContain('One space is for signed-in customers only.');
     const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Offer Guides to customers"]');
     await act(async () => toggle?.click());
     await act(async () => vi.advanceTimersByTimeAsync(2000));

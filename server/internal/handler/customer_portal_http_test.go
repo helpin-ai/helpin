@@ -106,6 +106,9 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		r.Get("/session", h.Session)
 		r.Get("/requests", h.Requests)
 		r.Get("/requests/{reference}", h.RequestDetail)
+		r.Get("/help", h.HelpArticles)
+		r.Get("/help/search", h.HelpSearch)
+		r.Get("/help/articles/{articleId}", h.HelpArticle)
 	})
 	for _, credential := range []struct {
 		name     string
@@ -119,9 +122,10 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		{"portal cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: portalCookie, Value: secret}) }, true},
 	} {
 		t.Run(credential.name, func(t *testing.T) {
-			paths := []string{"/session", "/requests", "/requests/visible"}
+			// Help articles for signed-in customers need a portal session too.
+			paths := []string{"/session", "/requests", "/help", "/help/search?q=pricing", "/requests/visible", "/help/articles/any"}
 			if credential.allowed {
-				paths = paths[:2]
+				paths = paths[:4]
 			} // Detail success requires the full inbox projection schema.
 			for _, path := range paths {
 				r := httptest.NewRequest(http.MethodGet, "/api/public/portal/space-0"+path, nil)

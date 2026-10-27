@@ -43,7 +43,7 @@ const (
 	// with the query and are only loosely similar. Measured on a live help
 	// center: unrelated questions score 0.16–0.30, related ones 0.6 and up.
 	helpcenterSemanticRelevanceFloor = 0.40
-	helpcenterAnswerTimeout         = 25 * time.Second
+	helpcenterAnswerTimeout          = 25 * time.Second
 
 	// helpcenterAnswerDailyLimit caps LLM answer generations per workspace per
 	// UTC day (cache hits are free and do not count).
@@ -697,4 +697,20 @@ func answerResponseFromRow(row *model.HelpcenterAnswer, cached bool) *model.Help
 	}
 	_ = json.Unmarshal(row.Citations, &response.Citations)
 	return response
+}
+
+// searchCustomerChunks retrieves relevant chunks of live articles in help
+// spaces for signed-in portal customers, grouped by article, best first.
+// Callers must hold a portal session.
+func (s *HelpcenterAISearchService) searchCustomerChunks(ctx context.Context, workspaceID string, spaceIDs []string, query string) ([]helpcenterChunkGroup, error) {
+	query = strings.TrimSpace(query)
+	if query == "" || len(spaceIDs) == 0 {
+		return nil, nil
+	}
+	embedding := s.queryEmbedding(ctx, workspaceID, query)
+	chunks, err := s.chunkRepo.HybridSearchCustomerSpaces(ctx, workspaceID, spaceIDs, query, embedding, s.embeddingModel, helpcenterSemanticChunkLimit)
+	if err != nil {
+		return nil, err
+	}
+	return groupChunksByDocument(relevantChunks(chunks)), nil
 }

@@ -307,6 +307,7 @@ func setupDocsPublicSearchIndexTestDB(t *testing.T) *gorm.DB {
 			ai_answers_enabled BOOLEAN NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE docs_helpcenter_articles (
+			customer_published_at DATETIME,
 			document_id TEXT PRIMARY KEY,
 			public_id TEXT NOT NULL,
 			public_published_at DATETIME

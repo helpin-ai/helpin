@@ -79,10 +79,22 @@ While a customer writes a request, signed in or not, the portal suggests up to f
   - forms where an article was opened and no request followed within 30 minutes (likely answered by an article);
   - requests sent after reading;
   - requests sent when nothing matched.
-- **For teammates.** The conversation sidebar lists the articles the customer opened before writing in.
+- **Signed-in customers** also get articles from help spaces for signed-in customers, listed first. These open in the portal, not on the help center.
+- **For teammates.** The conversation sidebar lists the articles the customer opened before writing in. An article for signed-in customers opens in Docs.
 - **Coverage.** A request sent after the help center suggested nothing becomes a no-result signal in **Coverage gaps**.
 
-`GET /api/public/portal/{slug}/suggestions?q=` and `POST /api/public/portal/{slug}/suggestions/events` need no sign-in, because they only involve published articles. Both use the portal rate limiter.
+`GET /api/public/portal/{slug}/suggestions?q=` and `POST /api/public/portal/{slug}/suggestions/events` need no sign-in. Without a valid session, suggestions include only public articles. Both use the portal rate limiter.
+
+## Help articles for signed-in customers
+
+A help center space can be limited to customers signed in to the portal. In Docs, edit the space and set **Readers** to **Signed-in customers**.
+
+- **Publishing works as usual.** Publishing an article in such a space makes it live in the portal only. It never appears on the public help center, in its search or AI answers, in sitemaps, in the chat widget or in Echo's answers. The widget's space picker does not offer these spaces.
+- **In the portal.** Signed-in customers see **Help articles** on the portal home page when the team shares at least one. The page lists articles by space and collection and searches them by meaning. Articles open at `/help/{article}` in the portal.
+- **Changing readers.** Switching a space between **Everyone** and **Signed-in customers** moves its live articles at once. Changing an external space to internal unpublishes its articles.
+- **Not included.** Private articles cannot be limited to one company or role, and they are shown in the help center's default language only.
+
+The portal reads them through `GET /api/public/portal/{slug}/help`, `GET /api/public/portal/{slug}/help/search?q=` and `GET /api/public/portal/{slug}/help/articles/{id}`. All three need a portal session and return `Cache-Control: private, no-store`.
 
 ## Limitations
 

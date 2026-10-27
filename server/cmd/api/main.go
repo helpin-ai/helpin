@@ -1173,6 +1173,7 @@ func main() {
 		},
 	).SetTemporalClient(temporalClient, resolvePMImportEncryptionKey(cfg)).SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
+	docsSpaceService.SetHelpcenterSync(docsHelpcenterService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)

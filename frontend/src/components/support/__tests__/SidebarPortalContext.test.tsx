@@ -11,6 +11,10 @@ vi.mock('@/hooks/queries/useSupport', () => ({
     (enabled ? mocks.context() : { data: undefined }),
 }));
 
+vi.mock('@/stores/workspaceStore', () => ({
+  useWorkspaceStore: (select: (state: { currentWorkspace: { slug: string } }) => unknown) => select({ currentWorkspace: { slug: 'acme' } }),
+}));
+
 import { SidebarPortalContext } from '../SidebarPortalContext';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -55,6 +59,14 @@ describe('SidebarPortalContext', () => {
     expect(link?.textContent).toBe('Exporting reports');
     expect(link?.target).toBe('_blank');
     expect(container.textContent).not.toContain('colleague');
+  });
+
+  it('opens an article for signed-in customers in Docs', async () => {
+    mocks.context.mockReturnValue({ data: { company: null, intake: { suggested_count: 1, opened_articles: [{ id: 'doc-1', title: 'Renewal pricing', portal_article_id: 'hc_renewal' }] } } });
+    await render(portalRequest);
+    const link = container.querySelector<HTMLAnchorElement>('a');
+    expect(link?.getAttribute('href')).toBe('/w/acme/docs/documents/doc-1');
+    expect(link?.title).toBe('Renewal pricing (signed-in customers)');
   });
 
   it('stays hidden when there is nothing to tell', async () => {

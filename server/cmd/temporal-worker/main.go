@@ -501,6 +501,7 @@ func main() {
 	docsHelpcenterService.SetPublicationArtifactDependencies(artifactRepo, s3Client)
 	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
+	docsSpaceService.SetHelpcenterSync(docsHelpcenterService)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,
 		docsSpaceService,
