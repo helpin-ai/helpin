@@ -24,11 +24,30 @@ What it costs, and how this plan handles each:
 | Cost | Handling |
 |---|---|
 | Slower turns (several seconds, a few steps) | Progress labels while it works. The search box keeps the instant cached one-shot answer. |
-| Needs the Runtime service, NATS and Temporal | Production already runs them for Echo. When Runtime is unavailable, the assistant falls back to the one-shot answer for the first question. Dev runs Runtime and the Temporal worker for testing. |
+| Needs the Runtime service | Production already runs it for Echo. The assistant uses lightweight execution, so it does not need Temporal; see below. When Runtime is unavailable, the assistant falls back to the one-shot answer. |
 | Anonymous traffic can start many runs | The limits below, plus a cap on concurrent assistant runs per workspace. `MaxConcurrentRuns` is stored on agents today but not enforced, so the assistant enforces its own cap. |
 | Anonymous text reaches an agent (prompt injection) | The agent can only read published content and reply. It has no tool that changes data, sees conversations or reaches private content outside the visitor's audience. |
 
 The existing one-shot answer (`HelpcenterAISearchService.Answer`) stays for **Enter** in the search box. It is cached and fast, and the assistant reuses its validation rules.
+
+## Execution mode: lightweight, not durable
+
+Agent Runtime has two execution modes, chosen **per run** by the caller (`execution_mode` in StartRun, `agent-runtime/internal/engine/engine.go:271-283`). One deployment runs both at once:
+
+- **`durable`** runs a Temporal workflow per run, with retries, heartbeats, pause and an idle-chat reconciler. Helpin sends `durable` for every run today (`server/internal/service/agent.go:622`).
+- **`lightweight`** runs the turn in the Runtime API process. It keeps the run state in Postgres, so chat and approval resumes still work. It loses retries, manual pause and idle-chat expiry, and a pod restart drops a turn in progress.
+
+The help assistant uses **`lightweight`**:
+- **Durability is not needed.** A turn is a few reads and one reply. If a turn is lost, the customer sees "Try again" and the one-shot answer, and nothing is half done.
+- **It keeps public traffic off the shared worker slots.** Durable native runs share the interactive queue, 8 concurrent per worker and 2 workers in production, with Echo and the Ask Agent. Anonymous visitors must never take those slots from real support conversations.
+- **Faster starts.** A turn needs no workflow start or activity dispatch.
+- **Lower Temporal usage.** A durable 30-second turn costs about 8 Temporal actions, most of them heartbeats every 5 seconds, and a chat workflow stays open until it goes idle. Whether that costs money depends on whether production uses Temporal Cloud, which the repositories do not show; check `TEMPORAL_ADDRESS` in Doppler. Either way it is small next to model tokens, so this is not the main reason.
+
+Lightweight mode requires these changes:
+- **Helpin selects the mode per agent.** The help assistant preset sets `lightweight`; all other agents stay `durable`.
+- **One run per turn.** Each turn starts a new run with `complete_on_finish` and gets the last turns from `help_assistant_messages`, so no chat run stays open. Lightweight runs never expire on their own, because the idle-chat reconciler only checks durable runs.
+- **Helpin bounds every turn.** A turn that has not answered within 60 seconds is cancelled and shown as failed, because lightweight runs are not recovered after a restart in a multi-pod deployment.
+- **Helpin enforces the concurrency cap.** Lightweight runs are unbounded goroutines on the Runtime API pods, so the per-workspace cap (5 runs) must hold before StartRun. A global cap per Helpin replica protects the Runtime API pods.
 
 ## Design
 
@@ -43,7 +62,7 @@ Echo requires a `support_conversation` target, so each chat would appear in the 
   - an anonymous visitor ID;
   - locale, the current page, and the turn count.
 - **`help_assistant_messages`** holds each question and answer, with citations, status (`answered`, `no_answer`, `handed_off`) and feedback. Its rows are the analytics and the transcript used for a handoff.
-- **One chat-mode run per session.** Later turns resume it with `SendRunMessage`, as Echo does. A new successor run starts after 20 turns or when the transcript grows too long, carrying a short summary forward.
+- **One run per turn**, as explained under execution mode. The session's recent messages are the conversation memory.
 
 ### 2. The agent and its tools
 
