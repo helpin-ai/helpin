@@ -1308,10 +1308,18 @@ export interface UpdateConversationEmailRecipientsRequest {
 
 // ── Support Installation Settings ───────────────────────────────────
 
+/** One open time range as "HH:MM"; end may be "24:00" for midnight. */
+export interface BusinessHoursSlot {
+  start: string;
+  end: string;
+}
+
 export interface BusinessHoursDay {
+  /** Mirrors the first slot for settings saved before slots existed. */
   start: string;
   end: string;
   enabled: boolean;
+  slots?: BusinessHoursSlot[];
 }
 
 export interface SupportInboxSettings {

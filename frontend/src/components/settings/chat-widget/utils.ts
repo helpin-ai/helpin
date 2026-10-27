@@ -5,6 +5,7 @@ import { DEFAULT_PRIVACY_NOTICE_TEXT, formatReplyTimeCopy } from '@helpin-ai/sha
 import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './delayedTeamReply';
 import { DEFAULT_EMAIL_HANDOFF_MESSAGE, DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS } from './emailHandoff';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY } from './constants';
+import { DEFAULT_BUSINESS_HOURS_SLOT, daySlots, isOpenAt, withSlots } from './businessHours';
 import { getChatWidgetAIResponseModeForUI, isChatWidgetAIResponseModeActive } from './responseModes';
 
 export type ChatSettingsDraft = Omit<
@@ -29,11 +30,6 @@ export type ChatSettingsDraft = Omit<
 > & {
   ai_agent_id: string;
 };
-
-export function parseTimeToMinutes(value: string): number {
-  const [hours = '0', minutes = '0'] = value.split(':');
-  return Number(hours) * 60 + Number(minutes);
-}
 
 function weekdayKey(date: Date, timezone: string): string {
   const day = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(date).toLowerCase();
@@ -85,13 +81,7 @@ export function buildPreviewAvailability(input: PreviewAvailabilityInput): Previ
 
   try {
     const now = new Date();
-    const day = schedule[weekdayKey(now, timezone)];
-    const nowMinutes = zonedMinutes(now, timezone);
-    const withinHours = Boolean(
-      day?.enabled
-      && nowMinutes >= parseTimeToMinutes(day.start)
-      && nowMinutes < parseTimeToMinutes(day.end),
-    );
+    const withinHours = isOpenAt(schedule[weekdayKey(now, timezone)], zonedMinutes(now, timezone));
 
     if (withinHours) return online;
 
@@ -108,11 +98,11 @@ export function buildPreviewAvailability(input: PreviewAvailabilityInput): Previ
 }
 
 export function normalizeBusinessHoursDay(day?: Partial<BusinessHoursDay> | null): BusinessHoursDay {
-  return {
-    start: day?.start ?? DEFAULT_BUSINESS_HOURS_DAY.start,
-    end: day?.end ?? DEFAULT_BUSINESS_HOURS_DAY.end,
-    enabled: day?.enabled ?? DEFAULT_BUSINESS_HOURS_DAY.enabled,
-  };
+  const slots = daySlots(day);
+  return withSlots(
+    { ...DEFAULT_BUSINESS_HOURS_DAY, enabled: day?.enabled ?? DEFAULT_BUSINESS_HOURS_DAY.enabled },
+    slots.length > 0 ? slots : [DEFAULT_BUSINESS_HOURS_SLOT],
+  );
 }
 
 export function normalizeBusinessHoursSchedule(

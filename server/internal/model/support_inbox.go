@@ -1328,11 +1328,34 @@ type CsatSurveyRequest struct {
 	Feedback string `json:"feedback"`
 }
 
+// BusinessHoursSlot is one open time range in a day, as "HH:MM" in the
+// business-hours timezone. End may be "24:00" for midnight.
+type BusinessHoursSlot struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
 // BusinessHoursDay defines a single day's business hours.
 type BusinessHoursDay struct {
+	// Start and End mirror the first slot for clients that predate Slots.
 	Start   string `json:"start"` // "09:00"
 	End     string `json:"end"`   // "17:00"
 	Enabled bool   `json:"enabled"`
+	// Slots are the day's open time ranges in order. Settings saved before
+	// slots existed have only Start and End.
+	Slots []BusinessHoursSlot `json:"slots,omitempty"`
+}
+
+// OpenSlots returns the day's open time ranges, falling back to Start and End
+// for settings saved before slots existed.
+func (d BusinessHoursDay) OpenSlots() []BusinessHoursSlot {
+	if len(d.Slots) > 0 {
+		return d.Slots
+	}
+	if d.Start == "" && d.End == "" {
+		return nil
+	}
+	return []BusinessHoursSlot{{Start: d.Start, End: d.End}}
 }
 
 const (
