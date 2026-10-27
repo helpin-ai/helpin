@@ -128,6 +128,14 @@ func (s *SupportReportService) Overview(ctx context.Context, req model.SupportRe
 		}
 		overview.PortalIntake = intake
 	}
+	// Help assistant conversations have no inbox or channel.
+	if len(req.MailboxIDs) == 0 && len(req.Channels) == 0 {
+		assistant, err := s.conversations.ReportHelpAssistant(ctx, req.WorkspaceID, current.from, current.to)
+		if err != nil {
+			return nil, err
+		}
+		overview.HelpAssistant = assistant
+	}
 	return overview, nil
 }
 

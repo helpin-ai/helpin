@@ -18,12 +18,12 @@ import (
 
 func createHelpAssistantTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	mustExec(t, db, `CREATE TABLE help_assistant_sessions (
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS help_assistant_sessions (
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		workspace_id TEXT NOT NULL, surface TEXT NOT NULL, audience TEXT NOT NULL,
 		portal_identity_id TEXT, visitor_id TEXT NOT NULL, locale TEXT NOT NULL DEFAULT '',
 		turn_count INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME)`)
-	mustExec(t, db, `CREATE TABLE help_assistant_messages (
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS help_assistant_messages (
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		session_id TEXT NOT NULL, workspace_id TEXT NOT NULL, role TEXT NOT NULL,
 		content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, progress_label TEXT, citations TEXT,
@@ -380,5 +380,36 @@ func TestHelpAssistantCommandGate(t *testing.T) {
 	}
 	if _, err := commands.Execute(ctx, own, "help.progress", json.RawMessage(`{"label":"Reading the export guide…"}`)); err != nil {
 		t.Fatalf("own progress: %v", err)
+	}
+}
+
+func TestHelpAssistantHandoffFeedsCoverageAndReports(t *testing.T) {
+	ctx := context.Background()
+	db, assistant, meta, _ := helpToolsFixture(t, model.HelpcenterAudiencePublic)
+	recorder := &captureSupportEventRecorder{}
+	assistant.inbox = &SupportInboxService{supportEventRecorder: recorder}
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO help_assistant_messages (session_id, workspace_id, role, content, status, created_at) VALUES ('11111111-1111-1111-1111-111111111111', ?, 'user', 'Can I get a refund for last month?', 'answered', ?)`, audienceWorkspaceID, now.Add(-time.Second))
+	if err := assistant.OfferContactSupport(ctx, meta, "The team can help with refunds."); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.events) != 1 || recorder.events[0].SourceSignal != "no_results" || recorder.events[0].IssueSummary != "Can I get a refund for last month?" {
+		t.Fatalf("coverage events = %+v", recorder.events)
+	}
+
+	mustExec(t, db, `INSERT INTO help_assistant_messages (session_id, workspace_id, role, content, status, helpful, created_at) VALUES
+		('11111111-1111-1111-1111-111111111111', ?, 'user', 'How do I export?', 'answered', NULL, ?),
+		('11111111-1111-1111-1111-111111111111', ?, 'assistant', 'Open Reports.', 'answered', true, ?)`,
+		audienceWorkspaceID, now, audienceWorkspaceID, now)
+	report, err := repository.NewSupportConversationRepository(db).ReportHelpAssistant(ctx, audienceWorkspaceID, now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report == nil || report.Conversations != 1 || report.Questions != 2 || report.Answered != 1 || report.HandedOff != 1 || report.Helpful != 1 ||
+		len(report.Unanswered) != 1 || report.Unanswered[0].Question != "Can I get a refund for last month?" {
+		t.Fatalf("report = %+v", report)
+	}
+	if empty, err := repository.NewSupportConversationRepository(db).ReportHelpAssistant(ctx, "other-workspace", now.Add(-time.Hour), now.Add(time.Hour)); err != nil || empty != nil {
+		t.Fatalf("report without questions = %+v, %v", empty, err)
 	}
 }

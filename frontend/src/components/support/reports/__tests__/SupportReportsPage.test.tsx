@@ -224,6 +224,22 @@ describe('SupportReportsPage', () => {
     expect(document.body.querySelector('[data-testid="report-day-stats"]')).toBeNull()
   })
 
+  it('shows the help assistant only when visitors asked it questions', () => {
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    expect(container.textContent).not.toContain('Help assistant')
+
+    const help_assistant = { conversations: 3, questions: 4, answered: 3, handed_off: 1, failed: 0, helpful: 2, not_helpful: 1, unanswered: [{ question: 'Can I get a refund?', asked_at: new Date().toISOString() }] }
+    mockOverview.mockReturnValue({ data: { ...report, help_assistant }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    const text = container.textContent ?? ''
+    expect(text).toContain('Help assistant3 conversations')
+    expect(text).toContain('Answered from the articles75%')
+    expect(text).toContain('3 of 4 questions')
+    expect(text).toContain('Rated helpful67%')
+    expect(text).toContain('Can I get a refund?')
+  })
+
   it('explains an empty CSAT period', () => {
     const emptySLA = { met: 0, missed: 0, hit_rate: null }
     mockOverview.mockReturnValue({ data: { ...report, summary: summary(), teammates: [], channels: [], topics: [topic({ conversations_created: 2 })], sla: { conversations: 0, first_response: emptySLA, next_response: emptySLA, resolution: emptySLA } }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })

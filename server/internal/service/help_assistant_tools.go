@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"slices"
 	"sort"
@@ -267,7 +268,42 @@ func (s *HelpAssistantService) OfferContactSupport(ctx context.Context, meta mod
 	if message == "" || helpAssistantLink.MatchString(message) {
 		message = helpAssistantDefaultHandoff
 	}
-	return s.finish(ctx, turn.ID, model.HelpAssistantStatusHandedOff, truncateRunes(message, 800), nil)
+	if err := s.finish(ctx, turn.ID, model.HelpAssistantStatusHandedOff, truncateRunes(message, 800), nil); err != nil {
+		return err
+	}
+	s.recordUnansweredQuestion(ctx, turn)
+	return nil
+}
+
+// recordUnansweredQuestion reports a question the help articles did not
+// answer to Coverage gaps, like a help search without results.
+func (s *HelpAssistantService) recordUnansweredQuestion(ctx context.Context, turn *model.HelpAssistantMessage) {
+	if s.inbox == nil {
+		return
+	}
+	messages, err := s.repo.ListMessages(ctx, turn.SessionID)
+	if err != nil {
+		slog.WarnContext(ctx, "help assistant question not read for coverage", "answer_id", turn.ID, "error", err)
+		return
+	}
+	question := ""
+	for _, message := range messages {
+		if message.Role == model.HelpAssistantRoleUser && !message.CreatedAt.After(turn.CreatedAt) {
+			question = message.Content
+		}
+	}
+	if !IsMeaningfulCoverageSearchQuery(question) {
+		return
+	}
+	s.inbox.recordSupportEvent(SupportEventInput{
+		WorkspaceID:  turn.WorkspaceID,
+		EventType:    model.SupportEventWidgetSearchPerformed,
+		ActorType:    model.SupportEventActorCustomer,
+		Channel:      "help_assistant",
+		SourceSignal: "no_results",
+		IssueSummary: truncateRunes(question, 300),
+		Metadata:     map[string]any{"query": truncateRunes(question, 300), "result_count": 0, "surface": "help_assistant"},
+	})
 }
 
 // SetProgress shows what the assistant is doing while the turn runs.

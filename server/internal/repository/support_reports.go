@@ -411,3 +411,55 @@ func (r *SupportConversationRepository) ReportPortalIntake(ctx context.Context, 
 		LikelyDeflected: row.LikelyDeflected, SubmittedWithoutSuggestions: row.SubmittedWithoutSuggestions,
 	}, nil
 }
+
+// helpAssistantUnansweredLimit is how many unanswered questions a report lists.
+const helpAssistantUnansweredLimit = 5
+
+// ReportHelpAssistant summarizes help assistant questions asked in [from, to).
+// It returns nil when no question was asked.
+func (r *SupportConversationRepository) ReportHelpAssistant(ctx context.Context, workspaceID string, from, to time.Time) (*model.SupportReportHelpAssistant, error) {
+	var row struct {
+		Conversations int
+		Questions     int
+		Answered      int
+		HandedOff     int
+		Failed        int
+		Helpful       int
+		NotHelpful    int
+	}
+	err := r.db.WithContext(ctx).Raw(`SELECT
+			COUNT(DISTINCT CASE WHEN role = 'user' THEN session_id END) AS conversations,
+			COALESCE(SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END), 0) AS questions,
+			COALESCE(SUM(CASE WHEN role = 'assistant' AND status = 'answered' THEN 1 ELSE 0 END), 0) AS answered,
+			COALESCE(SUM(CASE WHEN role = 'assistant' AND status = 'handed_off' THEN 1 ELSE 0 END), 0) AS handed_off,
+			COALESCE(SUM(CASE WHEN role = 'assistant' AND status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+			COALESCE(SUM(CASE WHEN role = 'assistant' AND helpful = true THEN 1 ELSE 0 END), 0) AS helpful,
+			COALESCE(SUM(CASE WHEN role = 'assistant' AND helpful = false THEN 1 ELSE 0 END), 0) AS not_helpful
+		FROM help_assistant_messages
+		WHERE workspace_id = ? AND created_at >= ? AND created_at < ?`, workspaceID, from, to).Scan(&row).Error
+	if err != nil || row.Questions == 0 {
+		return nil, err
+	}
+	report := &model.SupportReportHelpAssistant{
+		Conversations: row.Conversations, Questions: row.Questions, Answered: row.Answered, HandedOff: row.HandedOff,
+		Failed: row.Failed, Helpful: row.Helpful, NotHelpful: row.NotHelpful, Unanswered: []model.SupportReportUnansweredQuestion{},
+	}
+	var handedOff []model.HelpAssistantMessage
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND role = ? AND status = ? AND created_at >= ? AND created_at < ?",
+		workspaceID, model.HelpAssistantRoleAssistant, model.HelpAssistantStatusHandedOff, from, to).
+		Order("created_at DESC").Limit(helpAssistantUnansweredLimit).Find(&handedOff).Error; err != nil {
+		return nil, err
+	}
+	for _, answer := range handedOff {
+		var question model.HelpAssistantMessage
+		err := r.db.WithContext(ctx).Where("session_id = ? AND role = ? AND created_at <= ?", answer.SessionID, model.HelpAssistantRoleUser, answer.CreatedAt).
+			Order("created_at DESC").Limit(1).Find(&question).Error
+		if err != nil {
+			return nil, err
+		}
+		if question.ID != "" {
+			report.Unanswered = append(report.Unanswered, model.SupportReportUnansweredQuestion{Question: question.Content, AskedAt: question.CreatedAt})
+		}
+	}
+	return report, nil
+}

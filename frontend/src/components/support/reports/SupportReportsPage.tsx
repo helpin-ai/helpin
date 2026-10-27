@@ -32,6 +32,7 @@ import { getInitials } from '@/lib/initials'
 import { cn, timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { ReportPortalIntake } from './ReportPortalIntake'
+import { ReportHelpAssistant } from './ReportHelpAssistant'
 import { ReportDailyChart } from './ReportDailyChart'
 import { ReportTopicsTable } from './ReportTopicsTable'
 
@@ -276,6 +277,8 @@ export function SupportReportsPage() {
           </QuietSection>
 
           {report.portal_intake ? <ReportPortalIntake intake={report.portal_intake} workspaceSlug={workspaceSlug} /> : null}
+
+          {report.help_assistant ? <ReportHelpAssistant assistant={report.help_assistant} workspaceSlug={workspaceSlug} /> : null}
 
           <QuietSection title="Customer satisfaction" count={summary.csat_responses ? `${summary.csat_responses} ratings` : undefined}>
             {summary.csat_responses === 0 ? (
