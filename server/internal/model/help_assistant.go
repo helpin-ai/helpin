@@ -1,9 +1,6 @@
 package model
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 // HelpAssistantTurnTarget is the agent run target of one help assistant
 // turn. Its ID is the pending assistant message the run answers.
@@ -47,20 +44,21 @@ func (HelpAssistantSession) TableName() string { return "help_assistant_sessions
 
 // HelpAssistantMessage is a question or an answer in a session.
 type HelpAssistantMessage struct {
-	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	SessionID     string          `json:"session_id" gorm:"type:uuid;not null"`
-	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null"`
-	Role          string          `json:"role" gorm:"not null"`
-	Content       string          `json:"content" gorm:"not null;default:''"`
-	Status        string          `json:"status" gorm:"not null"`
-	ProgressLabel *string         `json:"progress_label,omitempty"`
-	Citations     json.RawMessage `json:"citations,omitempty" gorm:"type:jsonb"`
-	PageArticleID *string         `json:"page_article_id,omitempty"`
-	RunID         *string         `json:"run_id,omitempty" gorm:"type:uuid"`
-	Helpful       *bool           `json:"helpful,omitempty"`
-	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
-	CompletedAt   *time.Time      `json:"completed_at,omitempty"`
+	ID            string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	SessionID     string  `json:"session_id" gorm:"type:uuid;not null"`
+	WorkspaceID   string  `json:"workspace_id" gorm:"type:uuid;not null"`
+	Role          string  `json:"role" gorm:"not null"`
+	Content       string  `json:"content" gorm:"not null;default:''"`
+	Status        string  `json:"status" gorm:"not null"`
+	ProgressLabel *string `json:"progress_label,omitempty"`
+	// Citations is a JSON array of HelpAssistantCitation.
+	Citations     *string    `json:"citations,omitempty" gorm:"type:jsonb"`
+	PageArticleID *string    `json:"page_article_id,omitempty"`
+	RunID         *string    `json:"run_id,omitempty" gorm:"type:uuid"`
+	Helpful       *bool      `json:"helpful,omitempty"`
+	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
 }
 
 // TableName returns the help assistant messages table name.

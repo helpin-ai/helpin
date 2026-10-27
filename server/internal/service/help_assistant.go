@@ -398,8 +398,8 @@ func helpAssistantMessageView(message model.HelpAssistantMessage) HelpAssistantM
 		ProgressLabel: derefString(message.ProgressLabel), Citations: []model.HelpAssistantCitation{},
 		Helpful: message.Helpful, CreatedAt: message.CreatedAt,
 	}
-	if len(message.Citations) > 0 {
-		if err := json.Unmarshal(message.Citations, &view.Citations); err != nil {
+	if message.Citations != nil && *message.Citations != "" {
+		if err := json.Unmarshal([]byte(*message.Citations), &view.Citations); err != nil {
 			view.Citations = []model.HelpAssistantCitation{}
 		}
 	}

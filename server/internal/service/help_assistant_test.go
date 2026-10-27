@@ -297,7 +297,7 @@ func TestHelpAssistantToolsAnswerSignedInCustomers(t *testing.T) {
 		t.Fatal(err)
 	}
 	var citations []model.HelpAssistantCitation
-	_ = json.Unmarshal(saved.Citations, &citations)
+	_ = json.Unmarshal([]byte(derefString(saved.Citations)), &citations)
 	if saved.Status != model.HelpAssistantStatusAnswered || len(citations) != 2 ||
 		citations[0].ArticleID != audienceDocumentID || citations[0].PortalArticleID == "" || citations[0].URL != "" ||
 		citations[1].ArticleID != "doc-export" {
@@ -381,6 +381,15 @@ func TestHelpAssistantCommandGate(t *testing.T) {
 	if _, err := commands.Execute(ctx, own, "help.progress", json.RawMessage(`{"label":"Reading the export guide…"}`)); err != nil {
 		t.Fatalf("own progress: %v", err)
 	}
+
+	// The runtime calls tools with its own run id; evidence is Helpin's.
+	mustExec(t, db, `UPDATE agent_runs SET external_runtime = ?, external_runtime_id = 'run_runtime_1' WHERE id = ?`, agentRuntimeName, runID)
+	mustExec(t, db, `INSERT INTO support_run_evidence (id, workspace_id, run_id, evidence_id, source_type, document_id, title, url, content) VALUES ('e1', 'ws-1', ?, 'chunk-1', 'help_article', 'doc-1', 'Export reports', 'https://help.test/export', 'Open Reports.')`, runID)
+	runtimeMeta := own
+	runtimeMeta.RunID = "run_runtime_1"
+	if _, err := commands.Execute(ctx, runtimeMeta, "help.send_answer", json.RawMessage(`{"answer":"Open Reports.","citations":["chunk-1"]}`)); err != nil {
+		t.Fatalf("answer with the runtime's run id: %v", err)
+	}
 }
 
 func TestHelpAssistantHandoffFeedsCoverageAndReports(t *testing.T) {
@@ -411,5 +420,22 @@ func TestHelpAssistantHandoffFeedsCoverageAndReports(t *testing.T) {
 	}
 	if empty, err := repository.NewSupportConversationRepository(db).ReportHelpAssistant(ctx, "other-workspace", now.Add(-time.Hour), now.Add(time.Hour)); err != nil || empty != nil {
 		t.Fatalf("report without questions = %+v, %v", empty, err)
+	}
+}
+
+func TestHelpAssistantSearchFallsBackToKeywords(t *testing.T) {
+	ctx := context.Background()
+	db, assistant, meta, _ := helpToolsFixture(t, model.HelpcenterAudienceCustomers)
+	// Articles not chunked yet are still found by their text, public ones only.
+	mustExec(t, db, `DELETE FROM docs_chunks`)
+	results, err := assistant.SearchHelp(ctx, meta, "Export reports")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := helpResultArticles(results); !slices.Equal(got, []string{"doc-export"}) || results[0].EvidenceID != "article:doc-export" {
+		t.Fatalf("keyword results = %+v", results)
+	}
+	if err := assistant.SendAnswer(ctx, meta, "Open Reports and choose Export.", []string{"article:doc-export"}); err != nil {
+		t.Fatalf("cite a keyword result: %v", err)
 	}
 }

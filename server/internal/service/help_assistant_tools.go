@@ -104,6 +104,14 @@ func (s *HelpAssistantService) SearchHelp(ctx context.Context, meta model.Intern
 		groups = append(groups, private...)
 		sort.SliceStable(groups, func(i, j int) bool { return groups[i].bestScore > groups[j].bestScore })
 	}
+	if len(groups) == 0 {
+		// Never worse than keyword search: articles without search chunks yet
+		// are still found by their text.
+		groups, err = s.keywordGroups(ctx, session, query)
+		if err != nil {
+			return nil, err
+		}
+	}
 	refs, err := s.articleRefs(ctx, session, documentIDsOf(groups))
 	if err != nil {
 		return nil, err
@@ -139,6 +147,35 @@ func (s *HelpAssistantService) publicGroups(ctx context.Context, workspaceID, qu
 		return nil, err
 	}
 	return groupChunksByDocument(relevantChunks(chunks)), nil
+}
+
+// keywordGroups finds public articles by full-text search, as passages
+// citable like chunks. The evidence id of a keyword passage is the article's.
+func (s *HelpAssistantService) keywordGroups(ctx context.Context, session *model.HelpAssistantSession, query string) ([]helpcenterChunkGroup, error) {
+	if s.knowledge == nil || s.knowledge.searchRepo == nil {
+		return nil, nil
+	}
+	results, err := s.knowledge.searchRepo.PublicSearch(ctx, session.WorkspaceID, session.Locale, query, "", helpAssistantSearchArticles)
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]helpcenterChunkGroup, 0, len(results))
+	for _, result := range results {
+		passage := strings.TrimSpace(derefString(result.Excerpt))
+		for _, match := range result.Matches {
+			if text := strings.TrimSpace(match.Snippet); text != "" {
+				passage = portalSnippetMarkup.Replace(text)
+				break
+			}
+		}
+		if passage == "" {
+			passage = result.Title
+		}
+		groups = append(groups, helpcenterChunkGroup{documentID: result.ID, chunks: []repository.DocsChunkSearchResult{{
+			ID: helpAssistantArticleEvidence + result.ID, DocumentID: result.ID, Title: result.Title, Content: passage, LexicalScore: 1,
+		}}})
+	}
+	return groups, nil
 }
 
 // articleRefs resolves documents to the articles the session's audience may

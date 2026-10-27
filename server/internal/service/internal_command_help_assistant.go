@@ -169,6 +169,12 @@ func (s *InternalCommandService) helpAssistantCommand(action func(context.Contex
 		if s.helpAssistant == nil {
 			return nil, fmt.Errorf("the help assistant is not configured")
 		}
+		// The runtime names its own run; evidence is kept under Helpin's run.
+		run, err := s.resolveCommandRun(ctx, meta)
+		if err != nil {
+			return nil, err
+		}
+		meta.RunID = run.ID
 		output, err := action(ctx, meta, input)
 		if err != nil {
 			return nil, err

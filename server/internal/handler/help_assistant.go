@@ -49,7 +49,7 @@ func (h *DocsHandler) PublicAssistantAsk(w http.ResponseWriter, r *http.Request)
 	}
 	asker := service.HelpAssistantAsker{WorkspaceID: cfg.WorkspaceID, Surface: model.HelpAssistantSurfaceHelpcenter, VisitorID: body.VisitorID}
 	turn, err := h.helpAssistant.Ask(r.Context(), asker, body.HelpAssistantQuestion)
-	writeHelpAssistant(w, r, http.StatusAccepted, turn, err)
+	writeHelpAssistant(w, r, http.StatusOK, turn, err)
 }
 
 // PublicAssistantSession handles GET /hc/{subdomain}/assistant/sessions/{sessionId}.
@@ -92,7 +92,7 @@ func (h *CustomerPortalHandler) AssistantAsk(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	turn, err := h.assistant.Ask(r.Context(), h.assistantAsker(r, ws, body.VisitorID), body.HelpAssistantQuestion)
-	writeHelpAssistant(w, r, http.StatusAccepted, turn, err)
+	writeHelpAssistant(w, r, http.StatusOK, turn, err)
 }
 
 // AssistantSession handles GET /public/portal/{slug}/assistant/sessions/{sessionId}.

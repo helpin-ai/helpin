@@ -151,7 +151,8 @@ func (r *HelpAssistantRepository) Complete(ctx context.Context, messageID, statu
 		if err != nil {
 			return false, err
 		}
-		updates["citations"] = encoded
+		// Text, not bytes: Postgres reads a byte parameter as bytea, not jsonb.
+		updates["citations"] = string(encoded)
 	}
 	result := r.db.WithContext(ctx).Model(&model.HelpAssistantMessage{}).
 		Where("id = ? AND status = ?", messageID, model.HelpAssistantStatusPending).Updates(updates)
