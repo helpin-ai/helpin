@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -100,6 +101,7 @@ type InternalCommandService struct {
 	dockActionProposalRepo    *repository.DockActionProposalRepository
 	commandBarService         *CommandBarService
 	supportKnowledgeSearcher  supportKnowledgeSearcher
+	helpAssistant             *HelpAssistantService
 	supportRunEvidenceRepo    *repository.SupportRunEvidenceRepository
 	supportFollowUpService    *SupportFollowUpService
 	supportAIService          *SupportAIService
@@ -427,8 +429,17 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 			}
 			return s.executeSupportPreviewCommand(ctx, run, meta, def, input)
 		}
-	} else if meta.TargetType == supportPreviewTarget {
-		return nil, fmt.Errorf("preview requires a persisted run")
+		// Help assistant runs answer anonymous visitors: only their own tools,
+		// only for their own turn.
+		if run.TargetType == model.HelpAssistantTurnTarget || meta.TargetType == model.HelpAssistantTurnTarget {
+			if meta.TargetType != run.TargetType || meta.TargetID != run.TargetID || meta.AgentID != run.AgentID || !slices.Contains(agentcontract.HelpAssistantTools, def.toolAlias()) {
+				return nil, fmt.Errorf("help assistant command scope mismatch")
+			}
+		}
+	} else if meta.TargetType == supportPreviewTarget || meta.TargetType == model.HelpAssistantTurnTarget {
+		return nil, fmt.Errorf("%s requires a persisted run", meta.TargetType)
+	} else if def.Tool != nil && slices.Contains(agentcontract.HelpAssistantTools, def.Tool.Alias) {
+		return nil, fmt.Errorf("help assistant tools run only in a help assistant turn")
 	}
 
 	if def.Validate != nil {
@@ -2019,6 +2030,7 @@ func (s *InternalCommandService) registerDefaults() {
 	})
 	s.registerAgentOrchestrationCommands()
 	s.registerSupportKnowledgeCommands()
+	s.registerHelpAssistantCommands()
 	s.registerSupportReplyCommands()
 	s.registerSupportFollowUpCommand()
 	s.registerSupportCommands()

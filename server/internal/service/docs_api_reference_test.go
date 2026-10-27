@@ -201,6 +201,7 @@ func setupDocsAPIReferenceTestDB(t *testing.T) *gorm.DB {
 	}
 	statements := []string{
 		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, team_id TEXT, name TEXT NOT NULL,
 			slug TEXT NOT NULL, icon TEXT, visibility TEXT NOT NULL, type TEXT NOT NULL,
 			default_review_days INTEGER, is_system BOOLEAN NOT NULL DEFAULT 0,

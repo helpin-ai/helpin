@@ -155,6 +155,24 @@ describe('SupportReportsPage', () => {
     expect(new Date(params.to).getTime()).toBeLessThanOrEqual(Date.now() + 60_000)
   })
 
+  it('shows portal self-service only when customers wrote portal requests', () => {
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    expect(container.textContent).not.toContain('Portal self-service')
+
+    const portal_intake = { with_suggestions: 9, opened: 5, submitted_after_opening: 2, likely_deflected: 3, submitted_without_suggestions: 4 }
+    mockOverview.mockReturnValue({ data: { ...report, portal_intake }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    const text = container.textContent ?? ''
+    expect(text).toContain('Portal self-service')
+    expect(text).toContain('Likely answered by an article3')
+    expect(text).toContain('Opened an article5')
+    expect(text).toContain('Of 9 forms that showed suggestions')
+    expect(text).toContain('Asked after reading2')
+    expect(text).toContain('Nothing to suggest4')
+    expect(container.querySelector('a[href="/w/acme/support/coverage"]')).not.toBeNull()
+  })
+
   it('puts the AI agent above the daily chart, followed by topics', () => {
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
     act(() => root.render(<SupportReportsPage />))
@@ -204,6 +222,22 @@ describe('SupportReportsPage', () => {
     expect(stats?.textContent).toBe('Created3Resolved1Resolved by AI1First response (team)5m')
     act(() => { firstDay.parentElement?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })) })
     expect(document.body.querySelector('[data-testid="report-day-stats"]')).toBeNull()
+  })
+
+  it('shows the help assistant only when visitors asked it questions', () => {
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    expect(container.textContent).not.toContain('Help assistant')
+
+    const help_assistant = { conversations: 3, questions: 4, answered: 3, handed_off: 1, failed: 0, helpful: 2, not_helpful: 1, unanswered: [{ question: 'Can I get a refund?', asked_at: new Date().toISOString() }] }
+    mockOverview.mockReturnValue({ data: { ...report, help_assistant }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    const text = container.textContent ?? ''
+    expect(text).toContain('Help assistant3 conversations')
+    expect(text).toContain('Answered from the articles75%')
+    expect(text).toContain('3 of 4 questions')
+    expect(text).toContain('Rated helpful67%')
+    expect(text).toContain('Can I get a refund?')
   })
 
   it('explains an empty CSAT period', () => {

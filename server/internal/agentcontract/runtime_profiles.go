@@ -48,6 +48,16 @@ var runtimeProfiles = []model.RuntimeProfile{
 		RequiresRepo:       false,
 	},
 	{
+		Name:               model.AgentPresetHelpAssistant,
+		RuntimeKind:        "native_sdk",
+		Description:        "Answers help center and customer portal visitors from published help articles, with server-checked citations.",
+		AllowedTools:       HelpAssistantTools,
+		AllowedCommands:    []string{},
+		AllowedTargetTypes: []string{model.HelpAssistantTurnTarget},
+		ApprovalRequired:   false,
+		RequiresRepo:       false,
+	},
+	{
 		Name:               model.AgentPresetDocumentationAgent,
 		RuntimeKind:        "native_sdk",
 		Description:        "Documentation maintenance across internal docs, public help center articles, API docs, support gaps, and release-driven updates.",
@@ -82,6 +92,8 @@ func normalizeRuntimeProfileName(name string) string {
 		return model.AgentPresetSupportAgent
 	case "docs", "documentation", model.AgentPresetDocumentationAgent:
 		return model.AgentPresetDocumentationAgent
+	case model.AgentPresetHelpAssistant:
+		return model.AgentPresetHelpAssistant
 	default:
 		return strings.TrimSpace(name)
 	}

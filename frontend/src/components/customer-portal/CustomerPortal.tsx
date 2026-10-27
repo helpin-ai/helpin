@@ -24,17 +24,24 @@ import {
   QuietUnderlineTextarea,
 } from '@/components/design-system/quiet'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { PortalActivityRow, PortalMessage } from './PortalConversation'
 import { portalPublicRedirect } from './portalPaths'
 import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
+import { MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
 import { requestNumber } from './portalRequestFormat'
 import { formatPortalRelativeTime } from './portalTime'
 import { usePortalLiveUpdates } from './usePortalLiveUpdates'
 import { PortalAttachmentTray } from './PortalAttachmentTray'
 import { pastedFiles, usePortalFileDrop } from './portalFileDrop'
 import { usePortalAttachmentUploads } from './usePortalAttachmentUploads'
+import { PortalArticleSuggestions } from './PortalArticleSuggestions'
+import { PortalHelpArticleView, PortalHelpList } from './PortalHelp'
+import { PortalAskAI } from './PortalAssistant'
+import { usePortalArticleSuggestions } from './usePortalArticleSuggestions'
+import { clearPortalDrafts, usePortalDraft } from './usePortalDraft'
 import {
   CustomerPortalApiError,
   customerPortalService,
@@ -276,6 +283,7 @@ export function CustomerPortalProvider({ slug }: { slug: string }) {
     try {
       await customerPortalService.signOut(slug)
     } finally {
+      clearPortalDrafts(slug)
       goToSignIn()
     }
   }, [goToSignIn, slug])
@@ -307,6 +315,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
   const [token, setToken] = useState('')
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
+  const suggestions = usePortalArticleSuggestions(slug, token ? subject : '', token ? message : '')
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAnonymousAttachment(slug, token, file, options),
     [slug, token],
@@ -335,7 +344,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
     setError(null)
     try {
       await customerPortalService.createAnonymousRequest(slug, token, {
-        subject: subject.trim(), message: message.trim(), attachment_ids: uploads.attachmentIds,
+        subject: subject.trim(), message: message.trim(), attachment_ids: uploads.attachmentIds, intake: suggestions.intake(),
       })
       setSubmitted(true)
       setToken('')
@@ -373,6 +382,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
           <PortalField id="intake-message" label="How can we help?">
             <QuietUnderlineTextarea id="intake-message" required rows={4} className="max-h-none min-h-24" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} />
           </PortalField>
+          <PortalArticleSuggestions slug={slug} articles={suggestions.articles} onOpen={suggestions.recordOpened} />
           <PortalDropCue visible={dragging} />
           {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
           {error ? <PortalError>{error}</PortalError> : null}
@@ -530,8 +540,17 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   onCreated: (reference: string) => void
   handleSessionError: (error: unknown) => boolean
 }) {
-  const [subject, setSubject] = useState('')
-  const [message, setMessage] = useState('')
+  const { session } = usePortal()
+  // A help assistant handoff opens this form with the conversation filled in.
+  const [prefill] = useState(readRequestPrefill)
+  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill && { subject: prefill.subject, message: prefill.message })
+  useEffect(() => {
+    if (prefill) clearRequestPrefill()
+  }, [prefill])
+  const { subject, message } = draft
+  const setSubject = (value: string) => setDraft({ subject: value, message })
+  const setMessage = (value: string) => setDraft({ subject, message: value })
+  const suggestions = usePortalArticleSuggestions(slug, subject, message)
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAttachment(slug, file, undefined, options),
     [slug],
@@ -550,8 +569,10 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         subject: subject.trim(),
         message: message.trim(),
         attachment_ids: uploads.attachmentIds,
+        intake: { ...suggestions.intake(), assistant_session_id: prefill?.assistantSession },
       })
       uploads.clear()
+      clearDraft()
       onCreated(created.reference)
     } catch (requestError) {
       if (handleSessionError(requestError)) return
@@ -562,68 +583,135 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   }
 
   return (
-    <form className={cn('-mx-3 mt-8 max-w-[784px] space-y-6 rounded-lg px-3 py-3 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-label="New request" {...dropProps}>
-      <PortalField id="request-subject" label="Subject">
-        <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} placeholder="A short summary, e.g. “Invoices export is missing VAT”" />
-      </PortalField>
-      <PortalField id="request-message" label="How can we help?">
-        <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
-      </PortalField>
-      <PortalDropCue visible={dragging} />
-      {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
-      {error ? <PortalError>{error}</PortalError> : null}
-      <div className="flex items-center gap-5">
-        <QuietPrimaryAction type="submit" disabled={submitting || uploads.blocked}>{submitting ? 'Sending…' : 'Send request'}</QuietPrimaryAction>
-        <QuietTextAction type="button" onClick={onCancel}>Cancel</QuietTextAction>
-      </div>
-    </form>
+    <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-12">
+      <form className={cn('-mx-3 max-w-[784px] space-y-6 rounded-lg px-3 py-3 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-label="New request" {...dropProps}>
+        <PortalField id="request-subject" label="Subject">
+          <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} placeholder="A short summary, e.g. “Invoices export is missing VAT”" />
+        </PortalField>
+        <PortalField id="request-message" label="How can we help?">
+          <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
+        </PortalField>
+        <PortalArticleSuggestions slug={slug} className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
+        <PortalDropCue visible={dragging} />
+        {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
+        {error ? <PortalError>{error}</PortalError> : null}
+        <div className="flex items-center gap-5">
+          <QuietPrimaryAction type="submit" disabled={submitting || uploads.blocked}>{submitting ? 'Sending…' : 'Send request'}</QuietPrimaryAction>
+          <QuietTextAction type="button" onClick={() => { clearDraft(); onCancel() }}>Cancel</QuietTextAction>
+        </div>
+      </form>
+      <PortalArticleSuggestions slug={slug} className="hidden pt-3 lg:block" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
+    </div>
   )
 }
 
+/** readRequestPrefill reads a request filled in from the help assistant. */
+function readRequestPrefill(): { subject: string; message: string; assistantSession?: string } | undefined {
+  const params = new URLSearchParams(window.location.search)
+  // The router JSON-quotes values that would otherwise parse as JSON.
+  const read = (key: string) => {
+    const value = params.get(key) ?? ''
+    try {
+      return value.startsWith('"') ? String(JSON.parse(value)) : value
+    } catch {
+      return value
+    }
+  }
+  const subject = read('subject').trim().slice(0, 200)
+  const message = read('message').trim().slice(0, 8000)
+  const assistantSession = read('assistant_session').trim()
+  return subject || message ? { subject, message, assistantSession: /^[0-9a-f-]{36}$/i.test(assistantSession) ? assistantSession : undefined } : undefined
+}
+
+/** clearRequestPrefill drops the prefill from the address, so a reload starts from the saved draft. */
+function clearRequestPrefill() {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('subject')
+  url.searchParams.delete('message')
+  url.searchParams.delete('assistant_session')
+  window.history.replaceState(window.history.state, '', url.toString())
+}
+
 export function CustomerPortalHome() {
-  const { configuration, handleSessionError, slug, status } = usePortal()
+  const { configuration, handleSessionError, session, slug, status } = usePortal()
   const [reload, setReload] = useState(0)
-  // The skeleton shows only on the first load, so live refreshes keep the
-  // table, its filters and its open groups in place.
-  const [result, setResult] = useState<{ requests: CustomerPortalRequest[]; error: string | null } | null>(null)
+  const requestScope = usePortalRequestScope(slug, session?.companies ?? [])
+  // The skeleton shows only on the first load of a list, so live refreshes
+  // keep the table, its filters and its open groups in place.
+  const [result, setResult] = useState<{ scope: string; requests: CustomerPortalRequest[]; error: string | null } | null>(null)
   const supportName = configuration?.branding.name || 'Support'
   const refresh = useCallback(() => setReload((current) => current + 1), [])
+  const scopeKey = requestScope.key
 
   usePortalLiveUpdates(slug, status === 'authenticated', { onChange: refresh })
+
+  // The Help link shows only when the team shares articles with signed-in customers.
+  const [hasHelp, setHasHelp] = useState(false)
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    let active = true
+    customerPortalService.helpArticles(slug)
+      .then((articles) => { if (active) setHasHelp(articles.length > 0) })
+      .catch((error) => { if (active) handleSessionError(error) })
+    return () => { active = false }
+  }, [handleSessionError, slug, status])
 
   useEffect(() => {
     if (status !== 'authenticated') return
     let active = true
     // Every request is loaded once; the table filters and counts them locally.
     customerPortalService
-      .requests(slug, 'all')
+      .requests(slug, 'all', scopeKey === MINE_SCOPE ? { kind: 'mine' } : { kind: 'company', companyId: scopeKey })
       .then((nextRequests) => {
-        if (active) setResult({ requests: nextRequests, error: null })
+        if (active) setResult({ scope: scopeKey, requests: nextRequests, error: null })
       })
       .catch((requestError) => {
         if (!active || handleSessionError(requestError)) return
-        setResult((previous) => previous?.requests.length ? previous : { requests: [], error: 'Your requests could not be loaded.' })
+        setResult((previous) => previous?.scope === scopeKey && previous.requests.length ? previous : { scope: scopeKey, requests: [], error: 'Your requests could not be loaded.' })
       })
     return () => {
       active = false
     }
-  }, [handleSessionError, slug, status, reload])
+  }, [handleSessionError, slug, status, reload, scopeKey])
 
   if (status !== 'authenticated') return null
+  const current = result?.scope === scopeKey ? result : null
+  const companyName = requestScope.company?.name
 
   return (
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
-        title="Your requests"
-        actions={configuration?.intake_enabled ? (
-          <QuietPrimaryAction asChild>
-            <Link to="/portal/$slug/new" params={{ slug }}>New request</Link>
-          </QuietPrimaryAction>
+        title={companyName ? `${companyName} requests` : 'Your requests'}
+        actions={hasHelp || configuration?.intake_enabled || configuration?.assistant_enabled ? (
+          <>
+            {configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
+            {hasHelp ? (
+              <QuietTextAction asChild>
+                <Link to="/portal/$slug/help" params={{ slug }}>Help articles</Link>
+              </QuietTextAction>
+            ) : null}
+            {configuration?.intake_enabled ? (
+              <QuietPrimaryAction asChild>
+                <Link to="/portal/$slug/new" params={{ slug }}>New request</Link>
+              </QuietPrimaryAction>
+            ) : null}
+          </>
         ) : null}
       />
 
+      {requestScope.memberCompanies.length > 0 ? (
+        <Tabs value={scopeKey} onValueChange={requestScope.select} className="mt-4 gap-0">
+          <TabsList variant="quiet" aria-label="Which requests to show">
+            <TabsTrigger value={MINE_SCOPE}>My requests</TabsTrigger>
+            {requestScope.memberCompanies.map((company) => (
+              <TabsTrigger key={company.id} value={company.id}>{company.name}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      ) : null}
+
       <section className="mt-4" aria-label="Request history">
-        {!result ? (
+        {!current ? (
           <div className="border-t border-quiet-divider-strong" role="status" aria-label="Loading requests">
             {[0, 1, 2].map((item) => (
               <div key={item} className="space-y-2 border-b border-quiet-divider-light px-2 py-3 motion-safe:animate-pulse">
@@ -633,14 +721,14 @@ export function CustomerPortalHome() {
               </div>
             ))}
           </div>
-        ) : result.error ? (
+        ) : current.error ? (
           <QuietEmptyState
-            title={result.error}
+            title={current.error}
             description="Check your connection and try again."
             action={<QuietTextAction onClick={refresh}>Try again</QuietTextAction>}
           />
         ) : (
-          <PortalRequestTable requests={result.requests} slug={slug} supportName={supportName} onRefresh={refresh} />
+          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} />
         )}
       </section>
     </PortalShell>
@@ -658,6 +746,7 @@ export function CustomerPortalNewRequestPage() {
         navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to all requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
         title="New request"
         description="Tell us what you need. We’ll reply here and by email."
+        actions={configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
       />
       {configuration?.intake_enabled ? (
         <NewRequestForm
@@ -671,6 +760,43 @@ export function CustomerPortalNewRequestPage() {
       ) : (
         <QuietEmptyState className="mt-8" title="New requests are turned off" description="Contact support through your usual channel." action={<QuietTextAction onClick={backToRequests}>All requests</QuietTextAction>} />
       )}
+    </PortalShell>
+  )
+}
+
+// ── Help articles for signed-in customers ──────────────────────────────
+
+export function CustomerPortalHelpPage() {
+  const { configuration, handleSessionError, slug, status } = usePortal()
+  const navigate = useNavigate()
+  if (status !== 'authenticated') return null
+  const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
+  return (
+    <PortalShell account={<PortalAccount />}>
+      <QuietPageHeader
+        navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to all requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
+        title="Help articles"
+        description="Guides your support team shares with signed-in customers."
+        actions={configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
+      />
+      <PortalHelpList slug={slug} onSessionError={handleSessionError} />
+    </PortalShell>
+  )
+}
+
+export function CustomerPortalHelpArticlePage({ articleId }: { articleId: string }) {
+  const { handleSessionError, slug, status } = usePortal()
+  const navigate = useNavigate()
+  const [title, setTitle] = useState('')
+  if (status !== 'authenticated') return null
+  const backToHelp = () => void navigate({ to: '/portal/$slug/help', params: { slug } })
+  return (
+    <PortalShell account={<PortalAccount />}>
+      <QuietPageHeader
+        navigation={<QuietBreadcrumbs onBack={backToHelp} backLabel="Back to help articles" items={[{ id: 'help', label: 'Help articles', onClick: backToHelp }]} />}
+        title={title || 'Help article'}
+      />
+      <PortalHelpArticleView slug={slug} articleId={articleId} onSessionError={handleSessionError} onTitle={setTitle} />
     </PortalShell>
   )
 }
@@ -823,7 +949,11 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         description={request ? (
           <QuietMetaLine
             className="text-[12px]"
-            items={[requestNumber(request), request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null]}
+            items={[
+              requestNumber(request),
+              request.own === false ? `Asked by ${request.requester_name || 'a colleague'}` : null,
+              request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null,
+            ]}
           />
         ) : null}
         actions={request ? <RequestStatusText status={request.status} /> : null}
@@ -840,11 +970,7 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         <>
           <ol className="mt-6 border-t border-quiet-divider-strong pt-3" aria-label="Messages">
             {request.messages.map((message) => <PortalMessage key={message.id} message={message} supportName={configuration?.branding.name || 'Support'} />)}
-            {request.ai_processing ? (
-              <PortalActivityRow label={`${configuration?.branding.assistant_name || 'The AI assistant'} is working on your request…`} />
-            ) : typing ? (
-              <PortalActivityRow label={`${configuration?.branding.name || 'Support'} is replying…`} />
-            ) : null}
+            {typing ? <PortalActivityRow label={`${configuration?.branding.name || 'Support'} is replying…`} /> : null}
           </ol>
           {error ? <PortalError className="mt-4">{error}</PortalError> : null}
           {request.can_rate ? (

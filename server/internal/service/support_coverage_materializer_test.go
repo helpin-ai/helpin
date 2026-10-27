@@ -636,6 +636,7 @@ func TestCoverageMaterializationPreservesFindingsWhenEmbeddingUnavailable(t *tes
 func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string) {
 	t.Helper()
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_spaces (
+		helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		team_id TEXT,
@@ -691,6 +692,7 @@ func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string
 		t.Fatalf("create docs_documents: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_helpcenter_articles (
+		customer_published_at DATETIME,
 		document_id TEXT PRIMARY KEY,
 		public_published_at DATETIME
 	)`).Error; err != nil {

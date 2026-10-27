@@ -1240,6 +1240,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			lifecycle_stage TEXT NOT NULL DEFAULT 'subscriber',
 			lead_status TEXT NOT NULL DEFAULT 'new',
 			portal_access TEXT,
+			portal_role TEXT,
 			owner_member_id TEXT,
 			avatar_url TEXT,
 			source TEXT,
@@ -1267,9 +1268,14 @@ func newTestDB(t *testing.T) *gorm.DB {
 			owner_member_id TEXT,
 			customer_success_owner_member_id TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
+			portal_default_role TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_portal_company_members (workspace_id TEXT NOT NULL, crm_company_id TEXT NOT NULL, crm_contact_id TEXT NOT NULL, added_by_user_id TEXT, created_at DATETIME, PRIMARY KEY (crm_company_id, crm_contact_id))`,
+		`CREATE TABLE IF NOT EXISTS help_assistant_sessions (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, surface TEXT NOT NULL, audience TEXT NOT NULL, portal_identity_id TEXT, visitor_id TEXT NOT NULL, locale TEXT NOT NULL DEFAULT '', turn_count INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE IF NOT EXISTS help_assistant_messages (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), session_id TEXT NOT NULL, workspace_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, progress_label TEXT, citations TEXT, page_article_id TEXT, run_id TEXT, helpful BOOLEAN, created_at DATETIME, updated_at DATETIME, completed_at DATETIME)`,
+		`CREATE TABLE support_portal_intake_events (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, intake_id TEXT NOT NULL, event_type TEXT NOT NULL, article_ids TEXT NOT NULL DEFAULT '[]', article_count INTEGER NOT NULL DEFAULT 0, search_completed BOOLEAN NOT NULL DEFAULT false, conversation_id TEXT, occurred_at DATETIME NOT NULL)`,
 		`CREATE TABLE crm_associations (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,

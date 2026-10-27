@@ -233,8 +233,9 @@ func (r *AIMessageProcessingRepository) createReply(ctx context.Context, process
 				return err
 			}
 			if conversation.Channel == "portal" {
-				if !settings.PortalEnabled || (settings.PortalAIMode != "ai_first" && settings.PortalAIMode != "internal_note") ||
-					(!message.IsInternal && settings.PortalAIMode != "ai_first") {
+				// People answer portal requests: AI output there is only ever
+				// a private suggestion.
+				if !settings.PortalAIDraftsEnabled() || !message.IsInternal {
 					return nil
 				}
 			} else if !settings.AIEnabled || (settings.AIResponseMode != "ai_first" && settings.AIResponseMode != "internal_note") {

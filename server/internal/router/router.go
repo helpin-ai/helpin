@@ -28,6 +28,9 @@ type Handlers struct {
 	// HelpcenterAnswerRateLimit guards the public AI answer endpoints
 	// (nil disables limiting, e.g. when Redis is not configured).
 	HelpcenterAnswerRateLimit func(http.Handler) http.Handler
+	// HelpAssistantRateLimit guards questions to the help assistant (nil
+	// disables limiting).
+	HelpAssistantRateLimit func(http.Handler) http.Handler
 
 	// DemoReadOnly rejects every non-read request made by the shared public demo
 	// viewer account (nil when the demo login is not configured).
@@ -139,6 +142,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	helpcenterAnswerLimiter := h.HelpcenterAnswerRateLimit
 	if helpcenterAnswerLimiter == nil {
 		helpcenterAnswerLimiter = func(next http.Handler) http.Handler { return next }
+	}
+	helpAssistantLimiter := h.HelpAssistantRateLimit
+	if helpAssistantLimiter == nil {
+		helpAssistantLimiter = func(next http.Handler) http.Handler { return next }
 	}
 
 	// Global middleware (applied to all routes)
@@ -302,6 +309,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/search", h.Docs.PublicSearchArticles)
 			r.With(helpcenterAnswerLimiter).Post("/answer", h.Docs.PublicAnswerQuestion)
 			r.With(helpcenterAnswerLimiter).Post("/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
+			if h.CustomerPortal != nil {
+				r.Get("/portal", h.CustomerPortal.HelpcenterPortal)
+			}
+			r.With(helpAssistantLimiter).Post("/assistant/messages", h.Docs.PublicAssistantAsk)
+			r.Get("/assistant/sessions/{sessionId}", h.Docs.PublicAssistantSession)
+			r.With(helpcenterAnswerLimiter).Post("/assistant/messages/{messageId}/feedback", h.Docs.PublicAssistantFeedback)
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
@@ -345,6 +358,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Post("/intake/attachments", h.CustomerPortal.UploadAnonymousAttachment)
 				r.Patch("/intake/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAnonymousAttachment)
 				r.Post("/intake/requests", h.CustomerPortal.CreateAnonymousRequest)
+				r.Get("/suggestions", h.CustomerPortal.Suggestions)
+				r.Post("/suggestions/events", h.CustomerPortal.SuggestionEvent)
+				r.With(helpAssistantLimiter).Post("/assistant/messages", h.CustomerPortal.AssistantAsk)
+				r.Get("/assistant/sessions/{sessionId}", h.CustomerPortal.AssistantSession)
+				r.Post("/assistant/messages/{messageId}/feedback", h.CustomerPortal.AssistantFeedback)
+				r.Get("/help", h.CustomerPortal.HelpArticles)
+				r.Get("/help/search", h.CustomerPortal.HelpSearch)
+				r.Get("/help/articles/{articleId}", h.CustomerPortal.HelpArticle)
 				r.Get("/session", h.CustomerPortal.Session)
 				r.Delete("/session", h.CustomerPortal.Logout)
 				r.Get("/requests", h.CustomerPortal.Requests)
@@ -478,6 +499,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/search", h.Docs.PublicSearchArticles)
 			r.With(helpcenterAnswerLimiter).Post("/answer", h.Docs.PublicAnswerQuestion)
 			r.With(helpcenterAnswerLimiter).Post("/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
+			r.With(helpAssistantLimiter).Post("/assistant/messages", h.Docs.PublicAssistantAsk)
+			r.Get("/assistant/sessions/{sessionId}", h.Docs.PublicAssistantSession)
+			r.With(helpcenterAnswerLimiter).Post("/assistant/messages/{messageId}/feedback", h.Docs.PublicAssistantFeedback)
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
@@ -551,10 +575,15 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
+			// Writes share the /widget limiter: a message can start an AI turn.
+			sdkWrite := chi.Chain(h.SupportInboxWidget.RequireOrigin)
+			if h.WidgetRateLimit != nil {
+				sdkWrite = chi.Chain(h.WidgetRateLimit, h.SupportInboxWidget.RequireOrigin)
+			}
 			r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
-			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+			r.With(sdkWrite...).Post("/session", h.SupportInboxWidget.CreateSession)
 			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.With(sdkWrite...).Post("/messages", h.SupportInboxWidget.SendMessage)
 			if h.WidgetRateLimit != nil {
 				r.With(h.WidgetRateLimit, h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
 			} else {
@@ -1229,7 +1258,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/access", h.CustomerPortalAdmin.AccessSummary)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/contacts/{contactId}/access", h.CustomerPortalAdmin.ContactAccess)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/contacts/{contactId}/access", h.CustomerPortalAdmin.UpdateContactAccess)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/contacts/{contactId}/role", h.CustomerPortalAdmin.UpdateContactRole)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/companies/{companyId}", h.CustomerPortalAdmin.CompanyAccess)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}", h.CustomerPortalAdmin.UpdateCompanyAccess)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/portal/companies/{companyId}/members/from-domain", h.CustomerPortalAdmin.AddCompanyDomainMembers)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}/members/{contactId}", h.CustomerPortalAdmin.UpdateCompanyMember)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/conversations/{id}/portal-confirmation", h.CustomerPortalAdmin.ResendIntakeConfirmation)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/portal-context", h.CustomerPortalAdmin.ConversationPortalContext)
 				}
 
 				// Canned responses

@@ -157,6 +157,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetReviewAgent,
 		model.AgentPresetCommandAgent,
 		model.AgentPresetAskAgent,
+		model.AgentPresetHelpAssistant,
 	}
 }
 
@@ -250,6 +251,8 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "command_agent_default"
 	case model.AgentPresetAskAgent:
 		return "ask_agent_default"
+	case model.AgentPresetHelpAssistant:
+		return "help_assistant_default"
 	default:
 		return ""
 	}
@@ -432,6 +435,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	engineerProfile := agentcontract.GetRuntimeProfile(model.AgentPresetCodeBuilder)
 	reviewerProfile := agentcontract.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := agentcontract.GetRuntimeProfile(model.AgentPresetSupportAgent)
+	helpAssistantProfile := agentcontract.GetRuntimeProfile(model.AgentPresetHelpAssistant)
+	helpAssistantPrompt := defaultSystemPromptForPreset(model.AgentPresetHelpAssistant)
 	documentationProfile := agentcontract.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
 	openAIPresetProvider := model.AgentModelProviderOpenAI
 	openAIPresetModel := defaultOpenAIAgentModel
@@ -761,6 +766,29 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          &askAgentPrompt,
+		},
+		{
+			Key:                   model.AgentPresetHelpAssistant,
+			FamilyKey:             model.AgentPresetHelpAssistant,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetHelpAssistant),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
+			Label:                 "Help assistant",
+			Description:           "Answers help center and customer portal visitors in a conversation, only from published help articles, citing them and offering support when the articles do not answer.",
+			DefaultRole:           "Help assistant",
+			RuntimeKind:           "native_sdk",
+			Provider:              &openRouterPresetProvider,
+			Model:                 &supportDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
+			DefaultTriggerMode:    "manual",
+			AllowedTriggerModes:   []string{"manual"},
+			AllowedTools:          slices.Clone(helpAssistantProfile.AllowedTools),
+			AllowedCommands:       []string{},
+			AllowedTargetTypes:    slices.Clone(helpAssistantProfile.AllowedTargetTypes),
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
+			SystemPrompt:          helpAssistantPrompt,
 		},
 	}
 

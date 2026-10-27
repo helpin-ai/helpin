@@ -1,4 +1,5 @@
 import { API_BASE, uploadToS3 } from '@/lib/api'
+import type { AssistantResult, AssistantSessionView, AssistantTurn } from '@helpin-ai/shared'
 import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles'
 
 // The app calls the API directly. On a help center the portal calls the
@@ -28,6 +29,8 @@ export interface CustomerPortalConfiguration {
   branding: CustomerPortalBranding
   /** Where customers reach this portal; the app's /portal path redirects there. */
   public_url?: string
+  /** Whether the portal offers the Ask AI help assistant. */
+  assistant_enabled?: boolean
 }
 
 /** Server upload rules plus the portal's per-message file limit. */
@@ -51,9 +54,21 @@ export interface CustomerPortalCustomer {
   name?: string | null
 }
 
+/** A company whose portal the customer belongs to, with their role there. */
+export interface CustomerPortalCompany {
+  id: string
+  name: string
+  /** Requesters see their own requests; members see every company request. */
+  role: 'requester' | 'member'
+}
+
 export interface CustomerPortalSession {
   customer: CustomerPortalCustomer
+  companies?: CustomerPortalCompany[]
 }
+
+/** Which requests a list shows: the customer's own, or one company's. */
+export type CustomerPortalRequestScope = { kind: 'mine' } | { kind: 'company'; companyId: string }
 
 export interface CustomerPortalRequest {
   reference: string
@@ -66,14 +81,22 @@ export interface CustomerPortalRequest {
   last_message_from?: 'customer' | 'support'
   /** Support replied since the customer last opened the request. */
   unread?: boolean
+  /** Company lists only: whether the signed-in customer asked. */
+  own?: boolean
+  /** Company lists only: who asked. */
+  requested_by?: string
+  company?: { id: string; name: string }
 }
 
 export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   can_reply: boolean
-  ai_processing?: boolean
   /** The customer may rate this resolved request. */
   can_rate?: boolean
   csat?: { rating: number; comment?: string | null; submitted_at: string } | null
+  /** False for a colleague's request opened through company access. */
+  own?: boolean
+  /** Who asked, for a colleague's request. */
+  requester_name?: string | null
   messages: Array<{
     id: string
     content: string
@@ -84,8 +107,37 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
     sender_avatar_style?: { style?: string | null; seed?: string | null; background_mode?: string | null; background_color?: string | null } | null
     via_channel?: string
     created_at: string
+    /** False for a colleague's message; older servers omit it. */
+    from_you?: boolean
     attachments?: Array<{ id: string; file_name: string; file_type: string; file_size: number; url: string }>
   }>
+}
+
+/** A published help center article that may answer a request being written. */
+export interface CustomerPortalArticleSuggestion {
+  id: string
+  title: string
+  space_name?: string
+  snippet?: string
+  /** The public help center address; articles for signed-in customers have none. */
+  url?: string
+  /** Set for articles for signed-in customers, which open in the portal. */
+  portal_article_id?: string
+}
+
+/** A help article for signed-in customers, read in the portal. */
+export interface CustomerPortalHelpArticle {
+  id: string
+  title: string
+  excerpt?: string
+  snippet?: string
+  space_name: string
+  collection_name?: string
+  published_at: string
+}
+
+export interface CustomerPortalHelpArticleDetail extends CustomerPortalHelpArticle {
+  content_html: string
 }
 
 export type CustomerPortalRequestFilter = 'all' | CustomerPortalRequest['status']
@@ -96,10 +148,21 @@ export interface CreatedCustomerPortalRequest extends CustomerPortalRequest {
   resolved_at?: string | null
 }
 
+/** What the customer saw while writing a request. */
+export interface CustomerPortalIntake {
+  intake_id: string
+  suggested_article_ids: string[]
+  opened_article_ids: string[]
+  search_completed: boolean
+  /** The help assistant conversation that handed the customer off, if any. */
+  assistant_session_id?: string
+}
+
 export interface CreateCustomerPortalRequestInput {
   subject: string
   message: string
   attachment_ids?: string[]
+  intake?: CustomerPortalIntake
 }
 
 export class CustomerPortalApiError extends Error {
@@ -153,6 +216,24 @@ export function customerPortalSocketUrl(slug: string) {
   return base.toString()
 }
 
+/** readerLocale is the customer's language, for reading translated articles. */
+function readerLocale() {
+  return encodeURIComponent(typeof navigator === 'undefined' ? '' : navigator.language)
+}
+
+/**
+ * portalAssistantRequest returns a help assistant response in the result
+ * shape the shared conversation controller expects, instead of throwing.
+ */
+async function portalAssistantRequest<T>(slug: string, path: string, init?: RequestInit): Promise<AssistantResult<T>> {
+  try {
+    return { data: await portalRequest<T>(slug, path, init), error: null, status: 200 }
+  } catch (error) {
+    if (error instanceof CustomerPortalApiError) return { data: null, error: error.message, status: error.status }
+    return { data: null, error: error instanceof Error ? error.message : 'Request failed', status: 0 }
+  }
+}
+
 export const customerPortalService = {
   configuration: (slug: string) =>
     portalRequest<CustomerPortalConfiguration>(slug, ''),
@@ -178,8 +259,33 @@ export const customerPortalService = {
     }),
   signOut: (slug: string) =>
     portalRequest<void>(slug, '/session', { method: 'DELETE' }),
-  requests: (slug: string, filter: CustomerPortalRequestFilter = 'all') =>
-    portalRequest<CustomerPortalRequest[]>(slug, `/requests${filter === 'all' ? '' : `?status=${filter}`}`),
+  requests: (slug: string, filter: CustomerPortalRequestFilter = 'all', scope: CustomerPortalRequestScope = { kind: 'mine' }) => {
+    const params = new URLSearchParams()
+    if (filter !== 'all') params.set('status', filter)
+    if (scope.kind === 'company') {
+      params.set('scope', 'company')
+      params.set('company_id', scope.companyId)
+    }
+    const query = params.toString()
+    return portalRequest<CustomerPortalRequest[]>(slug, `/requests${query ? `?${query}` : ''}`)
+  },
+  suggestionEvent: (slug: string, event: { intake_id: string; event: 'shown' | 'opened'; article_ids: string[] }) =>
+    portalRequest<void>(slug, '/suggestions/events', { method: 'POST', body: JSON.stringify(event) }),
+  suggestions: (slug: string, text: string, signal?: AbortSignal) =>
+    portalRequest<{ articles: CustomerPortalArticleSuggestion[]; search_completed: boolean }>(slug, `/suggestions?q=${encodeURIComponent(text)}`, { signal }),
+  // Help articles are read in the customer's language where translated.
+  helpArticles: (slug: string) =>
+    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, `/help?locale=${readerLocale()}`).then((result) => result.articles),
+  searchHelpArticles: (slug: string, query: string, signal?: AbortSignal) =>
+    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, `/help/search?q=${encodeURIComponent(query)}&locale=${readerLocale()}`, { signal }).then((result) => result.articles),
+  helpArticle: (slug: string, articleId: string) =>
+    portalRequest<CustomerPortalHelpArticleDetail>(slug, `/help/articles/${encodeURIComponent(articleId)}?locale=${readerLocale()}`),
+  assistantAsk: (slug: string, body: { visitor_id: string; session_id?: string; message: string; page_article_id?: string }) =>
+    portalAssistantRequest<AssistantTurn>(slug, '/assistant/messages', { method: 'POST', body: JSON.stringify({ ...body, locale: navigator.language }) }),
+  assistantSession: (slug: string, sessionId: string, visitorId: string) =>
+    portalAssistantRequest<AssistantSessionView>(slug, `/assistant/sessions/${encodeURIComponent(sessionId)}?visitor_id=${encodeURIComponent(visitorId)}`),
+  assistantFeedback: (slug: string, messageId: string, body: { visitor_id: string; session_id: string; helpful: boolean }) =>
+    portalAssistantRequest<{ saved: boolean }>(slug, `/assistant/messages/${encodeURIComponent(messageId)}/feedback`, { method: 'POST', body: JSON.stringify(body) }),
   requestDetail: (slug: string, reference: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
   reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>

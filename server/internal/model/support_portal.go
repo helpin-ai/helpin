@@ -12,6 +12,9 @@ const (
 	SupportPortalAuditRequestReopened    = "request_reopened"
 	SupportPortalAuditVisibilityChanged  = "visibility_changed"
 	SupportPortalAuditConfirmationResent = "confirmation_resent"
+	// SupportPortalAuditCompanyRequestViewed records a colleague opening a
+	// request through company visibility.
+	SupportPortalAuditCompanyRequestViewed = "company_request_viewed"
 
 	SupportPortalActorCustomer = "customer"
 	SupportPortalActorUser     = "user"
@@ -25,7 +28,27 @@ const (
 	// Portal access modes decide who may sign in to the customer portal.
 	SupportPortalAccessModeApprovedContacts = "approved_contacts"
 	SupportPortalAccessModeAnyVerifiedEmail = "any_verified_email"
+	// SupportPortalAccessModeCompanyMembers lets only allowed contacts sign
+	// in who are members of a company with company access turned on.
+	SupportPortalAccessModeCompanyMembers = "company_members"
+
+	// Portal AI modes. People answer portal requests; AI may only draft a
+	// private suggestion for the teammate.
+	SupportPortalAIModeOff          = "off"
+	SupportPortalAIModeInternalNote = "internal_note"
+
+	// Portal roles decide what a contact sees in a company that uses the
+	// portal: requesters see their own requests, members see every request
+	// from the company. A company's default role applies unless the contact
+	// has its own.
+	PortalRoleRequester = "requester"
+	PortalRoleMember    = "member"
 )
+
+// ValidPortalRole reports whether role is a portal role.
+func ValidPortalRole(role string) bool {
+	return role == PortalRoleRequester || role == PortalRoleMember
+}
 
 // SupportPortalIdentity is the stable customer identity used to authorize
 // portal requests in one workspace. Authentication providers can bind their
@@ -107,6 +130,14 @@ type SupportPortalRequest struct {
 	LastMessageContent    *string    `json:"-"`
 	LastVisibleSenderType *string    `json:"-"`
 	LastVisibleMessageAt  *time.Time `json:"-"`
+
+	// Company requests also carry who asked and for which company. The
+	// owner identity decides whether the viewer is the requester.
+	OwnerIdentityID string  `json:"-"`
+	RequesterName   *string `json:"-"`
+	RequesterEmail  *string `json:"-"`
+	CompanyID       *string `json:"-" gorm:"column:crm_company_id"`
+	CompanyName     *string `json:"-"`
 }
 
 // PortalRequestStatus exposes the customer-facing lifecycle. Open requests
@@ -150,4 +181,46 @@ type PortalSenderAvatar struct {
 	Seed            *string `json:"seed,omitempty" gorm:"column:avatar_seed"`
 	BackgroundMode  *string `json:"background_mode,omitempty" gorm:"column:avatar_background_mode"`
 	BackgroundColor *string `json:"background_color,omitempty" gorm:"column:avatar_background_color"`
+}
+
+// PortalAIDraftsEnabled reports whether AI drafts private suggestions for new
+// portal requests. It never replies to portal customers.
+func (s SupportInboxSettings) PortalAIDraftsEnabled() bool {
+	return s.PortalEnabled && s.PortalAIMode == SupportPortalAIModeInternalNote
+}
+
+// Portal intake events record what happens while a request is written.
+const (
+	PortalIntakeEventShown     = "shown"
+	PortalIntakeEventOpened    = "opened"
+	PortalIntakeEventSubmitted = "submitted"
+)
+
+// SupportPortalIntakeEvent is one step of writing a portal request. ArticleIDs
+// holds the articles shown or opened; a submission holds those suggested.
+type SupportPortalIntakeEvent struct {
+	ID              string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID     string    `json:"workspace_id" gorm:"type:uuid;not null"`
+	IntakeID        string    `json:"intake_id" gorm:"type:uuid;not null"`
+	EventType       string    `json:"event_type" gorm:"not null"`
+	ArticleIDs      string    `json:"article_ids" gorm:"type:jsonb;not null;default:'[]'"`
+	ArticleCount    int       `json:"article_count" gorm:"not null;default:0"`
+	SearchCompleted bool      `json:"search_completed" gorm:"not null;default:false"`
+	ConversationID  *string   `json:"conversation_id,omitempty" gorm:"type:uuid"`
+	OccurredAt      time.Time `json:"occurred_at" gorm:"not null"`
+}
+
+func (SupportPortalIntakeEvent) TableName() string { return "support_portal_intake_events" }
+
+// PortalIntake is what the customer saw while writing a request: the articles
+// suggested and the ones opened. It is stored on the request's first message.
+type PortalIntake struct {
+	IntakeID            string   `json:"intake_id"`
+	SuggestedArticleIDs []string `json:"suggested_article_ids"`
+	OpenedArticleIDs    []string `json:"opened_article_ids"`
+	// SearchCompleted means the final request text was successfully searched.
+	SearchCompleted bool `json:"search_completed"`
+	// AssistantSessionID is the help assistant conversation that handed the
+	// customer off to this request, if any.
+	AssistantSessionID string `json:"assistant_session_id,omitempty"`
 }

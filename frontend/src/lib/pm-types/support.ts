@@ -1392,8 +1392,10 @@ export interface SupportInboxSettings {
   portal_requests_only: boolean;
   portal_anonymous_intake_enabled: boolean;
   portal_intake_enabled: boolean;
+  /** Ask AI help assistant on the help center and in the customer portal. */
+  help_assistant_enabled?: boolean;
   portal_access_mode?: CustomerPortalAccessMode;
-  portal_ai_mode?: 'off' | 'internal_note' | 'ai_first';
+  portal_ai_mode?: 'off' | 'internal_note';
   portal_ai_agent_id?: string | null;
   csat_enabled: boolean;
   file_uploads_enabled: boolean;
@@ -1470,7 +1472,7 @@ export interface SupportTranslation {
  expires_at?: string;
 }
 
-export type CustomerPortalAccessMode = 'approved_contacts' | 'any_verified_email';
+export type CustomerPortalAccessMode = 'approved_contacts' | 'company_members' | 'any_verified_email';
 export type CustomerPortalContactAccessValue = 'allowed' | 'blocked';
 
 export interface CustomerPortalAccessSummary {
@@ -1485,7 +1487,57 @@ export interface CustomerPortalAccessSummary {
 
 export interface CustomerPortalContactAccess {
   portal_access: CustomerPortalContactAccessValue | null;
+  /** Overrides the default role of the contact's companies; null follows them. */
+  portal_role?: CustomerPortalRole | null;
   shared_email_contacts: number;
+}
+
+/** Requesters see their own requests; members see every request from their company. */
+export type CustomerPortalRole = 'requester' | 'member';
+
+export interface CustomerPortalCompanyContact {
+  id: string;
+  first_name: string;
+  last_name?: string | null;
+  email?: string | null;
+  portal_access: CustomerPortalContactAccessValue | null;
+  portal_role: CustomerPortalRole | null;
+  /** A support admin gave this contact access to the company's portal requests. */
+  member: boolean;
+  shared_email_contacts: number;
+  last_signed_in_at?: string | null;
+}
+
+export interface CustomerPortalCompanyAccess {
+  /** Null keeps the portal personal for this company's contacts. */
+  default_role: CustomerPortalRole | null;
+  /** The company's email domain; bulk adding needs it. */
+  domain?: string | null;
+  contacts: CustomerPortalCompanyContact[];
+  access_mode: CustomerPortalAccessMode;
+  portal_enabled: boolean;
+  /** How many of the company's requests members could see. */
+  request_count: number;
+}
+
+export interface CustomerPortalCompanyAudience {
+  company_id: string;
+  company_name: string;
+  /** Allowed company members besides the requester who can read the conversation. */
+  members: number;
+}
+
+/** What a teammate should know about a conversation's portal side. */
+export interface CustomerPortalConversationContext {
+  company: CustomerPortalCompanyAudience | null;
+  /** Help center articles the customer saw while writing the request. */
+  intake: {
+    /** Public articles carry their help center url; articles for signed-in customers carry portal_article_id instead. */
+    opened_articles: Array<{ id: string; title: string; space_name?: string; url?: string; portal_article_id?: string }>;
+    /** The help assistant conversation that handed the customer off, if any. */
+    assistant?: Array<{ role: 'user' | 'assistant'; content: string; status: string; citations: Array<{ article_id: string; title: string; url?: string }> }>;
+    suggested_count: number;
+  } | null;
 }
 
 export interface SupportConversationMerge {

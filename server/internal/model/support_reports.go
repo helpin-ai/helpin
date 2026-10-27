@@ -152,4 +152,48 @@ type SupportReportOverview struct {
 	Teammates []SupportReportTeammate `json:"teammates"`
 	CSAT      SupportReportCSAT       `json:"csat"`
 	SLA       SupportReportSLA        `json:"sla"`
+	// PortalIntake is present for workspace-wide reports with portal intake
+	// activity in the period; requests are not in an inbox while written.
+	PortalIntake *SupportReportPortalIntake `json:"portal_intake,omitempty"`
+	// HelpAssistant is present for workspace-wide reports when visitors asked
+	// the help assistant questions in the period.
+	HelpAssistant *SupportReportHelpAssistant `json:"help_assistant,omitempty"`
+}
+
+// SupportReportPortalIntake counts portal request forms by what customers
+// did with suggested help center articles.
+// SupportReportHelpAssistant summarizes help assistant conversations.
+type SupportReportHelpAssistant struct {
+	Conversations int `json:"conversations"`
+	Questions     int `json:"questions"`
+	Answered      int `json:"answered"`
+	// HandedOff counts questions the articles did not answer, where the
+	// assistant offered to contact support.
+	HandedOff  int `json:"handed_off"`
+	Failed     int `json:"failed"`
+	Helpful    int `json:"helpful"`
+	NotHelpful int `json:"not_helpful"`
+	// Unanswered lists the latest questions the articles did not answer.
+	Unanswered []SupportReportUnansweredQuestion `json:"unanswered"`
+}
+
+// SupportReportUnansweredQuestion is a question the help articles did not answer.
+type SupportReportUnansweredQuestion struct {
+	Question string    `json:"question"`
+	AskedAt  time.Time `json:"asked_at"`
+}
+
+type SupportReportPortalIntake struct {
+	// WithSuggestions counts forms that showed at least one article.
+	WithSuggestions int `json:"with_suggestions"`
+	// Opened counts forms where the customer opened an article.
+	Opened int `json:"opened"`
+	// SubmittedAfterOpening counts forms submitted after opening an article.
+	SubmittedAfterOpening int `json:"submitted_after_opening"`
+	// LikelyDeflected counts forms with an opened article and no request
+	// within 30 minutes of the last opening.
+	LikelyDeflected int `json:"likely_deflected"`
+	// SubmittedWithoutSuggestions counts requests written after the help
+	// center suggested nothing.
+	SubmittedWithoutSuggestions int `json:"submitted_without_suggestions"`
 }

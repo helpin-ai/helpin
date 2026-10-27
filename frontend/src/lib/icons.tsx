@@ -210,6 +210,8 @@ import {
   ZapIcon as _ZapIcon,
   ZoomInAreaIcon as _ZoomInAreaIcon,
   ZoomOutAreaIcon as _ZoomOutAreaIcon,
+  ThumbsDownIcon as _ThumbsDownIcon,
+  ThumbsUpIcon as _ThumbsUpIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -356,6 +358,8 @@ export const Comment01Icon = /* @__PURE__ */ hi(_Comment01Icon);
 export const ColumnsThreeCogIcon = /* @__PURE__ */ hi(_ColumnsThreeCogIcon);
 export const ComputerIcon = /* @__PURE__ */ hi(_ComputerIcon);
 export const Copy01Icon = /* @__PURE__ */ hi(_Copy01Icon);
+export const ThumbsDownIcon = /* @__PURE__ */ hi(_ThumbsDownIcon);
+export const ThumbsUpIcon = /* @__PURE__ */ hi(_ThumbsUpIcon);
 export const CursorTextIcon = /* @__PURE__ */ hi(_CursorTextIcon);
 export const DashboardSpeed01Icon = /* @__PURE__ */ hi(_DashboardSpeed01Icon);
 export const DatabaseIcon = /* @__PURE__ */ hi(_DatabaseIcon);

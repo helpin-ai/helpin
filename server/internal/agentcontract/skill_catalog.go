@@ -101,6 +101,10 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 		CoreSkillKeys:   []string{"crm_record_operations"},
 		WorkspaceSearch: true,
 	},
+	model.AgentPresetHelpAssistant: {
+		Preamble:     "You are the help assistant on a company's help center and customer portal.",
+		SystemPrompt: helpAssistantSystemPrompt,
+	},
 	model.AgentPresetSupportAgent: {
 		Preamble:      "You are Echo, the workspace support agent. You help triage support conversations, draft replies, and route customer issues.",
 		SystemPrompt:  echoSystemPrompt,

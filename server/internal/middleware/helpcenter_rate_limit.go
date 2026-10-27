@@ -19,10 +19,24 @@ import (
 const (
 	helpcenterAnswerPerMinutePerIP = 6
 	helpcenterAnswerPerDayPerIP    = 60
+	// A help assistant conversation sends a question every few seconds at
+	// most; each one starts an agent run.
+	helpAssistantPerMinutePerIP = 10
+	helpAssistantPerDayPerIP    = 100
 )
 
 // HelpcenterAnswerRateLimit limits POSTs to the public answer endpoints.
 func HelpcenterAnswerRateLimit(redisClient *redis.Client) func(http.Handler) http.Handler {
+	return ipRateLimit(redisClient, "hc:rl", helpcenterAnswerPerMinutePerIP, helpcenterAnswerPerDayPerIP)
+}
+
+// HelpAssistantRateLimit limits questions to the help assistant.
+func HelpAssistantRateLimit(redisClient *redis.Client) func(http.Handler) http.Handler {
+	return ipRateLimit(redisClient, "hca:rl", helpAssistantPerMinutePerIP, helpAssistantPerDayPerIP)
+}
+
+// ipRateLimit applies per-IP minute and day windows under a key prefix.
+func ipRateLimit(redisClient *redis.Client, prefix string, perMinute, perDay int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if redisClient == nil {
@@ -40,8 +54,8 @@ func HelpcenterAnswerRateLimit(redisClient *redis.Client) func(http.Handler) htt
 				limit int
 				ttl   time.Duration
 			}{
-				{fmt.Sprintf("hc:rl:m:%s:%d", ip, now.Unix()/60), helpcenterAnswerPerMinutePerIP, 2 * time.Minute},
-				{fmt.Sprintf("hc:rl:d:%s:%s", ip, now.Format("20060102")), helpcenterAnswerPerDayPerIP, 48 * time.Hour},
+				{fmt.Sprintf("%s:m:%s:%d", prefix, ip, now.Unix()/60), perMinute, 2 * time.Minute},
+				{fmt.Sprintf("%s:d:%s:%s", prefix, ip, now.Format("20060102")), perDay, 48 * time.Hour},
 			}
 			for _, check := range checks {
 				count, err := redisClient.Incr(r.Context(), check.key).Result()

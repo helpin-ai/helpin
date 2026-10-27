@@ -16,7 +16,8 @@ export type AgentPresetKey =
   | 'code_builder'
   | 'review_agent'
   | 'command_agent'
-  | 'ask_agent';
+  | 'ask_agent'
+  | 'help_assistant';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentIconKey =
   | 'violet_star'

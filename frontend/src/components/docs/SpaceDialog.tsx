@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useCreateDocsSpace, useDocsHelpcenterLocales, useUpdateDocsSpace } from '@/hooks/queries'
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams'
-import type { DocsSpace, SpaceType } from '@/lib/docsTypes'
+import type { DocsSpace, HelpcenterAudience, SpaceType } from '@/lib/docsTypes'
 import { showAutoTranslateToast } from '@/lib/autoTranslateEntity'
 import { toast } from 'sonner'
 
@@ -35,6 +35,7 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
   const [name, setName] = useState('')
   const [teamAccessMode, setTeamAccessMode] = useState<TeamAccessMode>('all_teams')
   const [type, setType] = useState<SpaceType>('internal')
+  const [audience, setAudience] = useState<HelpcenterAudience>('public')
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([])
 
   const { teams } = useWorkspaceTeams(wsId)
@@ -50,6 +51,7 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
     if (open && space) {
       setName(space.name)
       setType(space.type)
+      setAudience(space.helpcenter_audience ?? 'public')
       const tids = space.team_ids ?? []
       setSelectedTeamIds(tids)
       setTeamAccessMode(space.visibility === 'team_only' && tids.length > 0 ? 'specific_teams' : 'all_teams')
@@ -57,6 +59,7 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
       setName('')
       setTeamAccessMode('all_teams')
       setType(defaultType ?? 'internal')
+      setAudience('public')
       setSelectedTeamIds([])
     }
   }, [open, space, defaultType])
@@ -85,6 +88,7 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
           id: space.id,
           name: name.trim(),
           type,
+          helpcenter_audience: audience,
           visibility: derivedVisibility,
           team_ids: derivedTeamIds,
           set_team_ids: true,
@@ -95,6 +99,7 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
           name: name.trim(),
           visibility: derivedVisibility,
           type,
+          helpcenter_audience: audience,
           team_ids: derivedTeamIds,
         })
         if (type === 'external_capable' && nonDefaultLocales.length > 0 && created?.id) {
@@ -165,6 +170,44 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
                 </button>
               </div>
             </div>
+
+            {type === 'external_capable' && (
+              <fieldset className="grid gap-2">
+                <legend className="mb-2 text-sm font-medium leading-none">Readers</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: 'public', label: 'Everyone', description: 'On your public help center, the chat widget and AI answers' },
+                    { value: 'customers', label: 'Signed-in customers', description: 'Only customers signed in to the customer portal' },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={audience === option.value}
+                      onClick={() => setAudience(option.value)}
+                      className={`rounded-lg border p-3 text-left transition-colors ${
+                        audience === option.value
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                          : 'border-border/60 hover:border-border hover:bg-muted/30'
+                      }`}
+                    >
+                      <span className="text-sm font-medium">{option.label}</span>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{option.description}</p>
+                    </button>
+                  ))}
+                </div>
+                {isEdit && space.type === 'external_capable' && audience !== (space.helpcenter_audience ?? 'public') && (
+                  <p className="text-xs text-muted-foreground">
+                    {audience === 'customers'
+                      ? 'Published articles leave the public help center and appear in the customer portal when you save.'
+                      : 'Published articles become public on your help center when you save.'}
+                  </p>
+                )}
+              </fieldset>
+            )}
+
+            {isEdit && space.type === 'external_capable' && type === 'internal' && (
+              <p className="text-xs text-muted-foreground">Published articles in this space are unpublished when you save.</p>
+            )}
 
             {/* Team access */}
             <div className="grid gap-2">

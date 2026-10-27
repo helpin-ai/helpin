@@ -21,6 +21,7 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 	}
 	tables := []string{
 		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL
 		)`,
@@ -30,6 +31,7 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 			deleted_at DATETIME
 		)`,
 		`CREATE TABLE docs_helpcenter_articles (
+			customer_published_at DATETIME,
 			document_id TEXT PRIMARY KEY,
 			public_published_at DATETIME
 		)`,

@@ -23,6 +23,15 @@ const (
 	SpaceTypeExternalCapable = "external_capable"
 )
 
+// Help center audience values for external-capable spaces.
+const (
+	// HelpcenterAudiencePublic spaces are on the public help center.
+	HelpcenterAudiencePublic = "public"
+	// HelpcenterAudienceCustomers spaces are readable only by customers signed
+	// in to the customer portal.
+	HelpcenterAudienceCustomers = "customers"
+)
+
 // Space visibility values.
 const (
 	SpaceVisibilityWorkspaceWide = "workspace_wide"
@@ -120,21 +129,24 @@ func (a *StringArray) Scan(src interface{}) error {
 
 // DocsSpace is the top-level container owned by a team.
 type DocsSpace struct {
-	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_docs_space_ws_slug,priority:1;index:idx_docs_space_ws_team,priority:1;index:idx_docs_space_ws_pos,priority:1"`
-	TeamID            *string    `json:"team_id" gorm:"type:uuid;index:idx_docs_space_ws_team,priority:2"`
-	Name              string     `json:"name" gorm:"not null"`
-	Slug              string     `json:"slug" gorm:"not null;uniqueIndex:idx_docs_space_ws_slug,priority:2"`
-	Icon              *string    `json:"icon"`
-	Visibility        string     `json:"visibility" gorm:"not null;default:'workspace_wide'"`
-	Type              string     `json:"type" gorm:"not null;default:'internal'"`
-	DefaultReviewDays *int       `json:"default_review_days"`
-	IsSystem          bool       `json:"is_system" gorm:"not null;default:false"`
-	Position          int        `json:"position" gorm:"not null;default:0;index:idx_docs_space_ws_pos,priority:2"`
-	CreatedBy         string     `json:"created_by" gorm:"type:uuid;not null"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
-	DeletedAt         *time.Time `json:"deleted_at" gorm:"index"`
+	ID          string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_docs_space_ws_slug,priority:1;index:idx_docs_space_ws_team,priority:1;index:idx_docs_space_ws_pos,priority:1"`
+	TeamID      *string `json:"team_id" gorm:"type:uuid;index:idx_docs_space_ws_team,priority:2"`
+	Name        string  `json:"name" gorm:"not null"`
+	Slug        string  `json:"slug" gorm:"not null;uniqueIndex:idx_docs_space_ws_slug,priority:2"`
+	Icon        *string `json:"icon"`
+	Visibility  string  `json:"visibility" gorm:"not null;default:'workspace_wide'"`
+	Type        string  `json:"type" gorm:"not null;default:'internal'"`
+	// HelpcenterAudience limits an external-capable space to signed-in portal
+	// customers ("customers") or leaves it public ("public").
+	HelpcenterAudience string     `json:"helpcenter_audience" gorm:"not null;default:'public'"`
+	DefaultReviewDays  *int       `json:"default_review_days"`
+	IsSystem           bool       `json:"is_system" gorm:"not null;default:false"`
+	Position           int        `json:"position" gorm:"not null;default:0;index:idx_docs_space_ws_pos,priority:2"`
+	CreatedBy          string     `json:"created_by" gorm:"type:uuid;not null"`
+	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt          *time.Time `json:"deleted_at" gorm:"index"`
 }
 
 func (DocsSpace) TableName() string { return "docs_spaces" }
@@ -643,11 +655,26 @@ type DocsHelpcenterArticle struct {
 	NotHelpfulCount   int        `json:"not_helpful_count" gorm:"not null;default:0"`
 	ViewCount         int        `json:"view_count" gorm:"not null;default:0"`
 	PublicPublishedAt *time.Time `json:"public_published_at" gorm:"index"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// CustomerPublishedAt marks a live article in a space for signed-in
+	// customers. Such an article never has PublicPublishedAt.
+	CustomerPublishedAt *time.Time `json:"customer_published_at"`
+	CreatedAt           time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (DocsHelpcenterArticle) TableName() string { return "docs_helpcenter_articles" }
+
+// LivePublishedAt returns when the article went live for its audience, or
+// nil when it is not live on the help center or in the portal.
+func (a *DocsHelpcenterArticle) LivePublishedAt() *time.Time {
+	if a == nil {
+		return nil
+	}
+	if a.PublicPublishedAt != nil {
+		return a.PublicPublishedAt
+	}
+	return a.CustomerPublishedAt
+}
 
 // DocsSlugAlias stores old public slugs for redirect.
 type DocsSlugAlias struct {
@@ -705,26 +732,28 @@ func (DocsComment) TableName() string { return "docs_comments" }
 
 // CreateDocsSpaceRequest is the payload for creating a space.
 type CreateDocsSpaceRequest struct {
-	TeamID            *string  `json:"team_id"`
-	TeamIDs           []string `json:"team_ids"`
-	Name              string   `json:"name"`
-	Slug              string   `json:"slug"`
-	Icon              *string  `json:"icon"`
-	Visibility        string   `json:"visibility"`
-	Type              string   `json:"type"`
-	DefaultReviewDays *int     `json:"default_review_days"`
+	TeamID             *string  `json:"team_id"`
+	TeamIDs            []string `json:"team_ids"`
+	Name               string   `json:"name"`
+	Slug               string   `json:"slug"`
+	Icon               *string  `json:"icon"`
+	Visibility         string   `json:"visibility"`
+	Type               string   `json:"type"`
+	HelpcenterAudience string   `json:"helpcenter_audience"`
+	DefaultReviewDays  *int     `json:"default_review_days"`
 }
 
 // UpdateDocsSpaceRequest is the payload for updating a space.
 type UpdateDocsSpaceRequest struct {
-	Name              *string  `json:"name"`
-	Slug              *string  `json:"slug"`
-	Icon              *string  `json:"icon"`
-	Type              *string  `json:"type"`
-	Visibility        *string  `json:"visibility"`
-	DefaultReviewDays *int     `json:"default_review_days"`
-	TeamIDs           []string `json:"team_ids"`
-	SetTeamIDs        bool     `json:"set_team_ids"`
+	Name               *string  `json:"name"`
+	Slug               *string  `json:"slug"`
+	Icon               *string  `json:"icon"`
+	Type               *string  `json:"type"`
+	HelpcenterAudience *string  `json:"helpcenter_audience"`
+	Visibility         *string  `json:"visibility"`
+	DefaultReviewDays  *int     `json:"default_review_days"`
+	TeamIDs            []string `json:"team_ids"`
+	SetTeamIDs         bool     `json:"set_team_ids"`
 }
 
 // CreateDocsCollectionRequest is the payload for creating a collection.
