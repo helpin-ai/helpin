@@ -1870,6 +1870,7 @@ func main() {
 	// Lazy chunk backfill for workspaces whose help center predates
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
+	customerPortalService.SetKnowledgeSearch(helpcenterAISearchService)
 
 	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
 

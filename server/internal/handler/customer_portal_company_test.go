@@ -183,3 +183,34 @@ func TestCustomerPortalAdminCompanyErrors(t *testing.T) {
 		})
 	}
 }
+
+// The suggestions route is public: it serves published articles only and
+// answers short or unsearchable text with an empty list.
+func TestPortalHTTPSuggestionsShape(t *testing.T) {
+	db := openCompanyPortalHandlerDB(t)
+	settings, _ := json.Marshal(map[string]bool{"portal_enabled": true, "portal_intake_enabled": true})
+	execAll(t, db,
+		`INSERT INTO workspaces VALUES ('ws', 'acme-support')`,
+		fmt.Sprintf(`INSERT INTO support_widget_installations VALUES ('install', 'ws', '%s', 1)`, settings),
+	)
+	inbox := service.NewSupportInboxService(repository.NewSupportConversationRepository(db), nil, repository.NewSupportMessageRepository(db), nil, nil, repository.NewSupportInboxInstallationRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewCustomerPortalHandler(service.NewCustomerPortalService(repository.NewCustomerPortalRepository(db), inbox, nil, ""))
+	router := chi.NewRouter()
+	router.Get("/api/public/portal/{slug}/suggestions", h.Suggestions)
+	for _, tt := range []struct {
+		path string
+		want int
+	}{
+		{"/api/public/portal/acme-support/suggestions?q=help", http.StatusOK},
+		{"/api/public/portal/missing/suggestions?q=export+fails+on+safari", http.StatusNotFound},
+	} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tt.path, nil))
+		if w.Code != tt.want {
+			t.Fatalf("%s: status %d %s", tt.path, w.Code, w.Body.String())
+		}
+		if tt.want == http.StatusOK && strings.TrimSpace(w.Body.String()) != `{"articles":[]}` {
+			t.Fatalf("%s: body %s", tt.path, w.Body.String())
+		}
+	}
+}

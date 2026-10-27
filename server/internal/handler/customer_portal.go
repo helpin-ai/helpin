@@ -263,6 +263,23 @@ func (h *CustomerPortalHandler) CreateAnonymousRequest(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// Suggestions returns help center articles for a request being written. The
+// articles are public, so the forms for signed-in and anonymous customers
+// both use it; the portal rate limiter bounds it.
+func (h *CustomerPortalHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
+	ws := h.workspace(w, r)
+	if ws == nil {
+		return
+	}
+	suggestions, err := h.portal.SuggestArticles(r.Context(), ws, r.URL.Query().Get("q"))
+	if err != nil {
+		writePortalError(w, r, ws.ID, err, "unable to suggest articles")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	writeJSON(w, http.StatusOK, map[string]any{"articles": suggestions})
+}
+
 // CreateRequest creates a request for the signed-in customer.
 func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Request) {
 	access := h.authorized(w, r)

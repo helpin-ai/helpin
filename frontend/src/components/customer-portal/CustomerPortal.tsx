@@ -37,6 +37,9 @@ import { usePortalLiveUpdates } from './usePortalLiveUpdates'
 import { PortalAttachmentTray } from './PortalAttachmentTray'
 import { pastedFiles, usePortalFileDrop } from './portalFileDrop'
 import { usePortalAttachmentUploads } from './usePortalAttachmentUploads'
+import { PortalArticleSuggestions } from './PortalArticleSuggestions'
+import { usePortalArticleSuggestions } from './usePortalArticleSuggestions'
+import { usePortalDraft } from './usePortalDraft'
 import {
   CustomerPortalApiError,
   customerPortalService,
@@ -309,6 +312,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
   const [token, setToken] = useState('')
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
+  const suggestions = usePortalArticleSuggestions(slug, token ? subject : '', token ? message : '')
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAnonymousAttachment(slug, token, file, options),
     [slug, token],
@@ -375,6 +379,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
           <PortalField id="intake-message" label="How can we help?">
             <QuietUnderlineTextarea id="intake-message" required rows={4} className="max-h-none min-h-24" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} />
           </PortalField>
+          <PortalArticleSuggestions articles={suggestions.articles} />
           <PortalDropCue visible={dragging} />
           {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
           {error ? <PortalError>{error}</PortalError> : null}
@@ -532,8 +537,11 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   onCreated: (reference: string) => void
   handleSessionError: (error: unknown) => boolean
 }) {
-  const [subject, setSubject] = useState('')
-  const [message, setMessage] = useState('')
+  const { draft, setDraft, clearDraft } = usePortalDraft(`${slug}.new-request`)
+  const { subject, message } = draft
+  const setSubject = (value: string) => setDraft({ subject: value, message })
+  const setMessage = (value: string) => setDraft({ subject, message: value })
+  const suggestions = usePortalArticleSuggestions(slug, subject, message)
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAttachment(slug, file, undefined, options),
     [slug],
@@ -554,6 +562,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         attachment_ids: uploads.attachmentIds,
       })
       uploads.clear()
+      clearDraft()
       onCreated(created.reference)
     } catch (requestError) {
       if (handleSessionError(requestError)) return
@@ -564,21 +573,25 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   }
 
   return (
-    <form className={cn('-mx-3 mt-8 max-w-[784px] space-y-6 rounded-lg px-3 py-3 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-label="New request" {...dropProps}>
-      <PortalField id="request-subject" label="Subject">
-        <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} placeholder="A short summary, e.g. “Invoices export is missing VAT”" />
-      </PortalField>
-      <PortalField id="request-message" label="How can we help?">
-        <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
-      </PortalField>
-      <PortalDropCue visible={dragging} />
-      {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
-      {error ? <PortalError>{error}</PortalError> : null}
-      <div className="flex items-center gap-5">
-        <QuietPrimaryAction type="submit" disabled={submitting || uploads.blocked}>{submitting ? 'Sending…' : 'Send request'}</QuietPrimaryAction>
-        <QuietTextAction type="button" onClick={onCancel}>Cancel</QuietTextAction>
-      </div>
-    </form>
+    <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-12">
+      <form className={cn('-mx-3 max-w-[784px] space-y-6 rounded-lg px-3 py-3 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-label="New request" {...dropProps}>
+        <PortalField id="request-subject" label="Subject">
+          <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} placeholder="A short summary, e.g. “Invoices export is missing VAT”" />
+        </PortalField>
+        <PortalField id="request-message" label="How can we help?">
+          <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
+        </PortalField>
+        <PortalArticleSuggestions className="lg:hidden" articles={suggestions.articles} />
+        <PortalDropCue visible={dragging} />
+        {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
+        {error ? <PortalError>{error}</PortalError> : null}
+        <div className="flex items-center gap-5">
+          <QuietPrimaryAction type="submit" disabled={submitting || uploads.blocked}>{submitting ? 'Sending…' : 'Send request'}</QuietPrimaryAction>
+          <QuietTextAction type="button" onClick={() => { clearDraft(); onCancel() }}>Cancel</QuietTextAction>
+        </div>
+      </form>
+      <PortalArticleSuggestions className="hidden pt-3 lg:block" articles={suggestions.articles} />
+    </div>
   )
 }
 

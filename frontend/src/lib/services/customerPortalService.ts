@@ -110,6 +110,15 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   }>
 }
 
+/** A published help center article that may answer a request being written. */
+export interface CustomerPortalArticleSuggestion {
+  id: string
+  title: string
+  space_name?: string
+  snippet?: string
+  url: string
+}
+
 export type CustomerPortalRequestFilter = 'all' | CustomerPortalRequest['status']
 
 export interface CreatedCustomerPortalRequest extends CustomerPortalRequest {
@@ -210,6 +219,8 @@ export const customerPortalService = {
     const query = params.toString()
     return portalRequest<CustomerPortalRequest[]>(slug, `/requests${query ? `?${query}` : ''}`)
   },
+  suggestions: (slug: string, text: string, signal?: AbortSignal) =>
+    portalRequest<{ articles: CustomerPortalArticleSuggestion[] }>(slug, `/suggestions?q=${encodeURIComponent(text)}`, { signal }),
   requestDetail: (slug: string, reference: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
   reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>

@@ -345,6 +345,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Post("/intake/attachments", h.CustomerPortal.UploadAnonymousAttachment)
 				r.Patch("/intake/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAnonymousAttachment)
 				r.Post("/intake/requests", h.CustomerPortal.CreateAnonymousRequest)
+				r.Get("/suggestions", h.CustomerPortal.Suggestions)
 				r.Get("/session", h.CustomerPortal.Session)
 				r.Delete("/session", h.CustomerPortal.Logout)
 				r.Get("/requests", h.CustomerPortal.Requests)

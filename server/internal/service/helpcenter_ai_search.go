@@ -39,6 +39,10 @@ const (
 	helpcenterAnswerMinQueryChars   = 8
 	helpcenterAnswerMaxQueryChars   = 400
 	helpcenterAnswerConfidenceFloor = 0.5
+	// helpcenterSemanticRelevanceFloor drops chunks that share no keyword
+	// with the query and are only loosely similar. Measured on a live help
+	// center: unrelated questions score 0.16–0.30, related ones 0.6 and up.
+	helpcenterSemanticRelevanceFloor = 0.40
 	helpcenterAnswerTimeout         = 25 * time.Second
 
 	// helpcenterAnswerDailyLimit caps LLM answer generations per workspace per
@@ -161,7 +165,8 @@ func (s *HelpcenterAISearchService) SemanticSearch(ctx context.Context, workspac
 	if err != nil {
 		return nil, err
 	}
-	grouped := groupChunksByDocument(chunks)
+	// Nearest neighbours always exist; only relevant ones are results.
+	grouped := groupChunksByDocument(relevantChunks(chunks))
 	if len(grouped) == 0 {
 		return []model.PublicSearchResultResponse{}, nil
 	}
@@ -323,20 +328,85 @@ func (s *HelpcenterAISearchService) retrievePublicChunks(ctx context.Context, wo
 		s.queueAutoIndexBackfill(ctx, workspaceID)
 		return nil, nil
 	}
-	queryEmbedding := ""
-	if embeddingsAvailable(ctx, s.embeddingProvider, workspaceID) {
-		embedCtx := withAIActionMetering(ctx, workspaceID, aipolicy.ActionHelpcenterSearchEmbed, "helpcenter_search_embed", query, map[string]interface{}{"surface": "helpcenter_search"})
-		resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
-			Model:  s.embeddingModel,
-			Inputs: []string{query},
-		})
-		if err != nil {
-			slog.WarnContext(ctx, "helpcenter query embedding failed; lexical retrieval only", "error", err)
-		} else if len(resp.Vectors) > 0 {
-			queryEmbedding = formatVector(resp.Vectors[0])
+	queryEmbedding := s.queryEmbedding(ctx, workspaceID, query)
+	return s.chunkRepo.HybridSearchWithEmbeddingModel(ctx, workspaceID, spaceIDs, query, queryEmbedding, s.embeddingModel, limit)
+}
+
+// knowledgeSurfaceKey names the public surface a search serves, for metering.
+type knowledgeSurfaceKey struct{}
+
+// WithKnowledgeSurface records which public surface a search serves, such as
+// "portal_intake"; searches default to "helpcenter_search".
+func WithKnowledgeSurface(ctx context.Context, surface string) context.Context {
+	return context.WithValue(ctx, knowledgeSurfaceKey{}, surface)
+}
+
+// Search returns public help center results for every customer-facing
+// surface: semantic retrieval first, then full-text search when that fails
+// or finds nothing, so results are never worse than keyword search.
+func (s *HelpcenterAISearchService) Search(ctx context.Context, workspaceID, locale, fallbackLocale, query, spaceSlug string, limit int) ([]model.PublicSearchResultResponse, error) {
+	results, err := s.SemanticSearch(ctx, workspaceID, locale, fallbackLocale, query, spaceSlug, limit)
+	if err != nil {
+		slog.WarnContext(ctx, "helpcenter semantic search failed; falling back to full-text", "error", err, "workspace_id", workspaceID)
+		results = nil
+	}
+	if len(results) > 0 {
+		return results, nil
+	}
+	results, err = s.searchRepo.PublicSearch(ctx, workspaceID, locale, strings.TrimSpace(query), spaceSlug, limit)
+	if err != nil {
+		return nil, err
+	}
+	for i := range results {
+		results[i].RequestedLocale = locale
+	}
+	return results, nil
+}
+
+// helpcenterQueryEmbeddingTTL keeps query embeddings long enough to absorb
+// type-ahead and repeated questions without pinning stale models.
+const helpcenterQueryEmbeddingTTL = time.Hour
+
+// queryEmbedding embeds a search query, reusing a cached vector for the same
+// workspace, model and text. It returns "" when embeddings are unavailable,
+// which leaves retrieval lexical.
+func (s *HelpcenterAISearchService) queryEmbedding(ctx context.Context, workspaceID, query string) string {
+	if !embeddingsAvailable(ctx, s.embeddingProvider, workspaceID) {
+		return ""
+	}
+	key := helpcenterQueryEmbeddingKey(workspaceID, s.embeddingModel, query)
+	if s.redis != nil {
+		if cached, err := s.redis.Get(ctx, key).Result(); err == nil && cached != "" {
+			return cached
 		}
 	}
-	return s.chunkRepo.HybridSearchWithEmbeddingModel(ctx, workspaceID, spaceIDs, query, queryEmbedding, s.embeddingModel, limit)
+	surface, _ := ctx.Value(knowledgeSurfaceKey{}).(string)
+	if surface == "" {
+		surface = "helpcenter_search"
+	}
+	embedCtx := withAIActionMetering(ctx, workspaceID, aipolicy.ActionHelpcenterSearchEmbed, "helpcenter_search_embed", query, map[string]interface{}{"surface": surface})
+	resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{Model: s.embeddingModel, Inputs: []string{query}})
+	if err != nil {
+		slog.WarnContext(ctx, "helpcenter query embedding failed; lexical retrieval only", "error", err)
+		return ""
+	}
+	if len(resp.Vectors) == 0 {
+		return ""
+	}
+	vector := formatVector(resp.Vectors[0])
+	if s.redis != nil {
+		if err := s.redis.Set(ctx, key, vector, helpcenterQueryEmbeddingTTL).Err(); err != nil {
+			slog.WarnContext(ctx, "helpcenter query embedding cache write failed", "error", err, "workspace_id", workspaceID)
+		}
+	}
+	return vector
+}
+
+// helpcenterQueryEmbeddingKey identifies a query's embedding. Whitespace is
+// collapsed; case is kept because it can change the embedding.
+func helpcenterQueryEmbeddingKey(workspaceID, model, query string) string {
+	sum := sha256.Sum256([]byte(workspaceID + "\x00" + model + "\x00" + strings.Join(strings.Fields(query), " ")))
+	return "helpcenter:query-embedding:" + hex.EncodeToString(sum[:])
 }
 
 func (s *HelpcenterAISearchService) resolveArticleRefs(ctx context.Context, workspaceID, locale, fallbackLocale string, documentIDs []string) (map[string]model.PublicSearchResultResponse, error) {
@@ -371,6 +441,18 @@ func (s *HelpcenterAISearchService) resolveArticleRefs(ctx context.Context, work
 		}
 	}
 	return refs, nil
+}
+
+// relevantChunks keeps chunks that match a query keyword or are similar
+// enough to it to be worth showing.
+func relevantChunks(chunks []repository.DocsChunkSearchResult) []repository.DocsChunkSearchResult {
+	relevant := make([]repository.DocsChunkSearchResult, 0, len(chunks))
+	for _, chunk := range chunks {
+		if chunk.LexicalScore > 0 || chunk.VectorScore >= helpcenterSemanticRelevanceFloor {
+			relevant = append(relevant, chunk)
+		}
+	}
+	return relevant
 }
 
 type helpcenterChunkGroup struct {

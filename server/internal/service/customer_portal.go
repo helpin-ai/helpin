@@ -73,6 +73,8 @@ type CustomerPortalService struct {
 	baseURL string
 	// helpcenterDomain, when set, serves portals on help centers at /requests.
 	helpcenterDomain string
+	// knowledge suggests help center articles while customers write.
+	knowledge *HelpcenterAISearchService
 }
 
 // NewCustomerPortalService creates the customer portal service. It registers

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   session: vi.fn(),
   exchangeMagicLink: vi.fn(),
   requests: vi.fn(),
+  suggestions: vi.fn(),
   navigate: vi.fn(),
   outlet: null as (() => React.ReactNode) | null,
 }))
@@ -28,7 +29,7 @@ vi.mock('@/lib/services/customerPortalService', () => ({
   customerPortalSocketUrl: () => 'ws://portal.test/ws',
 }))
 
-import { CustomerPortalCallback, CustomerPortalHome, CustomerPortalProvider } from '../CustomerPortal'
+import { CustomerPortalCallback, CustomerPortalHome, CustomerPortalNewRequestPage, CustomerPortalProvider } from '../CustomerPortal'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -166,6 +167,33 @@ describe('CustomerPortalProvider', () => {
     expect(container.textContent).toContain('Company outage')
     expect(container.textContent).toContain('Asked by Bob Roe')
     expect(container.textContent).not.toContain('My invoice')
+  })
+
+  it('suggests help center articles while a request is written', async () => {
+    window.sessionStorage.clear()
+    mocks.pathname = '/portal/acme/new'
+    mocks.configuration.mockResolvedValue({ ...config, intake_enabled: true })
+    mocks.session.mockResolvedValue(customer)
+    mocks.suggestions.mockResolvedValue({ articles: [{ id: 'a', title: 'Exporting reports', url: 'https://help.example/export' }] })
+    mocks.outlet = () => <CustomerPortalNewRequestPage />
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root.render(<CustomerPortalProvider slug="acme" />))
+    await settle()
+    await settle()
+    const subject = container.querySelector<HTMLInputElement>('#request-subject')!
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(subject, 'Export fails on Safari')
+      subject.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 650)) })
+    await settle()
+    expect(mocks.suggestions).toHaveBeenCalledWith('acme', 'Export fails on Safari', expect.any(AbortSignal))
+    expect(container.textContent).toContain('Related articles')
+    const link = container.querySelector<HTMLAnchorElement>('a[href="https://help.example/export"]')
+    expect(link?.target).toBe('_blank')
   })
 
   it('shows no company tabs to a requester', async () => {

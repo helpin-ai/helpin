@@ -2166,21 +2166,14 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	var results []model.PublicSearchResultResponse
 	var err error
 	if mode == "semantic" && h.aiSearchSvc != nil {
-		// Semantic retrieval over public chunks; empty results or errors fall
-		// back to full-text search so the search box never regresses.
-		results, err = h.aiSearchSvc.SemanticSearch(r.Context(), cfg.WorkspaceID, locale, publicAnswerFallbackLocale(cfg, locale), query, spaceSlug, limit)
-		if err != nil {
-			slog.WarnContext(r.Context(), "helpcenter semantic search failed; falling back to full-text",
-				"error", err, "workspace_id", cfg.WorkspaceID)
-			results = nil
-		}
-	}
-	if len(results) == 0 {
+		// Semantic retrieval with the shared full-text fallback.
+		results, err = h.aiSearchSvc.Search(r.Context(), cfg.WorkspaceID, locale, publicAnswerFallbackLocale(cfg, locale), query, spaceSlug, limit)
+	} else {
 		results, err = h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, locale, query, spaceSlug, limit)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService
