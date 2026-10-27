@@ -305,37 +305,11 @@ export interface HelpCenterBootstrap {
   spaces: Space[]
 }
 
-/** An article an assistant answer is based on. */
-export interface AssistantCitation {
-  article_id: string
-  title: string
-  url?: string
-  portal_article_id?: string
-}
 
-export type AssistantMessageStatus = 'pending' | 'answered' | 'handed_off' | 'failed'
-
-/** A question or answer in an Ask AI conversation. */
-export interface AssistantMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  status: AssistantMessageStatus
-  progress_label?: string
-  citations: AssistantCitation[]
-  helpful?: boolean
-  created_at: string
-}
-
-export interface AssistantSession {
-  id: string
-  messages: AssistantMessage[]
-  turns_left: number
-}
-
-export interface AssistantTurn {
-  session_id: string
-  question_id: string
-  answer_id: string
-  turns_left: number
-}
+export type {
+  AssistantCitation,
+  AssistantMessage,
+  AssistantMessageStatus,
+  AssistantSessionView as AssistantSession,
+  AssistantTurn,
+} from '../../../packages/shared/src/help-assistant'

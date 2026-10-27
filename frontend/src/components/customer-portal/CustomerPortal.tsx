@@ -39,6 +39,7 @@ import { pastedFiles, usePortalFileDrop } from './portalFileDrop'
 import { usePortalAttachmentUploads } from './usePortalAttachmentUploads'
 import { PortalArticleSuggestions } from './PortalArticleSuggestions'
 import { PortalHelpArticleView, PortalHelpList } from './PortalHelp'
+import { PortalAskAI } from './PortalAssistant'
 import { usePortalArticleSuggestions } from './usePortalArticleSuggestions'
 import { clearPortalDrafts, usePortalDraft } from './usePortalDraft'
 import {
@@ -540,7 +541,12 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   handleSessionError: (error: unknown) => boolean
 }) {
   const { session } = usePortal()
-  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id)
+  // A help assistant handoff opens this form with the conversation filled in.
+  const [prefill] = useState(readRequestPrefill)
+  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill)
+  useEffect(() => {
+    if (prefill) clearRequestPrefill()
+  }, [prefill])
   const { subject, message } = draft
   const setSubject = (value: string) => setDraft({ subject: value, message })
   const setMessage = (value: string) => setDraft({ subject, message: value })
@@ -599,6 +605,31 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   )
 }
 
+/** readRequestPrefill reads a request filled in from the help assistant. */
+function readRequestPrefill(): { subject: string; message: string } | undefined {
+  const params = new URLSearchParams(window.location.search)
+  // The router JSON-quotes values that would otherwise parse as JSON.
+  const read = (key: string) => {
+    const value = params.get(key) ?? ''
+    try {
+      return value.startsWith('"') ? String(JSON.parse(value)) : value
+    } catch {
+      return value
+    }
+  }
+  const subject = read('subject').trim().slice(0, 200)
+  const message = read('message').trim().slice(0, 8000)
+  return subject || message ? { subject, message } : undefined
+}
+
+/** clearRequestPrefill drops the prefill from the address, so a reload starts from the saved draft. */
+function clearRequestPrefill() {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('subject')
+  url.searchParams.delete('message')
+  window.history.replaceState(window.history.state, '', url.toString())
+}
+
 export function CustomerPortalHome() {
   const { configuration, handleSessionError, session, slug, status } = usePortal()
   const [reload, setReload] = useState(0)
@@ -649,8 +680,9 @@ export function CustomerPortalHome() {
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
         title={companyName ? `${companyName} requests` : 'Your requests'}
-        actions={hasHelp || configuration?.intake_enabled ? (
+        actions={hasHelp || configuration?.intake_enabled || configuration?.assistant_enabled ? (
           <>
+            {configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
             {hasHelp ? (
               <QuietTextAction asChild>
                 <Link to="/portal/$slug/help" params={{ slug }}>Help articles</Link>
@@ -712,6 +744,7 @@ export function CustomerPortalNewRequestPage() {
         navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to all requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
         title="New request"
         description="Tell us what you need. We’ll reply here and by email."
+        actions={configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
       />
       {configuration?.intake_enabled ? (
         <NewRequestForm
@@ -732,7 +765,7 @@ export function CustomerPortalNewRequestPage() {
 // ── Help articles for signed-in customers ──────────────────────────────
 
 export function CustomerPortalHelpPage() {
-  const { handleSessionError, slug, status } = usePortal()
+  const { configuration, handleSessionError, slug, status } = usePortal()
   const navigate = useNavigate()
   if (status !== 'authenticated') return null
   const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
@@ -742,6 +775,7 @@ export function CustomerPortalHelpPage() {
         navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to all requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
         title="Help articles"
         description="Guides your support team shares with signed-in customers."
+        actions={configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
       />
       <PortalHelpList slug={slug} onSessionError={handleSessionError} />
     </PortalShell>

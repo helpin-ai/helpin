@@ -19,6 +19,8 @@ COPY help-center/package.json ./
 COPY help-center/pnpm-lock.yaml ./
 COPY help-center/ ./
 COPY packages/shared/src/docs-blocks.css /workspace/packages/shared/src/docs-blocks.css
+# The Ask AI conversation controller is shared with the customer portal.
+COPY packages/shared/src/help-assistant.ts /workspace/packages/shared/src/help-assistant.ts
 RUN pnpm install --frozen-lockfile
 RUN pnpm run build
 RUN pnpm prune --prod

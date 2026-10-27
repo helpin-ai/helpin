@@ -1,4 +1,5 @@
 import { API_BASE, uploadToS3 } from '@/lib/api'
+import type { AssistantResult, AssistantSessionView, AssistantTurn } from '@helpin-ai/shared'
 import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles'
 
 // The app calls the API directly. On a help center the portal calls the
@@ -28,6 +29,8 @@ export interface CustomerPortalConfiguration {
   branding: CustomerPortalBranding
   /** Where customers reach this portal; the app's /portal path redirects there. */
   public_url?: string
+  /** Whether the portal offers the Ask AI help assistant. */
+  assistant_enabled?: boolean
 }
 
 /** Server upload rules plus the portal's per-message file limit. */
@@ -211,6 +214,19 @@ export function customerPortalSocketUrl(slug: string) {
   return base.toString()
 }
 
+/**
+ * portalAssistantRequest returns a help assistant response in the result
+ * shape the shared conversation controller expects, instead of throwing.
+ */
+async function portalAssistantRequest<T>(slug: string, path: string, init?: RequestInit): Promise<AssistantResult<T>> {
+  try {
+    return { data: await portalRequest<T>(slug, path, init), error: null, status: 200 }
+  } catch (error) {
+    if (error instanceof CustomerPortalApiError) return { data: null, error: error.message, status: error.status }
+    return { data: null, error: error instanceof Error ? error.message : 'Request failed', status: 0 }
+  }
+}
+
 export const customerPortalService = {
   configuration: (slug: string) =>
     portalRequest<CustomerPortalConfiguration>(slug, ''),
@@ -256,6 +272,12 @@ export const customerPortalService = {
     portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, `/help/search?q=${encodeURIComponent(query)}`, { signal }).then((result) => result.articles),
   helpArticle: (slug: string, articleId: string) =>
     portalRequest<CustomerPortalHelpArticleDetail>(slug, `/help/articles/${encodeURIComponent(articleId)}`),
+  assistantAsk: (slug: string, body: { visitor_id: string; session_id?: string; message: string; page_article_id?: string }) =>
+    portalAssistantRequest<AssistantTurn>(slug, '/assistant/messages', { method: 'POST', body: JSON.stringify(body) }),
+  assistantSession: (slug: string, sessionId: string, visitorId: string) =>
+    portalAssistantRequest<AssistantSessionView>(slug, `/assistant/sessions/${encodeURIComponent(sessionId)}?visitor_id=${encodeURIComponent(visitorId)}`),
+  assistantFeedback: (slug: string, messageId: string, body: { visitor_id: string; session_id: string; helpful: boolean }) =>
+    portalAssistantRequest<{ saved: boolean }>(slug, `/assistant/messages/${encodeURIComponent(messageId)}/feedback`, { method: 'POST', body: JSON.stringify(body) }),
   requestDetail: (slug: string, reference: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
   reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>

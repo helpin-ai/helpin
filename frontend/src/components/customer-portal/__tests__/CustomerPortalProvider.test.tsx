@@ -202,6 +202,25 @@ describe('CustomerPortalProvider', () => {
     expect(link?.target).toBe('_blank')
   })
 
+  it('fills in a request handed off from the help assistant, then clears the address', async () => {
+    window.sessionStorage.clear()
+    window.history.replaceState(null, '', '/portal/acme/new?subject=Refund%20question&message=Can%20I%20get%20a%20refund%3F%0A%0AHelp%20assistant%3A%20The%20team%20can%20help.')
+    mocks.pathname = '/portal/acme/new'
+    mocks.configuration.mockResolvedValue({ ...config, intake_enabled: true })
+    mocks.session.mockResolvedValue(customer)
+    mocks.suggestions.mockResolvedValue({ articles: [] })
+    mocks.outlet = () => <CustomerPortalNewRequestPage />
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root.render(<CustomerPortalProvider slug="acme" />))
+    await settle()
+    await settle()
+    expect(container.querySelector<HTMLInputElement>('#request-subject')?.value).toBe('Refund question')
+    expect(container.querySelector<HTMLTextAreaElement>('#request-message')?.value).toContain('Help assistant: The team can help.')
+    expect(window.location.search).toBe('')
+  })
+
   it('clears saved drafts when the customer signs out', async () => {
     const key = 'helpin.portal.acme.1.new-request.draft'
     window.sessionStorage.setItem(key, JSON.stringify({ subject: 'Private', message: 'Details' }))

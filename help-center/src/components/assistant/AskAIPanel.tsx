@@ -29,7 +29,7 @@ function helpinWidget(): HelpinWidget | null {
  */
 export function AskAIPanel({ request, onClose }: { request: AskAIRequest | null; onClose: () => void }) {
   const { config, subdomain, basepath } = useDocsContext()
-  const assistant = useHelpAssistant(true)
+  const assistant = useHelpAssistant()
   const [draft, setDraft] = useState('')
   const [page, setPage] = useState<AskAIRequest | null>(null)
   const [handoffNote, setHandoffNote] = useState<string | null>(null)

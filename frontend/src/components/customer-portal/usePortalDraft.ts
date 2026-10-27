@@ -2,15 +2,16 @@ import { useCallback, useState } from 'react'
 
 type PortalDraft = { subject: string; message: string }
 
-function readDraft(storageKey: string): PortalDraft {
+function readDraft(storageKey: string, initial?: PortalDraft): PortalDraft {
   try {
     const stored = JSON.parse(window.sessionStorage.getItem(storageKey) ?? '{}') as { subject?: unknown; message?: unknown }
-    return {
+    const draft = {
       subject: typeof stored.subject === 'string' ? stored.subject : '',
       message: typeof stored.message === 'string' ? stored.message : '',
     }
+    return !draft.subject && !draft.message && initial ? initial : draft
   } catch {
-    return { subject: '', message: '' }
+    return initial ?? { subject: '', message: '' }
   }
 }
 
@@ -30,11 +31,12 @@ export function clearPortalDrafts(slug: string) {
 /**
  * usePortalDraft keeps a request draft for this browser tab, so leaving the
  * form (for example to read a suggested article) does not lose it. Storage can
- * be unavailable; the draft then lives only in the form.
+ * be unavailable; the draft then lives only in the form. An initial draft,
+ * such as a help assistant conversation, applies only when none is saved.
  */
-export function usePortalDraft(slug: string, customerID: string) {
+export function usePortalDraft(slug: string, customerID: string, initial?: PortalDraft) {
   const storageKey = `helpin.portal.${slug}.${customerID}.new-request.draft`
-  const [stored, setStored] = useState(() => ({ storageKey, draft: readDraft(storageKey) }))
+  const [stored, setStored] = useState(() => ({ storageKey, draft: readDraft(storageKey, initial) }))
   let draft = stored.draft
   if (stored.storageKey !== storageKey) {
     draft = readDraft(storageKey)
