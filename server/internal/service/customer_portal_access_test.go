@@ -59,7 +59,7 @@ func TestCustomerPortalAutoCreatedContactIsNotEligible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil); err != nil {
+	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var contacts int64
@@ -112,7 +112,7 @@ func TestCustomerPortalRebindRequiresFreshSignIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil); err != nil {
+	if _, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,7 +233,7 @@ func TestCustomerPortalIntakeReceiptIsThrottled(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil); err != nil {
+		if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -253,7 +253,7 @@ func TestCustomerPortalResendConfirmationPublishesOnlyThatRequest(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.CreateAnonymousRequest(ctx, ws, token, subject, "Please help", nil); err != nil {
+		if err := svc.CreateAnonymousRequest(ctx, ws, token, subject, "Please help", nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		var conversation model.SupportConversation

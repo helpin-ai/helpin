@@ -37,7 +37,7 @@ func TestCustomerPortalMergedRequestShowsSharedReplies(t *testing.T) {
 	ctx := context.Background()
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Export broken", "The export fails.", nil)
+	request, err := svc.CreateRequest(ctx, access, "Export broken", "The export fails.", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestCustomerPortalListPreviewSkipsEmailOnlyReplies(t *testing.T) {
 	ctx := context.Background()
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Export broken", "The export fails.", nil)
+	request, err := svc.CreateRequest(ctx, access, "Export broken", "The export fails.", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

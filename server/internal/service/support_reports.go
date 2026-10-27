@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -118,6 +119,15 @@ func (s *SupportReportService) Overview(ctx context.Context, req model.SupportRe
 		return nil, err
 	}
 	overview.SLA = summarizeSupportReportSLA(slaRows)
+	// Requests have no inbox while they are written, so intake is reported
+	// only for the whole workspace.
+	if len(req.MailboxIDs) == 0 && (len(req.Channels) == 0 || slices.Contains(req.Channels, "portal")) {
+		intake, err := s.conversations.ReportPortalIntake(ctx, req.WorkspaceID, current.from, current.to, time.Now().UTC())
+		if err != nil {
+			return nil, err
+		}
+		overview.PortalIntake = intake
+	}
 	return overview, nil
 }
 

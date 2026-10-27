@@ -52,7 +52,7 @@ jobs:
             schema)
               psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION vector; CREATE EXTENSION pgcrypto;'
               COMMUNITY_TEST_DATABASE_URL="$TEST_DATABASE_URL" go test -tags integration ./internal/dbmigrate -run '^TestFreshCommunityFoundationPostgres$' -count=1 -v
-              CONTACT_PRIVACY_TEST_DATABASE_URL="$TEST_DATABASE_URL" go test -tags integration ./internal/repository ./internal/service -run '^(TestContactAnonymization|TestCustomerPortalCompanyPostgres)' -count=1
+              CONTACT_PRIVACY_TEST_DATABASE_URL="$TEST_DATABASE_URL" go test -tags integration ./internal/repository ./internal/service -run '^(TestContactAnonymization|TestCustomerPortalCompanyPostgres|TestCustomerPortalIntakePostgres)' -count=1
               ;;
             *) exit 1 ;;
           esac

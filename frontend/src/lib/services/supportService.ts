@@ -27,7 +27,7 @@ import type {
   SupportInboxSettings,
   CustomerPortalAccessSummary,
   CustomerPortalCompanyAccess,
-  CustomerPortalCompanyAudience,
+  CustomerPortalConversationContext,
   CustomerPortalRole,
   CustomerPortalContactAccess,
   CustomerPortalContactAccessValue,
@@ -386,8 +386,8 @@ export const supportService = {
     api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`, { default_role: defaultRole }),
   allowCompanyPortalContacts: (workspaceId: string, companyId: string) =>
     api.post<{ allowed: number; company: CustomerPortalCompanyAccess }>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/allow-contacts${qs(workspaceId)}`, {}),
-  getConversationPortalAudience: (workspaceId: string, conversationId: string) =>
-    api.get<{ company: CustomerPortalCompanyAudience | null }>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-audience${qs(workspaceId)}`),
+  getConversationPortalContext: (workspaceId: string, conversationId: string) =>
+    api.get<CustomerPortalConversationContext>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-context${qs(workspaceId)}`),
   resendPortalConfirmation: (workspaceId: string, conversationId: string) =>
     api.post<void>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-confirmation${qs(workspaceId)}`, {}),
   /**

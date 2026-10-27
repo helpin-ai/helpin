@@ -121,3 +121,43 @@ func derefPortalTestString(value *string) string {
 	}
 	return *value
 }
+
+// Portal intake events and the deflection report on the real ledger.
+func TestCustomerPortalIntakePostgres(t *testing.T) {
+	db := contactPrivacyDB(t)
+	ctx := context.Background()
+	ws := uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, ws)
+	portal := NewCustomerPortalRepository(db)
+	reports := NewSupportConversationRepository(db)
+	now := time.Now().UTC()
+	deflected, asked := uuid.NewString(), uuid.NewString()
+	article := uuid.NewString()
+	for _, step := range []struct {
+		intake, event string
+		articles      []string
+	}{
+		{deflected, model.PortalIntakeEventShown, []string{article}},
+		{deflected, model.PortalIntakeEventOpened, []string{article}},
+		{asked, model.PortalIntakeEventShown, []string{article}},
+		{asked, model.PortalIntakeEventOpened, []string{article}},
+		{asked, model.PortalIntakeEventSubmitted, []string{article}},
+	} {
+		if err := portal.RecordIntakeEvent(ctx, ws, step.intake, step.event, step.articles, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO support_portal_intake_events (workspace_id, intake_id, event_type) VALUES (?, ?, 'clicked')`, ws, deflected).Error; err == nil {
+		t.Fatal("unknown intake event accepted")
+	}
+	// Judged after the deflection window has passed.
+	summary, err := reports.ReportPortalIntake(ctx, ws, now.Add(-time.Hour), now.Add(time.Minute), now.Add(PortalIntakeDeflectionWindow+time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := model.SupportReportPortalIntake{WithSuggestions: 2, Opened: 2, SubmittedAfterOpening: 1, LikelyDeflected: 1}
+	if summary == nil || *summary != want {
+		t.Fatalf("summary = %+v, want %+v", summary, want)
+	}
+	privacyCheck(t, db, `SELECT article_ids = jsonb_build_array(?::text) AND article_count = 1 FROM support_portal_intake_events WHERE intake_id = ? AND event_type = 'shown'`, article, deflected)
+}

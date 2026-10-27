@@ -141,4 +141,24 @@ type SupportReportOverview struct {
 	Teammates []SupportReportTeammate `json:"teammates"`
 	CSAT      SupportReportCSAT       `json:"csat"`
 	SLA       SupportReportSLA        `json:"sla"`
+	// PortalIntake is present for workspace-wide reports with portal intake
+	// activity in the period; requests are not in an inbox while written.
+	PortalIntake *SupportReportPortalIntake `json:"portal_intake,omitempty"`
+}
+
+// SupportReportPortalIntake counts portal request forms by what customers
+// did with suggested help center articles.
+type SupportReportPortalIntake struct {
+	// WithSuggestions counts forms that showed at least one article.
+	WithSuggestions int `json:"with_suggestions"`
+	// Opened counts forms where the customer opened an article.
+	Opened int `json:"opened"`
+	// SubmittedAfterOpening counts forms submitted after opening an article.
+	SubmittedAfterOpening int `json:"submitted_after_opening"`
+	// LikelyDeflected counts forms with an opened article and no request
+	// within 30 minutes of the last opening.
+	LikelyDeflected int `json:"likely_deflected"`
+	// SubmittedWithoutSuggestions counts requests written after the help
+	// center suggested nothing.
+	SubmittedWithoutSuggestions int `json:"submitted_without_suggestions"`
 }

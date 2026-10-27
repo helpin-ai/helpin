@@ -362,10 +362,10 @@ export function useAllowCompanyPortalContacts(workspaceId: string, companyId: st
   });
 }
 
-export function useConversationPortalAudience(workspaceId: string, conversationId: string, enabled = true) {
+export function useConversationPortalContext(workspaceId: string, conversationId: string, enabled = true) {
   return useQuery({
-    queryKey: queryKeys.support.portalAudience(workspaceId, conversationId),
-    queryFn: async () => unwrap(await supportService.getConversationPortalAudience(workspaceId, conversationId)).company,
+    queryKey: queryKeys.support.portalContext(workspaceId, conversationId),
+    queryFn: async () => unwrap(await supportService.getConversationPortalContext(workspaceId, conversationId)),
     enabled: !!workspaceId && !!conversationId && enabled,
     staleTime: 60_000,
   });

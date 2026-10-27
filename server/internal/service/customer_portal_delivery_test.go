@@ -39,7 +39,7 @@ func TestCustomerPortalAgentReplyReachesIneligibleSubmitterByEmail(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := portal.CreateAnonymousRequest(ctx, ws, token, "Broken export", "The export fails", nil); err != nil {
+	if err := portal.CreateAnonymousRequest(ctx, ws, token, "Broken export", "The export fails", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(sender.sent) != 1 || strings.Contains(sender.sent[0].text, "token=") {

@@ -346,6 +346,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Patch("/intake/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAnonymousAttachment)
 				r.Post("/intake/requests", h.CustomerPortal.CreateAnonymousRequest)
 				r.Get("/suggestions", h.CustomerPortal.Suggestions)
+				r.Post("/suggestions/events", h.CustomerPortal.SuggestionEvent)
 				r.Get("/session", h.CustomerPortal.Session)
 				r.Delete("/session", h.CustomerPortal.Logout)
 				r.Get("/requests", h.CustomerPortal.Requests)
@@ -1235,7 +1236,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}", h.CustomerPortalAdmin.UpdateCompanyAccess)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/portal/companies/{companyId}/allow-contacts", h.CustomerPortalAdmin.AllowCompanyContacts)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/conversations/{id}/portal-confirmation", h.CustomerPortalAdmin.ResendIntakeConfirmation)
-					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/portal-audience", h.CustomerPortalAdmin.ConversationCompanyAudience)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/portal-context", h.CustomerPortalAdmin.ConversationPortalContext)
 				}
 
 				// Canned responses

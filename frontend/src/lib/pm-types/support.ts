@@ -1517,6 +1517,16 @@ export interface CustomerPortalCompanyAudience {
   members: number;
 }
 
+/** What a teammate should know about a conversation's portal side. */
+export interface CustomerPortalConversationContext {
+  company: CustomerPortalCompanyAudience | null;
+  /** Help center articles the customer saw while writing the request. */
+  intake: {
+    opened_articles: Array<{ id: string; title: string; space_name?: string; url: string }>;
+    suggested_count: number;
+  } | null;
+}
+
 export interface SupportConversationMerge {
   id: string;
   operation_id: string;

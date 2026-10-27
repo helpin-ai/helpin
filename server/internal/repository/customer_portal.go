@@ -71,6 +71,8 @@ type PortalRequestDraft struct {
 	AttachmentIDs   []string
 	UploadSessionID string
 	DispatchAIMode  string
+	// Intake records what the customer saw while writing, when known.
+	Intake *model.PortalIntake
 }
 
 // PortalLinkCounts summarizes recently issued sign-in links.
@@ -148,13 +150,21 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 			SenderType: "customer", SenderDisplayName: draft.DisplayName,
 			MessageType: "reply", Content: draft.Description,
 		}
-		// Company colleagues read the request, so its first message names its author.
+		// Company colleagues read the request, so its first message names its
+		// author; teammates see which articles the customer already read.
+		messageMetadata := map[string]any{}
 		if draft.Identity != nil {
-			author, err := json.Marshal(map[string]string{"portal_identity_id": draft.Identity.ID})
+			messageMetadata["portal_identity_id"] = draft.Identity.ID
+		}
+		if draft.Intake != nil {
+			messageMetadata["portal_intake"] = draft.Intake
+		}
+		if len(messageMetadata) > 0 {
+			encoded, err := json.Marshal(messageMetadata)
 			if err != nil {
 				return err
 			}
-			message.Metadata = string(author)
+			message.Metadata = string(encoded)
 		}
 		portalChannel := "portal"
 		message.ViaChannel = &portalChannel
@@ -173,6 +183,11 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 		}
 		if err := projectFirstPortalMessage(tx, conversation, message); err != nil {
 			return err
+		}
+		if draft.Intake != nil {
+			if err := recordPortalIntakeEvent(tx, draft.WorkspaceID, draft.Intake.IntakeID, model.PortalIntakeEventSubmitted, draft.Intake.SuggestedArticleIDs, &conversation.ID); err != nil {
+				return err
+			}
 		}
 		var identityID *string
 		if draft.Identity != nil {

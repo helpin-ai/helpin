@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // companyPortal is a workspace where Alice and Bob are allowed contacts of
@@ -37,7 +38,7 @@ func setupCompanyPortal(t *testing.T) *companyPortal {
 	// Stored from the company side to cover both association directions.
 	linkCompanyContact(t, db, ws.ID, p.acme, p.bob)
 	p.bobIn = signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "bob@acme.test", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(context.Background(), p.bobIn, "Invoices are missing", "We cannot find March invoices", nil)
+	request, err := svc.CreateRequest(context.Background(), p.bobIn, "Invoices are missing", "We cannot find March invoices", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func TestCompanyPortalRequestCompanyIsSnapshotted(t *testing.T) {
 	// A contact of two companies leaves the company for a teammate to choose.
 	other := createPortalCompany(t, p.db, p.ws.ID, "Other", nil)
 	linkContactCompany(t, p.db, p.ws.ID, p.alice, other)
-	request, err := p.svc.CreateRequest(context.Background(), p.aliceIn, "Two companies", "Which account?", nil)
+	request, err := p.svc.CreateRequest(context.Background(), p.aliceIn, "Two companies", "Which account?", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +566,7 @@ func TestCompanyPortalConversationAudience(t *testing.T) {
 	p := setupCompanyPortal(t)
 	ctx := context.Background()
 	conversationID := p.bobConversationID(t)
-	audience, err := p.svc.ConversationCompanyAudience(ctx, p.ws.ID, conversationID)
+	audience, err := portalAudience(t, p, conversationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,11 +576,21 @@ func TestCompanyPortalConversationAudience(t *testing.T) {
 	}
 
 	p.exec(t, `UPDATE crm_companies SET portal_default_role = NULL WHERE id = ?`, p.acme)
-	audience, err = p.svc.ConversationCompanyAudience(ctx, p.ws.ID, conversationID)
+	audience, err = portalAudience(t, p, conversationID)
 	if err != nil || audience != nil {
 		t.Fatalf("audience with company portal off = %+v, %v", audience, err)
 	}
-	if _, err := p.svc.ConversationCompanyAudience(ctx, p.ws.ID, uuid.NewString()); !errors.Is(err, ErrPortalRequestNotFound) {
+	if _, err := p.svc.ConversationPortalContext(ctx, p.ws.ID, uuid.NewString()); !errors.Is(err, ErrPortalRequestNotFound) {
 		t.Fatalf("unknown conversation err = %v", err)
 	}
+}
+
+// portalAudience returns the company part of a conversation's portal context.
+func portalAudience(t *testing.T, p *companyPortal, conversationID string) (*repository.PortalCompanyAudience, error) {
+	t.Helper()
+	portalContext, err := p.svc.ConversationPortalContext(context.Background(), p.ws.ID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	return portalContext.Company, nil
 }

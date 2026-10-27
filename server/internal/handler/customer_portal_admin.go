@@ -155,15 +155,16 @@ func (h *CustomerPortalAdminHandler) UpdateContactRole(w http.ResponseWriter, r 
 	writeJSON(w, http.StatusOK, access)
 }
 
-// ConversationCompanyAudience handles
-// GET /api/support/inbox/conversations/{id}/portal-audience. The response's
-// company is null when only the requester can read the conversation.
-func (h *CustomerPortalAdminHandler) ConversationCompanyAudience(w http.ResponseWriter, r *http.Request) {
+// ConversationPortalContext handles
+// GET /api/support/inbox/conversations/{id}/portal-context: who besides the
+// requester reads it in the portal, and the articles the customer opened
+// before writing in. Either part is null when it does not apply.
+func (h *CustomerPortalAdminHandler) ConversationPortalContext(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	audience, err := h.portal.ConversationCompanyAudience(r.Context(), workspaceID, chi.URLParam(r, "id"))
+	portalContext, err := h.portal.ConversationPortalContext(r.Context(), workspaceID, chi.URLParam(r, "id"))
 	if err != nil {
 		writePortalAdminError(w, r, workspaceID, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"company": audience})
+	writeJSON(w, http.StatusOK, portalContext)
 }

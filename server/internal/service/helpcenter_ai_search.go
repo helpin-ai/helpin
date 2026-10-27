@@ -409,6 +409,12 @@ func helpcenterQueryEmbeddingKey(workspaceID, model, query string) string {
 	return "helpcenter:query-embedding:" + hex.EncodeToString(sum[:])
 }
 
+// PublicArticles returns the published articles among documentIDs in the
+// help center's locale, keyed by document id.
+func (s *HelpcenterAISearchService) PublicArticles(ctx context.Context, workspaceID, locale string, documentIDs []string) (map[string]model.PublicSearchResultResponse, error) {
+	return s.resolveArticleRefs(ctx, workspaceID, locale, "", documentIDs)
+}
+
 func (s *HelpcenterAISearchService) resolveArticleRefs(ctx context.Context, workspaceID, locale, fallbackLocale string, documentIDs []string) (map[string]model.PublicSearchResultResponse, error) {
 	refs := map[string]model.PublicSearchResultResponse{}
 	if len(documentIDs) == 0 {

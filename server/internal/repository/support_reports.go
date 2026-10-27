@@ -374,3 +374,47 @@ func (r *SupportConversationRepository) ListReportSLA(ctx context.Context, scope
 	}
 	return rows, nil
 }
+
+// PortalIntakeDeflectionWindow is how long after opening an article a form
+// must stay unsubmitted to count as likely deflected.
+const PortalIntakeDeflectionWindow = 30 * time.Minute
+
+// ReportPortalIntake summarizes portal request forms started in [from, to).
+// It returns nil when there was no intake activity. now bounds deflection, so
+// forms still inside the window are not counted as deflected yet.
+func (r *SupportConversationRepository) ReportPortalIntake(ctx context.Context, workspaceID string, from, to, now time.Time) (*model.SupportReportPortalIntake, error) {
+	var row struct {
+		Forms                       int
+		WithSuggestions             int
+		Opened                      int
+		SubmittedAfterOpening       int
+		LikelyDeflected             int
+		SubmittedWithoutSuggestions int
+	}
+	err := r.db.WithContext(ctx).Raw(`WITH intakes AS (
+			SELECT intake_id,
+				MAX(CASE WHEN event_type = 'shown' THEN 1 ELSE 0 END) AS shown,
+				MAX(CASE WHEN event_type = 'opened' THEN 1 ELSE 0 END) AS opened,
+				MAX(CASE WHEN event_type = 'submitted' THEN 1 ELSE 0 END) AS submitted,
+				MAX(CASE WHEN event_type = 'submitted' AND article_count = 0 THEN 1 ELSE 0 END) AS submitted_without,
+				MAX(CASE WHEN event_type = 'opened' THEN occurred_at END) AS last_opened
+			FROM support_portal_intake_events
+			WHERE workspace_id = @workspace
+			GROUP BY intake_id
+			HAVING MIN(occurred_at) >= @from AND MIN(occurred_at) < @to)
+		SELECT COUNT(*) AS forms,
+			COALESCE(SUM(shown), 0) AS with_suggestions,
+			COALESCE(SUM(opened), 0) AS opened,
+			COALESCE(SUM(CASE WHEN opened = 1 AND submitted = 1 THEN 1 ELSE 0 END), 0) AS submitted_after_opening,
+			COALESCE(SUM(CASE WHEN opened = 1 AND submitted = 0 AND last_opened < @cutoff THEN 1 ELSE 0 END), 0) AS likely_deflected,
+			COALESCE(SUM(submitted_without), 0) AS submitted_without_suggestions
+		FROM intakes`,
+		map[string]any{"workspace": workspaceID, "from": from, "to": to, "cutoff": now.Add(-PortalIntakeDeflectionWindow)}).Scan(&row).Error
+	if err != nil || row.Forms == 0 {
+		return nil, err
+	}
+	return &model.SupportReportPortalIntake{
+		WithSuggestions: row.WithSuggestions, Opened: row.Opened, SubmittedAfterOpening: row.SubmittedAfterOpening,
+		LikelyDeflected: row.LikelyDeflected, SubmittedWithoutSuggestions: row.SubmittedWithoutSuggestions,
+	}, nil
+}

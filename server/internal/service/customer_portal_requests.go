@@ -119,7 +119,7 @@ func (s *CustomerPortalService) ConfirmAnonymousAttachment(ctx context.Context, 
 // the address owner exchanges the confirmation link sent here. An address
 // that may not use the portal gets a receipt without a link instead, and
 // agents reply by email. Submitting never grants portal access.
-func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *PortalWorkspace, secret, subject, description string, attachmentIDs []string) error {
+func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *PortalWorkspace, secret, subject, description string, attachmentIDs []string, intake *model.PortalIntake) error {
 	session, err := s.anonymousIntakeSession(ctx, ws, secret)
 	if err != nil {
 		return err
@@ -131,11 +131,14 @@ func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *
 	if err := s.validateAttachments(ctx, ws, attachmentIDs, session.ID, ""); err != nil {
 		return err
 	}
+	if intake, err = normalizePortalIntake(intake); err != nil {
+		return err
+	}
 	draft, err := s.routeNewRequest(ctx, ws.ID, session.Email, nil)
 	if err != nil {
 		return err
 	}
-	draft.Subject, draft.Description, draft.AttachmentIDs = subject, description, attachmentIDs
+	draft.Subject, draft.Description, draft.AttachmentIDs, draft.Intake = subject, description, attachmentIDs, intake
 	var conversation *model.SupportConversation
 	err = s.repo.ConsumeIntakeSession(ctx, ws.ID, portalHash(secret), time.Now(), func(tx *gorm.DB, current *model.PortalIntakeSession) error {
 		draft.UploadSessionID = current.ID
@@ -147,6 +150,7 @@ func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *
 		return err
 	}
 	s.publishNewRequest(ctx, conversation)
+	s.recordIntakeCoverageSignal(ws, conversation, intake)
 	result, err := s.eligibility(ctx, s.repo, ws, session.Email)
 	if err != nil {
 		slog.ErrorContext(ctx, "portal eligibility lookup failed", "workspace_id", ws.ID, "conversation_id", conversation.ID, "error", err)
@@ -184,7 +188,7 @@ func (s *CustomerPortalService) sendIntakeReceipt(ctx context.Context, ws *Porta
 }
 
 // CreateRequest creates a request owned by the signed-in identity.
-func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *PortalAccess, subject, description string, attachmentIDs []string) (*model.SupportPortalRequest, error) {
+func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *PortalAccess, subject, description string, attachmentIDs []string, intake *model.PortalIntake) (*model.SupportPortalRequest, error) {
 	if !access.Workspace.Settings.PortalIntakeEnabled {
 		return nil, ErrPortalIntakeDisabled
 	}
@@ -195,13 +199,16 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	if err := s.validateAttachments(ctx, &access.Workspace, attachmentIDs, access.Session.ID, ""); err != nil {
 		return nil, err
 	}
+	if intake, err = normalizePortalIntake(intake); err != nil {
+		return nil, err
+	}
 	identity := access.Identity
 	draft, err := s.routeNewRequest(ctx, access.Workspace.ID, identity.Email, identity.DisplayName)
 	if err != nil {
 		return nil, err
 	}
 	draft.Identity = &identity
-	draft.Subject, draft.Description, draft.AttachmentIDs, draft.UploadSessionID = subject, description, attachmentIDs, access.Session.ID
+	draft.Subject, draft.Description, draft.AttachmentIDs, draft.UploadSessionID, draft.Intake = subject, description, attachmentIDs, access.Session.ID, intake
 	if portalAIQueueAllowed(access.Workspace.Settings, draft.OwnerID) {
 		draft.DispatchAIMode = access.Workspace.Settings.PortalAIMode
 	}
@@ -210,6 +217,7 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 		return nil, err
 	}
 	s.publishNewRequest(ctx, conversation)
+	s.recordIntakeCoverageSignal(&access.Workspace, conversation, intake)
 	return request, nil
 }
 

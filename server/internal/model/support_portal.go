@@ -185,3 +185,33 @@ type PortalSenderAvatar struct {
 func (s SupportInboxSettings) PortalAIDraftsEnabled() bool {
 	return s.PortalEnabled && s.PortalAIMode == SupportPortalAIModeInternalNote
 }
+
+// Portal intake events record what happens while a request is written.
+const (
+	PortalIntakeEventShown     = "shown"
+	PortalIntakeEventOpened    = "opened"
+	PortalIntakeEventSubmitted = "submitted"
+)
+
+// SupportPortalIntakeEvent is one step of writing a portal request. ArticleIDs
+// holds the articles shown or opened; a submission holds those suggested.
+type SupportPortalIntakeEvent struct {
+	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null"`
+	IntakeID       string    `json:"intake_id" gorm:"type:uuid;not null"`
+	EventType      string    `json:"event_type" gorm:"not null"`
+	ArticleIDs     string    `json:"article_ids" gorm:"type:jsonb;not null;default:'[]'"`
+	ArticleCount   int       `json:"article_count" gorm:"not null;default:0"`
+	ConversationID *string   `json:"conversation_id,omitempty" gorm:"type:uuid"`
+	OccurredAt     time.Time `json:"occurred_at" gorm:"not null"`
+}
+
+func (SupportPortalIntakeEvent) TableName() string { return "support_portal_intake_events" }
+
+// PortalIntake is what the customer saw while writing a request: the articles
+// suggested and the ones opened. It is stored on the request's first message.
+type PortalIntake struct {
+	IntakeID            string   `json:"intake_id"`
+	SuggestedArticleIDs []string `json:"suggested_article_ids"`
+	OpenedArticleIDs    []string `json:"opened_article_ids"`
+}

@@ -42,6 +42,8 @@ type portalRequestBody struct {
 	Subject       string   `json:"subject"`
 	Message       string   `json:"message"`
 	AttachmentIDs []string `json:"attachment_ids"`
+	// Intake is what the customer saw while writing; optional.
+	Intake *model.PortalIntake `json:"intake"`
 }
 
 // workspace resolves the enabled portal for the slug or writes a 404.
@@ -255,7 +257,7 @@ func (h *CustomerPortalHandler) CreateAnonymousRequest(w http.ResponseWriter, r 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs); err != nil {
+	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs, body.Intake); err != nil {
 		writePortalError(w, r, ws.ID, err, "unable to create request")
 		return
 	}
@@ -280,6 +282,29 @@ func (h *CustomerPortalHandler) Suggestions(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"articles": suggestions})
 }
 
+// SuggestionEvent records that suggestions were shown, or one was opened,
+// while a request was written. Like suggestions it needs no sign-in.
+func (h *CustomerPortalHandler) SuggestionEvent(w http.ResponseWriter, r *http.Request) {
+	ws := h.workspace(w, r)
+	if ws == nil {
+		return
+	}
+	var body struct {
+		IntakeID   string   `json:"intake_id"`
+		Event      string   `json:"event"`
+		ArticleIDs []string `json:"article_ids"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.portal.RecordIntakeEvent(r.Context(), ws, body.IntakeID, body.Event, body.ArticleIDs); err != nil {
+		writePortalError(w, r, ws.ID, err, "unable to record the event")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // CreateRequest creates a request for the signed-in customer.
 func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Request) {
 	access := h.authorized(w, r)
@@ -291,7 +316,7 @@ func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs)
+	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs, body.Intake)
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to create request")
 		return
@@ -464,7 +489,7 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalIntakeDisabled), errors.Is(err, service.ErrPortalAnonymousIntakeDisabled), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
 		writeError(w, http.StatusForbidden, err.Error())
-	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalReplyInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalTooManyAttachments):
+	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalReplyInvalid), errors.Is(err, service.ErrPortalIntakeInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalTooManyAttachments):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		slog.ErrorContext(r.Context(), "portal request failed", "workspace_id", workspaceID, "action", r.Method, "error", err)

@@ -30,6 +30,7 @@ import type { SupportReportOverview } from '@/lib/supportReportTypes'
 import { getInitials } from '@/lib/initials'
 import { cn, timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { ReportPortalIntake } from './ReportPortalIntake'
 import { ReportDailyChart } from './ReportDailyChart'
 
 const ALL_INBOXES = 'all'
@@ -262,6 +263,8 @@ export function SupportReportsPage() {
               />
             </QuietMetricGrid>
           </QuietSection>
+
+          {report.portal_intake ? <ReportPortalIntake intake={report.portal_intake} workspaceSlug={workspaceSlug} /> : null}
 
           <QuietSection title="Customer satisfaction" count={summary.csat_responses ? `${summary.csat_responses} ratings` : undefined}>
             {summary.csat_responses === 0 ? (

@@ -127,10 +127,18 @@ export interface CreatedCustomerPortalRequest extends CustomerPortalRequest {
   resolved_at?: string | null
 }
 
+/** What the customer saw while writing a request. */
+export interface CustomerPortalIntake {
+  intake_id: string
+  suggested_article_ids: string[]
+  opened_article_ids: string[]
+}
+
 export interface CreateCustomerPortalRequestInput {
   subject: string
   message: string
   attachment_ids?: string[]
+  intake?: CustomerPortalIntake
 }
 
 export class CustomerPortalApiError extends Error {
@@ -219,6 +227,8 @@ export const customerPortalService = {
     const query = params.toString()
     return portalRequest<CustomerPortalRequest[]>(slug, `/requests${query ? `?${query}` : ''}`)
   },
+  suggestionEvent: (slug: string, event: { intake_id: string; event: 'shown' | 'opened'; article_ids: string[] }) =>
+    portalRequest<void>(slug, '/suggestions/events', { method: 'POST', body: JSON.stringify(event) }),
   suggestions: (slug: string, text: string, signal?: AbortSignal) =>
     portalRequest<{ articles: CustomerPortalArticleSuggestion[] }>(slug, `/suggestions?q=${encodeURIComponent(text)}`, { signal }),
   requestDetail: (slug: string, reference: string) =>

@@ -341,7 +341,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
     setError(null)
     try {
       await customerPortalService.createAnonymousRequest(slug, token, {
-        subject: subject.trim(), message: message.trim(), attachment_ids: uploads.attachmentIds,
+        subject: subject.trim(), message: message.trim(), attachment_ids: uploads.attachmentIds, intake: suggestions.intake(),
       })
       setSubmitted(true)
       setToken('')
@@ -379,7 +379,7 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
           <PortalField id="intake-message" label="How can we help?">
             <QuietUnderlineTextarea id="intake-message" required rows={4} className="max-h-none min-h-24" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} />
           </PortalField>
-          <PortalArticleSuggestions articles={suggestions.articles} />
+          <PortalArticleSuggestions articles={suggestions.articles} onOpen={suggestions.recordOpened} />
           <PortalDropCue visible={dragging} />
           {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
           {error ? <PortalError>{error}</PortalError> : null}
@@ -560,6 +560,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         subject: subject.trim(),
         message: message.trim(),
         attachment_ids: uploads.attachmentIds,
+        intake: suggestions.intake(),
       })
       uploads.clear()
       clearDraft()
@@ -581,7 +582,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         <PortalField id="request-message" label="How can we help?">
           <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
         </PortalField>
-        <PortalArticleSuggestions className="lg:hidden" articles={suggestions.articles} />
+        <PortalArticleSuggestions className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
         <PortalDropCue visible={dragging} />
         {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
         {error ? <PortalError>{error}</PortalError> : null}
@@ -590,7 +591,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
           <QuietTextAction type="button" onClick={() => { clearDraft(); onCancel() }}>Cancel</QuietTextAction>
         </div>
       </form>
-      <PortalArticleSuggestions className="hidden pt-3 lg:block" articles={suggestions.articles} />
+      <PortalArticleSuggestions className="hidden pt-3 lg:block" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
     </div>
   )
 }

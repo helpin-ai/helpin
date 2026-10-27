@@ -24,7 +24,7 @@ import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignab
 import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarOtherConversations, SidebarSessionDetails, SidebarVisitorContext } from './SidebarVisitorContext';
 import { SidebarLifecyclePicker } from './SidebarLifecyclePicker';
-import { SidebarPortalAudience } from './SidebarPortalAudience';
+import { SidebarPortalContext } from './SidebarPortalContext';
 import { SidebarPortalConfirmation } from './SidebarPortalConfirmation';
 import { SidebarCompanyDetails } from './SidebarCompanyDetails';
 import { SupportTagPicker } from './SupportTagPicker';
@@ -815,7 +815,7 @@ export function ConversationDetailSidebar({
           )}
 
           <SidebarPortalConfirmation workspaceId={workspaceId} conversation={conversation} />
-          <SidebarPortalAudience workspaceId={workspaceId} conversation={conversation} />
+          <SidebarPortalContext workspaceId={workspaceId} conversation={conversation} />
 
           {/* ── Visitor Intelligence ─────────────────────── */}
           <SidebarVisitorContext

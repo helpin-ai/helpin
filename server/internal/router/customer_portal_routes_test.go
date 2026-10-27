@@ -16,6 +16,9 @@ func TestCustomerPortalConfigRoutes(t *testing.T) {
 			t.Errorf("GET %s is not registered", path)
 		}
 	}
+	if !routes.Match(chi.NewRouteContext(), http.MethodPost, "/api/public/portal/acme/suggestions/events") {
+		t.Error("POST /api/public/portal/acme/suggestions/events is not registered")
+	}
 	for _, path := range []string{"/api/portal/auth/request-link", "/api/portal/auth/exchange", "/api/portal/auth/logout"} {
 		if routes.Match(chi.NewRouteContext(), http.MethodPost, path) {
 			t.Errorf("legacy bearer portal route POST %s is still registered", path)
@@ -37,7 +40,7 @@ func TestCustomerPortalAdminRoutes(t *testing.T) {
 		{http.MethodGet, "/api/support/inbox/portal/companies/co1"},
 		{http.MethodPut, "/api/support/inbox/portal/companies/co1"},
 		{http.MethodPost, "/api/support/inbox/portal/companies/co1/allow-contacts"},
-		{http.MethodGet, "/api/support/inbox/conversations/conv1/portal-audience"},
+		{http.MethodGet, "/api/support/inbox/conversations/conv1/portal-context"},
 	} {
 		if !routes.Match(chi.NewRouteContext(), route.method, route.path) {
 			t.Errorf("%s %s is not registered", route.method, route.path)

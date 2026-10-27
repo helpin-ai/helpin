@@ -90,6 +90,17 @@ export interface SupportReportOverview {
     next_response: SupportReportSLATarget
     resolution: SupportReportSLATarget
   }
+  /** Workspace-wide reports only, when customers wrote portal requests in the period. */
+  portal_intake?: SupportReportPortalIntake
+}
+
+/** What customers did with help center articles suggested while writing portal requests. */
+export interface SupportReportPortalIntake {
+  with_suggestions: number
+  opened: number
+  submitted_after_opening: number
+  likely_deflected: number
+  submitted_without_suggestions: number
 }
 
 export interface SupportReportParams {

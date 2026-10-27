@@ -129,6 +129,24 @@ describe('SupportReportsPage', () => {
     expect(new Date(params.to).getTime()).toBeLessThanOrEqual(Date.now() + 60_000)
   })
 
+  it('shows portal self-service only when customers wrote portal requests', () => {
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    expect(container.textContent).not.toContain('Portal self-service')
+
+    const portal_intake = { with_suggestions: 9, opened: 5, submitted_after_opening: 2, likely_deflected: 3, submitted_without_suggestions: 4 }
+    mockOverview.mockReturnValue({ data: { ...report, portal_intake }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    const text = container.textContent ?? ''
+    expect(text).toContain('Portal self-service')
+    expect(text).toContain('Likely answered by an article3')
+    expect(text).toContain('Opened an article5')
+    expect(text).toContain('Of 9 forms that showed suggestions')
+    expect(text).toContain('Asked after reading2')
+    expect(text).toContain('Nothing to suggest4')
+    expect(container.querySelector('a[href="/w/acme/support/coverage"]')).not.toBeNull()
+  })
+
   it('explains an empty CSAT period', () => {
     const emptySLA = { met: 0, missed: 0, hit_rate: null }
     mockOverview.mockReturnValue({ data: { ...report, summary: summary(), teammates: [], channels: [], sla: { conversations: 0, first_response: emptySLA, next_response: emptySLA, resolution: emptySLA } }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })

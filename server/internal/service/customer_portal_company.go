@@ -261,10 +261,25 @@ func withSupportMessageMetadataValue(metadata, key string, value any) string {
 	return string(encoded)
 }
 
-// ConversationCompanyAudience tells a teammate who can read a conversation
-// in the portal through company visibility, or nil when nobody besides its
-// requester can. It enforces the teammate's mailbox access.
-func (s *CustomerPortalService) ConversationCompanyAudience(ctx context.Context, workspaceID, conversationID string) (*repository.PortalCompanyAudience, error) {
+// PortalConversationContext is what a teammate should know about a
+// conversation's portal side before replying.
+type PortalConversationContext struct {
+	// Company is who besides the requester reads it in the portal, or nil.
+	Company *repository.PortalCompanyAudience `json:"company"`
+	// Intake is what the customer saw while writing the request, or nil.
+	Intake *PortalIntakeContext `json:"intake"`
+}
+
+// PortalIntakeContext lists the help center articles a customer opened
+// before writing in, so teammates don't send them again.
+type PortalIntakeContext struct {
+	OpenedArticles []PortalArticleSuggestion `json:"opened_articles"`
+	SuggestedCount int                       `json:"suggested_count"`
+}
+
+// ConversationPortalContext returns the portal context of a conversation the
+// teammate can open: its company audience and the requester's intake.
+func (s *CustomerPortalService) ConversationPortalContext(ctx context.Context, workspaceID, conversationID string) (*PortalConversationContext, error) {
 	conv, err := s.inbox.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, err
@@ -272,5 +287,48 @@ func (s *CustomerPortalService) ConversationCompanyAudience(ctx context.Context,
 	if conv == nil {
 		return nil, ErrPortalRequestNotFound
 	}
-	return s.repo.ConversationCompanyAudience(ctx, workspaceID, conv.ID)
+	audience, err := s.repo.ConversationCompanyAudience(ctx, workspaceID, conv.ID)
+	if err != nil {
+		return nil, err
+	}
+	result := &PortalConversationContext{Company: audience}
+	intake, err := s.repo.ConversationPortalIntake(ctx, workspaceID, conv.ID)
+	if err != nil || intake == nil {
+		return result, err
+	}
+	opened, err := s.portalArticles(ctx, workspaceID, intake.OpenedArticleIDs)
+	if err != nil {
+		return nil, err
+	}
+	result.Intake = &PortalIntakeContext{OpenedArticles: opened, SuggestedCount: len(intake.SuggestedArticleIDs)}
+	return result, nil
+}
+
+// portalArticles resolves article ids to published articles with their
+// public addresses, in the given order; unpublished articles are skipped.
+func (s *CustomerPortalService) portalArticles(ctx context.Context, workspaceID string, ids []string) ([]PortalArticleSuggestion, error) {
+	articles := []PortalArticleSuggestion{}
+	if len(ids) == 0 || s.knowledge == nil || s.inbox == nil || s.inbox.docsHelpcenterRepo == nil {
+		return articles, nil
+	}
+	cfg, err := s.inbox.docsHelpcenterRepo.GetConfig(ctx, workspaceID)
+	if err != nil || cfg == nil {
+		return articles, err
+	}
+	refs, err := s.knowledge.PublicArticles(ctx, workspaceID, defaultHelpcenterLocale(cfg), ids)
+	if err != nil {
+		return nil, err
+	}
+	urls, err := supportPublicArticleURLs(ctx, s.inbox.docsHelpcenterRepo, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		ref, ok := refs[id]
+		if !ok || urls[id] == "" {
+			continue
+		}
+		articles = append(articles, PortalArticleSuggestion{ID: id, Title: ref.Title, SpaceName: ref.SpaceName, URL: urls[id]})
+	}
+	return articles, nil
 }

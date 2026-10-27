@@ -3,10 +3,10 @@ import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ suggestions: vi.fn() }))
-vi.mock('@/lib/services/customerPortalService', () => ({ customerPortalService: { suggestions: mocks.suggestions } }))
+const mocks = vi.hoisted(() => ({ suggestions: vi.fn(), suggestionEvent: vi.fn() }))
+vi.mock('@/lib/services/customerPortalService', () => ({ customerPortalService: { suggestions: mocks.suggestions, suggestionEvent: mocks.suggestionEvent } }))
 
-import { PORTAL_SUGGESTION_DEBOUNCE_MS, portalSuggestionSearchable, portalSuggestionText, usePortalArticleSuggestions } from '../usePortalArticleSuggestions'
+import { newIntakeId, PORTAL_SUGGESTION_DEBOUNCE_MS, portalSuggestionSearchable, portalSuggestionText, usePortalArticleSuggestions } from '../usePortalArticleSuggestions'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -25,6 +25,8 @@ const article = (id: string) => ({ id, title: `Article ${id}`, url: `https://hel
 beforeEach(() => {
   vi.useFakeTimers()
   mocks.suggestions.mockReset()
+  mocks.suggestionEvent.mockReset()
+  mocks.suggestionEvent.mockResolvedValue(undefined)
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -111,5 +113,42 @@ describe('usePortalArticleSuggestions', () => {
     await pause()
     await type('')
     expect(probe.current?.articles).toEqual([])
+  })
+
+  it('records each distinct set of shown articles once and every opened article', async () => {
+    mocks.suggestions.mockResolvedValue({ articles: [article('a'), article('b')] })
+    await type('Export fails on Safari')
+    await pause()
+    await type('Export fails on Safari today')
+    await pause()
+    const shown = mocks.suggestionEvent.mock.calls.filter(([, event]) => event.event === 'shown')
+    expect(shown).toHaveLength(1)
+    expect(shown[0][1].article_ids).toEqual(['a', 'b'])
+    await act(async () => probe.current!.recordOpened(article('b')))
+    const intake = probe.current!.intake()
+    expect(mocks.suggestionEvent).toHaveBeenLastCalledWith('acme', { intake_id: intake.intake_id, event: 'opened', article_ids: ['b'] })
+    expect(intake.suggested_article_ids).toEqual(['a', 'b'])
+    expect(intake.opened_article_ids).toEqual(['b'])
+    expect(shown[0][1].intake_id).toBe(intake.intake_id)
+  })
+
+  it('ignores a failed measurement event', async () => {
+    mocks.suggestionEvent.mockRejectedValue(new Error('offline'))
+    mocks.suggestions.mockResolvedValue({ articles: [article('a')] })
+    await type('Export fails on Safari')
+    await pause()
+    expect(probe.current?.articles.map((item) => item.id)).toEqual(['a'])
+  })
+})
+
+describe('newIntakeId', () => {
+  it('makes a v4 UUID without randomUUID, as on plain-http pages', () => {
+    const original = crypto.randomUUID
+    Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true })
+    try {
+      expect(newIntakeId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    } finally {
+      Object.defineProperty(crypto, 'randomUUID', { value: original, configurable: true })
+    }
   })
 })
