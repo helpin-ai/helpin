@@ -156,6 +156,9 @@ type PortalCompanyAccess struct {
 
 // CompanyAccess returns a company's portal settings and contacts.
 func (s *CustomerPortalService) CompanyAccess(ctx context.Context, workspaceID, companyID string) (*PortalCompanyAccess, error) {
+	if !validPortalID(companyID) {
+		return nil, ErrPortalCompanyNotFound
+	}
 	access, err := s.repo.CompanyPortalAccess(ctx, workspaceID, companyID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPortalCompanyNotFound
@@ -182,6 +185,9 @@ func (s *CustomerPortalService) CompanyAccess(ctx context.Context, workspaceID, 
 // returns the refreshed settings. Sessions pick the change up on their next
 // request.
 func (s *CustomerPortalService) SetCompanyDefaultRole(ctx context.Context, workspaceID, companyID, actorUserID string, role *string) (*PortalCompanyAccess, error) {
+	if !validPortalID(companyID) {
+		return nil, ErrPortalCompanyNotFound
+	}
 	role, err := normalizePortalRole(role)
 	if err != nil {
 		return nil, err
@@ -199,6 +205,9 @@ func (s *CustomerPortalService) SetCompanyDefaultRole(ctx context.Context, works
 // SetContactRole sets or clears a contact's portal role and returns the
 // contact's refreshed portal decision.
 func (s *CustomerPortalService) SetContactRole(ctx context.Context, workspaceID, contactID, actorUserID string, role *string) (*PortalContactAccess, error) {
+	if !validPortalID(contactID) {
+		return nil, ErrPortalContactNotFound
+	}
 	role, err := normalizePortalRole(role)
 	if err != nil {
 		return nil, err
@@ -213,20 +222,47 @@ func (s *CustomerPortalService) SetContactRole(ctx context.Context, workspaceID,
 	return s.ContactAccess(ctx, workspaceID, contactID)
 }
 
-// AllowCompanyContacts allows every company contact that has no portal
-// decision and an email of its own, and returns the refreshed settings with
-// how many contacts changed.
-func (s *CustomerPortalService) AllowCompanyContacts(ctx context.Context, workspaceID, companyID, actorUserID string) (*PortalCompanyAccess, int64, error) {
+// SetCompanyMember gives a contact company access, or removes it, and
+// returns the refreshed company settings. Giving access also allows sign-in
+// for a contact without a portal decision; a blocked contact stays blocked.
+func (s *CustomerPortalService) SetCompanyMember(ctx context.Context, workspaceID, companyID, contactID, actorUserID string, member bool) (*PortalCompanyAccess, error) {
+	if !validPortalID(companyID) {
+		return nil, ErrPortalCompanyNotFound
+	}
+	if !validPortalID(contactID) {
+		return nil, ErrPortalContactNotFound
+	}
+	if err := s.repo.SetCompanyMember(ctx, workspaceID, companyID, contactID, actorUserID, member); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrPortalCompanyNotFound
+		}
+		return nil, err
+	}
+	slog.InfoContext(ctx, "portal company membership changed", "workspace_id", workspaceID, "company_id", companyID, "contact_id", contactID, "user_id", actorUserID, "member", member)
+	return s.CompanyAccess(ctx, workspaceID, companyID)
+}
+
+// AddCompanyDomainMembers gives company access to every CRM contact of the
+// company whose email is on the company's domain and used by no other
+// contact, and returns the refreshed settings with how many were added.
+func (s *CustomerPortalService) AddCompanyDomainMembers(ctx context.Context, workspaceID, companyID, actorUserID string) (*PortalCompanyAccess, int, error) {
 	if _, err := s.CompanyAccess(ctx, workspaceID, companyID); err != nil {
 		return nil, 0, err
 	}
-	allowed, err := s.repo.AllowCompanyContacts(ctx, workspaceID, companyID)
+	added, err := s.repo.AddCompanyDomainMembers(ctx, workspaceID, companyID, actorUserID)
 	if err != nil {
 		return nil, 0, err
 	}
-	slog.InfoContext(ctx, "portal company contacts allowed", "workspace_id", workspaceID, "company_id", companyID, "user_id", actorUserID, "allowed", allowed)
+	slog.InfoContext(ctx, "portal company domain members added", "workspace_id", workspaceID, "company_id", companyID, "user_id", actorUserID, "added", added)
 	access, err := s.CompanyAccess(ctx, workspaceID, companyID)
-	return access, allowed, err
+	return access, added, err
+}
+
+// validPortalID reports whether an id from a URL can name a row; anything
+// else is simply not found.
+func validPortalID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
 }
 
 // normalizePortalRole trims a role, maps "" to nil, and rejects unknown roles.

@@ -124,16 +124,37 @@ func (h *CustomerPortalAdminHandler) UpdateCompanyAccess(w http.ResponseWriter, 
 	writeJSON(w, http.StatusOK, access)
 }
 
-// AllowCompanyContacts handles
-// POST /api/support/inbox/portal/companies/{companyId}/allow-contacts.
-func (h *CustomerPortalAdminHandler) AllowCompanyContacts(w http.ResponseWriter, r *http.Request) {
+// AddCompanyDomainMembers handles
+// POST /api/support/inbox/portal/companies/{companyId}/members/from-domain:
+// company access for every contact on the company's email domain.
+func (h *CustomerPortalAdminHandler) AddCompanyDomainMembers(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	access, allowed, err := h.portal.AllowCompanyContacts(r.Context(), workspaceID, chi.URLParam(r, "companyId"), middleware.GetUserID(r.Context()))
+	access, added, err := h.portal.AddCompanyDomainMembers(r.Context(), workspaceID, chi.URLParam(r, "companyId"), middleware.GetUserID(r.Context()))
 	if err != nil {
 		writePortalAdminError(w, r, workspaceID, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"allowed": allowed, "company": access})
+	writeJSON(w, http.StatusOK, map[string]any{"added": added, "company": access})
+}
+
+// UpdateCompanyMember handles
+// PUT /api/support/inbox/portal/companies/{companyId}/members/{contactId}
+// with {"member": true|false}.
+func (h *CustomerPortalAdminHandler) UpdateCompanyMember(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	var body struct {
+		Member *bool `json:"member"`
+	}
+	if err := decodeJSON(r, &body); err != nil || body.Member == nil {
+		writeError(w, http.StatusBadRequest, "member must be true or false")
+		return
+	}
+	access, err := h.portal.SetCompanyMember(r.Context(), workspaceID, chi.URLParam(r, "companyId"), chi.URLParam(r, "contactId"), middleware.GetUserID(r.Context()), *body.Member)
+	if err != nil {
+		writePortalAdminError(w, r, workspaceID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
 }
 
 // UpdateContactRole handles PUT /api/support/inbox/portal/contacts/{contactId}/role.

@@ -37,6 +37,8 @@ func setupCompanyPortal(t *testing.T) *companyPortal {
 	linkContactCompany(t, db, ws.ID, p.alice, p.acme)
 	// Stored from the company side to cover both association directions.
 	linkCompanyContact(t, db, ws.ID, p.acme, p.bob)
+	addPortalMember(t, db, ws.ID, p.acme, p.alice)
+	addPortalMember(t, db, ws.ID, p.acme, p.bob)
 	p.bobIn = signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "bob@acme.test", time.Now().Add(-time.Hour)))
 	request, err := svc.CreateRequest(context.Background(), p.bobIn, "Invoices are missing", "We cannot find March invoices", nil, nil)
 	if err != nil {
@@ -68,6 +70,14 @@ func createNamedPortalContact(t *testing.T, db *gorm.DB, workspaceID, name, emai
 func linkContactCompany(t *testing.T, db *gorm.DB, workspaceID, contactID, companyID string) {
 	t.Helper()
 	if err := db.Exec(`INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id) VALUES (?, ?, 'contact', ?, 'company', ?)`, uuid.NewString(), workspaceID, contactID, companyID).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// addPortalMember gives a contact company portal access, as an admin does.
+func addPortalMember(t *testing.T, db *gorm.DB, workspaceID, companyID, contactID string) {
+	t.Helper()
+	if err := db.Exec(`INSERT INTO support_portal_company_members (workspace_id, crm_company_id, crm_contact_id) VALUES (?, ?, ?)`, workspaceID, companyID, contactID).Error; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -113,10 +123,28 @@ func TestCompanyPortalRequestCompanyIsSnapshotted(t *testing.T) {
 		t.Fatalf("portal request company = %v, want Acme", companyIDs)
 	}
 
-	// A contact of two companies leaves the company for a teammate to choose.
+	// A CRM association the Messenger may have created does not move a
+	// member's requests away from their portal company.
+	claimed := createPortalCompany(t, p.db, p.ws.ID, "Claimed", nil)
+	linkContactCompany(t, p.db, p.ws.ID, p.alice, claimed)
+	request, err := p.svc.CreateRequest(context.Background(), p.aliceIn, "Still Acme", "Which account?", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var acme []string
+	if err := p.db.Table("support_conversations AS conv").Joins("JOIN support_portal_request_references AS refs ON refs.conversation_id = conv.id").
+		Where("refs.reference = ? AND conv.crm_company_id IS NOT NULL", request.Reference).Pluck("conv.crm_company_id", &acme).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(acme) != 1 || acme[0] != p.acme {
+		t.Fatalf("member's request company = %v, want Acme", acme)
+	}
+
+	// A member of two portal companies leaves the company for a teammate.
 	other := createPortalCompany(t, p.db, p.ws.ID, "Other", nil)
 	linkContactCompany(t, p.db, p.ws.ID, p.alice, other)
-	request, err := p.svc.CreateRequest(context.Background(), p.aliceIn, "Two companies", "Which account?", nil, nil)
+	addPortalMember(t, p.db, p.ws.ID, other, p.alice)
+	request, err = p.svc.CreateRequest(context.Background(), p.aliceIn, "Two companies", "Which account?", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +163,10 @@ func TestCompanyPortalSessionCompanies(t *testing.T) {
 	createPortalCompany(t, p.db, p.ws.ID, "Unlinked", portalAccess(model.PortalRoleMember))
 	off := createPortalCompany(t, p.db, p.ws.ID, "Portal off", nil)
 	linkContactCompany(t, p.db, p.ws.ID, p.alice, off)
+	addPortalMember(t, p.db, p.ws.ID, off, p.alice)
+	// Associated in the CRM, as a Messenger claim would do, but not a member.
+	claimed := createPortalCompany(t, p.db, p.ws.ID, "Claimed", portalAccess(model.PortalRoleMember))
+	linkContactCompany(t, p.db, p.ws.ID, p.alice, claimed)
 	p.exec(t, `UPDATE crm_contacts SET portal_role = ? WHERE id = ?`, model.PortalRoleRequester, p.alice)
 
 	companies, err := p.svc.Companies(context.Background(), p.aliceIn)
@@ -232,12 +264,20 @@ func TestCompanyPortalVisibilityRules(t *testing.T) {
 			p.exec(t, `UPDATE crm_companies SET portal_default_role = NULL WHERE id = ?`, p.acme)
 			p.exec(t, `UPDATE crm_contacts SET portal_role = ? WHERE id = ?`, model.PortalRoleMember, p.alice)
 		}, false},
-		{"viewer removed from the company", func(t *testing.T, p *companyPortal) {
+		{"viewer's company access removed", func(t *testing.T, p *companyPortal) {
+			p.exec(t, `DELETE FROM support_portal_company_members WHERE crm_contact_id = ?`, p.alice)
+		}, false},
+		{"requester's company access removed", func(t *testing.T, p *companyPortal) {
+			p.exec(t, `DELETE FROM support_portal_company_members WHERE crm_contact_id = ?`, p.bob)
+		}, false},
+		{"CRM association alone does not make the viewer a member", func(t *testing.T, p *companyPortal) {
+			// As a Messenger identity claim would leave it: associated, never added.
+			p.exec(t, `DELETE FROM support_portal_company_members WHERE crm_contact_id = ?`, p.alice)
+			linkContactCompany(t, p.db, p.ws.ID, p.alice, p.acme)
+		}, false},
+		{"CRM association change does not end membership", func(t *testing.T, p *companyPortal) {
 			p.exec(t, `DELETE FROM crm_associations WHERE from_object_id = ? AND to_object_id = ?`, p.alice, p.acme)
-		}, false},
-		{"requester removed from the company", func(t *testing.T, p *companyPortal) {
-			p.exec(t, `DELETE FROM crm_associations WHERE from_object_id = ? AND to_object_id = ?`, p.acme, p.bob)
-		}, false},
+		}, true},
 		{"requester blocked", func(t *testing.T, p *companyPortal) {
 			p.exec(t, `UPDATE crm_contacts SET portal_access = ? WHERE id = ?`, model.PortalAccessBlocked, p.bob)
 		}, false},
@@ -442,6 +482,12 @@ func TestCompanyPortalPublishesColleagueConversations(t *testing.T) {
 	p := setupCompanyPortal(t)
 	carol := createNamedPortalContact(t, p.db, p.ws.ID, "Carol", "carol@acme.test", nil)
 	linkContactCompany(t, p.db, p.ws.ID, carol, p.acme)
+	addPortalMember(t, p.db, p.ws.ID, p.acme, carol)
+	// Dave claimed Acme in the Messenger: his conversations stay private.
+	dave := createNamedPortalContact(t, p.db, p.ws.ID, "Dave", "dave@elsewhere.test", nil)
+	linkContactCompany(t, p.db, p.ws.ID, dave, p.acme)
+	p.exec(t, `INSERT INTO support_conversations (id, workspace_id, subject, status, priority, channel, source, customer_email, crm_contact_id, crm_company_id, portal_visible, display_id, created_at, updated_at)
+		VALUES (?, ?, 'Dave private', 'open', 'medium', 'email', 'email', 'dave@elsewhere.test', ?, ?, false, 999, ?, ?)`, uuid.NewString(), p.ws.ID, dave, p.acme, time.Now(), time.Now())
 	insert := func(subject, companyID string, hidden bool) string {
 		id := uuid.NewString()
 		p.exec(t, `INSERT INTO support_conversations (id, workspace_id, subject, status, priority, channel, source, customer_email, crm_contact_id, crm_company_id, portal_visible, display_id, created_at, updated_at)
@@ -492,8 +538,14 @@ func TestCompanyPortalAdminAccess(t *testing.T) {
 	createNamedPortalContact(t, p.db, p.ws.ID, "Duplicate", "SHARED@acme.test ", nil)
 	noEmail := createNamedPortalContact(t, p.db, p.ws.ID, "No email", "", nil)
 	fresh := createNamedPortalContact(t, p.db, p.ws.ID, "Fresh", "fresh@acme.test", nil)
+	regional := createNamedPortalContact(t, p.db, p.ws.ID, "Regional", "ops@eu.acme.test", nil)
+	// Claimed Acme in the Messenger with an address the company does not own.
+	claimed := createNamedPortalContact(t, p.db, p.ws.ID, "Claimed", "eve@attacker.test", nil)
 	outside := createNamedPortalContact(t, p.db, p.ws.ID, "Outside", "outside@else.test", nil)
-	for _, id := range []string{blocked, shared, noEmail, fresh} {
+	// A member an admin added although the CRM does not link them.
+	consultant := createNamedPortalContact(t, p.db, p.ws.ID, "Consultant", "consultant@agency.test", portalAccess(model.PortalAccessAllowed))
+	addPortalMember(t, p.db, p.ws.ID, p.acme, consultant)
+	for _, id := range []string{blocked, shared, noEmail, fresh, regional, claimed} {
 		linkContactCompany(t, p.db, p.ws.ID, id, p.acme)
 	}
 
@@ -501,25 +553,43 @@ func TestCompanyPortalAdminAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if derefString(access.DefaultRole) != model.PortalRoleMember || len(access.Contacts) != 6 || !access.PortalEnabled || access.RequestCount != 1 {
+	if derefString(access.DefaultRole) != model.PortalRoleMember || len(access.Contacts) != 9 || !access.PortalEnabled || access.RequestCount != 1 {
 		t.Fatalf("company access = %+v", access)
 	}
-	byName := map[string]int{}
-	for i, contact := range access.Contacts {
-		byName[contact.FirstName] = i
+	byName := func(access *PortalCompanyAccess) map[string]repository.PortalCompanyContact {
+		contacts := map[string]repository.PortalCompanyContact{}
+		for _, contact := range access.Contacts {
+			contacts[contact.FirstName] = contact
+		}
+		return contacts
 	}
-	if access.Contacts[byName["Shared"]].SharedEmailContacts != 1 || access.Contacts[byName["Bob"]].LastSignedInAt == nil || access.Contacts[byName["Fresh"]].LastSignedInAt != nil {
+	contacts := byName(access)
+	if contacts["Shared"].SharedEmailContacts != 1 || contacts["Bob"].LastSignedInAt == nil || contacts["Fresh"].LastSignedInAt != nil {
 		t.Fatalf("contact details = %+v", access.Contacts)
 	}
+	if !contacts["Alice"].Member || !contacts["Consultant"].Member || contacts["Claimed"].Member || contacts["Fresh"].Member {
+		t.Fatalf("membership flags = %+v", access.Contacts)
+	}
 
-	updated, allowed, err := p.svc.AllowCompanyContacts(ctx, p.ws.ID, p.acme, "admin")
+	// Without a company domain nothing can be added in bulk.
+	if _, added, err := p.svc.AddCompanyDomainMembers(ctx, p.ws.ID, p.acme, "admin"); err != nil || added != 0 {
+		t.Fatalf("bulk add without a domain = %d, %v", added, err)
+	}
+	p.exec(t, `UPDATE crm_companies SET domain = 'https://www.acme.test/' WHERE id = ?`, p.acme)
+	updated, added, err := p.svc.AddCompanyDomainMembers(ctx, p.ws.ID, p.acme, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if allowed != 1 || derefString(updated.Contacts[byName["Fresh"]].PortalAccess) != model.PortalAccessAllowed {
-		t.Fatalf("allowed %d contacts: %+v", allowed, updated.Contacts)
+	contacts = byName(updated)
+	if added != 2 || !contacts["Fresh"].Member || !contacts["Regional"].Member || derefString(contacts["Fresh"].PortalAccess) != model.PortalAccessAllowed {
+		t.Fatalf("added %d: %+v", added, updated.Contacts)
 	}
-	for _, id := range []string{blocked, shared, noEmail, outside} {
+	for _, name := range []string{"Blocked", "Shared", "No email", "Claimed"} {
+		if contacts[name].Member {
+			t.Errorf("%s was added in bulk", name)
+		}
+	}
+	for _, id := range []string{blocked, shared, noEmail, claimed, outside} {
 		var row struct{ PortalAccess *string }
 		if err := p.db.Table("crm_contacts").Select("portal_access").Where("id = ?", id).Take(&row).Error; err != nil {
 			t.Fatal(err)
@@ -530,6 +600,25 @@ func TestCompanyPortalAdminAccess(t *testing.T) {
 		}
 		if derefString(row.PortalAccess) != want {
 			t.Errorf("contact %s access changed to %q", id, derefString(row.PortalAccess))
+		}
+	}
+
+	// An admin can still add someone one by one, which also allows sign-in.
+	withClaimed, err := p.svc.SetCompanyMember(ctx, p.ws.ID, p.acme, claimed, "admin", true)
+	if err != nil || !byName(withClaimed)["Claimed"].Member || derefString(byName(withClaimed)["Claimed"].PortalAccess) != model.PortalAccessAllowed {
+		t.Fatalf("add member = %+v, %v", withClaimed, err)
+	}
+	withoutClaimed, err := p.svc.SetCompanyMember(ctx, p.ws.ID, p.acme, claimed, "admin", false)
+	if err != nil || byName(withoutClaimed)["Claimed"].Member {
+		t.Fatalf("remove member = %+v, %v", withoutClaimed, err)
+	}
+	blockedMember, err := p.svc.SetCompanyMember(ctx, p.ws.ID, p.acme, blocked, "admin", true)
+	if err != nil || derefString(byName(blockedMember)["Blocked"].PortalAccess) != model.PortalAccessBlocked {
+		t.Fatalf("adding a blocked contact unblocked it: %+v, %v", blockedMember, err)
+	}
+	for _, ids := range [][2]string{{uuid.NewString(), claimed}, {p.acme, uuid.NewString()}, {"acme", claimed}} {
+		if _, err := p.svc.SetCompanyMember(ctx, p.ws.ID, ids[0], ids[1], "admin", true); err == nil {
+			t.Fatalf("member of %v accepted", ids)
 		}
 	}
 
@@ -546,8 +635,11 @@ func TestCompanyPortalAdminAccess(t *testing.T) {
 	if _, err := p.svc.CompanyAccess(ctx, p.ws.ID, uuid.NewString()); !errors.Is(err, ErrPortalCompanyNotFound) {
 		t.Fatalf("unknown company access err = %v", err)
 	}
-	if _, _, err := p.svc.AllowCompanyContacts(ctx, p.ws.ID, uuid.NewString(), "admin"); !errors.Is(err, ErrPortalCompanyNotFound) {
-		t.Fatalf("unknown company allow err = %v", err)
+	if _, _, err := p.svc.AddCompanyDomainMembers(ctx, p.ws.ID, uuid.NewString(), "admin"); !errors.Is(err, ErrPortalCompanyNotFound) {
+		t.Fatalf("unknown company bulk add err = %v", err)
+	}
+	if _, err := p.svc.CompanyAccess(ctx, p.ws.ID, "not-a-uuid"); !errors.Is(err, ErrPortalCompanyNotFound) {
+		t.Fatalf("malformed company id err = %v", err)
 	}
 
 	contact, err := p.svc.SetContactRole(ctx, p.ws.ID, p.alice, "admin", portalAccess(model.PortalRoleRequester))

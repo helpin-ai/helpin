@@ -28,8 +28,9 @@ A contact's role overrides its companies' default in either direction. Members c
 Admins manage this on the company's **Portal** tab:
 
 - turn company access on and choose the default;
-- allow or block each contact, and set each contact's role;
-- allow every eligible contact at once.
+- give or remove each contact's **company access**: only contacts with company access count as the company's people;
+- allow or block each contact's sign-in, and set each contact's role;
+- add every contact on the company's email domain at once.
 
 The contact page shows the same access and role.
 
@@ -37,8 +38,13 @@ The contact page shows the same access and role.
 
 Company visibility is deliberately conservative:
 
-- **Sign-in is never inferred.** A member needs an explicit **Allowed** decision, even in any-verified-email mode. CRM associations are created automatically (email sync, the support inbox, meetings), so being associated with a company never grants access by itself. **Allow all contacts** skips contacts that are blocked, that have no email, or whose email another contact also uses.
-- **A request belongs to a company only through a known requester.** The request's conversation must name the company, and its requester must be a contact associated with that company who is not blocked. A conversation linked to a company by email domain alone is not shared.
+- **Company access is never inferred.** A support admin gives each contact company access on the Portal tab.
+  - CRM contact–company links are created automatically: by email sync, the support inbox, meetings, and the Messenger, which accepts unverified identity claims by default. A link alone grants nothing.
+  - Giving company access also allows sign-in for a contact without a decision. A blocked contact stays blocked.
+  - Removing a CRM link does not remove company access; remove it on the Portal tab.
+- **Bulk adding needs a domain.** **Add contacts from acme.com** adds the company's linked contacts whose email is on the company's domain or a subdomain. It skips contacts that are blocked, that have no email, or whose email another contact also uses. Everyone else is added one by one.
+- **Sign-in still needs an Allowed decision**, even in any-verified-email mode.
+- **A request belongs to a company only through a member.** The request's conversation must name the company, and its requester must be an unblocked member of that company. A conversation linked to a company by email domain or by a Messenger claim alone is not shared.
 - **Hidden and erased conversations stay private.** Conversations hidden from the portal by a teammate, marked as spam, or anonymized for privacy are never shared.
 - **Colleagues' conversations are published on demand.** When a member opens their company's requests, published email and chat conversations from colleagues who have never signed in also appear. They must pass the same continuity checks as the colleague's own first sign-in.
 - **New portal requests take the requester's company** when the requester belongs to exactly one company, as new email conversations do. Otherwise a teammate sets the company in the conversation's details.
@@ -89,10 +95,11 @@ All routes require the `support.admin` permission unless noted otherwise:
 
 - `GET /api/support/inbox/portal/companies/{companyId}`: the company's default role, its contacts with access, role, shared-email count and last sign-in, and how many of its requests members could see.
 - `PUT /api/support/inbox/portal/companies/{companyId}` with `{"default_role": "requester" | "member" | null}`.
-- `POST /api/support/inbox/portal/companies/{companyId}/allow-contacts`: allows eligible contacts and returns how many changed.
+- `PUT /api/support/inbox/portal/companies/{companyId}/members/{contactId}` with `{"member": true | false}`: gives or removes company access.
+- `POST /api/support/inbox/portal/companies/{companyId}/members/from-domain`: gives company access to eligible contacts on the company's domain and returns how many were added.
 - `PUT /api/support/inbox/portal/contacts/{contactId}/role` with `{"portal_role": "requester" | "member" | null}`.
 - `GET /api/support/inbox/conversations/{id}/portal-context` (requires `support.read` and mailbox access): the company and the number of colleagues who can read the conversation, and the articles the customer opened before writing in.
 
 The portal API adds `companies` to the session response. It also adds `scope=company` (with an optional `company_id`) to `GET /api/public/portal/{slug}/requests`.
 
-The schema is in `server/internal/dbmigrate/sql/202610260004_support_portal_company_access.sql`. It adds `crm_companies.portal_default_role` and `crm_contacts.portal_role`.
+The schema is in `server/internal/dbmigrate/sql/202610260004_support_portal_company_access.sql`. It adds `crm_companies.portal_default_role` and `crm_contacts.portal_role`. Membership lives in `support_portal_company_members` (`202610270003_support_portal_company_members.sql`).

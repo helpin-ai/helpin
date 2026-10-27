@@ -14,9 +14,24 @@ export const portalRoleLabels: Record<CustomerPortalRole, string> = {
   member: 'Member',
 };
 
-/** Contacts the bulk action would allow, matching the server rule. */
-export function allowableContacts(contacts: CustomerPortalCompanyContact[]) {
-  return contacts.filter((contact) => !contact.portal_access && contact.email?.trim() && contact.shared_email_contacts === 0);
+/** emailOnDomain mirrors the server: the address is on the domain or a subdomain; the domain may be a URL. */
+export function emailOnDomain(email: string, domain: string) {
+  const host = email.trim().toLowerCase().split('@').at(-1) ?? '';
+  const bare = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/:]/)[0];
+  return Boolean(bare) && email.includes('@') && (host === bare || host.endsWith(`.${bare}`));
+}
+
+/**
+ * domainAddableContacts are the contacts the bulk action would add, matching
+ * the server: not yet members, not blocked, with an email of their own on the
+ * company's domain. CRM links alone are not trusted, because the Messenger
+ * creates them from unverified claims.
+ */
+export function domainAddableContacts(contacts: CustomerPortalCompanyContact[], domain?: string | null) {
+  if (!domain?.trim()) return [];
+  return contacts.filter((contact) =>
+    !contact.member && contact.portal_access !== 'blocked' && contact.shared_email_contacts === 0 &&
+    !!contact.email?.trim() && emailOnDomain(contact.email, domain));
 }
 
 /** companyScopeSummary states what the company setting does for its contacts. */

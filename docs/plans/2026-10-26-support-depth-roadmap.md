@@ -65,17 +65,17 @@ Neither product has a self-serve customer admin. Both use two levels of visibili
    - Unlike Zendesk, an override can also restrict a contact below the company default. Intercom allows this, and it fits contractors.
    - A per-company role table was considered and dropped. Keeping the role on the contact needs no new table and no cleanup when associations change.
    - When the company setting is `NULL`, no company features apply, whatever the overrides.
-3. **Sign-in access is still granted per contact, never by association.** Turning on a company does not let its contacts sign in. A member also needs an explicit **Allowed** decision, even in any-verified-email mode.
+3. **Company membership is explicit (`support_portal_company_members`), never inferred from CRM links.** A support admin gives each contact company access on the Portal tab. Sign-in also needs an explicit **Allowed** decision, even in any-verified-email mode.
 
-   Reason: associations are created automatically by email sync, the inbox and meetings. If association granted access, a sync could silently give someone access to a company's tickets.
+   Reason: associations are created automatically by email sync, the inbox, meetings and the Messenger. The Messenger accepts unverified identity claims by default. The first build trusted associations, and a branch review showed that a visitor could claim a company in the Messenger and read its requests. Membership became an explicit table.
 
-   The Portal tab has per-contact controls and **Allow N contacts**. The bulk action skips blocked contacts, contacts without an email, and shared emails.
+   Bulk adding covers only linked contacts whose email is on the company's domain. It skips blocked contacts, contacts without an email, and shared emails.
 4. **Which requests count as company requests.** A conversation is visible to member M of company C only if all of the following hold:
    - `conv.crm_company_id = C`;
-   - the requester (`conv.crm_contact_id`) is associated with C and not blocked;
+   - the requester (`conv.crm_contact_id`) is a member of C and not blocked;
    - the conversation is published to the portal and not anonymized.
 
-   Colleagues' email and chat conversations are published when a member lists company requests, under the same continuity rule as the colleague's own sign-in. New portal requests take the requester's company when there is exactly one, as email does.
+   Colleagues' email and chat conversations are published when a member lists company requests, under the same continuity rule as the colleague's own sign-in. New portal requests take the requester's portal company when there is exactly one, otherwise their single CRM company, as email does. A CRM company shares nothing unless the requester is a member there.
 5. **Who wrote each message.** Portal replies store `portal_identity_id` in message metadata. Inbound email already stores `email_sender`. The portal marks each message `from_you`, and a colleague's reply carries their contact name in the inbox.
    - Read state and ratings stay the requester's.
    - Each time a member opens a colleague's request, it is audited, at most once per hour per member and request.

@@ -1496,6 +1496,8 @@ export interface CustomerPortalCompanyContact {
   email?: string | null;
   portal_access: CustomerPortalContactAccessValue | null;
   portal_role: CustomerPortalRole | null;
+  /** A support admin gave this contact access to the company's portal requests. */
+  member: boolean;
   shared_email_contacts: number;
   last_signed_in_at?: string | null;
 }
@@ -1503,6 +1505,8 @@ export interface CustomerPortalCompanyContact {
 export interface CustomerPortalCompanyAccess {
   /** Null keeps the portal personal for this company's contacts. */
   default_role: CustomerPortalRole | null;
+  /** The company's email domain; bulk adding needs it. */
+  domain?: string | null;
   contacts: CustomerPortalCompanyContact[];
   access_mode: CustomerPortalAccessMode;
   portal_enabled: boolean;

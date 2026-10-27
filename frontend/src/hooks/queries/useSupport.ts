@@ -347,17 +347,32 @@ export function useSetCompanyPortalRole(workspaceId: string, companyId: string) 
   });
 }
 
-export function useAllowCompanyPortalContacts(workspaceId: string, companyId: string) {
+export function useAddCompanyPortalDomainMembers(workspaceId: string, companyId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async () => unwrap(await supportService.allowCompanyPortalContacts(workspaceId, companyId)),
-    onSuccess: ({ allowed, company }) => {
+    mutationFn: async () => unwrap(await supportService.addCompanyPortalDomainMembers(workspaceId, companyId)),
+    onSuccess: ({ added, company }) => {
       queryClient.setQueryData(queryKeys.support.portalCompanyAccess(workspaceId, companyId), company);
       void queryClient.invalidateQueries({ queryKey: queryKeys.support.portalAccess(workspaceId) });
-      toast.success(allowed === 1 ? '1 contact can now sign in' : `${allowed} contacts can now sign in`);
+      toast.success(added === 1 ? '1 contact added' : `${added} contacts added`);
     },
     onError: (error: Error) => {
-      toast.error('Failed to allow contacts', { description: error.message });
+      toast.error('Failed to add contacts', { description: error.message });
+    },
+  });
+}
+
+export function useSetCompanyPortalMember(workspaceId: string, companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ contactId, member }: { contactId: string; member: boolean }) =>
+      unwrap(await supportService.setCompanyPortalMember(workspaceId, companyId, contactId, member)),
+    onSuccess: (company) => {
+      queryClient.setQueryData(queryKeys.support.portalCompanyAccess(workspaceId, companyId), company);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.portalAccess(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to change company access', { description: error.message });
     },
   });
 }

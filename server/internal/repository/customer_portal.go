@@ -133,10 +133,15 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 	}
 	var reference string
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// As for new email conversations, an unambiguous CRM membership
-		// becomes the request's company, which shares it with colleagues.
+		// The requester's one portal company becomes the request's company,
+		// which shares it with colleagues. Otherwise, as for new email
+		// conversations, an unambiguous CRM membership is used; it shares
+		// nothing unless the requester is also a portal member there.
 		if draft.CRMContactID != nil {
-			companyID, err := NewCRMAssociationRepository(tx).SingleCompanyForContact(ctx, draft.WorkspaceID, *draft.CRMContactID)
+			companyID, err := SinglePortalCompanyForContact(tx, draft.WorkspaceID, *draft.CRMContactID)
+			if err == nil && companyID == nil {
+				companyID, err = NewCRMAssociationRepository(tx).SingleCompanyForContact(ctx, draft.WorkspaceID, *draft.CRMContactID)
+			}
 			if err != nil {
 				return err
 			}

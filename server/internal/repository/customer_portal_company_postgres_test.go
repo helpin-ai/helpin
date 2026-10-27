@@ -4,10 +4,12 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -23,12 +25,13 @@ func TestCustomerPortalCompanyPostgres(t *testing.T) {
 	aliceID, bobID := uuid.NewString(), uuid.NewString()
 	bobConv, carolConv, hiddenConv := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	seedContactPrivacyWorkspace(t, db, ws)
-	privacyExec(t, db, `INSERT INTO crm_companies (id,workspace_id,display_id,name,portal_default_role) VALUES (?,?,'CO-1','Acme','member'), (?,?,'CO-2','Other',NULL)`, acme, ws, other, ws)
+	privacyExec(t, db, `INSERT INTO crm_companies (id,workspace_id,display_id,name,domain,portal_default_role) VALUES (?,?,'CO-1','Acme','acme.test','member'), (?,?,'CO-2','Other',NULL,NULL)`, acme, ws, other, ws)
 	privacyExec(t, db, `INSERT INTO crm_contacts (id,workspace_id,display_id,first_name,last_name,email,portal_access) VALUES
 		(?,?,'C-1','Alice','Doe','alice@acme.test','allowed'), (?,?,'C-2','Bob','Roe','bob@acme.test','allowed'),
 		(?,?,'C-3','Carol',NULL,'carol@acme.test',NULL), (?,?,'C-4','Outsider',NULL,'out@else.test',NULL)`, alice, ws, bob, ws, carol, ws, outsider, ws)
 	privacyExec(t, db, `INSERT INTO crm_associations (workspace_id,from_object_type,from_object_id,to_object_type,to_object_id) VALUES
 		(?,'contact',?,'company',?), (?,'company',?,'contact',?), (?,'contact',?,'company',?)`, ws, alice, acme, ws, acme, bob, ws, carol, acme)
+	privacyExec(t, db, `INSERT INTO support_portal_company_members (workspace_id,crm_company_id,crm_contact_id) VALUES (?,?,?), (?,?,?)`, ws, acme, alice, ws, acme, bob)
 	privacyExec(t, db, `INSERT INTO support_portal_identities (id,workspace_id,email,crm_contact_id) VALUES (?,?,'alice@acme.test',?), (?,?,'bob@acme.test',?)`, aliceID, ws, alice, bobID, ws, bob)
 	privacyExec(t, db, `INSERT INTO support_portal_sessions (id,workspace_id,identity_id,crm_contact_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?,?)`, uuid.NewString(), ws, aliceID, alice, uuid.NewString(), time.Now().Add(time.Hour), time.Now())
 	privacyExec(t, db, `INSERT INTO support_conversations (id,workspace_id,display_id,subject,status,channel,source,customer_email,crm_contact_id,crm_company_id,portal_visible,portal_visibility_changed_at) VALUES
@@ -53,6 +56,16 @@ func TestCustomerPortalCompanyPostgres(t *testing.T) {
 		t.Fatalf("memberships = %+v", memberships)
 	}
 
+	// Carol is linked in the CRM but not a member: her conversations stay private.
+	if count, err := repo.CompanyRequestCount(ctx, ws, acme); err != nil || count != 1 {
+		t.Fatalf("requests before Carol joins = %d, %v", count, err)
+	}
+	added, err := repo.AddCompanyDomainMembers(ctx, ws, acme, "")
+	if err != nil || added != 1 {
+		t.Fatalf("domain members added = %d, %v", added, err)
+	}
+	privacyCheck(t, db, `SELECT portal_access = 'allowed' FROM crm_contacts WHERE id = ?`, carol)
+	privacyCheck(t, db, `SELECT portal_access IS NULL FROM crm_contacts WHERE id = ?`, outsider)
 	if err := repo.PublishCompanyRequests(ctx, ws, []string{acme}); err != nil {
 		t.Fatal(err)
 	}
@@ -89,12 +102,9 @@ func TestCustomerPortalCompanyPostgres(t *testing.T) {
 	if err != nil || count != 2 {
 		t.Fatalf("company request count = %d, %v", count, err)
 	}
-	allowed, err := repo.AllowCompanyContacts(ctx, ws, acme)
-	if err != nil || allowed != 1 {
-		t.Fatalf("allowed = %d, %v", allowed, err)
+	if !access.Contacts[0].Member || !access.Contacts[2].Member {
+		t.Fatalf("membership flags = %+v", access.Contacts)
 	}
-	privacyCheck(t, db, `SELECT portal_access = 'allowed' FROM crm_contacts WHERE id = ?`, carol)
-	privacyCheck(t, db, `SELECT portal_access IS NULL FROM crm_contacts WHERE id = ?`, outsider)
 
 	audience, err := repo.ConversationCompanyAudience(ctx, ws, bobConv)
 	// Alice and Carol, but not Bob, who asked.
@@ -112,6 +122,15 @@ func TestCustomerPortalCompanyPostgres(t *testing.T) {
 	}
 	if memberships, err := repo.PortalCompanyMemberships(ctx, ws, alice); err != nil || len(memberships) != 0 {
 		t.Fatalf("memberships with company portal off = %+v, %v", memberships, err)
+	}
+	// Deleting a contact or company removes its memberships.
+	if err := repo.SetCompanyMember(ctx, ws, acme, outsider, "", true); err != nil {
+		t.Fatal(err)
+	}
+	privacyExec(t, db, `DELETE FROM crm_contacts WHERE id = ?`, outsider)
+	privacyCheck(t, db, `SELECT count(*) = 0 FROM support_portal_company_members WHERE crm_contact_id = ?`, outsider)
+	if err := repo.SetCompanyMember(ctx, ws, acme, uuid.NewString(), "", true); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("member of unknown contact = %v", err)
 	}
 }
 

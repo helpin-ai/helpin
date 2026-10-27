@@ -1234,7 +1234,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/contacts/{contactId}/role", h.CustomerPortalAdmin.UpdateContactRole)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/companies/{companyId}", h.CustomerPortalAdmin.CompanyAccess)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}", h.CustomerPortalAdmin.UpdateCompanyAccess)
-					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/portal/companies/{companyId}/allow-contacts", h.CustomerPortalAdmin.AllowCompanyContacts)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/portal/companies/{companyId}/members/from-domain", h.CustomerPortalAdmin.AddCompanyDomainMembers)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}/members/{contactId}", h.CustomerPortalAdmin.UpdateCompanyMember)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/conversations/{id}/portal-confirmation", h.CustomerPortalAdmin.ResendIntakeConfirmation)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/portal-context", h.CustomerPortalAdmin.ConversationPortalContext)
 				}

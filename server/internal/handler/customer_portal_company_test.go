@@ -31,8 +31,9 @@ func openCompanyPortalHandlerDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT, settings TEXT, active BOOLEAN)`,
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, display_name TEXT, crm_contact_id TEXT, UNIQUE(workspace_id, email))`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, first_name TEXT, last_name TEXT, email TEXT, portal_access TEXT, portal_role TEXT, updated_at DATETIME)`,
-		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, portal_default_role TEXT, updated_at DATETIME)`,
+		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, domain TEXT, portal_default_role TEXT, updated_at DATETIME)`,
 		`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
+		`CREATE TABLE support_portal_company_members (workspace_id TEXT, crm_company_id TEXT, crm_contact_id TEXT, added_by_user_id TEXT, created_at DATETIME, PRIMARY KEY (crm_company_id, crm_contact_id))`,
 		`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, crm_contact_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME, reconciled_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, id TEXT PRIMARY KEY, workspace_id TEXT, display_id INTEGER, last_public_message_id TEXT, last_public_sender_type TEXT, customer_awaiting_response BOOLEAN, customer_email TEXT, customer_name TEXT, crm_contact_id TEXT, crm_company_id TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, anonymized_at DATETIME)`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, customer_last_read_at DATETIME, UNIQUE(workspace_id, conversation_id))`,
@@ -69,6 +70,7 @@ func TestPortalHTTPCompanyScope(t *testing.T) {
 		`INSERT INTO crm_contacts (id, workspace_id, first_name, last_name, email, portal_access) VALUES
 			('alice', 'ws', 'Alice', 'Doe', 'alice@acme.test', 'allowed'), ('bob', 'ws', 'Bob', 'Roe', 'bob@acme.test', 'allowed')`,
 		`INSERT INTO crm_associations VALUES ('l1', 'ws', 'contact', 'alice', 'company', 'acme'), ('l2', 'ws', 'contact', 'bob', 'company', 'acme')`,
+		`INSERT INTO support_portal_company_members (workspace_id, crm_company_id, crm_contact_id) VALUES ('ws', 'acme', 'alice'), ('ws', 'acme', 'bob')`,
 		`INSERT INTO support_portal_identities (id, workspace_id, email, crm_contact_id) VALUES ('alice-id', 'ws', 'alice@acme.test', 'alice'), ('bob-id', 'ws', 'bob@acme.test', 'bob')`,
 		`INSERT INTO support_conversations (id, workspace_id, display_id, customer_email, crm_contact_id, crm_company_id, subject, status, channel, source, portal_visible, created_at) VALUES
 			('c-alice', 'ws', 1, 'alice@acme.test', 'alice', 'acme', 'subject-alice', 'open', 'email', 'email', 1, CURRENT_TIMESTAMP),
@@ -145,9 +147,10 @@ func TestPortalHTTPCompanyScope(t *testing.T) {
 
 func TestCustomerPortalAdminCompanyErrors(t *testing.T) {
 	db := openCompanyPortalHandlerDB(t)
+	acme, alice := uuid.NewString(), uuid.NewString()
 	execAll(t, db,
-		`INSERT INTO crm_companies (id, workspace_id, name) VALUES ('acme', 'ws', 'Acme')`,
-		`INSERT INTO crm_contacts (id, workspace_id, first_name, email) VALUES ('alice', 'ws', 'Alice', 'alice@acme.test')`,
+		fmt.Sprintf(`INSERT INTO crm_companies (id, workspace_id, name) VALUES ('%s', 'ws', 'Acme')`, acme),
+		fmt.Sprintf(`INSERT INTO crm_contacts (id, workspace_id, first_name, email) VALUES ('%s', 'ws', 'Alice', 'alice@acme.test')`, alice),
 	)
 	h := NewCustomerPortalAdminHandler(service.NewCustomerPortalService(repository.NewCustomerPortalRepository(db), nil, nil, ""))
 	router := chi.NewRouter()
@@ -158,20 +161,24 @@ func TestCustomerPortalAdminCompanyErrors(t *testing.T) {
 	})
 	router.Get("/portal/companies/{companyId}", h.CompanyAccess)
 	router.Put("/portal/companies/{companyId}", h.UpdateCompanyAccess)
-	router.Post("/portal/companies/{companyId}/allow-contacts", h.AllowCompanyContacts)
+	router.Post("/portal/companies/{companyId}/members/from-domain", h.AddCompanyDomainMembers)
+	router.Put("/portal/companies/{companyId}/members/{contactId}", h.UpdateCompanyMember)
 	router.Put("/portal/contacts/{contactId}/role", h.UpdateContactRole)
 	for _, tt := range []struct {
 		name, method, path, body string
 		want                     int
 	}{
-		{"unknown company", http.MethodGet, "/portal/companies/missing", "", http.StatusNotFound},
+		{"malformed company id", http.MethodGet, "/portal/companies/missing", "", http.StatusNotFound},
+		{"unknown company", http.MethodGet, "/portal/companies/" + uuid.NewString(), "", http.StatusNotFound},
 		{"update unknown company", http.MethodPut, "/portal/companies/missing", `{"default_role":"member"}`, http.StatusNotFound},
-		{"allow unknown company", http.MethodPost, "/portal/companies/missing/allow-contacts", "", http.StatusNotFound},
-		{"invalid company role", http.MethodPut, "/portal/companies/acme", `{"default_role":"owner"}`, http.StatusBadRequest},
-		{"malformed company body", http.MethodPut, "/portal/companies/acme", `{`, http.StatusBadRequest},
-		{"invalid contact role", http.MethodPut, "/portal/contacts/alice/role", `{"portal_role":"admin"}`, http.StatusBadRequest},
+		{"add members to unknown company", http.MethodPost, "/portal/companies/missing/members/from-domain", "", http.StatusNotFound},
+		{"member of unknown company", http.MethodPut, "/portal/companies/" + uuid.NewString() + "/members/" + uuid.NewString(), `{"member":true}`, http.StatusNotFound},
+		{"member without a decision", http.MethodPut, "/portal/companies/" + acme + "/members/" + alice, `{}`, http.StatusBadRequest},
+		{"invalid company role", http.MethodPut, "/portal/companies/" + acme, `{"default_role":"owner"}`, http.StatusBadRequest},
+		{"malformed company body", http.MethodPut, "/portal/companies/" + acme, `{`, http.StatusBadRequest},
+		{"invalid contact role", http.MethodPut, "/portal/contacts/" + alice + "/role", `{"portal_role":"admin"}`, http.StatusBadRequest},
 		{"unknown contact", http.MethodPut, "/portal/contacts/missing/role", `{"portal_role":"member"}`, http.StatusNotFound},
-		{"malformed contact body", http.MethodPut, "/portal/contacts/alice/role", `[]`, http.StatusBadRequest},
+		{"malformed contact body", http.MethodPut, "/portal/contacts/" + alice + "/role", `[]`, http.StatusBadRequest},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))

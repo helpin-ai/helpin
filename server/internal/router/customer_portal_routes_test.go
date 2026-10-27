@@ -39,7 +39,8 @@ func TestCustomerPortalAdminRoutes(t *testing.T) {
 		{http.MethodPut, "/api/support/inbox/portal/contacts/c1/role"},
 		{http.MethodGet, "/api/support/inbox/portal/companies/co1"},
 		{http.MethodPut, "/api/support/inbox/portal/companies/co1"},
-		{http.MethodPost, "/api/support/inbox/portal/companies/co1/allow-contacts"},
+		{http.MethodPost, "/api/support/inbox/portal/companies/co1/members/from-domain"},
+		{http.MethodPut, "/api/support/inbox/portal/companies/co1/members/c1"},
 		{http.MethodGet, "/api/support/inbox/conversations/conv1/portal-context"},
 	} {
 		if !routes.Match(chi.NewRouteContext(), route.method, route.path) {

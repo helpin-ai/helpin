@@ -20,6 +20,9 @@ const portalIntakeArticleLimit = 25
 // RecordIntakeEvent stores that suggestions were shown or one was opened
 // while a request was written. Submissions are recorded with the request.
 func (s *CustomerPortalService) RecordIntakeEvent(ctx context.Context, ws *PortalWorkspace, intakeID, eventType string, articleIDs []string) error {
+	if !ws.Settings.PortalIntakeEnabled && !ws.Settings.PortalAnonymousIntakeEnabled {
+		return ErrPortalIntakeDisabled
+	}
 	if _, err := uuid.Parse(intakeID); err != nil {
 		return ErrPortalIntakeInvalid
 	}

@@ -1,9 +1,11 @@
 import { Link } from '@tanstack/react-router';
 import { QuietEmptyState, QuietTextAction } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
+import { Switch } from '@/components/ui/switch';
 import {
-  useAllowCompanyPortalContacts,
+  useAddCompanyPortalDomainMembers,
   useCompanyPortalAccess,
+  useSetCompanyPortalMember,
   useSetCompanyPortalRole,
   useSetContactPortalAccess,
   useSetContactPortalRole,
@@ -11,7 +13,7 @@ import {
 import { Loading01Icon } from '@/lib/icons';
 import type { CustomerPortalCompanyContact, CustomerPortalContactAccessValue, CustomerPortalRole } from '@/lib/pmTypes';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { allowableContacts, companyScopeSummary, portalRoleChoices, portalRoleLabels, type PortalRoleChoice } from './companyPortal';
+import { companyScopeSummary, domainAddableContacts, portalRoleChoices, portalRoleLabels, type PortalRoleChoice } from './companyPortal';
 
 type CompanyAccessChoice = CustomerPortalRole | 'off';
 
@@ -29,7 +31,7 @@ const accessChoices: { value: AccessChoice; label: string }[] = [
   { value: 'blocked', label: 'Blocked' },
 ];
 
-const rowGrid = 'sm:grid sm:grid-cols-[minmax(0,1fr)_128px_160px_112px] sm:items-center sm:gap-4';
+const rowGrid = 'sm:grid sm:grid-cols-[minmax(0,1fr)_112px_128px_160px_112px] sm:items-center sm:gap-4';
 
 function contactName(contact: CustomerPortalCompanyContact) {
   return [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || contact.email || 'Unnamed contact';
@@ -37,8 +39,9 @@ function contactName(contact: CustomerPortalCompanyContact) {
 
 /**
  * CompanyPortalPanel lets support admins decide how a company's contacts use
- * the customer portal: who may sign in, and who sees every request from the
- * company. Signing in always needs an explicit decision per contact.
+ * the customer portal: who belongs to the company there, who may sign in, and
+ * who sees every request from the company. Company access is an explicit
+ * decision: CRM links alone never grant it.
  */
 export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
   workspaceId: string;
@@ -47,7 +50,7 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
 }) {
   const access = useCompanyPortalAccess(workspaceId, companyId);
   const setRole = useSetCompanyPortalRole(workspaceId, companyId);
-  const allowAll = useAllowCompanyPortalContacts(workspaceId, companyId);
+  const addDomain = useAddCompanyPortalDomainMembers(workspaceId, companyId);
 
   if (access.isLoading) {
     return (
@@ -68,7 +71,8 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
   }
 
   const data = access.data;
-  const allowable = allowableContacts(data.contacts).length;
+  const addable = domainAddableContacts(data.contacts, data.domain).length;
+  const domain = data.domain?.trim().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/:]/)[0];
   const companyChoice: CompanyAccessChoice = data.default_role ?? 'off';
 
   return (
@@ -76,9 +80,9 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
       <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2 sm:px-6 lg:px-8">
         <h2 className="mr-2 text-sm font-semibold">Customer portal</h2>
         <div className="ml-auto">
-          {allowable > 0 && (
-            <QuietTextAction disabled={allowAll.isPending} onClick={() => allowAll.mutate()}>
-              {allowAll.isPending ? 'Allowing…' : allowable === 1 ? 'Allow 1 contact' : `Allow ${allowable} contacts`}
+          {addable > 0 && (
+            <QuietTextAction disabled={addDomain.isPending} onClick={() => addDomain.mutate()}>
+              {addDomain.isPending ? 'Adding…' : `Add ${addable === 1 ? '1 contact' : `${addable} contacts`} from ${domain}`}
             </QuietTextAction>
           )}
         </div>
@@ -104,6 +108,10 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
             </Select>
           </div>
           <p className="mt-2 max-w-[680px] text-xs leading-5 text-muted-foreground">{companyScopeSummary(data)}</p>
+          <p className="mt-1 max-w-[680px] text-xs leading-5 text-muted-foreground">
+            Only contacts with company access count as the company's people. Links in the CRM can come from unverified chat visitors, so they never grant access.
+            {domain ? null : ' Add a domain to this company to add its people in bulk.'}
+          </p>
           {!data.portal_enabled && (
             <p role="note" className="mt-2 max-w-[680px] text-xs leading-5 text-quiet-accent">
               The customer portal is off for this workspace, so nobody can sign in yet.{' '}
@@ -117,18 +125,19 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
           <QuietEmptyState
             className="border-t-0"
             title="No contacts at this company"
-            description="Associate contacts with this company to let them sign in to the customer portal."
+            description="Associate contacts with this company in the CRM, then give them company access here."
           />
         ) : (
           <div role="table" aria-label="Company contacts in the customer portal">
             <div role="row" className={`hidden border-b border-border/60 px-4 py-2 text-[11.5px] font-medium text-muted-foreground sm:px-6 lg:px-8 ${rowGrid}`}>
               <span role="columnheader">Contact</span>
+              <span role="columnheader">Company access</span>
               <span role="columnheader">Sign-in</span>
               <span role="columnheader">Role</span>
               <span role="columnheader">Last signed in</span>
             </div>
             {data.contacts.map((contact) => (
-              <CompanyPortalContactRow key={contact.id} workspaceId={workspaceId} contact={contact} companyRole={data.default_role} />
+              <CompanyPortalContactRow key={contact.id} workspaceId={workspaceId} companyId={companyId} contact={contact} companyRole={data.default_role} />
             ))}
           </div>
         )}
@@ -137,11 +146,13 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
   );
 }
 
-function CompanyPortalContactRow({ workspaceId, contact, companyRole }: {
+function CompanyPortalContactRow({ workspaceId, companyId, contact, companyRole }: {
   workspaceId: string;
+  companyId: string;
   contact: CustomerPortalCompanyContact;
   companyRole: CustomerPortalRole | null;
 }) {
+  const setMember = useSetCompanyPortalMember(workspaceId, companyId);
   const setAccess = useSetContactPortalAccess(workspaceId, contact.id);
   const setRole = useSetContactPortalRole(workspaceId, contact.id);
   const name = contactName(contact);
@@ -160,6 +171,15 @@ function CompanyPortalContactRow({ workspaceId, contact, companyRole }: {
             {contact.shared_email_contacts === 1 ? '1 other contact shares' : `${contact.shared_email_contacts} other contacts share`} this email. Only one of them can be allowed.
           </span>
         )}
+      </span>
+      <span role="cell" className="flex items-center gap-2">
+        <Switch
+          checked={contact.member}
+          disabled={setMember.isPending}
+          onCheckedChange={(member) => setMember.mutate({ contactId: contact.id, member })}
+          aria-label={`Company access for ${name}`}
+        />
+        <span className="text-xs text-muted-foreground sm:hidden">Company access</span>
       </span>
       <span role="cell">
         <Select
@@ -182,7 +202,7 @@ function CompanyPortalContactRow({ workspaceId, contact, companyRole }: {
         <Select
           size="sm"
           value={role}
-          disabled={setRole.isPending || access !== 'allowed'}
+          disabled={setRole.isPending || access !== 'allowed' || !contact.member}
           onValueChange={(next) => setRole.mutate(next === 'default' ? null : (next as CustomerPortalRole))}
         >
           <SelectTrigger aria-label={`Portal role for ${name}`} className="h-7 w-40 text-xs">

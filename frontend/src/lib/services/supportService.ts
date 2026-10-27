@@ -384,8 +384,10 @@ export const supportService = {
     api.get<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`),
   setCompanyPortalRole: (workspaceId: string, companyId: string, defaultRole: CustomerPortalRole | null) =>
     api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`, { default_role: defaultRole }),
-  allowCompanyPortalContacts: (workspaceId: string, companyId: string) =>
-    api.post<{ allowed: number; company: CustomerPortalCompanyAccess }>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/allow-contacts${qs(workspaceId)}`, {}),
+  addCompanyPortalDomainMembers: (workspaceId: string, companyId: string) =>
+    api.post<{ added: number; company: CustomerPortalCompanyAccess }>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/members/from-domain${qs(workspaceId)}`, {}),
+  setCompanyPortalMember: (workspaceId: string, companyId: string, contactId: string, member: boolean) =>
+    api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/members/${encodeURIComponent(contactId)}${qs(workspaceId)}`, { member }),
   getConversationPortalContext: (workspaceId: string, conversationId: string) =>
     api.get<CustomerPortalConversationContext>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-context${qs(workspaceId)}`),
   resendPortalConfirmation: (workspaceId: string, conversationId: string) =>

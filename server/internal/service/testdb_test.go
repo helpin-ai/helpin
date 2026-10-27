@@ -1272,6 +1272,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_portal_company_members (workspace_id TEXT NOT NULL, crm_company_id TEXT NOT NULL, crm_contact_id TEXT NOT NULL, added_by_user_id TEXT, created_at DATETIME, PRIMARY KEY (crm_company_id, crm_contact_id))`,
 		`CREATE TABLE support_portal_intake_events (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, intake_id TEXT NOT NULL, event_type TEXT NOT NULL, article_ids TEXT NOT NULL DEFAULT '[]', article_count INTEGER NOT NULL DEFAULT 0, conversation_id TEXT, occurred_at DATETIME NOT NULL)`,
 		`CREATE TABLE crm_associations (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
