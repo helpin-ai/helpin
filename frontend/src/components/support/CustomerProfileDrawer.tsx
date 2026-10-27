@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
+import { openTaskPanelFromLink } from '@/components/pm/task-detail/taskRouteNavigation';
 import { useContact, useContactAssociations, useContactSupportConversations, useUpdateContact } from '@/hooks/queries/useCRM';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
@@ -566,7 +567,12 @@ function AssociationLink({ item, icon: Icon, workspaceSlug }: { item: LinkedAsso
   }
 
   return (
-    <Link to={href.to as never} params={href.params as never} className="flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40">
+    <Link
+      to={href.to as never}
+      params={href.params as never}
+      onClick={item.linkedType === 'task' ? (event) => openTaskPanelFromLink(event, item.linkedId) : undefined}
+      className="flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
+    >
       {content}
     </Link>
   );

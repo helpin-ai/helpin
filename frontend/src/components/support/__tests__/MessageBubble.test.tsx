@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/authStore'
+import { useTaskPanelStore } from '@/stores/taskPanelStore'
 import { api } from '@/lib/api'
 import { supportService } from '@/lib/services/supportService'
 import type { SupportMessage } from '@/lib/pmTypes'
@@ -1787,4 +1788,58 @@ it.each(['tag_added', 'tag_removed', 'ai_escalated', 'resolved'] as const)('uses
  });
  try { expect(rendered.container.querySelector('[data-support-system-callout] .ask-agent-avatar')).not.toBeNull(); }
  finally { rendered.cleanup(); }
+});
+
+it('shows a priority raised by Helpin AI with the Ask Agent avatar', () => {
+ const rendered = renderBubble({
+  id: 'ai-priority', workspace_id: 'ws-1', conversation_id: 'conv-1',
+  sender_type: 'ai', sender_display_name: 'Helpin AI', message_type: 'system',
+  system_event_type: 'priority_changed', content: 'Helpin AI changed the priority from Medium to Urgent.', is_internal: true,
+  created_at: '2026-10-27T10:00:00Z', updated_at: '2026-10-27T10:00:00Z',
+ });
+ try {
+  const callout = rendered.container.querySelector('[data-support-system-callout]');
+  expect(callout?.textContent).toContain('Helpin AI changed the priority from Medium to Urgent.');
+  expect(callout?.querySelector('.ask-agent-avatar')).not.toBeNull();
+ } finally { rendered.cleanup(); }
+});
+
+it('bolds both priority levels in a priority change', () => {
+ const rendered = renderBubble({
+  id: 'priority-change', workspace_id: 'ws-1', conversation_id: 'conv-1',
+  sender_type: 'user', sender_display_name: 'Alex Morgan', message_type: 'system',
+  system_event_type: 'priority_changed', content: 'Alex changed the priority from Low to High.', is_internal: true,
+  created_at: '2026-10-27T10:00:00Z', updated_at: '2026-10-27T10:00:00Z',
+ });
+ try {
+  const callout = rendered.container.querySelector('[data-support-system-callout]');
+  expect(Array.from(callout?.querySelectorAll('strong') ?? []).map((node) => node.textContent)).toEqual(['Low', 'High']);
+  expect(callout?.textContent).toContain('Alex changed the priority from Low to High.');
+ } finally { rendered.cleanup(); }
+});
+
+it('opens a task from the thread in the task drawer and keeps the link for new tabs', () => {
+ useTaskPanelStore.setState({ taskId: null, lastClosedTaskId: null, lastClosedAt: 0 });
+ const rendered = renderBubble({
+  id: 'task-created', workspace_id: 'ws-1', conversation_id: 'conv-1',
+  sender_type: 'user', sender_display_name: 'Alex Morgan', message_type: 'system',
+  system_event_type: 'task_created', content: 'Alex created task #ENG-123: Fix billing webhook.', is_internal: true,
+  created_at: '2026-10-27T10:00:00Z', updated_at: '2026-10-27T10:00:00Z',
+ }, undefined, { workspaceSlug: 'acme', linkedTaskId: 'task-123' });
+ try {
+  const link = rendered.container.querySelector<HTMLAnchorElement>('[data-task-created-link]')!;
+  const newTabClick = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+  act(() => { link.dispatchEvent(newTabClick); });
+  expect(newTabClick.defaultPrevented).toBe(false);
+  expect(useTaskPanelStore.getState().taskId).toBeNull();
+
+  const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+  act(() => { link.dispatchEvent(click); });
+  expect(click.defaultPrevented).toBe(true);
+  expect(useTaskPanelStore.getState().taskId).toBe('task-123');
+  expect(link.getAttribute('href')).toBe('/w/acme/pm/tasks/task-123');
+ } finally {
+  rendered.cleanup();
+  useTaskPanelStore.setState({ taskId: null });
+ }
 });

@@ -58,3 +58,6 @@ export function closeTaskRoute(
     params: { slug },
   })
 }
+
+// The desktop app has no task drawer, so task links keep their default behavior.
+export function openTaskPanelFromLink(_event: unknown, _taskId: string) {}

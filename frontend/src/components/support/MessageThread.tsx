@@ -2,12 +2,11 @@ import { AppLoadBoundary } from '@/components/layout/AppLoadError';
 import { ConversationSnoozeControl } from './ConversationSnoozeControl';
 import { onSupportShortcut } from '@/lib/supportShortcuts';
 import { SupportSLABadge } from './SupportSLABadge';
-import { ConversationMergeHistoryEvent, MergedConversationContinuation } from './ConversationMergeHistory';
-import { groupSupportTimeline } from './groupSupportTimeline';
+import { MergedConversationContinuation } from './ConversationMergeHistory';
+import { DaySeparator } from './SupportDaySeparator';
 import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
 import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
 import { LiveTranslateBar } from './LiveTranslateBar';
-import { useCachedSupportTranslations } from '@/hooks/queries/useSupportTranslation';
 import { SupportCreateTaskModal } from './SupportCreateTaskModal';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { useCallback, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
@@ -38,18 +37,16 @@ import { agentService } from '@/lib/services/agentService';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import type { AgentRun, ConversationStatus, SupportMessage } from '@/lib/pmTypes';
-import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/supportMessagePages';
+import type { AgentRun, ConversationStatus, SupportConversationMerge, SupportMessage } from '@/lib/pmTypes';
+import { flattenSupportMessagePages } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
-import { getSupportReceiptStatus, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
-import { TranslatedMessageBubble } from './TranslatedMessageBubble';
-import { foldedSupportAICardIds } from './supportAIActivityModel';
+import { getInitial, isAIActiveConversation } from './helpers';
 import { CREATE_SUPPORT_TASK_EVENT } from './supportAICardActions';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
 import { SupportFollowUpStatus } from './SupportFollowUpStatus';
-import { getSupportFollowUpStage, isFollowUpStatusNote } from './supportFollowUpState';
+import { getSupportFollowUpStage } from './supportFollowUpState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
@@ -64,7 +61,7 @@ import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
 import { getScrollDateIndicator } from './threadDateIndicator';
-import { cn } from '@/lib/utils';
+import { isShownInSupportThread, SupportThreadMessages } from './SupportThreadMessages';
 import type { UpgradeRequiredReason } from '@edition';
 
 interface MessageThreadProps {
@@ -83,6 +80,7 @@ const LazyReplyComposer = lazy(loadReplyComposer);
 
 const THREAD_SELECTION_FADE_MS = 160;
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
+const EMPTY_MERGES: SupportConversationMerge[] = [];
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
   const typingState = useSupportPresenceStore(
@@ -188,49 +186,6 @@ function resolveAgentIdentity(
       fallbackSeed: name,
     }),
   };
-}
-
-function DaySeparator({
-  label,
-  floating = false,
-  phase = 'visible',
-  separatorRef,
-}: {
-  label: string;
-  floating?: boolean;
-  phase?: 'visible' | 'handoff' | 'hidden';
-  separatorRef?: (node: HTMLDivElement | null) => void;
-}) {
-  const dateLabel = (
-    <span className="shrink-0 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground/75">
-      {label}
-    </span>
-  );
-
-  if (floating) {
-    return (
-      <div
-        data-support-floating-date
-        aria-hidden="true"
-        className={cn(
-          'flex justify-center motion-reduce:transition-none',
-          phase === 'handoff' ? 'transition-none translate-y-0 opacity-0'
-            : 'transition-[opacity,transform] duration-200 ease-out',
-          phase === 'visible' ? 'translate-y-0 opacity-100' : phase === 'hidden' ? '-translate-y-2 opacity-0' : null,
-        )}
-      >
-        {dateLabel}
-      </div>
-    );
-  }
-
-  return (
-    <div ref={separatorRef} data-support-day-separator className="my-5 flex items-center gap-3">
-      <div className="h-px flex-1 bg-border" aria-hidden />
-      {dateLabel}
-      <div className="h-px flex-1 bg-border" aria-hidden />
-    </div>
-  );
 }
 
 /** Skeleton message bubbles shown while loading */
@@ -351,16 +306,12 @@ export function MessageThread({
   const clearScopeKey = useSupportInboxStore((s) => inboxClearScopeFor(s.navFilter, s.selectedMailboxId)?.scopeKey ?? null);
   const loadedMessages = useMemo(
     () => flattenSupportMessagePages(messagePages).filter(
-      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined') && !isFollowUpStatusNote(message)
-        && !hiddenDuringHandoff(message, isHandingOff),
+      message => isShownInSupportThread(message) && !hiddenDuringHandoff(message, isHandingOff),
     ),
     [isHandingOff, messagePages],
   );
   const messages=usePendingSupportSends(workspaceId,conversationId||'',loadedMessages);
   const latestPublicMessage = useMemo(() => messages.findLast(message => !message.is_internal && message.message_type === 'reply' && !message.pending_send), [messages]);
-  const translationIds=useMemo(()=>messages.filter(m=>m.message_type==='reply'&&!m.is_internal&&!m.pending_send).map(m=>m.id),[messages]);
-  const cachedTranslations=useCachedSupportTranslations(workspaceId,conversationId||'',translationIds, Math.max(0, ...messages.filter(m=>!m.is_internal).map(m=>Date.parse(m.created_at)))).data;
-  const translationMap=useMemo(()=>new Map((cachedTranslations||[]).map(t=>[t.purpose === 'outgoing_reply' ? t.sent_message_id : t.source_message_id,t])),[cachedTranslations]);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
@@ -394,23 +345,6 @@ export function MessageThread({
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
   const memberNameByUserId = useMemo(() => new Map(members.map(member => [member.user_id, member.full_name])), [members]);
-  const memberAvatarByUserId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const member of members) {
-      const avatarSrc = resolveTeamMemberAvatarSrc({
-        avatarUrl: member.avatar_url,
-        avatarStyle: member.avatar_style,
-        avatarSeed: member.avatar_seed,
-        avatarBackgroundMode: member.avatar_background_mode,
-        avatarBackgroundColor: member.avatar_background_color,
-        fallbackSeed: member.full_name ?? member.email,
-      });
-      if (member.user_id && avatarSrc) {
-        map.set(member.user_id, avatarSrc);
-      }
-    }
-    return map;
-  }, [members]);
 
   const moveOptions = useMemo(() => {
     return [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
@@ -619,31 +553,7 @@ export function MessageThread({
     return () => window.removeEventListener(CREATE_SUPPORT_TASK_EVENT, openCreateTask);
   }, [conversationId, canCreateTasks]);
 
-  // Group messages with day separators and consecutive sender detection
-  // Find the last outbound reply message (for read receipt display)
-  const receiptMessageId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (!msg.is_internal && msg.sender_type !== 'customer' && (!msg.message_type || msg.message_type === 'reply')) {
-        return msg.id;
-      }
-    }
-    return null;
-  }, [messages]);
-
-  // Derive delivered/read status from conversation's contact_last_seen_at cursor
-  const receiptStatus = useMemo<SupportReceiptStatus>(() => {
-    if (!receiptMessageId || !conversation) return null;
-    const msg = messages.find((m) => m.id === receiptMessageId);
-    if (!msg) return null;
-    return getSupportReceiptStatus(msg, conversation);
-  }, [receiptMessageId, conversation, messages]);
-
   const { data: mergeHistory } = useConversationMerges(workspaceId, conversationId);
-  const groupedMessages = useMemo(() => groupSupportTimeline(messages, mergeHistory ?? []), [messages, mergeHistory]);
-  const foldedAICardIds = useMemo(() => foldedSupportAICardIds(messages), [messages]);
-
-  const visibleGroupedMessages = groupedMessages;
 
   const followUpStage = conversation ? getSupportFollowUpStage(conversation, latestPublicMessage) : null;
   const followUpStageKey = followUpStage ? `${conversation?.ai_follow_up?.id}:${followUpStage.kind}:${followUpStage.deadline ?? ''}` : null;
@@ -751,7 +661,7 @@ export function MessageThread({
       frames.forEach((frame) => window.cancelAnimationFrame(frame));
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
-  }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+  }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, mergeHistory?.length]);
 
   useLayoutEffect(() => {
     // A new schedule can arrive without a new message. Keep it visible only
@@ -843,7 +753,7 @@ export function MessageThread({
       viewport.removeEventListener('scroll', onScroll);
       window.clearTimeout(hideTimer);
     };
-  }, [conversationId, fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage, visibleGroupedMessages]);
+  }, [conversationId, fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage, messages, mergeHistory]);
 
   // Treat a stale conversation id (e.g., previous selection that no longer
   // matches the active filter, or a deleted conversation) the same as no
@@ -1188,54 +1098,23 @@ export function MessageThread({
               subtitle="Start the conversation using the reply below."
             />
           )}
-          {visibleGroupedMessages.map((item, idx) => {
-            if (item.type === 'merge') return conversation ? <ConversationMergeHistoryEvent key={item.id} workspaceId={workspaceId} conversation={conversation} merges={item.merges} restored={item.restored} canUnmerge={!!access?.permissions.includes('support.merge')} /> : null;
-            if (item.type === 'separator') {
-              return (
-                <DaySeparator
-                  key={`sep-${idx}`}
-                  label={item.label}
-                  separatorRef={(node) => {
-                    if (node) {
-                      separatorRefs.current.set(idx, node);
-                    } else {
-                      separatorRefs.current.delete(idx);
-                    }
-                  }}
-                />
-              );
-            }
-            return (
-              <div
-                key={supportMessageRenderKey(item.message)}
-                className="support-thread-message w-full min-w-0 max-w-full"
-                data-support-message-id={item.message.id}
-                data-support-message-key={supportMessageRenderKey(item.message)}
-              >
-                <TranslatedMessageBubble
-                  workspaceId={workspaceId}
-                  readOnly={!!conversation?.merged_into_id || !!conversation?.anonymized_at || !!editingNote}
-                  onEditNote={access?.permissions?.includes('support.edit') ? startEditingNote : undefined}
-                  message={item.message}
-                  cachedTranslation={translationMap.get(item.message.id)}
-                  isConsecutive={item.isConsecutive}
-                  isLastInGroup={item.isLastInGroup}
-                  source={conversation?.source}
-                  contactLastSeenAt={conversation?.contact_last_seen_at}
-                  receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
-                  teammateDisplayName={item.message.sender_user_id ? memberNameByUserId.get(item.message.sender_user_id) : undefined}
-                  customerDisplayName={conversation?.customer_name || conversation?.customer_email}
-                  customerEmail={conversation?.customer_email}
-                  workspaceSlug={workspaceSlug}
-                  linkedTaskId={conversation?.linked_task_id}
-                  folded={foldedAICardIds.has(item.message.id)}
-                  fallbackAvatarUrl={
-                    item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined
-                  }
-                />
-              </div>
-            );
-          })}
+          <SupportThreadMessages
+            workspaceId={workspaceId}
+            conversationId={conversationId || ''}
+            conversation={conversation}
+            messages={messages}
+            merges={mergeHistory ?? EMPTY_MERGES}
+            readOnly={!!conversation?.merged_into_id || !!conversation?.anonymized_at || !!editingNote}
+            canUnmerge={!!access?.permissions.includes('support.merge')}
+            onEditNote={access?.permissions?.includes('support.edit') ? startEditingNote : undefined}
+            separatorRef={(idx, node) => {
+              if (node) {
+                separatorRefs.current.set(idx, node);
+              } else {
+                separatorRefs.current.delete(idx);
+              }
+            }}
+          />
           {!isThreadLoading && conversation?.id === conversationId && (
             <SupportFollowUpStatus
               key={conversation.id}

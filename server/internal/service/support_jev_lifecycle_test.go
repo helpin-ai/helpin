@@ -298,6 +298,8 @@ func TestJevLifecycleConfiguration(t *testing.T) {
 	}{
 		{"invalid handoff mode", func(c *SupportJevConfig) { c.HandoffMode = "bad" }},
 		{"invalid followup mode", func(c *SupportJevConfig) { c.FollowUpMode = "bad" }},
+		{"invalid priority mode", func(c *SupportJevConfig) { c.PriorityMode = "bad" }},
+		{"priority threshold above one", func(c *SupportJevConfig) { c.PriorityThreshold = 1.1 }},
 		{"zero threshold", func(c *SupportJevConfig) { c.HandoffThreshold = 0 }},
 		{"negative threshold", func(c *SupportJevConfig) { c.FollowUpThreshold = -1 }},
 		{"nan threshold", func(c *SupportJevConfig) { c.HandoffThreshold = math.NaN() }},
@@ -313,6 +315,9 @@ func TestJevLifecycleConfiguration(t *testing.T) {
 	}
 	if jev.config.HandoffMode != "primary" || jev.config.FollowUpMode != "primary" {
 		t.Fatal("lifecycle default is not primary")
+	}
+	if jev.config.PriorityMode != "primary" || jev.config.PriorityThreshold != supportJevDefaultPriorityThreshold {
+		t.Fatalf("priority defaults = %q %v", jev.config.PriorityMode, jev.config.PriorityThreshold)
 	}
 }
 

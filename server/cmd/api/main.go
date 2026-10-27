@@ -118,6 +118,12 @@ func main() {
 		fatalWithSentry("failed to get underlying sql.DB", err)
 	}
 	defer sqlDB.Close()
+	// Keep warm connections between requests: the database/sql default of 2 idle
+	// connections makes ordinary traffic open new ones constantly, and opening a
+	// connection in the cluster sometimes stalls for 5s. Total connections stay
+	// uncapped as before; the idle limit lets quiet periods release them.
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err := sqlDB.Ping(); err != nil {
 		fatalWithSentry("failed to ping database", err)
@@ -857,6 +863,7 @@ func main() {
 			HandoffThreshold: cfg.JevHandoffThreshold, FollowUpThreshold: cfg.JevFollowUpThreshold,
 			RoutingMode: cfg.JevRoutingMode, TagsMode: cfg.JevTagsMode, WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
 			RoutingThreshold: cfg.JevRoutingThreshold, TagThreshold: cfg.JevTagThreshold, DailyLimit: cfg.JevDailyLimit,
+			PriorityMode: cfg.JevPriorityMode, PriorityThreshold: cfg.JevPriorityThreshold,
 		}, jevClient, repository.NewSupportJevRepository(db), repository.NewAIExecutionUsageRepository(db), supportTagService)
 		if jevErr != nil {
 			fatalWithSentry("configure support Jev", jevErr)
@@ -865,7 +872,7 @@ func main() {
 		supportInboxTriageService.SetJevService(jevService)
 		supportJevService = jevService
 	}
-	supportTagJobs := service.NewSupportTagJobService(repository.NewSupportTagJobRepository(db), supportMessageRepo, supportConversationRepo, supportJevService, editionServices.Entitlements)
+	supportTagJobs := service.NewSupportTagJobService(repository.NewSupportTagJobRepository(db), supportMessageRepo, supportConversationRepo, supportInstallRepo, supportJevService, editionServices.Entitlements)
 
 	jevProductDecisions, jevProductErr := service.NewJevDecisionService(pmJevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
 	if jevProductErr != nil {

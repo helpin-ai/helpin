@@ -394,7 +394,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
     id: 'support-sla',
     label: 'SLA policies',
     description: 'Set first response, next response and resolution targets for conversations.',
-    keywords: ['sla', 'service level', 'response time', 'targets', 'breach'],
+    keywords: ['sla', 'service level', 'response time', 'targets', 'breach', 'priority'],
     icon: SLAPolicies,
     group: 'Support',
   },

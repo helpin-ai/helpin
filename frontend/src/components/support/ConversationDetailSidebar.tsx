@@ -610,7 +610,7 @@ export function ConversationDetailSidebar({
               getDisabledReason={(member) => member.assignment_disabled_reason}
               getMemberValue={(member) => member.user_id ?? member.id}
               noneLabel="Unassigned"
-              disabled={!!conversation.merged_into_id || assignConversationUser.isPending || assigneesLoading || assigneesError}
+              disabled={!!conversation.merged_into_id || assigneesLoading || assigneesError}
               onChange={(value) => {
                 assignConversationUser.mutate({
                   conversationId: conversation.id,
@@ -673,7 +673,7 @@ export function ConversationDetailSidebar({
             <span className="text-sm font-semibold text-foreground">Priority</span>
             <ConversationPriorityPicker
               value={conversation.priority ?? 'medium'}
-              disabled={!!conversation.merged_into_id || updatePriority.isPending}
+              disabled={!!conversation.merged_into_id}
               onChange={(priority) => updatePriority.mutate({ conversationId: conversation.id, priority })}
               shortcutConversationId={conversation.id}
             />

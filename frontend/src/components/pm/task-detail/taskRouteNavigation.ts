@@ -1,3 +1,5 @@
+import type { MouseEvent } from 'react';
+import { isPlainLeftClick } from '@/lib/utils';
 import { clearTaskSearchParam, useTaskPanelStore } from '@/stores/taskPanelStore';
 
 export interface TaskOverlayLocationLike {
@@ -59,6 +61,17 @@ export function openTaskRoute(
 
   useTaskPanelStore.getState().openTask(taskId);
   return undefined;
+}
+
+/**
+ * Opens the task drawer over the current page for a plain click on a task
+ * link. Modified clicks keep the link, so a new tab still gets the task page.
+ */
+export function openTaskPanelFromLink(event: MouseEvent, taskId: string) {
+  if (!isPlainLeftClick(event)) return;
+  event.preventDefault();
+  if (useTaskPanelStore.getState().shouldSuppressOpen(taskId)) return;
+  useTaskPanelStore.getState().openTask(taskId);
 }
 
 export function getTaskOverlayCloseBehavior(location: TaskOverlayLocationLike, slug: string) {

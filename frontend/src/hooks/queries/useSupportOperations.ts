@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import { supportService } from '@/lib/services/supportService'
+import { findCachedConversation, patchCachedConversation } from '@/lib/supportQueryCache'
 import type { ConversationPriority, SupportConversationActions, SupportSLAPolicy, SupportSLAPolicyInput } from '@/lib/pmTypes'
 
 function refreshConversation(queryClient: QueryClient, workspaceId: string, conversationId: string) {
@@ -18,10 +19,18 @@ export function useUpdateConversationPriority(workspaceId: string) {
   return useMutation({
     mutationFn: ({ conversationId, priority }: { conversationId: string; priority: ConversationPriority }) =>
       supportService.updateConversationPriority(workspaceId, conversationId, priority).then(unwrap),
-    onSuccess: (_data, variables) => refreshConversation(queryClient, workspaceId, variables.conversationId),
-    onError: (error: Error) => {
+    onMutate: async ({ conversationId, priority }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) })
+      const previous = findCachedConversation(queryClient, workspaceId, conversationId)?.priority
+      patchCachedConversation(queryClient, workspaceId, conversationId, { priority })
+      return { previous }
+    },
+    onError: (error: Error, { conversationId }, context) => {
+      if (context?.previous) patchCachedConversation(queryClient, workspaceId, conversationId, { priority: context.previous })
       toast.error('Failed to change priority', { description: error.message })
     },
+    // SLA targets follow priority on the server, so refetch either way.
+    onSettled: (_data, _error, variables) => refreshConversation(queryClient, workspaceId, variables.conversationId),
   })
 }
 
