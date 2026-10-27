@@ -118,6 +118,12 @@ func main() {
 		fatalWithSentry("failed to get underlying sql.DB", err)
 	}
 	defer sqlDB.Close()
+	// Keep warm connections between requests: the database/sql default of 2 idle
+	// connections makes ordinary traffic open new ones constantly, and opening a
+	// connection in the cluster sometimes stalls for 5s. Total connections stay
+	// uncapped as before; the idle limit lets quiet periods release them.
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err := sqlDB.Ping(); err != nil {
 		fatalWithSentry("failed to ping database", err)
