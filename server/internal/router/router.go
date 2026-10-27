@@ -309,6 +309,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/search", h.Docs.PublicSearchArticles)
 			r.With(helpcenterAnswerLimiter).Post("/answer", h.Docs.PublicAnswerQuestion)
 			r.With(helpcenterAnswerLimiter).Post("/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
+			if h.CustomerPortal != nil {
+				r.Get("/portal", h.CustomerPortal.HelpcenterPortal)
+			}
 			r.With(helpAssistantLimiter).Post("/assistant/messages", h.Docs.PublicAssistantAsk)
 			r.Get("/assistant/sessions/{sessionId}", h.Docs.PublicAssistantSession)
 			r.With(helpcenterAnswerLimiter).Post("/assistant/messages/{messageId}/feedback", h.Docs.PublicAssistantFeedback)
