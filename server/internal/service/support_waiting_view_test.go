@@ -114,3 +114,10 @@ func TestSupportInboxViewParamsSnoozedAndSLA(t *testing.T) {
 		t.Fatalf("unknown SLA filter kept: %q", ignored.SLA)
 	}
 }
+
+func TestSupportInboxViewParamsPriority(t *testing.T) {
+	params := supportInboxViewConversationListParams("ws", "user", model.SupportInboxViewFilters{"priority": "urgent,high"})
+	if params.Priority != "urgent,high" {
+		t.Fatalf("priority filter lost: %q", params.Priority)
+	}
+}

@@ -303,6 +303,7 @@ func supportInboxViewConversationListParams(workspaceID, userID string, filters 
 		Search:      strings.TrimSpace(filters["search"]),
 		AssignedTo:  strings.TrimSpace(filters["assignment"]),
 		TagIDs:      splitSupportViewCSV(filters["tag_ids"]),
+		Priority:    strings.TrimSpace(filters["priority"]),
 		SystemTags:  splitSupportViewCSV(filters["system_tags"]),
 		AIFilters:   splitSupportViewCSV(filters["ai"]),
 		Sort:        strings.TrimSpace(filters["sort"]),

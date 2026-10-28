@@ -20,7 +20,7 @@ import { SupportShortcutsDialog } from './SupportShortcutsDialog';
 import { useSupportInboxShortcuts } from '@/hooks/useSupportInboxShortcuts';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
-import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseConversationSortOrder, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+import { parseConversationPriorities, conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseConversationSortOrder, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
 
 const LazySupportAgentSidebar = lazy(() => import('./SupportAgentSidebar').then((module) => ({ default: module.SupportAgentSidebar })));
 const LazyConversationDetailSidebar = lazy(() => import('./ConversationDetailSidebar').then((module) => ({ default: module.ConversationDetailSidebar })));
@@ -232,6 +232,7 @@ export function SupportInboxLayout() {
       assignment: parseRouteAssignments(routeSearch.assigned_to, effectiveNavFilter),
       mailboxIds: parseRouteStringList(routeSearch.mailbox_ids),
       tagIds: parseRouteStringList(routeSearch.tag_ids),
+      ...(routeSearch.priority ? { priorities: parseConversationPriorities(routeSearch.priority) } : {}),
       aiStates: parseRouteAIStates(routeSearch.ai, routeSearch.system_tags, effectiveNavFilter),
       sort: parseConversationSortOrder(routeSearch.sort),
       ...(routeSearch.sla === 'breached' ? { slaBreached: true } : {}),
@@ -243,6 +244,7 @@ export function SupportInboxLayout() {
       routeSearch.assigned_to ||
       routeSearch.mailbox_ids ||
       routeSearch.tag_ids ||
+      routeSearch.priority ||
       routeSearch.ai ||
       routeSearch.sla ||
       routeSearch.system_tags ||
@@ -310,6 +312,7 @@ export function SupportInboxLayout() {
       !stringArraysEqual(nextConversationListFilters.assignment, currentState.conversationListFilters.assignment) ||
       !stringArraysEqual(nextConversationListFilters.mailboxIds, currentState.conversationListFilters.mailboxIds) ||
       !stringArraysEqual(nextConversationListFilters.tagIds, currentState.conversationListFilters.tagIds) ||
+      !stringArraysEqual(nextConversationListFilters.priorities ?? [], currentState.conversationListFilters.priorities ?? []) ||
       !stringArraysEqual(nextConversationListFilters.aiStates, currentState.conversationListFilters.aiStates) ||
       nextConversationListFilters.sort !== currentState.conversationListFilters.sort
     ) {

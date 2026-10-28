@@ -1,4 +1,4 @@
-import type { SupportConversation } from './pmTypes';
+import type { ConversationPriority, SupportConversation } from './pmTypes';
 import type { NavFilter } from '@/stores/supportInboxStore';
 import {
   isAIActiveConversation,
@@ -17,6 +17,7 @@ export interface ConversationListFilters {
   assignment: ConversationAssignmentFilter[];
   mailboxIds: string[];
   tagIds: string[];
+  priorities?: ConversationPriority[];
   aiStates: ConversationAIStateFilter[];
   sort: ConversationSortOrder;
   /** Only conversations with an overdue SLA target. */
@@ -43,6 +44,7 @@ export type ConversationListRequestFilters = {
   sort?: string;
   statuses?: string;
   tag_ids?: string;
+  priority?: string;
   ai?: string;
   sla?: string;
 };
@@ -127,6 +129,7 @@ export function conversationListFiltersEqual(a: ConversationListFilters, b: Conv
     stringArraysEqual(a.assignment, b.assignment) &&
     stringArraysEqual(a.mailboxIds, b.mailboxIds) &&
     stringArraysEqual(a.tagIds, b.tagIds) &&
+    stringArraysEqual(a.priorities ?? [], b.priorities ?? []) &&
     stringArraysEqual(a.aiStates, b.aiStates) &&
     a.sort === b.sort &&
     Boolean(a.slaBreached) === Boolean(b.slaBreached)
@@ -189,6 +192,7 @@ export function normalizeConversationListFilters(
     assignment: filters && 'assignment' in filters ? normalizeAssignmentFilters(filters.assignment) : defaults.assignment,
     mailboxIds: filters?.mailboxIds ?? defaults.mailboxIds,
     tagIds: filters?.tagIds ?? defaults.tagIds,
+    ...(filters?.priorities?.length ? { priorities: filters.priorities } : {}),
     aiStates: filters && 'aiStates' in filters ? normalizeAIStateFilters(filters.aiStates) : defaults.aiStates,
     sort: filters?.sort ?? defaults.sort,
     ...(filters?.slaBreached ? { slaBreached: true } : {}),
@@ -211,6 +215,7 @@ export function hasConversationListChanges({
     !stringArraysEqual(normalized.assignment, defaultAssignmentForNav(navFilter)) ||
     normalized.mailboxIds.length > 0 ||
     normalized.tagIds.length > 0 ||
+    (normalized.priorities?.length ?? 0) > 0 ||
     !stringArraysEqual(normalized.aiStates, defaultAIStatesForNav(navFilter)) ||
     normalized.sort !== 'newest' ||
     Boolean(normalized.slaBreached)
@@ -235,6 +240,7 @@ export function filterChangeCountFromBaseline({
   if (!stringArraysEqual(listFilters.mailboxIds, baselineFilters.mailboxIds)) count += 1;
   if (!stringArraysEqual(listFilters.tagIds, baselineFilters.tagIds)) count += 1;
   if (!stringArraysEqual(listFilters.aiStates, baselineFilters.aiStates)) count += 1;
+  if (!stringArraysEqual(listFilters.priorities ?? [], baselineFilters.priorities ?? [])) count += 1;
   if (listFilters.sort !== baselineFilters.sort) count += 1;
   if (Boolean(listFilters.slaBreached) !== Boolean(baselineFilters.slaBreached)) count += 1;
   return count;
@@ -300,6 +306,7 @@ export function parseSupportInboxViewFilters(
       assignment: parseViewAssignmentFilters(rawFilters.assignment, navFilter),
       mailboxIds: parseViewStringList(rawFilters.mailbox_ids),
       tagIds: parseViewStringList(rawFilters.tag_ids),
+      ...(rawFilters.priority ? { priorities: parseConversationPriorities(rawFilters.priority) } : {}),
       aiStates,
       sort: parseConversationSortOrder(rawFilters.sort),
       ...(rawFilters.sla === 'breached' ? { slaBreached: true } : {}),
@@ -335,6 +342,7 @@ export function buildSupportInboxViewFilters({
   } else if (navFilter !== 'inbox' && normalizedFilters.aiStates.length > 0) {
     filters.ai = normalizedFilters.aiStates.join(',');
   }
+  if (normalizedFilters.priorities?.length) filters.priority = normalizedFilters.priorities.join(',');
   if (normalizedFilters.sort !== 'newest') filters.sort = normalizedFilters.sort;
   if (normalizedFilters.slaBreached) filters.sla = 'breached';
   return filters;
@@ -426,6 +434,7 @@ export function buildConversationListRequestFilters({
   } else {
     if (normalizedFilters.aiStates.length > 0) f.ai = normalizedFilters.aiStates.join(',');
   }
+  if (normalizedFilters.priorities?.length) f.priority = normalizedFilters.priorities.join(',');
   if (normalizedFilters.sort !== 'newest') f.sort = normalizedFilters.sort;
   if (normalizedFilters.slaBreached) f.sla = 'breached';
   return Object.keys(f).length > 0 ? f : undefined;
@@ -487,6 +496,7 @@ export function filterSupportConversations(
     skipViewFilter?: boolean;
     aiStates?: ConversationAIStateFilter[];
     slaBreached?: boolean;
+    priorities?: ConversationPriority[];
   }
 ): SupportConversation[] {
   const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false, aiStates, slaBreached = false } = options;
@@ -534,6 +544,11 @@ export function filterSupportConversations(
     });
   }
 
+  const priorities = options.priorities ?? [];
+  if (priorities.length > 0) {
+    result = result.filter((conversation) => priorities.includes(conversation.priority));
+  }
+
   if (searchQuery.trim()) {
     const query = searchQuery.toLowerCase();
     result = result.filter(
@@ -566,4 +581,16 @@ export function filterSupportConversations(
 /** A snoozed conversation is hidden from team queues until it wakes. */
 export function isSnoozedConversation(conversation: Pick<SupportConversation, 'snoozed_until' | 'status'>): boolean {
   return Boolean(conversation.snoozed_until) && conversation.status !== 'resolved' && conversation.status !== 'spam';
+}
+
+export const CONVERSATION_PRIORITY_OPTIONS: { value: ConversationPriority; label: string }[] = [
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+];
+
+export function parseConversationPriorities(value: unknown): ConversationPriority[] {
+  return parseViewStringList(value).filter((priority): priority is ConversationPriority =>
+    CONVERSATION_PRIORITY_OPTIONS.some(option => option.value === priority));
 }

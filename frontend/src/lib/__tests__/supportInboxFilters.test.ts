@@ -504,3 +504,21 @@ describe('snooze and SLA filters', () => {
     expect(restored.listFilters).toMatchObject({ sort: 'sla', slaBreached: true });
   });
 });
+
+
+describe('priority views', () => {
+  it('saves, restores and requests multiple priorities', () => {
+    const listFilters = { ...defaultConversationListFiltersForNav('inbox'), priorities: ['urgent', 'high'] as const };
+    const args = { navFilter: 'inbox' as const, selectedMailboxId: 'all', searchQuery: '', listFilters: { ...listFilters, priorities: [...listFilters.priorities] } };
+    const saved = buildSupportInboxViewFilters(args);
+    expect(saved.priority).toBe('urgent,high');
+    expect(parseSupportInboxViewFilters(saved, 'inbox').listFilters.priorities).toEqual(['urgent', 'high']);
+    expect(buildConversationListRequestFilters(args)?.priority).toBe('urgent,high');
+    expect(hasConversationListChanges(args)).toBe(true);
+  });
+
+  it('removes conversations that no longer match the selected priority', () => {
+    const conversations = [buildConversation({ id: 'high', priority: 'high' }), buildConversation({ id: 'low', priority: 'low' })];
+    expect(filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', searchQuery: '', priorities: ['high', 'urgent'] }).map(c => c.id)).toEqual(['high']);
+  });
+});

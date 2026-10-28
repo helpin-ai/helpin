@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, memo, useEffect, useRef, type ReactNode, type UIEvent } from 'react';
+import { useMemo, useCallback, useState, memo, useEffect, useRef, type UIEvent } from 'react';
 import {
   CheckmarkCircle02Icon,
   FilterHorizontalIcon,
@@ -13,7 +13,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCreateSupportInboxView, useHasAnySupportConversation, useInfiniteConversations, useInboxScopes, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { supportInboxBuiltinViewKey, useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
@@ -34,14 +33,11 @@ import {
   parseSupportInboxViewFilters,
   statesEqual,
   stringArraysEqual,
-  type ConversationAIStateFilter,
-  type ConversationAssignmentFilter,
-  type ConversationSortOrder,
-  type ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
-import type { SupportConversation, SupportInboxScope, SupportInboxView, SupportTag } from '@/lib/pmTypes';
+import type { SupportConversation, SupportInboxScope, SupportInboxView } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
-import { SupportTagBadge } from './SupportTagPicker';
+import { SupportViewFilters } from './SupportViewFilters';
+import { useSLAPolicies } from '@/hooks/queries/useSupportOperations';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 import { ConversationBulkToolbar } from './ConversationBulkToolbar';
@@ -136,106 +132,6 @@ function titleForView(navFilter: NavFilter): string {
   }
 }
 
-function FilterPill({
-  children,
-  selected,
-  onClick,
-}: {
-  children: ReactNode;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',
-        selected
-          ? 'border-border bg-primary/10 text-primary'
-          : 'border-border bg-background text-foreground hover:bg-muted'
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-function FilterSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <div className="text-[11px] font-semibold uppercase tracking-normal text-muted-foreground">{title}</div>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </div>
-  );
-}
-
-function TagFilterSelector({
-  tags,
-  selectedTagIds,
-  onToggleTag,
-}: {
-  tags: SupportTag[];
-  selectedTagIds: string[];
-  onToggleTag: (tagId: string) => void;
-}) {
-  const selectedTags = tags.filter((tag) => selectedTagIds.includes(tag.id));
-
-  return (
-    <>
-      {selectedTags.map((tag) => (
-        <SupportTagBadge
-          key={tag.id}
-          name={tag.name}
-          color={tag.color}
-          onRemove={() => onToggleTag(tag.id)}
-        />
-      ))}
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-5 gap-1 rounded-sm border-[0.5px] px-1.5 text-[11px] font-medium leading-none"
-          >
-            <PlusSignIcon className="h-3 w-3" />
-            Add
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-0">
-          <Command shouldFilter>
-            <CommandInput placeholder="Search tags..." className="h-8 text-xs" />
-            <CommandList className="max-h-56">
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                No tags found
-              </CommandEmpty>
-              {tags.length > 0 && (
-                <CommandGroup>
-                  {tags.map((tag) => (
-                    <CommandItem
-                      key={tag.id}
-                      value={tag.name}
-                      data-checked={selectedTagIds.includes(tag.id)}
-                      onSelect={() => onToggleTag(tag.id)}
-                    >
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: tag.color || 'var(--muted-foreground)' }}
-                      />
-                      <span className="truncate">{tag.name}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-    </>
-  );
-}
-
 export type SupportInboxEmptyState = 'onboarding' | 'inbox-zero' | null;
 
 interface ConversationListProps {
@@ -279,14 +175,12 @@ export function ConversationList({
   const setBuiltinViewFilter = useSupportInboxStore((s) => s.setBuiltinViewFilter);
   const syncRouteState = useSupportInboxStore((s) => s.syncRouteState);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
-  const createCustomViewOpen = useSupportInboxStore((s) => s.createCustomViewOpen);
-  const setCreateCustomViewOpen = useSupportInboxStore((s) => s.setCreateCustomViewOpen);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const handoffConversationId = useSupportInboxStore((s) => s.conversationHandoff?.fromConversationId ?? null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
-  const [saveViewShared, setSaveViewShared] = useState(false);
+  const [saveViewShared, setSaveViewShared] = useState(canCreateSharedViews);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const createInboxView = useCreateSupportInboxView(workspaceId);
@@ -295,6 +189,7 @@ export function ConversationList({
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: customViews = [] } = useSupportInboxViews(workspaceId, !!activeCustomViewId);
   const { data: supportTags = [] } = useSupportTags(workspaceId);
+  const { data: slaPolicies } = useSLAPolicies(workspaceId);
 
   const handleSelect = useCallback((id: string, _unreadCount?: number) => {
     if (onConversationOpen) {
@@ -344,8 +239,9 @@ export function ConversationList({
       skipViewFilter: shouldSkipSidebarViewFilter,
       aiStates: conversationListFilters.aiStates,
       slaBreached: conversationListFilters.slaBreached,
+      priorities: conversationListFilters.priorities,
     });
-  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.priorities, conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
 
   // J and K move through the list in its current order. The previous order
@@ -516,64 +412,6 @@ export function ConversationList({
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  const toggleStateFilter = useCallback((state: ConversationStateFilter) => {
-    const currentStates = conversationListFilters.states;
-    const nextStates = currentStates.includes(state)
-      ? currentStates.filter((value) => value !== state)
-      : [...currentStates, state];
-    if (nextStates.length === 0) return;
-    setConversationListFilter('states', nextStates);
-  }, [conversationListFilters.states, setConversationListFilter]);
-
-  const toggleAssignmentFilter = useCallback((assignment: ConversationAssignmentFilter) => {
-    const currentAssignments = conversationListFilters.assignment;
-    const nextAssignments = currentAssignments.includes(assignment)
-      ? currentAssignments.filter((value) => value !== assignment)
-      : [...currentAssignments, assignment];
-    if (navFilter === 'mine' && nextAssignments.length === 0) return;
-    setConversationListFilter('assignment', nextAssignments);
-  }, [conversationListFilters.assignment, navFilter, setConversationListFilter]);
-
-  const toggleMailboxFilter = useCallback((mailboxId: string) => {
-    if (mailboxId === 'all') {
-      setConversationMailboxFilters(navFilter === 'inbox' ? ['all'] : []);
-      return;
-    }
-    const currentMailboxIds = conversationListFilters.mailboxIds.length > 0
-      ? conversationListFilters.mailboxIds
-      : selectedMailboxId !== 'all'
-        ? [selectedMailboxId]
-        : navFilter === 'inbox'
-          ? ['shared']
-          : [];
-    if (currentMailboxIds.length === 0) {
-      setConversationMailboxFilters([mailboxId]);
-      return;
-    }
-    const scopedMailboxIds = currentMailboxIds.filter((value) => value !== 'all');
-    const nextMailboxIds = scopedMailboxIds.includes(mailboxId)
-      ? scopedMailboxIds.filter((value) => value !== mailboxId)
-      : [...scopedMailboxIds, mailboxId];
-    if (nextMailboxIds.length === 0) return;
-    setConversationMailboxFilters(nextMailboxIds);
-  }, [conversationListFilters.mailboxIds, navFilter, selectedMailboxId, setConversationMailboxFilters]);
-
-  const toggleTagFilter = useCallback((tagId: string) => {
-    const currentTags = conversationListFilters.tagIds;
-    const nextTags = currentTags.includes(tagId)
-      ? currentTags.filter((value) => value !== tagId)
-      : [...currentTags, tagId];
-    setConversationListFilter('tagIds', nextTags);
-  }, [conversationListFilters.tagIds, setConversationListFilter]);
-
-  const toggleAIStateFilter = useCallback((aiState: ConversationAIStateFilter) => {
-    const currentStates = conversationListFilters.aiStates;
-    const nextStates = currentStates.includes(aiState)
-      ? currentStates.filter((value) => value !== aiState)
-      : [...currentStates, aiState];
-    setConversationListFilter('aiStates', nextStates);
-  }, [conversationListFilters.aiStates, setConversationListFilter]);
-
   const handleSaveView = useCallback(() => {
     const name = saveViewName.trim();
     if (!name) return;
@@ -590,7 +428,7 @@ export function ConversationList({
       onSuccess: (view) => {
         setSaveViewOpen(false);
         setSaveViewName('');
-        setSaveViewShared(false);
+        setSaveViewShared(canCreateSharedViews);
         onViewCreated?.(view);
       },
     });
@@ -728,11 +566,8 @@ export function ConversationList({
             </TooltipContent>
           </Tooltip>
           <Popover
-            open={filterPopoverOpen || createCustomViewOpen}
-            onOpenChange={(open) => {
-              setFilterPopoverOpen(open);
-              if (!open) setCreateCustomViewOpen(false);
-            }}
+            open={filterPopoverOpen}
+            onOpenChange={setFilterPopoverOpen}
           >
             <Tooltip>
               <TooltipTrigger asChild>
@@ -757,7 +592,7 @@ export function ConversationList({
             <PopoverContent side="right" align="start" sideOffset={8} className="w-[380px] p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="min-w-0 text-sm font-semibold">
-                  <span className="block truncate">{createCustomViewOpen ? 'New view' : `${listTitle} filters`}</span>
+                  <span className="block truncate">{`${listTitle} filters`}</span>
                 </div>
                 {activeFilterCount > 0 && (
                   <Button
@@ -771,121 +606,19 @@ export function ConversationList({
                 )}
               </div>
                 <div className="space-y-4">
-                  <FilterSection title="State">
-                    {[
-                      ['Open', 'open'],
-                      ['Waiting', 'waiting_on_customer'],
-                      ['Resolved', 'resolved'],
-                      ['Spam', 'spam'],
-                    ].map(([label, value]) => (
-                      <FilterPill
-                        key={value}
-                        selected={conversationListFilters.states.includes(value as ConversationStateFilter)}
-                        onClick={() => toggleStateFilter(value as ConversationStateFilter)}
-                      >
-                        {label}
-                      </FilterPill>
-                    ))}
-                  </FilterSection>
-                  <FilterSection title="AI state">
-                    {([
-                      ['AI handling', 'handling'],
-                      ['AI handoff', 'handoff'],
-                      ['AI resolved', 'resolved'],
-                    ] as Array<[string, ConversationAIStateFilter]>).map(([label, value]) => (
-                      <FilterPill
-                        key={value}
-                        selected={conversationListFilters.aiStates.includes(value)}
-                        onClick={() => toggleAIStateFilter(value)}
-                      >
-                        {label}
-                      </FilterPill>
-                    ))}
-                  </FilterSection>
-                  <FilterSection title="Assignment">
-                    {[
-                      ['Assigned to me', 'me'],
-                      ['Mentioned me', 'mentioned_me'],
-                      ['Opened by me', 'opened_by_me'],
-                      ['Unassigned', 'unassigned'],
-                      ['Assigned to others', 'others'],
-                    ].map(([label, value]) => (
-                      <FilterPill
-                        key={value}
-                        selected={conversationListFilters.assignment.includes(value as ConversationAssignmentFilter)}
-                        onClick={() => toggleAssignmentFilter(value as ConversationAssignmentFilter)}
-                      >
-                        {label}
-                      </FilterPill>
-                    ))}
-                  </FilterSection>
-                  <FilterSection title="Tags">
-                    <TagFilterSelector
-                      tags={supportTags}
-                      selectedTagIds={conversationListFilters.tagIds}
-                      onToggleTag={toggleTagFilter}
-                    />
-                  </FilterSection>
-                  <FilterSection title="Team inbox">
-                    <FilterPill
-                      selected={
-                        conversationListFilters.mailboxIds.includes('all') ||
-                        (selectedMailboxId === 'all' && conversationListFilters.mailboxIds.length === 0 && navFilter !== 'inbox')
-                      }
-                      onClick={() => toggleMailboxFilter('all')}
-                    >
-                      All
-                    </FilterPill>
-                    <FilterPill
-                      selected={
-                        conversationListFilters.mailboxIds.length > 0
-                          ? conversationListFilters.mailboxIds.includes('shared')
-                          : selectedMailboxId === 'all' && navFilter === 'inbox'
-                      }
-                      onClick={() => toggleMailboxFilter('shared')}
-                    >
-                      Main inbox
-                    </FilterPill>
-                    {teamInboxFilterOptions.map((mailbox) => (
-                      <FilterPill
-                        key={mailbox.id}
-                        selected={
-                          conversationListFilters.mailboxIds.length > 0
-                            ? conversationListFilters.mailboxIds.includes(mailbox.id)
-                            : selectedMailboxId === mailbox.id
-                        }
-                        onClick={() => toggleMailboxFilter(mailbox.id)}
-                      >
-                        {mailbox.name}
-                      </FilterPill>
-                    ))}
-                  </FilterSection>
-                  <FilterSection title="SLA">
-                    <FilterPill
-                      selected={Boolean(conversationListFilters.slaBreached)}
-                      onClick={() => setConversationListFilter('slaBreached', !conversationListFilters.slaBreached)}
-                    >
-                      Breached only
-                    </FilterPill>
-                  </FilterSection>
-                  <FilterSection title="Sort">
-                    {[
-                      ['Newest', 'newest'],
-                      ['Oldest', 'oldest'],
-                      ['Next SLA due', 'sla'],
-                    ].map(([label, value]) => (
-                      <FilterPill
-                        key={value}
-                        selected={conversationListFilters.sort === value}
-                        onClick={() => setConversationListFilter('sort', value as ConversationSortOrder)}
-                      >
-                        {label}
-                      </FilterPill>
-                    ))}
-                  </FilterSection>
-                  {(createCustomViewOpen || canSaveCurrentView || canUpdateCurrentView) && (
+                  <SupportViewFilters
+                    conversationListFilters={conversationListFilters}
+                    navFilter={navFilter}
+                    selectedMailboxId={selectedMailboxId}
+                    setConversationListFilter={setConversationListFilter}
+                    setConversationMailboxFilters={setConversationMailboxFilters}
+                    supportTags={supportTags}
+                    teamInboxFilterOptions={teamInboxFilterOptions}
+                    slaEnabled={slaPolicies?.some(policy => policy.enabled) ?? true}
+                  />
+                  {(canSaveCurrentView || canUpdateCurrentView) && (
                     <div className="space-y-2 border-t pt-3">
-                      {!createCustomViewOpen && canUpdateCurrentView && (
+                      {canUpdateCurrentView && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -912,11 +645,11 @@ export function ConversationList({
                         className="w-full justify-center"
                         onClick={() => {
                           setFilterPopoverOpen(false);
-                          setCreateCustomViewOpen(false);
+                          setSaveViewShared(canCreateSharedViews);
                           setSaveViewOpen(true);
                         }}
                       >
-                        {createCustomViewOpen ? 'Create view' : 'Save as new view'}
+                        Save as new view
                       </Button>
                     </div>
                   )}

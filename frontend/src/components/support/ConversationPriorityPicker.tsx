@@ -4,12 +4,7 @@ import { onSupportShortcut } from '@/lib/supportShortcuts'
 import { PriorityIcon } from '@/lib/pmConstants'
 import type { ConversationPriority } from '@/lib/pmTypes'
 
-const CONVERSATION_PRIORITY_OPTIONS: { value: ConversationPriority; label: string }[] = [
-  { value: 'urgent', label: 'Urgent' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
-]
+import { CONVERSATION_PRIORITY_OPTIONS } from '@/lib/supportInboxFilters'
 
 /** Compact priority select used in the conversation details. */
 export function ConversationPriorityPicker({
