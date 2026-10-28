@@ -483,7 +483,7 @@ func (h *CustomerPortalHandler) ConfirmAttachment(w http.ResponseWriter, r *http
 // are logged and reported with fallback, never with internal detail.
 func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string, err error, fallback string) {
 	if message, rejected := service.IsSupportAttachmentRejected(err); rejected {
-		writeError(w, http.StatusBadRequest, message)
+		writeErrorCode(w, http.StatusBadRequest, message, service.SupportAttachmentRejectionCode(err))
 		return
 	}
 	switch {

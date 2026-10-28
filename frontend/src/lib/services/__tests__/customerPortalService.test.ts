@@ -6,6 +6,7 @@ vi.mock('@/lib/api', () => ({ API_BASE: '/api', uploadToS3: upload.toS3 }))
 import {
   CustomerPortalApiError,
   customerPortalService,
+  isRefusedPortalUpload,
 } from '../customerPortalService'
 
 describe('customerPortalService', () => {
@@ -130,7 +131,12 @@ describe('customerPortalService', () => {
     expect(onProgress).toHaveBeenCalledWith(50)
     expect(fetchMock.mock.calls[1][0]).toContain('/requests/req_1/attachments/att-1/confirm')
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'tool.exe files are not supported' }), { status: 400, headers: { 'Content-Type': 'application/json' } })))
-    await expect(customerPortalService.uploadAttachment('acme', new File(['x'], 'tool.exe', { type: 'application/x-msdownload' }))).rejects.toThrow('tool.exe files are not supported')
+    const refusal = "tool.exe can't be sent because this file type isn't accepted"
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: refusal, code: 'attachment_refused' }), { status: 400, headers: { 'Content-Type': 'application/json' } })))
+    const failure = await customerPortalService.uploadAttachment('acme', new File(['x'], 'tool.exe', { type: 'application/x-msdownload' })).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(CustomerPortalApiError)
+    expect((failure as Error).message).toBe(refusal)
+    expect(isRefusedPortalUpload(failure)).toBe(true)
+    expect(isRefusedPortalUpload(new CustomerPortalApiError(400, 'did not finish uploading'))).toBe(false)
   })
 })

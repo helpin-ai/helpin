@@ -22,23 +22,24 @@ func TestWritePortalErrorReportsAttachmentRejections(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	rejected := &service.SupportAttachmentRejectedError{Message: "clip.avi exceeds the maximum size of 100MB"}
+	unfinished := &service.SupportAttachmentRejectedError{Message: "clip.avi did not finish uploading. Please try again.", Retryable: true}
 	for _, tc := range []struct {
-		name string
-		err  error
-		want string
+		name, want, wantCode string
+		err                  error
 	}{
-		{"rejected upload", fmt.Errorf("create attachment: %w", rejected), rejected.Message},
-		{"too many files", service.ErrPortalTooManyAttachments, service.ErrPortalTooManyAttachments.Error()},
+		{name: "rejected upload", err: fmt.Errorf("create attachment: %w", rejected), want: rejected.Message, wantCode: service.SupportAttachmentRefusedCode},
+		{name: "unfinished upload", err: unfinished, want: unfinished.Message},
+		{name: "too many files", err: service.ErrPortalTooManyAttachments, want: service.ErrPortalTooManyAttachments.Error()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			writePortalError(w, httptest.NewRequest(http.MethodPost, "/", nil), "ws", tc.err, "attachment unavailable")
-			var body struct{ Error string }
+			var body struct{ Error, Code string }
 			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
-			if w.Code != http.StatusBadRequest || body.Error != tc.want {
-				t.Fatalf("status %d body %q, want 400 %q", w.Code, body.Error, tc.want)
+			if w.Code != http.StatusBadRequest || body.Error != tc.want || body.Code != tc.wantCode {
+				t.Fatalf("status %d body %q code %q, want 400 %q code %q", w.Code, body.Error, body.Code, tc.want, tc.wantCode)
 			}
 		})
 	}

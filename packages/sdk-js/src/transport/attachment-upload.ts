@@ -17,11 +17,18 @@ function checkAborted(signal: AbortSignal): void {
   if (signal.aborted) throw aborted();
 }
 
+// The server marks a file it refuses for good, such as one whose contents
+// don't match its type; the widget then offers no retry.
+const ATTACHMENT_REFUSED_CODE = 'attachment_refused';
+
 async function responseError(response: Response, fallback: string): Promise<Error> {
   try {
     const body = await response.json();
     const message = typeof body.error === 'string' ? body.error : body.message;
-    if (typeof message === 'string' && message.trim()) return new Error(message);
+    if (typeof message === 'string' && message.trim()) {
+      const error = new Error(message);
+      return body.code === ATTACHMENT_REFUSED_CODE ? Object.assign(error, { refused: true }) : error;
+    }
   } catch {
     // Storage and proxy errors may not have a JSON body.
   }

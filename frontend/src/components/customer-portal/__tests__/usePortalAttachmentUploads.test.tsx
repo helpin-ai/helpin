@@ -2,7 +2,7 @@
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CustomerPortalUploadOptions } from '@/lib/services/customerPortalService'
+import { CustomerPortalApiError, type CustomerPortalUploadOptions } from '@/lib/services/customerPortalService'
 import { usePortalAttachmentUploads, type PortalAttachmentUploads } from '../usePortalAttachmentUploads'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -95,6 +95,16 @@ describe('usePortalAttachmentUploads', () => {
     await flush()
     expect(current.blocked).toBe(false)
     expect(current.attachmentIds).toEqual(['att-a'])
+  })
+
+  it('marks a file the server refused for good', async () => {
+    await act(async () => current.addFiles([png('a.png'), png('b.png')]))
+    await act(async () => {
+      pending[0].reject(new CustomerPortalApiError(400, 'a.png can’t be sent', 'attachment_refused'))
+      pending[1].reject(new CustomerPortalApiError(400, 'b.png did not finish uploading. Please try again.'))
+    })
+    await flush()
+    expect(current.files.map((file) => file.refused)).toEqual([true, false])
   })
 
   it('cancels a removed upload and releases its preview', async () => {

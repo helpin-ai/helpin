@@ -167,12 +167,19 @@ export interface CreateCustomerPortalRequestInput {
 
 export class CustomerPortalApiError extends Error {
   readonly status: number
+  readonly code?: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.name = 'CustomerPortalApiError'
     this.status = status
+    this.code = code
   }
+}
+
+/** isRefusedPortalUpload reports whether the server refused a file for good, so a retry would fail the same way. */
+export function isRefusedPortalUpload(error: unknown) {
+  return error instanceof CustomerPortalApiError && error.code === 'attachment_refused'
 }
 
 async function portalRequest<T>(
@@ -195,13 +202,15 @@ async function portalRequest<T>(
 
   if (!response.ok) {
     let message = 'Something went wrong. Please try again.'
+    let code: string | undefined
     try {
-      const body = (await response.json()) as { error?: string; message?: string }
+      const body = (await response.json()) as { error?: string; message?: string; code?: string }
       message = body.error || body.message || message
+      code = body.code
     } catch {
       // The public API may deliberately return an empty body for unavailable portals.
     }
-    throw new CustomerPortalApiError(response.status, message)
+    throw new CustomerPortalApiError(response.status, message, code)
   }
 
   if (response.status === 204 || response.status === 202) return undefined as T

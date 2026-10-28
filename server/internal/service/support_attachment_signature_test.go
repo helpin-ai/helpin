@@ -156,6 +156,25 @@ func TestInboundEmailAttachmentWithMismatchedContentIsRefusedOnce(t *testing.T) 
 	}
 }
 
+func TestInboundEmailSVGAttachmentIsRefused(t *testing.T) {
+	db := newTestDB(t)
+	createSupportAttachmentTestTable(t, db)
+	store := newTestSupportObjectStore(t, map[string][]byte{})
+	svc := NewSupportAttachmentService(repository.NewSupportAttachmentRepository(db), store.client)
+	svg := base64.StdEncoding.EncodeToString([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`))
+	_, err := svc.StoreInboundEmailAttachment(context.Background(), supportInboundEmailAttachmentRequest{
+		WorkspaceID: "workspace", ConversationID: "conversation", FileName: "logo.svg",
+		ContentType: "image/svg+xml", Base64Content: svg,
+	})
+	want := "logo.svg was not saved because SVG files from customers aren't accepted"
+	if message, ok := IsSupportAttachmentRejected(err); !ok || message != want {
+		t.Fatalf("error = %v, want refusal %q", err, want)
+	}
+	if len(store.objects) != 0 {
+		t.Fatalf("refused SVG was stored: %d objects", len(store.objects))
+	}
+}
+
 // isoMedia builds an ISO base media "ftyp" box with a major and compatible brands.
 func isoMedia(major string, compatible ...string) []byte {
 	box := []byte{0, 0, 0, 0}

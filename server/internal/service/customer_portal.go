@@ -172,7 +172,7 @@ func (s *CustomerPortalService) Configuration(ctx context.Context, ws *PortalWor
 		IntakeEnabled:          ws.Settings.PortalIntakeEnabled,
 		AnonymousIntakeEnabled: s.anonymousIntakeEnabled(ws),
 		FileUploadsEnabled:     ws.Settings.FileUploadsEnabled,
-		Attachments:            PortalAttachmentPolicy{SupportAttachmentPolicy: CurrentSupportAttachmentPolicy(), MaxFiles: PortalMaxAttachmentsPerMessage},
+		Attachments:            PortalAttachmentPolicy{SupportAttachmentPolicy: CustomerSupportAttachmentPolicy(), MaxFiles: PortalMaxAttachmentsPerMessage},
 		Branding:               s.branding(ctx, ws),
 		PublicURL:              s.PublicURL(ctx, ws),
 	}

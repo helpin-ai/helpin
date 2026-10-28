@@ -5,9 +5,12 @@ export interface AttachmentUploadOptions {
   signal?: AbortSignal;
   onProgress?: (percent: number) => void;
 }
+// Rejects with an Error; one with `refused: true` means the server refused the
+// file itself, so the widget offers no retry.
 export type UploadAttachment = (file: File, localId: string, options?: AttachmentUploadOptions) => Promise<{ attachmentId: string; url: string } | null>;
 export const MAX_SUPPORT_FILE_SIZE = 100 * 1024 * 1024;
-export const SUPPORT_FILE_ACCEPT = 'image/*,video/mp4,video/quicktime,video/webm,video/mpeg,video/x-msvideo,video/x-matroska,.mp4,.mov,.webm,.mpeg,.mpg,.avi,.mkv,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md';
+// Images are listed one by one: customers can't send SVG, which can carry script.
+export const SUPPORT_FILE_ACCEPT = 'image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,video/mp4,video/quicktime,video/webm,video/mpeg,video/x-msvideo,video/x-matroska,.mp4,.mov,.webm,.mpeg,.mpg,.avi,.mkv,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md';
 const videoTypes: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mpeg: 'video/mpeg', mpg: 'video/mpeg', avi: 'video/x-msvideo', mkv: 'video/x-matroska' };
 
 export function useAttachmentUploads(scope: string, upload?: UploadAttachment) {
@@ -39,7 +42,7 @@ export function useAttachmentUploads(scope: string, upload?: UploadAttachment) {
     const controller = new AbortController();
     entry.controller = controller;
     const active = () => entries.current.get(id) === entry && entry.controller === controller && !controller.signal.aborted;
-    setPending(rows => rows.map(row => row.id === id ? { ...row, status: 'uploading', progress: 0, error: undefined } : row));
+    setPending(rows => rows.map(row => row.id === id ? { ...row, status: 'uploading', progress: 0, error: undefined, refused: undefined } : row));
     try {
       const result = await upload(entry.file, id, {
         signal: controller.signal,
@@ -51,7 +54,8 @@ export function useAttachmentUploads(scope: string, upload?: UploadAttachment) {
       if (!result) throw new Error('Upload failed. Please try again.');
       setPending(rows => rows.map(row => row.id === id ? { ...row, status: 'uploaded', progress: 100, attachmentId: result.attachmentId } : row));
     } catch (error) {
-      if (active()) setPending(rows => rows.map(row => row.id === id ? { ...row, status: 'error', error: error instanceof Error ? error.message : 'Upload failed. Please try again.' } : row));
+      const refused = (error as { refused?: unknown } | null)?.refused === true;
+      if (active()) setPending(rows => rows.map(row => row.id === id ? { ...row, status: 'error', error: error instanceof Error ? error.message : 'Upload failed. Please try again.', refused } : row));
     } finally {
       if (entry.controller === controller) entry.controller = undefined;
     }

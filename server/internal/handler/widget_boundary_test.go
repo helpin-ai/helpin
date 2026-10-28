@@ -49,7 +49,21 @@ func TestWidgetErrorsExplainRefusedFiles(t *testing.T) {
 	rec := httptest.NewRecorder()
 	refused := &service.SupportAttachmentRejectedError{Message: "photo.jpg can't be sent because its contents don't match its file type"}
 	writeWidgetError(rec, req, http.StatusBadRequest, fmt.Errorf("confirm upload: %w", refused))
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), refused.Message) {
+	var body struct{ Error, Code string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusBadRequest || body.Error != refused.Message {
 		t.Fatalf("visitor did not get the reason: %d %s", rec.Code, rec.Body.String())
+	}
+	if body.Code != service.SupportAttachmentRefusedCode {
+		t.Fatalf("code = %q, want the widget told not to offer a retry", body.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	unfinished := &service.SupportAttachmentRejectedError{Message: "photo.jpg did not finish uploading. Please try again.", Retryable: true}
+	writeWidgetError(rec, req, http.StatusBadRequest, unfinished)
+	if strings.Contains(rec.Body.String(), "code") || !strings.Contains(rec.Body.String(), unfinished.Message) {
+		t.Fatalf("an unfinished upload must stay retryable: %s", rec.Body.String())
 	}
 }

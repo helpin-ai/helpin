@@ -55,8 +55,8 @@ func (s *SupportAttachmentService) Create(
 	if req.ContentType == "" {
 		return nil, rejectSupportAttachment("the file type of %s could not be determined", req.FileName)
 	}
-	if !supportAttachmentContentTypes[req.ContentType] {
-		return nil, rejectSupportAttachment("%s files are not supported", req.ContentType)
+	if !supportAttachmentTypeAllowed(req.ContentType, uploaderType) {
+		return nil, refuseSupportAttachmentType(req.FileName, req.ContentType)
 	}
 
 	conversationID = strings.TrimSpace(conversationID)
@@ -204,8 +204,11 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	if !supportAttachmentContentTypes[contentType] {
-		return nil, rejectSupportAttachment("file type %s is not allowed", contentType)
+	if !supportAttachmentTypeAllowed(contentType, supportUploaderCustomer) {
+		if contentType == "image/svg+xml" {
+			return nil, rejectSupportAttachment("%s was not saved because SVG files from customers aren't accepted", fileName)
+		}
+		return nil, rejectSupportAttachment("%s was not saved because this file type isn't accepted", fileName)
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Base64Content))
 	if err != nil {

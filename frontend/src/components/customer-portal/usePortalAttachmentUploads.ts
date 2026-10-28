@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CustomerPortalAttachmentPolicy, CustomerPortalUploadOptions, CustomerPortalUploadedFile } from '@/lib/services/customerPortalService'
+import { isRefusedPortalUpload, type CustomerPortalAttachmentPolicy, type CustomerPortalUploadOptions, type CustomerPortalUploadedFile } from '@/lib/services/customerPortalService'
 import { fileRejection, isPreviewableImageType, withInferredFileType } from '@/lib/supportAttachmentFiles'
 
 export type PortalUploadStatus = 'queued' | 'uploading' | 'uploaded' | 'error'
@@ -13,6 +13,8 @@ export interface PortalPendingFile {
   status: PortalUploadStatus
   progress: number
   error?: string
+  /** The server refused the file itself, so a retry would fail the same way. */
+  refused?: boolean
   attachmentId?: string
 }
 
@@ -58,7 +60,7 @@ export function usePortalAttachmentUploads({ upload, policy }: { upload: Upload;
       const controller = new AbortController()
       entry.controller = controller
       active.current += 1
-      update(id, { status: 'uploading', progress: 0, error: undefined })
+      update(id, { status: 'uploading', progress: 0, error: undefined, refused: undefined })
       uploadRef.current(entry.file, {
         signal: controller.signal,
         onProgress: (percent) => {
@@ -70,7 +72,7 @@ export function usePortalAttachmentUploads({ upload, policy }: { upload: Upload;
         })
         .catch((reason: unknown) => {
           if (controller.signal.aborted) return
-          update(id, { status: 'error', error: reason instanceof Error ? reason.message : 'Upload failed. Please try again.' })
+          update(id, { status: 'error', error: reason instanceof Error ? reason.message : 'Upload failed. Please try again.', refused: isRefusedPortalUpload(reason) })
         })
         .finally(() => {
           if (entry.controller === controller) entry.controller = undefined

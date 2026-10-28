@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -299,7 +300,7 @@ func TestPortalReferenceIsOpaque(t *testing.T) {
 func TestCustomerPortalConfigurationCarriesAttachmentPolicy(t *testing.T) {
 	svc, _, _, ws := setupCustomerPortalService(t)
 	policy := svc.Configuration(context.Background(), ws).Attachments
-	if policy.MaxFiles != PortalMaxAttachmentsPerMessage || policy.MaxBytes != maxSupportFileSize || len(policy.ContentTypes) != len(supportAttachmentContentTypes) {
+	if policy.MaxFiles != PortalMaxAttachmentsPerMessage || policy.MaxBytes != maxSupportFileSize || !slices.Equal(policy.ContentTypes, CustomerSupportAttachmentPolicy().ContentTypes) {
 		t.Fatalf("unexpected attachment policy: %+v", policy)
 	}
 }

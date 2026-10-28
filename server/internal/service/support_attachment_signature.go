@@ -28,7 +28,10 @@ func (s *SupportAttachmentService) checkUploadedContent(ctx context.Context, att
 	if err != nil {
 		slog.WarnContext(ctx, "open uploaded support attachment failed",
 			"workspace_id", attachment.WorkspaceID, "attachment_id", attachment.ID, "error", err)
-		return rejectSupportAttachment("%s did not finish uploading. Please try again.", attachment.FileName)
+		return &SupportAttachmentRejectedError{
+			Message:   fmt.Sprintf("%s did not finish uploading. Please try again.", attachment.FileName),
+			Retryable: true,
+		}
 	}
 	head, err := io.ReadAll(io.LimitReader(body, supportAttachmentSniffBytes))
 	if closeErr := body.Close(); closeErr != nil {
