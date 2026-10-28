@@ -41,8 +41,6 @@ export function SupportCreateTaskModal({ workspaceId, workspaceSlug, conversatio
     access?.membership.support_default_team_id,
     teams[0]?.id,
   ].find(id => teams.some(team => team.id === id));
-  const sourceHref = `/w/${encodeURIComponent(workspaceSlug)}/support/${encodeURIComponent(conversationId)}`;
-  const sourceLabel = conversation ? [conversation.display_id && `#${conversation.display_id}`, conversation.subject].filter(Boolean).join(' · ') : undefined;
   const settingsLoading = !conversation || !scopes || !access || teamsLoading;
   let settingsError = '';
   if (settingsLoading || !teams.length) {
@@ -58,22 +56,20 @@ export function SupportCreateTaskModal({ workspaceId, workspaceSlug, conversatio
     <Dialog open onOpenChange={onOpenChange}>
       <CreateEntityDialogContent className="w-[480px]">
         <SupportTaskPreparation phase={settingsError ? 'blocked' : 'loading'} error={settingsError}
-          sourceHref={conversation ? sourceHref : undefined} sourceLabel={sourceLabel} onCancel={() => onOpenChange(false)} />
+          onCancel={() => onOpenChange(false)} />
       </CreateEntityDialogContent>
     </Dialog>
   );
   return (
     <SupportCreateTaskForm key={`${workspaceId}:${conversationId}`} workspaceId={workspaceId}
       workspaceSlug={workspaceSlug} conversationId={conversationId} inboxId={inboxId}
-      initialTeamId={initialTeam ?? undefined} sourceHref={sourceHref} sourceLabel={sourceLabel} onOpenChange={onOpenChange} />
+      initialTeamId={initialTeam ?? undefined} onOpenChange={onOpenChange} />
   );
 }
 
-function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inboxId, initialTeamId, sourceHref, sourceLabel, onOpenChange }: Props & {
+function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inboxId, initialTeamId, onOpenChange }: Props & {
   inboxId: string;
   initialTeamId?: string;
-  sourceHref: string;
-  sourceLabel?: string;
 }) {
   // Background settings refetches must never reset an open form.
   const [teamDefault] = useState(initialTeamId);
@@ -163,7 +159,8 @@ function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inb
       if (mounted.current) setReviewing(false);
     }
   };
-  const content = (
+  const hasMatches = !!view && getVisibleTriageSuggestions(view).length > 0;
+  const content = phase === 'draft' && !notice && !reviewing && !hasMatches ? null : (
     <div className={prepared ? 'px-6 py-3 text-sm' : 'mt-4 text-sm'}>
       {phase === 'matching' && <p role="status" className="text-muted-foreground">Checking for existing tasks…</p>}
       {notice && (prepared || phase !== 'failed') && <p role="alert" className="text-muted-foreground">{notice}</p>}
@@ -179,12 +176,9 @@ function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inb
           <QuietTextAction disabled={reviewing} onClick={() => { setNotice(''); setPhase('matching'); setMatchRetry(n => n + 1); }}>Refresh matches</QuietTextAction>
         </div>
       )}
-      {phase === 'draft' && (
+      {phase === 'draft' && hasMatches && (
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <a className="underline underline-offset-4" href={sourceHref} target="_blank" rel="noopener noreferrer">Source conversation</a>
-          {!!view && getVisibleTriageSuggestions(view).length > 0 && (
-            <QuietTextAction onClick={() => setPhase('matches')}>View matches</QuietTextAction>
-          )}
+          <QuietTextAction onClick={() => setPhase('matches')}>View matches</QuietTextAction>
         </div>
       )}
     </div>
@@ -193,7 +187,7 @@ function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inb
     <CreateTaskModal open workspaceId={workspaceId} initialTeamId={teamDefault}
       onOpenChange={open => { if (!reviewing) onOpenChange(open); }} onCreate={onCreate}
       renderPreparation={prepared ? undefined : ({ error, retry, cancel }) => (
-        <SupportTaskPreparation phase={phase} sourceHref={sourceHref} sourceLabel={sourceLabel}
+        <SupportTaskPreparation phase={phase}
           error={error} checkedExistingTasks={view?.status === 'ready'} reviewing={reviewing} onRetry={retry} onCancel={cancel}>
           {(phase === 'matches' || phase === 'failed') && content}
         </SupportTaskPreparation>

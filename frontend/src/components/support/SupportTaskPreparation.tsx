@@ -1,13 +1,11 @@
 import type { ReactNode } from 'react';
 import { QuietIconAction, QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
 import { DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { Cancel01Icon, CheckmarkCircle02Icon, ClipboardIcon, Loading01Icon, Message01Icon } from '@/lib/icons';
+import { Cancel01Icon, CheckmarkCircle02Icon, ClipboardIcon, Loading01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
 interface Props {
   phase: 'loading' | 'matching' | 'matches' | 'draft' | 'failed' | 'blocked';
-  sourceHref?: string;
-  sourceLabel?: string;
   error?: string;
   checkedExistingTasks?: boolean;
   reviewing?: boolean;
@@ -18,7 +16,7 @@ interface Props {
 
 /** Preparation and review share the task dialog; no editable fields appear yet. */
 export function SupportTaskPreparation({
-  phase, sourceHref, sourceLabel, error, checkedExistingTasks, reviewing,
+  phase, error, checkedExistingTasks, reviewing,
   onCancel, onRetry, children,
 }: Props) {
   const draftFailed = phase === 'draft' && !!error;
@@ -56,12 +54,6 @@ export function SupportTaskPreparation({
         <DialogTitle className="text-xl leading-snug font-semibold tracking-[-0.018em]">{title}</DialogTitle>
         <DialogDescription role={draftFailed || phase === 'failed' || phase === 'blocked' ? 'alert' : undefined}
           className="mt-2 leading-relaxed text-quiet-text-tertiary">{description}</DialogDescription>
-        {sourceHref && (
-          <a href={sourceHref} target="_blank" rel="noopener noreferrer"
-            className="mt-5 flex min-w-0 items-center gap-2 text-xs text-quiet-text-tertiary hover:text-quiet-text-primary focus-visible:underline">
-            <Message01Icon className="size-3.5 shrink-0" /><span className="truncate">{sourceLabel || 'Source conversation'}</span>
-          </a>
-        )}
         {working && (
           <>
             <p role="status" className={phase === 'loading' ? 'mt-6 flex items-center gap-2 text-xs text-quiet-text-tertiary' : 'sr-only'}>
