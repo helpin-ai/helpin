@@ -177,17 +177,30 @@ describe('ReplyComposer AI loading state', () => {
     setup(true);
     mocks.conversation = { ...mocks.conversation, merge_email_recipients: [' CUSTOMER@example.com ', 'other@example.com', 'OTHER@example.com'], email_cc: ['other@example.com', 'copy@example.com'] };
     act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
-    const notices = [...container.querySelectorAll('p')].filter(p => p.textContent?.startsWith('Reply will '));
+    const notices = [...container.querySelectorAll('p')].filter(p => p.textContent?.startsWith('Only emailed to '));
     expect(notices).toHaveLength(1);
-    expect(notices[0].textContent).toBe('Reply will only be emailed to customer@example.com, other@example.com. Cc: copy@example.com.');
+    expect(notices[0].textContent).toBe('Only emailed to customer@example.com +1 · Cc copy@example.com');
+    expect(notices[0].querySelector('button')?.getAttribute('aria-label')).toBe('More recipients: other@example.com');
   });
 
   it('lists a shared address only once after merging conversations from the same customer', () => {
     setup(true);
     mocks.conversation = { ...mocks.conversation, merge_email_recipients: ['customer@example.com', ' CUSTOMER@example.com '] };
     act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
-    const notice = [...container.querySelectorAll('p')].find(p => p.textContent?.startsWith('Reply will '));
-    expect(notice?.textContent).toBe('Reply will only be emailed to customer@example.com.');
+    const notice = [...container.querySelectorAll('p')].find(p => p.textContent?.startsWith('Only emailed to '));
+    expect(notice?.textContent).toBe('Only emailed to customer@example.com');
+  });
+
+  it('raises the email notice only once a reply is started', () => {
+    setup(true);
+    const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor;
+    const notice = () => container.querySelector('[data-support-delivery-notice]')!;
+    act(() => { editor.commands.setContent(''); });
+    expect(notice().getAttribute('aria-hidden')).toBe('true');
+    expect(notice().hasAttribute('inert')).toBe(true);
+    act(() => { editor.commands.setContent('Thanks for the details'); });
+    expect(notice().getAttribute('aria-hidden')).toBe('false');
+    expect(notice().hasAttribute('inert')).toBe(false);
   });
 
   it('sends email without a subject editor or a stale draft subject override', async () => {

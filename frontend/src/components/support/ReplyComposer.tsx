@@ -110,6 +110,35 @@ function normalizeRecipientEmails(values: string[], excluded: string[] = []): st
   return normalized;
 }
 
+/** The first address, then "+N" with every address in a tooltip, so the delivery notice stays on one line. */
+function EmailRecipientList({ emails, label, className }: { emails: string[]; label: string; className?: string }) {
+  const [first, ...rest] = emails;
+  return (
+    <>
+      <span className={cn('min-w-0 truncate font-medium text-foreground', className)} title={first}>{first}</span>
+      {rest.length > 0 && (
+        <>
+          {' '}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={`More ${label}: ${rest.join(', ')}`}
+                className="shrink-0 rounded-full bg-muted px-1.5 font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                +{rest.length}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="flex-col items-start gap-0.5 text-xs">
+              {emails.map((email) => <span key={email}>{email}</span>)}
+            </TooltipContent>
+          </Tooltip>
+        </>
+      )}
+    </>
+  );
+}
+
 const URL_TOKEN_REGEX =
   /^((?:https?|ftp):\/\/\S+|www\.\S+\.[a-z]{2,}\S*|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+\.[a-z]{2,}(?:[/?#]\S*)?)$/i;
 const TRAILING_PUNCT_REGEX = /[.,;:!?)\]}>'"]+$/;
@@ -1840,6 +1869,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     || JSON.stringify(pendingAttachments.map(a => a.attachmentId).sort()) !== JSON.stringify((editingNote.attachments ?? []).map(a => a.id).sort());
   const content = editor.getText();
   const hasContent = content.trim().length > 0;
+  const showDeliveryNotice = hasContent || pendingAttachments.length > 0;
   const suggestedPrimaryEmail = conversation?.suggested_primary_recipient_email?.trim() || '';
   const canUseAITools = hasContent && !isRewriting && !sendMutation.isPending;
   const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDownIcon }> = [
@@ -1908,14 +1938,35 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         </div>
       )}
 
+      {/* Rises into view once a reply is started. The grid-rows trick grows
+          its height without measuring, so the composer's top edge lifts. */}
       {sendsEmail && !isNote && (
-        <div className="space-y-2 border-b border-border/20 px-4 py-2.5 text-xs text-muted-foreground">
-          <p className="break-words" aria-live="polite">
-            Reply will {deliveryMode === 'email_only' ? 'only' : 'also'} be emailed to{' '}
-            <span className="font-medium text-foreground">{deliveryRecipientEmails.join(', ') || 'the customer'}</span>.
-            {ccRecipients.length > 0 && <> Cc: <span className="font-medium text-foreground">{ccRecipients.join(', ')}</span>.</>}
-          </p>
-          {deliveryUnavailableReason && <p role="status" className="text-quiet-accent">{deliveryUnavailableReason}</p>}
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows,opacity] duration-700 ease-in-out motion-reduce:transition-none',
+            showDeliveryNotice ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+          )}
+          aria-hidden={!showDeliveryNotice}
+          inert={!showDeliveryNotice}
+          data-support-delivery-notice
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div
+              className={cn(
+                'space-y-2 border-b border-border/20 px-4 py-2.5 text-xs text-muted-foreground transition-transform duration-700 ease-in-out motion-reduce:transition-none',
+                showDeliveryNotice ? 'translate-y-0' : 'translate-y-3',
+              )}
+            >
+              <p className="flex min-w-0 items-center gap-1 whitespace-nowrap" aria-live="polite">
+                <span className="shrink-0">{deliveryMode === 'email_only' ? 'Only' : 'Also'} emailed to</span>{' '}
+                {deliveryRecipientEmails.length > 0
+                  ? <EmailRecipientList emails={deliveryRecipientEmails} label="recipients" />
+                  : <span className="font-medium text-foreground">the customer</span>}
+                {ccRecipients.length > 0 && <>{' '}<span className="shrink-0">· Cc</span>{' '}<EmailRecipientList emails={ccRecipients} label="Cc" className="shrink-[3]" /></>}
+              </p>
+              {deliveryUnavailableReason && <p role="status" className="text-quiet-accent">{deliveryUnavailableReason}</p>}
+            </div>
+          </div>
         </div>
       )}
 
