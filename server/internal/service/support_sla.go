@@ -379,6 +379,20 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 			return nil
 		}
 		closed := conversation.Status == model.SupportConversationStatusResolved || conversation.Status == model.SupportConversationStatusSpam
+		// Imported conversations carry targets only from the cutover, the
+		// first evaluation that finds them open; their history was answered
+		// elsewhere and is never judged.
+		imported := conversation.Source == model.SupportImportSourceIntercom
+		if imported && previous == nil && closed {
+			return nil
+		}
+		matching := *conversation
+		if imported {
+			matching.CreatedAt = now
+			if previous != nil && previous.TargetsFrom != nil {
+				matching.CreatedAt = *previous.TargetsFrom
+			}
+		}
 		companyKey := supportSLACompanyKey(inputs.Company)
 		in := supportSLAInput{Conversation: *conversation, Now: now, Previous: previous, CompanyKey: companyKey}
 		var policy *model.SupportSLAPolicy
@@ -407,7 +421,7 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 				return err
 			}
 			for i := range policies {
-				if supportSLAPolicyMatches(policies[i], *conversation, inputs.Company) {
+				if supportSLAPolicyMatches(policies[i], matching, inputs.Company) {
 					policy = &policies[i]
 					break
 				}
@@ -424,9 +438,15 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 				in.Targets, in.AppliedAt, in.TargetsFrom = snapshot, previous.PolicyAppliedAt, previous.TargetsFrom
 			default:
 				in.Targets = supportSLATargetsFromPolicy(*policy)
-				in.AppliedAt, in.TargetsFrom = supportSLAPolicyStart(*policy, *conversation, inputs.Company, previous, companyKey, now)
+				in.AppliedAt, in.TargetsFrom = supportSLAPolicyStart(*policy, matching, inputs.Company, previous, companyKey, now)
 				in.Switched = previous != nil
+				if imported && previous == nil {
+					in.AppliedAt, in.TargetsFrom = timePtr(now), timePtr(now)
+				}
 			}
+		}
+		if imported {
+			in.HistoryBefore = in.TargetsFrom
 		}
 		in.Replies = make([]supportSLAReply, 0, len(inputs.Replies))
 		for _, row := range inputs.Replies {

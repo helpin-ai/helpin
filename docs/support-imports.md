@@ -92,7 +92,12 @@ and then 30 minutes, and the import stops after 8 failures in a row. It
 stops at once when Intercom refuses the token or the request.
 
 Imported history is kept out of live features:
-- it never gets SLA targets, including for replies after the import;
+- it is never judged against SLA targets. An imported conversation that is
+  open, or that a customer reopens later, gets the targets of its matching
+  policy counted from that moment, the cutover. A conversation a teammate
+  already answered in Intercom has no first-response target; the customer's
+  open question gets a next-response target from the cutover. Closed
+  imports get no targets;
 - it sends no webhooks, and neither do the messages copied with it;
 - its messages are not tagged or translated by AI;
 - new replies after the import do send webhooks.

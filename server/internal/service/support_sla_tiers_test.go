@@ -774,3 +774,84 @@ func TestSupportSLAWarningKeepsAFreshAssignment(t *testing.T) {
 		t.Fatalf("fresh assignment overwritten: %v %v", current.AssignedUserID, err)
 	}
 }
+
+// importedConversation creates an Intercom conversation from long ago with
+// a customer message, and a teammate reply when answered.
+func (f *slaTierFixture) importedConversation(t *testing.T, status string, created time.Time, answered bool) string {
+	t.Helper()
+	f.displayID++
+	conversation := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: f.workspaceID, DisplayID: f.displayID, Subject: "Imported",
+		Status: status, Priority: "medium", Channel: "widget", Source: model.SupportImportSourceIntercom, CreatedAt: created}
+	if status == model.SupportConversationStatusResolved {
+		conversation.ResolvedAt = timePtr(created.Add(time.Hour))
+	}
+	if err := f.db.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	add := func(sender string, at time.Time) {
+		if err := f.db.Create(&model.SupportMessage{ID: uuid.NewString(), WorkspaceID: f.workspaceID, ConversationID: conversation.ID, SenderType: sender,
+			MessageType: "reply", Content: "imported", CreatedAt: at, UpdatedAt: at}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("customer", created)
+	if answered {
+		add("user", created.Add(30*time.Minute))
+		add("customer", created.Add(45*time.Minute))
+	}
+	return conversation.ID
+}
+
+func TestSupportSLAImportedConversationsCountFromCutover(t *testing.T) {
+	f := newSLATierFixture(t)
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(60), NextResponseMinutes: intPtr(120), ResolutionMinutes: intPtr(2880)})
+	longAgo := f.start.Add(-90 * 24 * time.Hour)
+	cutover := f.start.Add(time.Hour)
+
+	// Open and never answered in Intercom: every target counts from cutover.
+	waiting := f.importedConversation(t, model.SupportConversationStatusOpen, longAgo, false)
+	processSLAAt(t, f.sla, f.workspaceID, waiting, cutover)
+	record := slaRecord(t, f.db, waiting)
+	if record.Breached || record.FirstResponseState != model.SupportSLAStatePending || !record.FirstResponseDueAt.Equal(cutover.Add(time.Hour)) ||
+		!record.ResolutionDueAt.Equal(cutover.Add(48*time.Hour)) || !record.TargetsFrom.Equal(cutover) {
+		t.Fatalf("unanswered import %+v", record)
+	}
+
+	// Answered in Intercom, customer waiting again: no first-response target,
+	// and the open next-response cycle counts from cutover.
+	answered := f.importedConversation(t, model.SupportConversationStatusOpen, longAgo, true)
+	processSLAAt(t, f.sla, f.workspaceID, answered, cutover)
+	record = slaRecord(t, f.db, answered)
+	if record.FirstResponseState != "" || record.NextResponseState != model.SupportSLAStatePending || record.NextResponseBreaches != 0 ||
+		!record.NextResponseDueAt.Equal(cutover.Add(2*time.Hour)) || record.Breached {
+		t.Fatalf("answered import %+v", record)
+	}
+	// Later evaluations keep the cutover.
+	processSLAAt(t, f.sla, f.workspaceID, answered, cutover.Add(time.Minute))
+	if again := slaRecord(t, f.db, answered); !again.TargetsFrom.Equal(cutover) || again.Breached {
+		t.Fatalf("cutover moved %+v", again)
+	}
+
+	// Closed imports stay out of SLA entirely.
+	resolved := f.importedConversation(t, model.SupportConversationStatusResolved, longAgo, true)
+	processSLAAt(t, f.sla, f.workspaceID, resolved, cutover)
+	var count int64
+	f.db.Model(&model.SupportConversationSLARecord{}).Where("conversation_id = ?", resolved).Count(&count)
+	if count != 0 {
+		t.Fatal("a closed import got an SLA record")
+	}
+
+	// The customer writes again and reopens it: targets count from then.
+	reopened := cutover.Add(24 * time.Hour)
+	if err := f.db.Create(&model.SupportMessage{ID: uuid.NewString(), WorkspaceID: f.workspaceID, ConversationID: resolved, SenderType: "customer",
+		MessageType: "reply", Content: "Back again", CreatedAt: reopened, UpdatedAt: reopened}).Error; err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, f.db, `UPDATE support_conversations SET status = 'open' WHERE id = ?`, resolved)
+	processSLAAt(t, f.sla, f.workspaceID, resolved, reopened.Add(time.Minute))
+	record = slaRecord(t, f.db, resolved)
+	if record.FirstResponseState != "" || record.NextResponseState != model.SupportSLAStatePending ||
+		!record.NextResponseDueAt.Equal(reopened.Add(time.Minute+2*time.Hour)) || record.Breached {
+		t.Fatalf("reopened import %+v", record)
+	}
+}

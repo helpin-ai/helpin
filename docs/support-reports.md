@@ -174,6 +174,9 @@ When a teammate hands a conversation back to the AI after the handoff:
   the policy at its next update.
 - A policy applies only to conversations created after it was enabled.
   Re-enabling it moves that point forward.
+- Conversations imported from Intercom count from the cutover, the first
+  evaluation that finds them open, instead of their creation in Intercom.
+  See [Support imports](support-imports.md).
 - Reopening a resolved conversation keeps its resolution result. Response
   targets continue with the customer's new message.
 

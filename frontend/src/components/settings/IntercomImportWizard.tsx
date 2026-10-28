@@ -258,7 +258,7 @@ export function IntercomImportWizard({ workspaceId }: { workspaceId: string }) {
                     </Select>
                   </div>
                   <p className="text-xs text-muted-foreground sm:col-span-2">
-                    Open conversations arrive open and already read. Imported history gets no SLA targets and sends no webhooks.
+                    Open conversations arrive open and already read. SLA targets count from the import, so history is never judged, and imported history sends no webhooks.
                   </p>
                 </div>
               ) : null}

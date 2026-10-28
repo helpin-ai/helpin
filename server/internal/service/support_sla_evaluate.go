@@ -24,8 +24,7 @@ type supportSLAEvaluation struct {
 // supportSLAPolicyMatches reports whether policy applies to conversation,
 // whose company is company (nil without one).
 func supportSLAPolicyMatches(policy model.SupportSLAPolicy, conversation model.SupportConversation, company *repository.SupportSLACompany) bool {
-	// Imported history was answered elsewhere; it never carries targets.
-	if !policy.Enabled || conversation.CreatedAt.Before(policy.ActiveSince) || conversation.Source == model.SupportImportSourceIntercom {
+	if !policy.Enabled || conversation.CreatedAt.Before(policy.ActiveSince) {
 		return false
 	}
 	if len(policy.Priorities) > 0 && !slices.Contains([]string(policy.Priorities), conversation.Priority) {
@@ -162,6 +161,10 @@ type supportSLAInput struct {
 	TargetsFrom *time.Time
 	// CompanyKey is the company and tier the targets were selected with.
 	CompanyKey string
+	// HistoryBefore marks replies before it as history: an imported
+	// conversation a teammate already answered elsewhere has no
+	// first-response target.
+	HistoryBefore *time.Time
 }
 
 // evaluateSupportSLA recomputes a conversation's SLA state. Only teammate
@@ -204,6 +207,7 @@ func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
 	state.aiHolding = in.AIOwnsNow && !state.closed
 	state.humanSince = in.HumanSince
 	state.targetsFrom = in.TargetsFrom
+	state.historyBefore = in.HistoryBefore
 	if state.aiHolding && in.HumanSince != nil {
 		record.AIHoldingSince = previous.AIHoldingSince
 		if record.AIHoldingSince == nil {
@@ -281,6 +285,7 @@ type supportSLAEvalState struct {
 	resolved, closed        bool
 	aiOnly, aiHolding       bool
 	humanSince, targetsFrom *time.Time
+	historyBefore           *time.Time
 	newBreaches             []string
 	openDue, wakeDue        []*time.Time
 	breachedNow             bool
@@ -327,6 +332,9 @@ func (st *supportSLAEvalState) firstResponse(record, previous *model.SupportConv
 		}
 	}
 	if firstCustomer == nil || (firstTeammate != nil && firstTeammate.Before(*firstCustomer)) {
+		return
+	}
+	if st.historyBefore != nil && firstTeammate != nil && firstTeammate.Before(*st.historyBefore) {
 		return
 	}
 	if st.aiOnly && firstTeammate == nil {
