@@ -429,6 +429,15 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 	if progressState != "" && turn.Status == "waiting_for_result" {
 		return mustJSON(map[string]any{"status": progressStatus, "next_action": progressNextAction}), nil
 	}
+	// An acknowledgment would arrive as its own email, so email customers get
+	// only the finished answer. The turn stays open while child work runs.
+	if progressState != "" && model.SupportAIReplyChannel(conv, source) == "email" {
+		next := supportEmailProgressNextAction
+		if !progressOnly {
+			next = supportEmailAwaitingResultNextAction
+		}
+		return mustJSON(map[string]any{"status": progressStatus, "sent": false, "next_action": next}), nil
+	}
 	// Claims cite chunk ids; AISources are keyed by reference ids — translate.
 	referenceByID := make(map[string]string, len(evidence))
 	for _, item := range evidence {
@@ -507,6 +516,11 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 }
 
 const supportProgressNextAction = "Acknowledgment delivered; the customer is still waiting for an answer. End this runtime turn and wait for the child result. When it arrives, call send_support_reply with the final answer; do not wait for another visitor message or repeat the acknowledgment."
+
+const (
+	supportEmailProgressNextAction       = "Nothing was sent: email customers get only the finished answer, never a progress message. Continue the investigation now using your assigned tools, then send_support_reply or escalate_to_human. Do not call send_support_progress again. If you launch child research, end this runtime turn after the launch and resume when its result arrives."
+	supportEmailAwaitingResultNextAction = "Nothing was sent: email customers get only the finished answer, never an acknowledgment. End this runtime turn without another reply and wait for the child result. When it arrives, call send_support_reply with the final answer or escalate_to_human."
+)
 
 func supportReplyInternalProcessDisclosures(content string) []string {
 	lower := strings.ToLower(content)

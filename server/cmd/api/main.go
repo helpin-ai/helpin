@@ -1560,6 +1560,8 @@ func main() {
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportAIService.SetPortalReplyNotifier(emailFallbackService)
+	supportTeamReplyService := service.NewSupportTeamReplyService(cfg.JWTSecret, cfg.AppBaseURL, supportConversationRepo, workspaceRepo, supportInboxService, supportAIService)
+	emailFallbackService.SetTeamReplyLinks(supportTeamReplyService)
 	supportAIService.SetCuratedGuidanceRepository(curatedGuidanceRepo)
 	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
 		supportAIService.SetKnowledgeReranker(service.NewGovernedSupportKnowledgeReranker(reranker, aiActionRegistry, aiActionExecutionRepo))
@@ -2016,6 +2018,7 @@ func main() {
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
 		CRMOutreach:         handler.NewCRMOutreachHandler(crmOutreachService),
+		SupportTeamReply:    handler.NewSupportTeamReplyHandler(supportTeamReplyService),
 		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),
 		CRMEnrichment:       handler.NewCRMEnrichmentHandler(crmEnrichmentService),
 		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),

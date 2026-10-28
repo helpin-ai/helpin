@@ -164,17 +164,33 @@ func TestSupportPreviewCommandsCaptureOutcomeAndFailClosed(t *testing.T) {
 	}
 }
 
-func TestSupportPreviewRetrievalOnlyAndHardHandoffAvoidModel(t *testing.T) {
+func TestSupportPreviewRetrievalOnlyAvoidsModel(t *testing.T) {
 	_, preview, _, runtime, ctx := previewFixture(t)
 	no := false
-	for _, req := range []model.SupportAIPreviewRequest{{Message: "pricing", IncludeAnswer: &no}, {Message: "I want to talk to a human"}} {
-		result, err := preview.Start(ctx, "workspace", "agent-1", req)
+	result, err := preview.Start(ctx, "workspace", "agent-1", model.SupportAIPreviewRequest{Message: "pricing", IncludeAnswer: &no})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalDecision == "pending" || len(runtime.startRunCalls) != 0 {
+		t.Fatal("unnecessary model execution")
+	}
+}
+
+// Phrases like "connect me to my Facebook page" once matched a keyword rule
+// and skipped the agent; the agent now decides when a person is needed.
+func TestSupportPreviewHumanPhraseReachesAgent(t *testing.T) {
+	_, preview, _, runtime, ctx := previewFixture(t)
+	for _, message := range []string{"I want to talk to a human", "How do I connect me to my Facebook page?"} {
+		result, err := preview.Start(ctx, "workspace", "agent-1", model.SupportAIPreviewRequest{Message: message})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.FinalDecision == "pending" || len(runtime.startRunCalls) != 0 {
-			t.Fatal("unnecessary model execution")
+		if result.FinalDecision == "handoff" {
+			t.Fatalf("%q was handed off without the agent", message)
 		}
+	}
+	if len(runtime.startRunCalls) != 2 {
+		t.Fatalf("agent runs = %d, want 2", len(runtime.startRunCalls))
 	}
 }
 

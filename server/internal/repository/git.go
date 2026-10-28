@@ -241,6 +241,17 @@ func (r *GitRepositoryRepository) List(ctx context.Context, workspaceID string) 
 	return repos, nil
 }
 
+// HasActive reports whether a workspace has a repository List would return.
+func (r *GitRepositoryRepository) HasActive(ctx context.Context, workspaceID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.GitRepository{}).
+		Where("workspace_id = ? AND deleted_at IS NULL AND active = ? AND archived = ? AND selected = ?", workspaceID, true, false, true).
+		Limit(1).Count(&count).Error; err != nil {
+		return false, fmt.Errorf("count git repositories: %w", err)
+	}
+	return count > 0, nil
+}
+
 // ListAll returns the full repository catalog for a workspace.
 func (r *GitRepositoryRepository) ListAll(ctx context.Context, workspaceID string) ([]model.GitRepository, error) {
 	var repos []model.GitRepository

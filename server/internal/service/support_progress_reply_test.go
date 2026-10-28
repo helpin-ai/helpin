@@ -255,6 +255,64 @@ func TestSupportProgressWithoutChildContinuesAndSettles(t *testing.T) {
 	}
 }
 
+// useEmailSupportConversation turns the progress fixture into an email thread
+// with AI replies enabled on both channels.
+func useEmailSupportConversation(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	settings := model.DefaultSupportInboxSettings()
+	settings.AIEnabled = true
+	settings.AIAgentID = strPtr("agent")
+	settings.AIResponseMode = "ai_first"
+	settings.AIReplyChannels = "both"
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `UPDATE support_widget_installations SET settings=? WHERE workspace_id='ws'`, string(raw))
+	mustExec(t, db, `UPDATE support_conversations SET channel='email', source='email' WHERE id='conv'`)
+}
+
+func TestSupportEmailAcknowledgmentsAreNotSent(t *testing.T) {
+	ctx := context.Background()
+	chat, commands, db, conv, run, meta := setupSupportProgressTest(t)
+	useEmailSupportConversation(t, db)
+	commands.definitions = map[string]InternalCommandDefinition{}
+	mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"source":"system","trigger_type":"support_chat"}}`))
+	commands.registerSupportReplyCommands()
+	progress, ok := commands.Definition("support.send_progress")
+	if !ok {
+		t.Fatal("missing progress tool")
+	}
+	for _, call := range []struct {
+		name, want string
+		run        func() (json.RawMessage, error)
+	}{
+		{"progress tool", `"status":"continuing"`, func() (json.RawMessage, error) {
+			return progress.Execute(ctx, meta, json.RawMessage(`{"content":"I'm checking the details for this issue."}`))
+		}},
+		{"acknowledgment while child work runs", `"status":"awaiting_result"`, func() (json.RawMessage, error) {
+			return commands.executeSupportSendReply(ctx, meta, json.RawMessage(`{"content":"I'm checking that for you.","reply_kind":"conversational","confidence":1}`))
+		}},
+	} {
+		out, err := call.run()
+		if err != nil || !strings.Contains(string(out), call.want) || !strings.Contains(string(out), `"sent":false`) {
+			t.Fatalf("%s: %s %v", call.name, out, err)
+		}
+	}
+	messages, err := chat.messageRepo.ListByConversation(ctx, "ws", "conv", false)
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("email acknowledgment was published: %d messages, %v", len(messages), err)
+	}
+	// The child result is still awaited without an acknowledgment.
+	if !chat.waitingForSupportResult(ctx, run, conv.ID) {
+		t.Fatal("email turn stopped waiting for its child result")
+	}
+	out, err := commands.executeSupportSendReply(ctx, meta, json.RawMessage(`{"content":"Which account is affected?","reply_kind":"clarify","confidence":1}`))
+	if err != nil || !strings.Contains(string(out), `"status":"sent"`) {
+		t.Fatalf("final reply: %s %v", out, err)
+	}
+}
+
 func TestSupportProgressToolPreservesOwnership(t *testing.T) {
 	for _, change := range []string{
 		`UPDATE support_conversations SET human_takeover=true WHERE id='conv'`,

@@ -28,6 +28,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { PortalActivityRow, PortalMessage } from './PortalConversation'
+import { PortalFrame, type PortalFrameWidth } from './PortalFrame'
 import { portalPublicRedirect } from './portalPaths'
 import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
 import { MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
@@ -55,46 +56,14 @@ import {
 
 // ── Shell and shared pieces ─────────────────────────────────────────────
 
-/**
- * PortalShell is the public portal's page: a hairline header with the
- * workspace name and account actions, then one centered column at the
- * Quiet prose measure. It uses no backdrop card; the portal lives outside
- * the authenticated app shell.
- */
-function PortalShell({ children, account, width = 'prose' }: { children: ReactNode; account?: ReactNode; width?: 'prose' | 'form' | 'wide' }) {
+/** PortalShell frames portal pages with the portal's own branding. */
+function PortalShell({ children, account, width = 'prose' }: { children: ReactNode; account?: ReactNode; width?: PortalFrameWidth }) {
   const { configuration } = usePortalOptional()
-  const name = configuration?.branding.name || 'Customer support'
-  // The request table uses the wide column; threads and forms keep a reading measure.
-  const columnClassName = width === 'form' ? 'max-w-[480px]' : width === 'wide' ? 'max-w-[1080px]' : 'max-w-[760px]'
+  const branding = configuration?.branding
   return (
-    <div className="min-h-svh bg-background text-quiet-text-primary">
-      <header className="border-b border-quiet-divider-strong">
-        <div className={cn('mx-auto flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6', columnClassName)}>
-          <div className="flex min-w-0 items-center gap-2.5">
-            <PortalBrandMark name={name} logoUrl={configuration?.branding.logo_url} color={configuration?.branding.brand_color} />
-            <span className="truncate text-sm font-semibold tracking-[-0.008em]">{name}</span>
-          </div>
-          {account}
-        </div>
-      </header>
-      <main className={cn('mx-auto w-full px-4 pb-20 pt-8 sm:px-6 sm:pt-10', columnClassName)}>
-        {children}
-      </main>
-    </div>
-  )
-}
-
-/** PortalBrandMark shows the workspace logo, or its initial in the brand colour. */
-function PortalBrandMark({ name, logoUrl, color }: { name: string; logoUrl?: string | null; color?: string | null }) {
-  if (logoUrl) return <img src={logoUrl} alt="" className="size-7 shrink-0 rounded-md object-contain" />
-  return (
-    <span
-      aria-hidden="true"
-      className="flex size-7 shrink-0 items-center justify-center rounded-md bg-quiet-action text-[12px] font-semibold text-quiet-action-ink"
-      style={color ? { backgroundColor: color, color: '#fff' } : undefined}
-    >
-      {name.trim().charAt(0).toUpperCase() || 'S'}
-    </span>
+    <PortalFrame name={branding?.name || 'Customer support'} logoUrl={branding?.logo_url} color={branding?.brand_color} account={account} width={width}>
+      {children}
+    </PortalFrame>
   )
 }
 

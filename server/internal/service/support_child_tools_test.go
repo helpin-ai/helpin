@@ -94,14 +94,15 @@ func TestSupportExternalResearchLaunchUsesReadOnlyPath(t *testing.T) {
 	}
 }
 
-func TestSupportRepositoryLaunchRequiresBackgroundInvestigation(t *testing.T) {
+// Outside the email code check, a customer turn still cannot read code.
+func TestSupportRepositoryLaunchOutsideEmailCodeCheckIsRejected(t *testing.T) {
 	_, commands, db, _, _, meta := setupSupportProgressTest(t)
 	mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
 	commands.agentService = &AgentService{}
 	steps := []dockLaunchStep{{Instructions: "Check the implementation", AllowedTools: []string{"read_files"}}}
 	_, err := commands.executeDockLaunch(context.Background(), meta, steps, "", "Check implementation")
-	if err == nil || !strings.Contains(err.Error(), "background investigation") {
-		t.Fatalf("repository launch error = %v, want background investigation guidance", err)
+	if err == nil || !strings.Contains(err.Error(), "code check is not available") {
+		t.Fatalf("repository launch error = %v, want the code check to be unavailable", err)
 	}
 }
 
