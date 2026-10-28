@@ -74,6 +74,12 @@ describe('ChatGeneralTab', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    })
+    HTMLElement.prototype.scrollIntoView = vi.fn()
     save.mockClear()
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -84,6 +90,8 @@ describe('ChatGeneralTab', () => {
     act(() => root.unmount())
     container.remove()
     vi.useRealTimers()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   async function renderTab() {
@@ -116,6 +124,39 @@ describe('ChatGeneralTab', () => {
       email_capture_timing: 'after_ai_reply',
       email_handoff_message: 'Our team will reply here.',
       email_handoff_message_after_hours: 'Our team will reply when we reopen.',
+    })
+  })
+
+  it('searches and autosaves a timezone outside the old support shortlist', async () => {
+    chatSettings.data = {
+      settings: { ...savedSettings(), business_hours_enabled: true },
+      allowed_origins: [],
+      widget_key: 'key',
+    }
+    await renderTab()
+    const availability = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Set when your team appears online'))!
+    await act(async () => { availability.click() })
+    const timezone = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.startsWith('UTC'))!
+    expect(timezone).toBeDefined()
+    await act(async () => {
+      timezone.click()
+      timezone.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    const search = document.querySelector<HTMLInputElement>('input[placeholder="Search timezones..."]')
+    expect(search).not.toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Karachi')
+      search!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.textContent?.includes('Asia/Karachi'))
+    expect(option).toBeDefined()
+    await act(async () => { option!.click() })
+    await act(async () => { vi.advanceTimersByTime(2000) })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save.mock.calls[0][0]).toMatchObject({
+      business_hours_timezone: 'Asia/Karachi',
+      business_hours_enabled: true,
+      outside_hours_message: 'We are away.',
     })
   })
 })

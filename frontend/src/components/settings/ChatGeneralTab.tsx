@@ -15,6 +15,7 @@ import { SettingsSaveStatus } from './SettingsSaveStatus';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TimezoneSelector } from './TimezoneSelector';
 import { Switch } from '@/components/ui/switch';
 import { HelpSpacesPicker } from './HelpSpacesPicker';
 import { toggleHelpSpaceId } from './helpSpaces';
@@ -36,7 +37,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
-import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DEFAULT_EMAIL_FALLBACK_DELAY_SECS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
+import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, DEFAULT_EMAIL_FALLBACK_DELAY_SECS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
 import { PreviewLayout } from './chat-widget/PreviewLayout';
 import { BusinessHoursEditor } from './chat-widget/BusinessHoursEditor';
 import { businessHoursDayIssue } from './chat-widget/businessHours';
@@ -1555,17 +1556,8 @@ function Dashboard() {
                 {businessHoursEnabled && (
                   <>
                     <div className="space-y-2">
-                      <Label className="text-sm">Timezone</Label>
-                      <Select value={timezone} onValueChange={setTimezone}>
-                        <SelectTrigger className="w-64">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {COMMON_TIMEZONES.map(tz => (
-                            <SelectItem key={tz} value={tz}>{tz.replace(/_/g, ' ')}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="support-timezone" className="text-sm">Timezone</Label>
+                      <TimezoneSelector id="support-timezone" value={timezone} onChange={setTimezone} className="max-w-sm" />
                     </div>
 
                     <div className="space-y-2">
