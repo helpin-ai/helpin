@@ -84,7 +84,8 @@ func TestSupportAttachmentConfirmUploadRequiresOwningWidgetSession(t *testing.T)
 	db := newTestDB(t)
 	createSupportAttachmentTestTable(t, db)
 	repo := repository.NewSupportAttachmentRepository(db)
-	svc := NewSupportAttachmentService(repo, nil)
+	store := newTestSupportObjectStore(t, map[string][]byte{"private.pdf": []byte("%PDF-1.7\n")})
+	svc := NewSupportAttachmentService(repo, store.client)
 	ownerSessionID := "owner-session"
 	attachment := &model.SupportAttachment{
 		WorkspaceID: "workspace-1", FileName: "private.pdf", FileSize: 256, ContentType: "application/pdf",

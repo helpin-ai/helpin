@@ -45,3 +45,29 @@ it('keeps failed files retryable across processing attempts without broken downl
     container.remove();
   }
 });
+
+it('shows a refused file as unavailable with its reason and no retry', async () => {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(
+      <TooltipProvider>
+        <SupportAttachmentGallery
+          attachments={[{
+            id: 'attachment', file_key: '', file_name: 'invoice.pdf', file_type: 'application/pdf',
+            file_size: 72, url: '', processing_status: 'rejected',
+            processing_error: "invoice.pdf was not saved because its contents don't match its file type",
+          }]}
+          onRetry={async () => undefined}
+        />
+      </TooltipProvider>,
+    ));
+    expect(container.textContent).toContain('Unavailable');
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.querySelector('button')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

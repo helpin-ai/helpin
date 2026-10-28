@@ -227,6 +227,12 @@ func (s *EmailFallbackService) processInboundAttachmentJob(ctx context.Context, 
 		return fmt.Errorf("attachment storage unavailable")
 	}
 	stored, err := s.inboundAttachmentStore.StoreInboundEmailAttachment(ctx, req)
+	if message, rejected := IsSupportAttachmentRejected(err); rejected {
+		// A refused file is refused again on every retry, so finish the job.
+		return s.convRepo.DB().WithContext(ctx).Model(&model.SupportAttachment{}).
+			Where("id = ? AND workspace_id = ? AND is_uploaded = false", req.AttachmentID, req.WorkspaceID).
+			Updates(map[string]any{"processing_status": supportAttachmentStatusRejected, "processing_error": message}).Error
+	}
 	if err != nil {
 		return err
 	}

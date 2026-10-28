@@ -143,7 +143,7 @@ func TestInboundAttachmentFailureDoesNotLoseMessage(t *testing.T) {
 	}
 	p := model.PostmarkInboundPayload{MessageID: uuid.NewString(), FromFull: model.PostmarkAddress{Email: "customer@example.com"}, To: "conv-" + conv.ID + "@replies.helpin.ai"}
 	// No body: an attachment alone is still a message.
-	p.Attachments = append(p.Attachments, model.PostmarkInboundAttachment{Name: "report.pdf", ContentType: "application/pdf", Content: "YWJj", ContentLength: 3})
+	p.Attachments = append(p.Attachments, model.PostmarkInboundAttachment{Name: "report.pdf", ContentType: "application/pdf", Content: "JVBERi0xLjcK", ContentLength: 9})
 	if err := env.service.ProcessInboundEmail(ctx, p, ""); err != nil {
 		t.Fatal(err)
 	}

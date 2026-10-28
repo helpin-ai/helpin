@@ -3,12 +3,14 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 func TestVisitorHistoryExcludesInternalFields(t *testing.T) {
@@ -39,5 +41,15 @@ func TestWidgetErrorsDoNotDiscloseProviderDetails(t *testing.T) {
 	writeWidgetError(rec, req, http.StatusBadRequest, errors.New("invalid email address"))
 	if !strings.Contains(rec.Body.String(), "invalid email address") {
 		t.Fatal("safe validation lost")
+	}
+}
+
+func TestWidgetErrorsExplainRefusedFiles(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPatch, "/widget/support/attachments/one/confirm", nil)
+	rec := httptest.NewRecorder()
+	refused := &service.SupportAttachmentRejectedError{Message: "photo.jpg can't be sent because its contents don't match its file type"}
+	writeWidgetError(rec, req, http.StatusBadRequest, fmt.Errorf("confirm upload: %w", refused))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), refused.Message) {
+		t.Fatalf("visitor did not get the reason: %d %s", rec.Code, rec.Body.String())
 	}
 }

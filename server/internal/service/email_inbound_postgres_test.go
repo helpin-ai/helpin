@@ -28,7 +28,7 @@ func TestInboundAttachmentCommitBoundaryPostgres(t *testing.T) {
 	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { uploads.Add(1); w.WriteHeader(http.StatusOK) }))
 	defer store.Close()
 	svc.SetAttachmentService(NewSupportAttachmentService(repository.NewSupportAttachmentRepository(db), storage.NewS3Client("test", "test", "test-bucket", "us-east-1", store.URL, "")))
-	p := model.PostmarkInboundPayload{MessageID: uuid.NewString(), FromFull: model.PostmarkAddress{Email: "customer@example.com"}, To: "conv-" + conv + "@replies.example.com", TextBody: "Here is the file", Attachments: []model.PostmarkInboundAttachment{{Name: "file.pdf", ContentType: "application/pdf", Content: "YWJj", ContentLength: 3}}}
+	p := model.PostmarkInboundPayload{MessageID: uuid.NewString(), FromFull: model.PostmarkAddress{Email: "customer@example.com"}, To: "conv-" + conv + "@replies.example.com", TextBody: "Here is the file", Attachments: []model.PostmarkInboundAttachment{{Name: "file.pdf", ContentType: "application/pdf", Content: "JVBERi0xLjcK", ContentLength: 9}}}
 	if err := svc.AcceptInboundEmail(ctx, p, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestInboundPendingJobsRespectPrivacyPostgres(t *testing.T) {
 	privacyExec(t, db, `INSERT INTO crm_contacts(id,workspace_id,display_id,first_name,email) VALUES (?,?,1,'Alice','alice@example.com')`, contact, ws)
 	privacyExec(t, db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,customer_email,crm_contact_id,status,channel) VALUES (?,?,1,'Files','alice@example.com',?,'open','email')`, conv, ws, contact)
 	svc := privacyEmail(t, db, ws)
-	p := model.PostmarkInboundPayload{MessageID: uuid.NewString(), FromFull: model.PostmarkAddress{Email: "alice@example.com"}, To: "conv-" + conv + "@replies.example.com", TextBody: "My file", Attachments: []model.PostmarkInboundAttachment{{Name: "file.pdf", ContentType: "application/pdf", Content: "YWJj", ContentLength: 3}}}
+	p := model.PostmarkInboundPayload{MessageID: uuid.NewString(), FromFull: model.PostmarkAddress{Email: "alice@example.com"}, To: "conv-" + conv + "@replies.example.com", TextBody: "My file", Attachments: []model.PostmarkInboundAttachment{{Name: "file.pdf", ContentType: "application/pdf", Content: "JVBERi0xLjcK", ContentLength: 9}}}
 	if err := svc.AcceptInboundEmail(ctx, p, ""); err != nil {
 		t.Fatal(err)
 	}

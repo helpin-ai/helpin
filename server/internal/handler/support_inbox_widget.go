@@ -425,6 +425,10 @@ func writeWidgetError(w http.ResponseWriter, r *http.Request, status int, err er
 	case "widget not found", "space not found", "collection not found", "article not found", "conversation not found", "attachment not found", "file_name is required", "file_size must be positive", "content_type is required", "invalid email address", "email is required":
 		message = err.Error()
 	}
+	// A refused file has a reason the visitor can act on; retrying would not help.
+	if rejected, ok := service.IsSupportAttachmentRejected(err); ok {
+		message = rejected
+	}
 	if status == http.StatusUnauthorized {
 		message = "Please reconnect to continue this conversation."
 	}

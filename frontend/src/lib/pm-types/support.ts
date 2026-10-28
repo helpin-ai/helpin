@@ -674,7 +674,7 @@ export interface SupportConversationSearchParams {
 }
 
 export interface SupportAttachmentPayload {
-  processing_status?: 'processing' | 'failed' | '';
+  processing_status?: 'processing' | 'failed' | 'rejected' | '';
   processing_error?: string;
   id: string;
   file_key: string;
