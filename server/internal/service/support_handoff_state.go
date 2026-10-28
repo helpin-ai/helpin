@@ -76,6 +76,20 @@ func selectEscalationTemplate(s model.SupportInboxSettings, state string) string
 	}
 }
 
+// selectEmailHandoffTemplate picks the email handoff message by business hours
+// alone, falling back to the built-in message when the workspace has none.
+func selectEmailHandoffTemplate(s model.SupportInboxSettings, withinOfficeHours bool) string {
+	defaults := model.DefaultSupportInboxSettings()
+	custom, fallback := s.EmailHandoffMessageAfterHours, defaults.EmailHandoffMessageAfterHours
+	if withinOfficeHours {
+		custom, fallback = s.EmailHandoffMessage, defaults.EmailHandoffMessage
+	}
+	if strings.TrimSpace(custom) != "" {
+		return custom
+	}
+	return fallback
+}
+
 // humanizeNextOpen renders a next-open time relative to localNow in the
 // business-hours timezone: "today at 5:00 PM PST", "tomorrow at 9:00 AM PST",
 // or "on Monday at 9:00 AM PST". Returns "" when next is nil.

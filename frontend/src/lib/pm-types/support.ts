@@ -1344,6 +1344,8 @@ export interface SupportInboxSettings {
   escalation_message: string;
   escalation_message_busy?: string;
   escalation_message_after_hours?: string;
+  email_handoff_message?: string;
+  email_handoff_message_after_hours?: string;
   delayed_team_reply_minutes?: number;
   delayed_team_reply_message?: string;
   delayed_team_reply_message_no_email?: string;

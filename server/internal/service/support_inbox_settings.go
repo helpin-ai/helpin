@@ -250,6 +250,12 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.EscalationMessageAfterHours != nil {
 		current.EscalationMessageAfterHours = *patch.EscalationMessageAfterHours
 	}
+	if patch.EmailHandoffMessage != nil {
+		current.EmailHandoffMessage = strings.TrimSpace(*patch.EmailHandoffMessage)
+	}
+	if patch.EmailHandoffMessageAfterHours != nil {
+		current.EmailHandoffMessageAfterHours = strings.TrimSpace(*patch.EmailHandoffMessageAfterHours)
+	}
 	if patch.HandoffBehavior != nil {
 		current.HandoffBehavior = *patch.HandoffBehavior
 	}
@@ -797,6 +803,15 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 	}
 	if len([]rune(merged.DelayedTeamReplyMessage)) > 2000 || len([]rune(merged.DelayedTeamReplyMessageNoEmail)) > 2000 {
 		return nil, nil, fmt.Errorf("delayed team reply messages must be at most 2000 characters")
+	}
+	if strings.TrimSpace(merged.EmailHandoffMessage) == "" {
+		merged.EmailHandoffMessage = defaults.EmailHandoffMessage
+	}
+	if strings.TrimSpace(merged.EmailHandoffMessageAfterHours) == "" {
+		merged.EmailHandoffMessageAfterHours = defaults.EmailHandoffMessageAfterHours
+	}
+	if len([]rune(merged.EmailHandoffMessage)) > 2000 || len([]rune(merged.EmailHandoffMessageAfterHours)) > 2000 {
+		return nil, nil, fmt.Errorf("email handoff messages must be at most 2000 characters")
 	}
 
 	if req.AllowedOrigins != nil {

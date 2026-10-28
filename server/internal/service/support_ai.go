@@ -183,6 +183,7 @@ type SupportAIService struct {
 	statusOverrideRepo             *repository.SupportTeammateStatusOverrideRepository
 	responderDirectory             *SupportResponderDirectory
 	sessionRepo                    *repository.SupportInboxSessionRepository
+	noticeTranslator               supportCustomerNoticeTranslator
 	triageService                  *SupportInboxTriageService
 	linkPreviewService             SupportMessageLinkPreviewer
 	assignmentSystemMessageEmitter func(ctx context.Context, workspaceID, conversationID, targetUserID string)

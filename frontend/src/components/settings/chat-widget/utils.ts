@@ -3,6 +3,7 @@ import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin-ai/widget-core';
 import { DEFAULT_PRIVACY_NOTICE_TEXT, formatReplyTimeCopy } from '@helpin-ai/shared';
 import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './delayedTeamReply';
+import { DEFAULT_EMAIL_HANDOFF_MESSAGE, DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS } from './emailHandoff';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY } from './constants';
 import { getChatWidgetAIResponseModeForUI, isChatWidgetAIResponseModeActive } from './responseModes';
 
@@ -217,6 +218,8 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
     delayed_team_reply_minutes: rest.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES,
     delayed_team_reply_message: rest.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE,
     delayed_team_reply_message_no_email: rest.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL,
+    email_handoff_message: rest.email_handoff_message || DEFAULT_EMAIL_HANDOFF_MESSAGE,
+    email_handoff_message_after_hours: rest.email_handoff_message_after_hours || DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS,
     ai_enabled: rest.ai_enabled && isChatWidgetAIResponseModeActive(rest.ai_response_mode),
     ai_response_mode: getChatWidgetAIResponseModeForUI(rest.ai_response_mode),
     ai_reply_channels: getAIReplyChannels(rest.ai_reply_channels),

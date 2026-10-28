@@ -782,6 +782,7 @@ func main() {
 	emailFallbackService.SetSupportInboxService(supportInboxService)
 	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 	notificationService.SetSupportEmailHistoryRepositories(supportMessageRepo, supportEmailLogRepo)
+	notificationService.SetSupportResponderDirectory(supportResponderDirectory)
 
 	// AI Support Agent — new repositories and service
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
@@ -1554,6 +1555,7 @@ func main() {
 	supportAIService.SetQueryExpansionTimeout(time.Duration(cfg.QueryExpansionTimeoutMS) * time.Millisecond)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 	supportAIService.SetSupportAvailabilitySources(supportResponderDirectory, supportSessionRepo)
+	supportAIService.SetCustomerNoticeTranslator(supportInboxService)
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
@@ -1580,6 +1582,7 @@ func main() {
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	commandService.SetSupportCoverageService(supportCoverageService)
 	agentRuntimeHostService.SetSupportCoverageService(supportCoverageService)
+	agentRuntimeHostService.SetSupportTeamAvailability(supportAIService)
 	if runFinalizers != nil {
 		runFinalizers.SetSupportCoverageService(supportCoverageService)
 	}

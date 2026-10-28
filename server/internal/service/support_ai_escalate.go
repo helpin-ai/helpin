@@ -146,47 +146,19 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		}
 	}
 
-	// Resolve the customer-facing handoff state and render the escalation message
-	// for that state. Computed outside the dedupe guard below so handoffState is
-	// persisted even when the customer-facing message is skipped.
-	// handoff_state must reflect whether a support responder is around (the same
-	// source the widget's pre-chat availability uses), NOT whether an assignee was
-	// selected: with HandoffBehavior "unassigned" (the default) selection is always
-	// nil even when a responder is around. selection stays purely about routing.
+	// Resolve the customer-facing handoff state. Computed outside the dedupe
+	// guard below so handoffState is persisted even when the customer-facing
+	// message is skipped.
+	// handoff_state must reflect whether someone who looks after the handoff
+	// inbox is around, NOT whether an assignee was selected: with
+	// HandoffBehavior "unassigned" (the default) selection is always nil even
+	// when a responder is around. selection stays purely about routing.
 	customerTeammates, err := resolveSupportCustomerTeammates(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, s.responderDirectory, workspaceID, settings.BusinessHoursTimezone, now)
 	if err != nil {
 		slog.WarnContext(ctx, "resolve teammates available to customers failed; treating as unavailable", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
 	}
-	handoffState := resolveHandoffState(customerTeammates.anyAvailable(), availability.IsWithinOfficeHours)
-
-	// Short phrase for the {reply_time} token. Do NOT use
-	// availability.WidgetAvailability.ReplyTimeText — that is full-sentence copy
-	// (and the offline branch sets it to the outside-hours message).
-	replyTime := shortReplyTimePhrase(
-		availability.WidgetAvailability.ReplyTimePreset,
-		availability.WidgetAvailability.ReplyTimeMinutes,
-	)
-
-	escalationTemplate := selectEscalationTemplate(settings, handoffState)
-	var nextOpenText string
-	if strings.Contains(escalationTemplate, "{next_open}") {
-		nextOpenText = s.nextOpenForCustomer(ctx, conv, settings, now)
-	}
-
-	escalationContent := renderEscalationMessage(
-		escalationTemplate,
-		replyTime,
-		nextOpenText,
-	)
-	if reply := strings.TrimSpace(transitionReply); reply != "" {
-		escalationContent = stripConversationPII(reply, conv.CustomerEmail, conv.CustomerPhone)
-	}
-	// A fact-checked account update goes first; the template keeps the
-	// reply-time and after-hours wording.
-	if len(briefs) > 0 && strings.TrimSpace(briefs[0].CustomerUpdate) != "" {
-		update := stripConversationPII(strings.TrimSpace(briefs[0].CustomerUpdate), conv.CustomerEmail, conv.CustomerPhone)
-		escalationContent = update + "\n\n" + escalationContent
-	}
+	inboxTeamAvailable := s.inboxTeamAvailable(ctx, customerTeammates, workspaceID, derefString(handoffMailboxID), settings.BusinessHoursTimezone, now)
+	handoffState := resolveHandoffState(inboxTeamAvailable, availability.IsWithinOfficeHours)
 
 	var replyMsg *model.SupportMessage
 	var escalationSystemMsg *model.SupportMessage
@@ -244,13 +216,14 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			}
 		}
 		if sendPublicHandoff {
+			content := s.handoffReplyContent(ctx, conv, settings, availability, handoffState, replyChannel, transitionReply, briefs, now)
 			replyMsg = &model.SupportMessage{
 				WorkspaceID:       workspaceID,
 				ConversationID:    conversationID,
 				SenderType:        "ai",
 				MessageType:       "reply",
 				SenderDisplayName: strPtr(helpinAIDisplayName),
-				Content:           escalationContent,
+				Content:           s.translateHandoffReply(ctx, conv, settings, content),
 			}
 			if replyChannel == "email" {
 				replyMsg.Metadata = `{"delivery_mode":"email_only"}`

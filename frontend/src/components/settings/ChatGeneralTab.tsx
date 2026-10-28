@@ -48,6 +48,8 @@ import {
 } from './chat-widget/utils';
 import { DelayedTeamReplySettings } from './chat-widget/DelayedTeamReplySettings';
 import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './chat-widget/delayedTeamReply';
+import { EmailHandoffSettings } from './chat-widget/EmailHandoffSettings';
+import { DEFAULT_EMAIL_HANDOFF_MESSAGE, DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS } from './chat-widget/emailHandoff';
 import { CHAT_WIDGET_ESCALATION_TABS } from './chat-widget/escalationTabs';
 import {
   CHAT_WIDGET_AI_RESPONSE_MODES,
@@ -132,6 +134,8 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
   const [escalationMessageBusy, setEscalationMessageBusy] = useState('');
   const [escalationMessageAfterHours, setEscalationMessageAfterHours] = useState('');
+  const [emailHandoffMessage, setEmailHandoffMessage] = useState(DEFAULT_EMAIL_HANDOFF_MESSAGE);
+  const [emailHandoffMessageAfterHours, setEmailHandoffMessageAfterHours] = useState(DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS);
   const [delayedTeamReplyMinutes, setDelayedTeamReplyMinutes] = useState(DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
   const [delayedTeamReplyMessage, setDelayedTeamReplyMessage] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
   const [delayedTeamReplyMessageNoEmail, setDelayedTeamReplyMessageNoEmail] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
@@ -206,6 +210,8 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
       setEscalationMessageBusy(s.escalation_message_busy ?? '');
       setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
+      setEmailHandoffMessage(s.email_handoff_message || DEFAULT_EMAIL_HANDOFF_MESSAGE);
+      setEmailHandoffMessageAfterHours(s.email_handoff_message_after_hours || DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS);
       setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
       setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
       setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
@@ -274,6 +280,8 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     escalation_message: escalationMessage,
     escalation_message_busy: escalationMessageBusy || undefined,
     escalation_message_after_hours: escalationMessageAfterHours || undefined,
+    email_handoff_message: emailHandoffMessage,
+    email_handoff_message_after_hours: emailHandoffMessageAfterHours,
     delayed_team_reply_minutes: delayedTeamReplyMinutes,
     delayed_team_reply_message: delayedTeamReplyMessage,
     delayed_team_reply_message_no_email: delayedTeamReplyMessageNoEmail,
@@ -815,6 +823,14 @@ function Dashboard() {
                     </TabsTrigger>
                   ))}
                 </TabsList>
+                <TabsContent value="email" className="mt-0">
+                  <EmailHandoffSettings
+                    message={emailHandoffMessage}
+                    messageAfterHours={emailHandoffMessageAfterHours}
+                    onMessageChange={setEmailHandoffMessage}
+                    onMessageAfterHoursChange={setEmailHandoffMessageAfterHours}
+                  />
+                </TabsContent>
                 <TabsContent value="delayed_team_reply" className="mt-0">
                   <DelayedTeamReplySettings
                     minutes={delayedTeamReplyMinutes}

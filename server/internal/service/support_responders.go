@@ -74,6 +74,42 @@ func newSupportResponders(replies []repository.SupportTeammateReply, loc *time.L
 	return responders
 }
 
+// supportResponderIndex holds a workspace's responders and, for each inbox, the
+// teammates who answer customers in that inbox. The Shared Inbox is keyed "".
+type supportResponderIndex struct {
+	workspace supportResponders
+	byMailbox map[string]supportResponders
+}
+
+// newSupportResponderIndex counts responders across the workspace and per inbox.
+// A reply counts toward the inbox the conversation is in now, unless the
+// conversation moved after it: it was then written in an earlier inbox, and
+// counting it would make a Shared Inbox teammate look like the new inbox's team.
+func newSupportResponderIndex(replies []repository.SupportTeammateReply, loc *time.Location, now time.Time) supportResponderIndex {
+	repliesByMailbox := make(map[string][]repository.SupportTeammateReply)
+	for _, reply := range replies {
+		if reply.MovedAfter {
+			continue
+		}
+		mailboxID := strings.TrimSpace(derefString(reply.MailboxID))
+		repliesByMailbox[mailboxID] = append(repliesByMailbox[mailboxID], reply)
+	}
+	index := supportResponderIndex{
+		workspace: newSupportResponders(replies, loc, now),
+		byMailbox: make(map[string]supportResponders, len(repliesByMailbox)),
+	}
+	for mailboxID, mailboxReplies := range repliesByMailbox {
+		index.byMailbox[mailboxID] = newSupportResponders(mailboxReplies, loc, now)
+	}
+	return index
+}
+
+// inbox returns the teammates who answer customers in an inbox, "" for the
+// Shared Inbox. An inbox without recent replies has no reply history.
+func (i supportResponderIndex) inbox(mailboxID string) supportResponders {
+	return i.byMailbox[mailboxID]
+}
+
 // SupportResponderDirectory finds and caches the teammates who answer customers in each workspace.
 type SupportResponderDirectory struct {
 	messageRepo *repository.SupportMessageRepository
@@ -83,9 +119,9 @@ type SupportResponderDirectory struct {
 }
 
 type cachedSupportResponders struct {
-	timezone  string
-	loadedAt  time.Time
-	responders supportResponders
+	timezone string
+	loadedAt time.Time
+	index    supportResponderIndex
 }
 
 // NewSupportResponderDirectory creates a responder directory backed by support messages.
@@ -97,25 +133,31 @@ func NewSupportResponderDirectory(messageRepo *repository.SupportMessageReposito
 // business-hours timezone. A nil directory knows no reply history, so every
 // teammate with support access counts.
 func (d *SupportResponderDirectory) responders(ctx context.Context, workspaceID, timezone string, now time.Time) (supportResponders, error) {
+	index, err := d.index(ctx, workspaceID, timezone, now)
+	return index.workspace, err
+}
+
+// index returns the workspace's responders together with each inbox's.
+func (d *SupportResponderDirectory) index(ctx context.Context, workspaceID, timezone string, now time.Time) (supportResponderIndex, error) {
 	if d == nil || d.messageRepo == nil || strings.TrimSpace(workspaceID) == "" {
-		return supportResponders{}, nil
+		return supportResponderIndex{}, nil
 	}
 	d.mu.Lock()
 	cached, ok := d.cache[workspaceID]
 	d.mu.Unlock()
 	if ok && cached.timezone == timezone && now.Sub(cached.loadedAt) < supportResponderCacheTTL && !now.Before(cached.loadedAt) {
-		return cached.responders, nil
+		return cached.index, nil
 	}
 
 	replies, err := d.messageRepo.ListTeammateReplies(ctx, workspaceID, now.Add(-supportResponderWindow))
 	if err != nil {
-		return supportResponders{}, fmt.Errorf("load support responders: %w", err)
+		return supportResponderIndex{}, fmt.Errorf("load support responders: %w", err)
 	}
 	loc, err := time.LoadLocation(timezone)
 	if err != nil || strings.TrimSpace(timezone) == "" {
 		loc = time.UTC
 	}
-	responders := newSupportResponders(replies, loc, now)
+	index := newSupportResponderIndex(replies, loc, now)
 
 	d.mu.Lock()
 	if len(d.cache) >= supportResponderCacheMax {
@@ -125,9 +167,9 @@ func (d *SupportResponderDirectory) responders(ctx context.Context, workspaceID,
 			}
 		}
 	}
-	d.cache[workspaceID] = cachedSupportResponders{timezone: timezone, loadedAt: now, responders: responders}
+	d.cache[workspaceID] = cachedSupportResponders{timezone: timezone, loadedAt: now, index: index}
 	d.mu.Unlock()
-	return responders, nil
+	return index, nil
 }
 
 // supportCustomerTeammates is what customers are told about each support teammate.
@@ -198,6 +240,27 @@ func (c supportCustomerTeammates) available(teammate supportTeammatePresence) bo
 func (c supportCustomerTeammates) anyAvailable() bool {
 	for _, teammate := range c.teammates {
 		if c.available(teammate) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyAround reports whether any teammate is around, responder or not.
+func (c supportCustomerTeammates) anyAround() bool {
+	for _, teammate := range c.teammates {
+		if c.around(teammate) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyAvailableAmong reports whether one of an inbox's people is around. The
+// inbox decides who its people are, so workspace-wide reply counts do not.
+func (c supportCustomerTeammates) anyAvailableAmong(userIDs map[string]struct{}) bool {
+	for _, teammate := range c.teammates {
+		if _, ok := userIDs[teammate.status.UserID]; ok && c.around(teammate) {
 			return true
 		}
 	}
