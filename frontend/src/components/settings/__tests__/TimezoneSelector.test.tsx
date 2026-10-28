@@ -61,7 +61,8 @@ describe('TimezoneSelector', () => {
 
   it('includes UTC and supports offset search and empty results', async () => {
     await render()
-    expect(trigger().textContent).toContain('UTC+00:00')
+    // Intl's zero-offset label varies across Node and browser ICU versions.
+    expect(trigger().textContent).toMatch(/\(UTC\+(?:0|00:00)\)/)
     await act(async () => { trigger().click() })
     expect(option('UTC')).not.toBeNull()
     await search('UTC+5:30')
