@@ -83,8 +83,11 @@ func writeSLAPolicyError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusPaymentRequired, entitlementErr.Error())
 	case errors.Is(err, service.ErrSupportSLAPolicyInvalid):
 		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrSupportSLAPolicyInvalid.Error()+": "))
-	case errors.Is(err, repository.ErrSupportSLAPolicyNotFound):
+	case errors.Is(err, repository.ErrSupportSLAPolicyNotFound), errors.Is(err, repository.ErrSupportSLATierNotFound),
+		errors.Is(err, service.ErrSupportSLACompanyNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrSupportSLACustomExists):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "unable to save SLA policies")
 	}
@@ -152,6 +155,124 @@ func (h *SupportSLAHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, policies)
+}
+
+// ListTiers handles GET /api/support/sla-tiers.
+func (h *SupportSLAHandler) ListTiers(w http.ResponseWriter, r *http.Request) {
+	tiers, err := h.sla.ListTiers(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tiers)
+}
+
+// CreateTier handles POST /api/support/sla-tiers.
+func (h *SupportSLAHandler) CreateTier(w http.ResponseWriter, r *http.Request) {
+	var req model.SupportSLATierRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tier, err := h.sla.CreateTier(r.Context(), getWorkspaceID(r), req)
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, tier)
+}
+
+// UpdateTier handles PUT /api/support/sla-tiers/{tierId}.
+func (h *SupportSLAHandler) UpdateTier(w http.ResponseWriter, r *http.Request) {
+	var req model.SupportSLATierRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tier, err := h.sla.UpdateTier(r.Context(), getWorkspaceID(r), chi.URLParam(r, "tierId"), req)
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tier)
+}
+
+// DeleteTier handles DELETE /api/support/sla-tiers/{tierId}.
+func (h *SupportSLAHandler) DeleteTier(w http.ResponseWriter, r *http.Request) {
+	if err := h.sla.DeleteTier(r.Context(), getWorkspaceID(r), chi.URLParam(r, "tierId")); err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ReorderTiers handles POST /api/support/sla-tiers/reorder.
+func (h *SupportSLAHandler) ReorderTiers(w http.ResponseWriter, r *http.Request) {
+	var req model.ReorderSupportSLATiersRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tiers, err := h.sla.ReorderTiers(r.Context(), getWorkspaceID(r), req.TierIDs)
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tiers)
+}
+
+// SetCompanyTier handles PUT /api/support/sla-companies/tier.
+func (h *SupportSLAHandler) SetCompanyTier(w http.ResponseWriter, r *http.Request) {
+	var req model.SetSupportSLATierRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	updated, err := h.sla.SetCompanyTier(r.Context(), getWorkspaceID(r), req)
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"updated": updated})
+}
+
+// CompanySLA handles GET /api/support/sla-companies/{companyId}.
+func (h *SupportSLAHandler) CompanySLA(w http.ResponseWriter, r *http.Request) {
+	result, err := h.sla.CompanySLA(r.Context(), getWorkspaceID(r), chi.URLParam(r, "companyId"))
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// CustomizeCompanySLA handles POST /api/support/sla-companies/{companyId}/custom-sla.
+func (h *SupportSLAHandler) CustomizeCompanySLA(w http.ResponseWriter, r *http.Request) {
+	policies, err := h.sla.CustomizeCompanySLA(r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()), chi.URLParam(r, "companyId"))
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, policies)
+}
+
+// RemoveCompanySLA handles DELETE /api/support/sla-companies/{companyId}/custom-sla.
+func (h *SupportSLAHandler) RemoveCompanySLA(w http.ResponseWriter, r *http.Request) {
+	if err := h.sla.RemoveCompanySLA(r.Context(), getWorkspaceID(r), chi.URLParam(r, "companyId")); err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SLATeammates handles GET /api/support/sla-teammates.
+func (h *SupportSLAHandler) SLATeammates(w http.ResponseWriter, r *http.Request) {
+	members, err := h.sla.SLATeammates(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
 }
 
 // SupportConversationActionsHandler applies macros and bulk actions.

@@ -88,6 +88,7 @@ type InternalCommandService struct {
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
 	supportInboxService       *SupportInboxService
+	supportSLAService         *SupportSLAService
 	supportTagService         *SupportTagService
 	crmContactService         *CRMContactService
 	crmSignalService          *CRMSignalService
@@ -2033,6 +2034,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerHelpAssistantCommands()
 	s.registerSupportReplyCommands()
 	s.registerSupportFollowUpCommand()
+	s.registerSupportSLACommands()
 	s.registerSupportCommands()
 	s.registerSupportCoverageCommands()
 	s.registerSupportOperationalCommands()

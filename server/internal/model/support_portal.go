@@ -121,6 +121,10 @@ type SupportPortalRequest struct {
 	LastMessageFrom string `json:"last_message_from,omitempty" gorm:"-"`
 	// Unread is true when support replied after the customer last opened it.
 	Unread bool `json:"unread" gorm:"-"`
+	// ReplyExpectedBy is when the team's reply is due, shown when the
+	// workspace turns it on and a response target is running.
+	ReplyExpectedBy *time.Time `json:"reply_expected_by,omitempty" gorm:"-"`
+	ConversationID  string     `json:"-"`
 
 	LastPublicSenderType     *string    `json:"-"`
 	CustomerAwaitingResponse bool       `json:"-"`
@@ -140,6 +144,9 @@ type SupportPortalRequest struct {
 	CompanyName     *string `json:"-"`
 }
 
+// PortalRequestStatusActive is a portal request waiting on the team.
+const PortalRequestStatusActive = "active"
+
 // PortalRequestStatus exposes the customer-facing lifecycle. Open requests
 // awaiting a customer reply share the inbox's derived Waiting view.
 func PortalRequestStatus(status, lastPublicSenderType string, customerAwaitingResponse bool) string {
@@ -154,7 +161,7 @@ func PortalRequestStatus(status, lastPublicSenderType string, customerAwaitingRe
 		}
 	default:
 	}
-	return "active"
+	return PortalRequestStatusActive
 }
 
 // PortalMessagePreview turns message text (often Markdown) into a short

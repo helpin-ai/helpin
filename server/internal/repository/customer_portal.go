@@ -443,7 +443,7 @@ func (r *CustomerPortalRepository) listRequests(query *gorm.DB, extraColumns, st
 	var requests []model.SupportPortalRequest
 	query = query.
 		Joins("LEFT JOIN support_messages AS lm ON lm.id = " + r.lastPortalVisibleMessageSQL()).
-		Select(`refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at,
+		Select(`refs.reference, conv.id AS conversation_id, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at,
 			conv.display_id, conv.last_public_sender_type, conv.customer_awaiting_response, refs.customer_last_read_at,
 			refs.portal_identity_id AS owner_identity_id,
 			COALESCE(` + supportMetadataValueSQL(r.db, "lm", "merge_public_text") + `, lm.content) AS last_message_content,

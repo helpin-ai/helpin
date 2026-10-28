@@ -454,3 +454,97 @@ func checkSupportReportCSVExport(t *testing.T, f *supportReportFixture) {
 		t.Fatalf("teammate-started conversation reported a first response: %v", byNumber["4"])
 	}
 }
+
+func TestSupportReportSLAConversations(t *testing.T) {
+	checkSupportReportSLAConversations(t, newSupportReportFixture(t))
+}
+
+// checkSupportReportSLAConversations lists exactly the conversations each SLA
+// count is made of, with the same access rules as the counts.
+func checkSupportReportSLAConversations(t *testing.T, f *supportReportFixture) {
+	t.Helper()
+	owner := f.ctx(model.RoleOwner, "", f.userOne)
+	c1, c3, c7 := f.conversationsByLabel["c1"], f.conversationsByLabel["c3"], f.conversationsByLabel["c7"]
+	company := model.CRMCompany{ID: uuid.NewString(), WorkspaceID: f.workspaceID, DisplayID: "CO-1", Name: "Acme"}
+	if err := f.db.Create(&company).Error; err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, f.db, `UPDATE support_conversations SET crm_company_id = ? WHERE id = ?`, company.ID, c3)
+	breachedAt := at(2, 9, 0)
+	mustExec(t, f.db, `UPDATE support_conversation_slas SET first_response_breached_at = ?, policy_name = 'Gold' WHERE conversation_id = ?`, breachedAt, c3)
+
+	ids := func(ctx context.Context, metric, outcome string) []string {
+		t.Helper()
+		page, err := f.svc.SLAConversations(ctx, f.request(), metric, outcome, 1)
+		if err != nil {
+			t.Fatalf("%s/%s: %v", metric, outcome, err)
+		}
+		if page.Total != int64(len(page.Data)) {
+			t.Fatalf("%s/%s total %d for %d rows", metric, outcome, page.Total, len(page.Data))
+		}
+		var out []string
+		for _, row := range page.Data {
+			out = append(out, row.ID)
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		metric, outcome string
+		want            []string
+	}{
+		{model.SupportSLAMetricFirstResponse, model.SupportSLAStateAchieved, []string{c1}},
+		// c8 missed its first response in the previous period.
+		{model.SupportSLAMetricFirstResponse, model.SupportSLAStateBreached, []string{c3}},
+		{model.SupportSLAMetricNextResponse, model.SupportSLAStateAchieved, []string{c1}},
+		{model.SupportSLAMetricNextResponse, model.SupportSLAStateBreached, []string{c3}},
+		{model.SupportSLAMetricResolution, model.SupportSLAStateAchieved, nil},
+		{model.SupportSLAMetricResolution, model.SupportSLAStateBreached, []string{c1}},
+	} {
+		if got := ids(owner, tc.metric, tc.outcome); strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Fatalf("%s/%s = %v, want %v", tc.metric, tc.outcome, got, tc.want)
+		}
+	}
+
+	page, err := f.svc.SLAConversations(owner, f.request(), model.SupportSLAMetricFirstResponse, model.SupportSLAStateBreached, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Data[0]
+	if row.CompanyName == nil || *row.CompanyName != "Acme" || row.PolicyName != "Gold" || row.OutcomeAt == nil ||
+		!row.OutcomeAt.Equal(breachedAt) || row.NextResponseBreaches != 2 || row.CustomerEmail == nil {
+		t.Fatalf("row %+v", row)
+	}
+	page, err = f.svc.SLAConversations(owner, f.request(), model.SupportSLAMetricResolution, model.SupportSLAStateBreached, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := page.Data[0]; row.AssigneeName == nil || *row.AssigneeName != "Uma One" || row.CompanyName != nil {
+		t.Fatalf("assignee row %+v", row)
+	}
+	if page, err = f.svc.SLAConversations(owner, f.request(), model.SupportSLAMetricResolution, model.SupportSLAStateBreached, 2); err != nil ||
+		len(page.Data) != 0 || page.Total != 1 || page.Page != 2 {
+		t.Fatalf("second page %+v, %v", page, err)
+	}
+
+	// A member never lists conversations from an inbox they cannot open.
+	mustExec(t, f.db, `UPDATE support_conversation_slas SET first_response_state = 'breached' WHERE conversation_id = ?`, c7)
+	t.Cleanup(func() {
+		mustExec(t, f.db, `UPDATE support_conversation_slas SET first_response_state = 'pending' WHERE conversation_id = ?`, c7)
+	})
+	if got := ids(owner, model.SupportSLAMetricFirstResponse, model.SupportSLAStateBreached); len(got) != 2 {
+		t.Fatalf("owner breached %v", got)
+	}
+	member := f.ctx(model.RoleMember, f.memberID, f.userTwo)
+	if got := ids(member, model.SupportSLAMetricFirstResponse, model.SupportSLAStateBreached); strings.Join(got, ",") != c3 {
+		t.Fatalf("member breached %v", got)
+	}
+
+	for _, tc := range [][2]string{{"first_response", "pending"}, {"csat", "breached"}, {"", ""}} {
+		if _, err := f.svc.SLAConversations(owner, f.request(), tc[0], tc[1], 1); !errors.Is(err, ErrSupportReportInvalidSLAOutcome) {
+			t.Fatalf("%v: %v", tc, err)
+		}
+	}
+	if _, err := f.svc.SLAConversations(owner, model.SupportReportRequest{WorkspaceID: f.workspaceID}, model.SupportSLAMetricResolution, model.SupportSLAStateBreached, 1); !errors.Is(err, ErrSupportReportInvalidRange) {
+		t.Fatalf("empty range: %v", err)
+	}
+}

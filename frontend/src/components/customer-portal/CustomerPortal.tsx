@@ -33,7 +33,7 @@ import { portalPublicRedirect } from './portalPaths'
 import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
 import { MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
 import { requestNumber } from './portalRequestFormat'
-import { formatPortalRelativeTime } from './portalTime'
+import { formatPortalRelativeTime, formatPortalReplyBy } from './portalTime'
 import { usePortalLiveUpdates } from './usePortalLiveUpdates'
 import { PortalAttachmentTray } from './PortalAttachmentTray'
 import { pastedFiles, usePortalFileDrop } from './portalFileDrop'
@@ -910,6 +910,7 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
 
   const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
 
+  const replyBy = request ? formatPortalReplyBy(request.reply_expected_by) : null
   return (
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
@@ -922,6 +923,7 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
               requestNumber(request),
               request.own === false ? `Asked by ${request.requester_name || 'a colleague'}` : null,
               request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null,
+              replyBy ? <span key="reply-by" className="font-medium text-quiet-text-secondary">Expect a reply by {replyBy}</span> : null,
             ]}
           />
         ) : null}

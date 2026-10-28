@@ -31,7 +31,35 @@ share one implementation.
 | Handoff rate | AI-involved conversations escalated to a teammate. |
 | Backlog | Open and waiting conversations right now, and how many have no assignee. Not tied to the range. |
 | CSAT | Average rating, number of ratings, and share of 4 and 5 ratings, split by AI and human resolution. |
-| SLA hit rate | Per target: met over met plus missed. Cancelled targets are left out. |
+| SLA hit rate | Per target: met over met plus missed, for conversations created in the range. Targets still running and cancelled targets are left out. |
+
+### First response vs. the SLA first response
+
+The two numbers measure different things, so they can disagree:
+
+- **First response (team)** is the median calendar time from the customer's
+  first message to the first teammate reply, for every conversation the
+  customer started, with or without an SLA policy.
+- The **SLA first response** target starts at the handoff when the AI answered
+  first, follows the policy's business hours, and excludes time the AI held
+  the conversation. It counts only conversations with a policy.
+
+Each SLA target shows its definition in Reports.
+
+### Conversations behind an SLA count
+
+Selecting a met or missed count in **SLA targets** lists those conversations,
+newest result first, with:
+- the customer and company;
+- the policy, assignee and priority;
+- when the target was met or missed.
+
+For next response, a missed conversation shows how many replies were late.
+The list follows the report's period, inbox filter and inbox access. It comes
+from `GET /api/workspaces/{ws}/support/reports/sla/conversations`, with the
+overview's parameters plus `metric` (`first_response`, `next_response` or
+`resolution`), `outcome` (`achieved` or `breached`) and `page` (50
+conversations per page).
 
 Values in the CSV that a spreadsheet could read as a formula are escaped.
 
@@ -52,9 +80,42 @@ the assignee at the time it was submitted.
 ## SLA policies
 
 Each policy has optional targets in minutes: first response, next response and
-resolution. Its conditions are priorities, inboxes and channels; an empty list
-matches every conversation. The first enabled matching policy, by position,
-applies. Only teammate replies meet response targets.
+resolution. Its conditions are:
+- priorities, inboxes and channels;
+- company tiers;
+- companies.
+
+An empty list matches every conversation. The first enabled matching policy,
+by position, applies, so put company and tier policies above general ones.
+Only teammate replies meet response targets.
+
+### Tiers and custom SLAs
+
+A tier, such as Gold or Standard, is a level of support promised to
+companies. Admins manage up to 20 tiers in **Settings → SLA**. Each company
+carries at most one tier, read from the conversation's company at each
+evaluation. It is set:
+- on the company page, under **Support SLA**;
+- for many companies at once from the Companies list;
+- through the public API (`PUT /support/companies/{company_id}/sla-tier`, by
+  tier name or ID).
+
+Only support admins can change a tier, because it changes what the company is
+promised.
+
+- A policy's **Company tier** condition matches companies with one of the
+  chosen tiers. **No tier** matches companies without a tier and
+  conversations without a company.
+- A policy's **Company** condition names up to 50 companies.
+- **Customize for this company** copies the enabled policies that can apply
+  to the company into policies that name only that company, placed first.
+  Edit them in Settings like any policy. As new policies, they apply to the
+  company's conversations created afterwards; open conversations keep their
+  current policy. **Remove custom SLA** deletes them, and open conversations
+  move to the next matching policy.
+- Deleting a tier clears it from its companies and from policy conditions.
+  A policy that matched only that tier is turned off, since with no tier left
+  it would match every company.
 
 ### What each target measures
 
@@ -90,6 +151,12 @@ When a teammate hands a conversation back to the AI after the handoff:
 - A met target stays met, and a recorded breach stays recorded, even if a
   message is deleted later. Neither is judged again, whatever happens to the
   policy.
+- When the conversation's company, or that company's tier, changes and
+  another policy applies as a result, the new targets count from the change.
+  The promise did not exist before, so an upgrade never marks a target overdue
+  at once. This also holds when no policy applied before: a conversation
+  linked to a Gold company hours after it started counts Gold's targets from
+  the link, and a company's first tier counts from when it was set.
 - When a priority, inbox or channel change selects a different policy:
   - Recorded results carry over.
   - Targets still running are judged by the new policy from their original
@@ -107,17 +174,29 @@ When a teammate hands a conversation back to the AI after the handoff:
   the policy at its next update.
 - A policy applies only to conversations created after it was enabled.
   Re-enabling it moves that point forward.
+- Conversations imported from Intercom count from the cutover, the first
+  evaluation that finds them open, instead of their creation in Intercom.
+  See [Support imports](support-imports.md).
 - Reopening a resolved conversation keeps its resolution result. Response
   targets continue with the customer's new message.
+
+### Inbox filters
+
+The inbox's **SLA** filter shows conversations with a **Breached** target, or a
+target **Due within an hour** that is not overdue yet. Views save the filter
+as `sla=breached` or `sla=due_soon`. **Next SLA due** sorts overdue targets
+first, then by due time.
 
 ### Evaluation and breaches
 
 The evaluation queue (`support_sla_work`) is filled by database triggers when a
 conversation's state changes:
 
-- status, priority, inbox, channel or snooze
+- status, priority, inbox, channel, company or snooze
 - AI ownership
 - public replies, including deleted ones
+
+Changing a company's tier queues that company's open conversations.
 
 A worker in the API evaluates queued conversations every few seconds. It
 claims rows with a two-minute lease and deletes a row only after its
@@ -134,6 +213,27 @@ A new breach:
 
 Breaches on resolved or spam conversations are recorded but send no
 notification.
+
+### Warnings before a breach
+
+A policy can **warn** a set number of minutes before a target is due; the
+warning must come before the policy's shortest target. The worker wakes at
+the warning time, so warnings arrive on time.
+- A warning notifies the same people as a breach and emits the `sla.warning`
+  webhook. It adds nothing to the conversation timeline.
+- Each due time warns once. A new next-response cycle, or a change that moves
+  the due time, warns again.
+- A paused, met or overdue target never warns. When an evaluation runs more
+  than half the lead time late, for example because a policy started applying
+  inside the warning window, the warning is recorded without being sent.
+- **If nobody is assigned at the warning, assign to** gives the conversation
+  to a chosen teammate. The assignment is skipped, and logged, if that
+  teammate can no longer work on the conversation.
+
+**Also notify** adds up to 10 teammates, and optionally the company's customer
+success owner, to warnings and breaches. Warning settings are read from the
+policy when the warning fires, so changing them applies to open
+conversations.
 
 ## Snooze
 

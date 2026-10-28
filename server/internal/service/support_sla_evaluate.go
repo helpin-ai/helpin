@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // supportSLAReply is one public reply on a conversation's timeline.
@@ -20,10 +21,10 @@ type supportSLAEvaluation struct {
 	NewBreaches []string
 }
 
-// supportSLAPolicyMatches reports whether policy applies to conversation.
-func supportSLAPolicyMatches(policy model.SupportSLAPolicy, conversation model.SupportConversation) bool {
-	// Imported history was answered elsewhere; it never carries targets.
-	if !policy.Enabled || conversation.CreatedAt.Before(policy.ActiveSince) || conversation.Source == model.SupportImportSourceIntercom {
+// supportSLAPolicyMatches reports whether policy applies to conversation,
+// whose company is company (nil without one).
+func supportSLAPolicyMatches(policy model.SupportSLAPolicy, conversation model.SupportConversation, company *repository.SupportSLACompany) bool {
+	if !policy.Enabled || conversation.CreatedAt.Before(policy.ActiveSince) {
 		return false
 	}
 	if len(policy.Priorities) > 0 && !slices.Contains([]string(policy.Priorities), conversation.Priority) {
@@ -41,7 +42,31 @@ func supportSLAPolicyMatches(policy model.SupportSLAPolicy, conversation model.S
 	if len(policy.Channels) > 0 && !slices.Contains([]string(policy.Channels), conversation.Channel) {
 		return false
 	}
+	if len(policy.CompanyTierIDs) > 0 && !slices.Contains([]string(policy.CompanyTierIDs), supportSLACompanyTier(company)) {
+		return false
+	}
+	if len(policy.CompanyIDs) > 0 && (company == nil || !slices.Contains([]string(policy.CompanyIDs), company.ID)) {
+		return false
+	}
 	return true
+}
+
+// supportSLACompanyTier is the tier policies match for company:
+// model.SupportSLANoTier without a company or tier.
+func supportSLACompanyTier(company *repository.SupportSLACompany) string {
+	if company == nil || company.TierID == nil || *company.TierID == "" {
+		return model.SupportSLANoTier
+	}
+	return *company.TierID
+}
+
+// supportSLACompanyKey identifies the company and tier a conversation is
+// matched with; a change of either counts new targets from the change.
+func supportSLACompanyKey(company *repository.SupportSLACompany) string {
+	if company == nil {
+		return "company:none"
+	}
+	return "company:" + company.ID + "|tier:" + supportSLACompanyTier(company)
 }
 
 // supportSLAWaitingOnCustomer mirrors the inbox's Waiting rule: the status
@@ -134,6 +159,12 @@ type supportSLAInput struct {
 	Resumed bool
 	// TargetsFrom is the earliest time any target counts from.
 	TargetsFrom *time.Time
+	// CompanyKey is the company and tier the targets were selected with.
+	CompanyKey string
+	// HistoryThrough marks replies at or before it as history copied from
+	// another help desk: a conversation a teammate already answered there
+	// has no first-response target.
+	HistoryThrough *time.Time
 }
 
 // evaluateSupportSLA recomputes a conversation's SLA state. Only teammate
@@ -151,7 +182,7 @@ func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
 		TargetFirstResponseMinutes: targets.FirstResponseMinutes, TargetNextResponseMinutes: targets.NextResponseMinutes,
 		TargetResolutionMinutes: targets.ResolutionMinutes, TargetBusinessHours: targets.BusinessHours,
 		TargetPauseWhileWaiting: targets.PauseWhileWaiting,
-		AIInvolved:              in.AIInvolved, HumanSince: in.HumanSince, TargetsFrom: in.TargetsFrom,
+		AIInvolved:              in.AIInvolved, HumanSince: in.HumanSince, TargetsFrom: in.TargetsFrom, CompanyKey: in.CompanyKey,
 		FirstResponsePausedSeconds: previous.FirstResponsePausedSeconds,
 	}
 	if previous.DetachedAt != nil && previous.FirstResponseAchievedAt == nil && previous.FirstResponseBreachedAt == nil {
@@ -176,6 +207,7 @@ func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
 	state.aiHolding = in.AIOwnsNow && !state.closed
 	state.humanSince = in.HumanSince
 	state.targetsFrom = in.TargetsFrom
+	state.historyThrough = in.HistoryThrough
 	if state.aiHolding && in.HumanSince != nil {
 		record.AIHoldingSince = previous.AIHoldingSince
 		if record.AIHoldingSince == nil {
@@ -253,6 +285,7 @@ type supportSLAEvalState struct {
 	resolved, closed        bool
 	aiOnly, aiHolding       bool
 	humanSince, targetsFrom *time.Time
+	historyThrough          *time.Time
 	newBreaches             []string
 	openDue, wakeDue        []*time.Time
 	breachedNow             bool
@@ -299,6 +332,9 @@ func (st *supportSLAEvalState) firstResponse(record, previous *model.SupportConv
 		}
 	}
 	if firstCustomer == nil || (firstTeammate != nil && firstTeammate.Before(*firstCustomer)) {
+		return
+	}
+	if st.historyThrough != nil && firstTeammate != nil && !firstTeammate.After(*st.historyThrough) {
 		return
 	}
 	if st.aiOnly && firstTeammate == nil {

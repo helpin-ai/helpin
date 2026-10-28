@@ -291,13 +291,19 @@ export function SupportViewFilters({ conversationListFilters, navFilter, selecte
       ))}
     </FilterSection>
     <FilterSection title="SLA">
-      <FilterPill
-        disabled={!slaEnabled}
-        selected={Boolean(conversationListFilters.slaBreached)}
-        onClick={() => setConversationListFilter('slaBreached', !conversationListFilters.slaBreached)}
-      >
-        Breached only
-      </FilterPill>
+      {([
+        ['Breached', 'breached'],
+        ['Due within an hour', 'due_soon'],
+      ] as const).map(([label, value]) => (
+        <FilterPill
+          key={value}
+          disabled={!slaEnabled}
+          selected={conversationListFilters.sla === value}
+          onClick={() => setConversationListFilter('sla', conversationListFilters.sla === value ? undefined : value)}
+        >
+          {label}
+        </FilterPill>
+      ))}
     </FilterSection>
     <FilterSection title="Sort">
       {[

@@ -1,6 +1,12 @@
 import { api, API_BASE } from '../api'
 import { fetchWithSessionAuth } from '@helpin-ai/support-core'
-import type { SupportReportOverview, SupportReportParams } from '../supportReportTypes'
+import type {
+  SupportReportOverview,
+  SupportReportParams,
+  SupportReportSLAConversationsPage,
+  SupportReportSLAMetric,
+  SupportReportSLAOutcome,
+} from '../supportReportTypes'
 
 function reportQuery(wsId: string, params: SupportReportParams): string {
   const query = new URLSearchParams({ workspace_id: wsId, from: params.from, to: params.to, tz: params.tz })
@@ -11,6 +17,11 @@ function reportQuery(wsId: string, params: SupportReportParams): string {
 export const supportReportsService = {
   overview: (wsId: string, params: SupportReportParams) =>
     api.get<SupportReportOverview>(`/support/reports/overview?${reportQuery(wsId, params)}`),
+
+  slaConversations: (wsId: string, params: SupportReportParams, metric: SupportReportSLAMetric, outcome: SupportReportSLAOutcome, page: number) =>
+    api.get<SupportReportSLAConversationsPage>(
+      `/support/reports/sla/conversations?${reportQuery(wsId, params)}&${new URLSearchParams({ metric, outcome, page: String(page) })}`,
+    ),
 
   /** Downloads the conversation export as a CSV blob. */
   exportConversations: async (wsId: string, params: SupportReportParams): Promise<{ blob: Blob; filename: string }> => {

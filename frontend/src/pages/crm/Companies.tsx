@@ -12,6 +12,9 @@ import {
   type CompanyGroupByOption,
 } from '@/components/crm/CompaniesTable';
 import { CreateCompanyDialog } from '@/components/crm/CreateCompanyDialog';
+import { CompanySLATierBulkBar } from '@/components/crm/CompanySLATierBulkBar';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
+import { useSLATiers } from '@/hooks/queries/useSupportSLATiers';
 import { CRMDataEmptyState, CRMNoResultsState } from '@/components/crm/CRMDataEmptyState';
 import { CompaniesAppliedFilters, CompaniesFilterTrigger } from '@/components/crm/CompaniesFilterBar';
 import { useCompanyFilterOptions } from '@/hooks/useCompanyFilterOptions';
@@ -48,6 +51,11 @@ export function CompaniesPage() {
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
   const navigate = useNavigate();
+  // Support admins set SLA tiers in bulk once the workspace has tiers.
+  const { data: workspaceAccess } = useWorkspaceAccess(wsId);
+  const canAdministerSupport = usePermissions(workspaceAccess).has('support.admin');
+  const { data: slaTiers } = useSLATiers(wsId, canAdministerSupport);
+  const canSetSLATier = canAdministerSupport && (slaTiers?.length ?? 0) > 0;
   const [search, setSearch] = useState('');
   const [groupBy, setGroupBy] = useState<CompanyGroupByOption>('none');
   const [showCreate, setShowCreate] = useState(false);
@@ -291,6 +299,9 @@ export function CompaniesPage() {
             onCompanyUpdated={() => refetch()}
             onCompanyDeleted={() => refetch()}
             toolbarContainer={tableToolbarContainer}
+            renderBulkActions={canSetSLATier ? (companyIds, clearSelection) => (
+              <CompanySLATierBulkBar workspaceId={wsId} companyIds={companyIds} tiers={slaTiers ?? []} onClearSelection={clearSelection} />
+            ) : undefined}
           />
         )}
       </div>

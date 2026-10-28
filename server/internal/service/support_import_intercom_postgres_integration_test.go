@@ -185,10 +185,13 @@ func TestIntercomConversationImportPostgres(t *testing.T) {
 	if _, err := sla.ProcessQueue(ctx, 50); err != nil {
 		t.Fatal(err)
 	}
-	var records int64
-	db.Model(&model.SupportConversationSLARecord{}).Where("conversation_id IN ?", []string{refund.ID, chat.ID}).Count(&records)
-	if records != 0 {
-		t.Fatalf("imported conversations got SLA records: %d", records)
+	// History is never judged: the closed import gets no targets, and the
+	// open one counts its targets from the cutover.
+	var records []model.SupportConversationSLARecord
+	db.Where("conversation_id IN ?", []string{refund.ID, chat.ID}).Find(&records)
+	if len(records) != 1 || records[0].ConversationID != chat.ID || records[0].TargetsFrom == nil ||
+		records[0].TargetsFrom.Before(now.Add(-time.Minute)) || records[0].Breached {
+		t.Fatalf("imported conversations' SLA records: %+v", records)
 	}
 
 	// A job that crashed after storing conversations but before saving its

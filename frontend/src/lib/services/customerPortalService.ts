@@ -77,6 +77,8 @@ export interface CustomerPortalRequest {
   subject: string
   status: 'active' | 'waiting_on_customer' | 'resolved'
   last_activity_at: string | null
+  /** When the team's reply is due, when the workspace shows it. */
+  reply_expected_by?: string | null
   last_message_preview?: string
   last_message_from?: 'customer' | 'support'
   /** Support replied since the customer last opened the request. */
