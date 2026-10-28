@@ -51,4 +51,12 @@ describe('SLA policy form', () => {
     expect(formatSLATarget(2880)).toBe('2d')
     expect(formatSLATarget(null)).toBeNull()
   })
+
+  it('keeps company tier and company conditions', () => {
+    const draft = { ...emptySLAPolicyDraft(), name: 'Gold', companyTierIds: ['tier-gold', 'none'], companies: [{ id: 'co-1', name: 'Acme' }] }
+    const { input } = draftToPolicyInput(draft)
+    expect(input).toMatchObject({ company_tier_ids: ['tier-gold', 'none'], company_ids: ['co-1'] })
+    const tooMany = { ...draft, companies: Array.from({ length: 51 }, (_, index) => ({ id: `co-${index}`, name: `Co ${index}` })) }
+    expect(draftToPolicyInput(tooMany).errors).toContain('Name at most 50 companies.')
+  })
 })

@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { SupportSLAPolicy, SupportSLAPolicyInput } from '@/lib/pmTypes'
+import { SUPPORT_SLA_NO_TIER, type SupportSLAPolicy, type SupportSLAPolicyInput, type SupportSLATier } from '@/lib/pmTypes'
 import {
+  MAX_SLA_POLICY_COMPANIES,
   draftToPolicyInput,
   emptySLAPolicyDraft,
   policyToDraft,
@@ -16,6 +17,7 @@ import {
 } from '@/lib/supportSLAPolicyForm'
 import { toggleListValue } from '@/lib/toggleListValue'
 import { SettingsPill } from '../SettingsPill'
+import { SLACompanyPicker } from './SLACompanyPicker'
 
 const PRIORITIES = [
   { value: 'urgent', label: 'Urgent' },
@@ -81,14 +83,16 @@ interface SupportSLAPolicyDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   policy: SupportSLAPolicy | null
+  workspaceId: string
   inboxes: { id: string; name: string }[]
+  tiers: SupportSLATier[]
   businessHoursConfigured: boolean
   saving: boolean
   onSave: (input: SupportSLAPolicyInput) => Promise<boolean>
 }
 
 /** Create or edit one SLA policy. */
-export function SupportSLAPolicyDialog({ open, onOpenChange, policy, inboxes, businessHoursConfigured, saving, onSave }: SupportSLAPolicyDialogProps) {
+export function SupportSLAPolicyDialog({ open, onOpenChange, policy, workspaceId, inboxes, tiers, businessHoursConfigured, saving, onSave }: SupportSLAPolicyDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
@@ -104,7 +108,9 @@ export function SupportSLAPolicyDialog({ open, onOpenChange, policy, inboxes, bu
             // A fresh form for each opening starts from the policy being edited.
             key={policy?.id ?? 'new'}
             policy={policy}
+            workspaceId={workspaceId}
             inboxes={inboxes}
+            tiers={tiers}
             businessHoursConfigured={businessHoursConfigured}
             saving={saving}
             onCancel={() => onOpenChange(false)}
@@ -120,14 +126,18 @@ export function SupportSLAPolicyDialog({ open, onOpenChange, policy, inboxes, bu
 
 function SupportSLAPolicyForm({
   policy,
+  workspaceId,
   inboxes,
+  tiers,
   businessHoursConfigured,
   saving,
   onCancel,
   onSave,
 }: {
   policy: SupportSLAPolicy | null
+  workspaceId: string
   inboxes: { id: string; name: string }[]
+  tiers: SupportSLATier[]
   businessHoursConfigured: boolean
   saving: boolean
   onCancel: () => void
@@ -183,6 +193,21 @@ function SupportSLAPolicyForm({
               <SettingsPill key={option.value} selected={draft.channels.includes(option.value)} onClick={() => update({ channels: toggleListValue(draft.channels, option.value) })}>{option.label}</SettingsPill>
             ))}
           </div>
+        </div>
+        {tiers.length > 0 || draft.companyTierIds.length > 0 ? (
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">Company tier</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[...tiers.map((tier) => ({ id: tier.id, name: tier.name })), { id: SUPPORT_SLA_NO_TIER, name: 'No tier' }].map((tier) => (
+                <SettingsPill key={tier.id} selected={draft.companyTierIds.includes(tier.id)} onClick={() => update({ companyTierIds: toggleListValue(draft.companyTierIds, tier.id) })}>{tier.name}</SettingsPill>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">“No tier” matches companies without a tier and conversations without a company.</p>
+          </div>
+        ) : null}
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">Company</div>
+          <SLACompanyPicker workspaceId={workspaceId} value={draft.companies} limit={MAX_SLA_POLICY_COMPANIES} onChange={(companies) => update({ companies })} />
         </div>
       </fieldset>
 

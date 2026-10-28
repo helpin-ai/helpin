@@ -1,4 +1,4 @@
-import type { ConversationPriority, SupportActionResult, SupportBulkActionResponse, SupportConversationActions, SupportSLAPolicy, SupportSLAPolicyInput, WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
+import type { ConversationPriority, SupportActionResult, SupportBulkActionResponse, SupportCompanySLA, SupportConversationActions, SupportSLAPolicy, SupportSLAPolicyInput, SupportSLATier, WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
 import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
@@ -295,6 +295,24 @@ export const supportService = {
     api.del<void>(`/support/sla-policies/${policyId}${qs(workspaceId)}`),
   reorderSLAPolicies: (workspaceId: string, policyIds: string[]) =>
     api.post<SupportSLAPolicy[]>(`/support/sla-policies/reorder${qs(workspaceId)}`, { policy_ids: policyIds }),
+  listSLATiers: (workspaceId: string) =>
+    api.get<SupportSLATier[]>(`/support/sla-tiers${qs(workspaceId)}`),
+  createSLATier: (workspaceId: string, input: { name: string; description: string }) =>
+    api.post<SupportSLATier>(`/support/sla-tiers${qs(workspaceId)}`, input),
+  updateSLATier: (workspaceId: string, tierId: string, input: { name: string; description: string }) =>
+    api.put<SupportSLATier>(`/support/sla-tiers/${tierId}${qs(workspaceId)}`, input),
+  deleteSLATier: (workspaceId: string, tierId: string) =>
+    api.del<void>(`/support/sla-tiers/${tierId}${qs(workspaceId)}`),
+  reorderSLATiers: (workspaceId: string, tierIds: string[]) =>
+    api.post<SupportSLATier[]>(`/support/sla-tiers/reorder${qs(workspaceId)}`, { tier_ids: tierIds }),
+  setCompanySLATier: (workspaceId: string, companyIds: string[], tierId: string | null) =>
+    api.put<{ updated: number }>(`/support/sla-companies/tier${qs(workspaceId)}`, { company_ids: companyIds, tier_id: tierId }),
+  companySLA: (workspaceId: string, companyId: string) =>
+    api.get<SupportCompanySLA>(`/support/sla-companies/${companyId}${qs(workspaceId)}`),
+  customizeCompanySLA: (workspaceId: string, companyId: string) =>
+    api.post<SupportSLAPolicy[]>(`/support/sla-companies/${companyId}/custom-sla${qs(workspaceId)}`),
+  removeCompanySLA: (workspaceId: string, companyId: string) =>
+    api.del<void>(`/support/sla-companies/${companyId}/custom-sla${qs(workspaceId)}`),
   recordInboxClear: (workspaceId: string, payload: RecordSupportInboxClearRequest) =>
     api.post<SupportInboxClearStats>(`/support/inbox-clears${qs(workspaceId)}`, payload),
   linkConversationTask: (workspaceId: string, conversationId: string, payload: LinkTaskRequest) =>

@@ -80,9 +80,40 @@ the assignee at the time it was submitted.
 ## SLA policies
 
 Each policy has optional targets in minutes: first response, next response and
-resolution. Its conditions are priorities, inboxes and channels; an empty list
-matches every conversation. The first enabled matching policy, by position,
-applies. Only teammate replies meet response targets.
+resolution. Its conditions are:
+- priorities, inboxes and channels;
+- company tiers;
+- companies.
+
+An empty list matches every conversation. The first enabled matching policy,
+by position, applies, so put company and tier policies above general ones.
+Only teammate replies meet response targets.
+
+### Tiers and custom SLAs
+
+A tier, such as Gold or Standard, is a level of support promised to
+companies. Admins manage up to 20 tiers in **Settings → SLA**. Each company
+carries at most one tier, read from the conversation's company at each
+evaluation. It is set:
+- on the company page, under **Support SLA**;
+- for many companies at once from the Companies list;
+- through the public API (`PUT /support/companies/{company_id}/sla-tier`, by
+  tier name or ID).
+
+Only support admins can change a tier, because it changes what the company is
+promised.
+
+- A policy's **Company tier** condition matches companies with one of the
+  chosen tiers. **No tier** matches companies without a tier and
+  conversations without a company.
+- A policy's **Company** condition names up to 50 companies.
+- **Customize for this company** copies the enabled policies that can apply
+  to the company into policies that name only that company, placed first.
+  Edit them in Settings like any policy. As new policies, they apply to the
+  company's conversations created afterwards; open conversations keep their
+  current policy. **Remove custom SLA** deletes them, and open conversations
+  move to the next matching policy.
+- Deleting a tier clears it from its companies and from policy conditions.
 
 ### What each target measures
 
@@ -118,6 +149,11 @@ When a teammate hands a conversation back to the AI after the handoff:
 - A met target stays met, and a recorded breach stays recorded, even if a
   message is deleted later. Neither is judged again, whatever happens to the
   policy.
+- When the conversation's company, or that company's tier, changes and
+  another policy applies as a result, the new targets count from the change.
+  The promise did not exist before, so an upgrade never marks a target overdue
+  at once. A company without a matching policy before its tier was set counts
+  from when the tier was set.
 - When a priority, inbox or channel change selects a different policy:
   - Recorded results carry over.
   - Targets still running are judged by the new policy from their original
@@ -150,9 +186,11 @@ first, then by due time.
 The evaluation queue (`support_sla_work`) is filled by database triggers when a
 conversation's state changes:
 
-- status, priority, inbox, channel or snooze
+- status, priority, inbox, channel, company or snooze
 - AI ownership
 - public replies, including deleted ones
+
+Changing a company's tier queues that company's open conversations.
 
 A worker in the API evaluates queued conversations every few seconds. It
 claims rows with a two-minute lease and deletes a row only after its

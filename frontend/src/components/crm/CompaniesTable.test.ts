@@ -7,7 +7,7 @@ describe('CompaniesTable layout', () => {
     const tableSource = readFileSync(resolve(__dirname, './CompaniesTable.tsx'), 'utf8');
     const styleSource = readFileSync(resolve(__dirname, '../../lib/tableStyles.ts'), 'utf8');
 
-    expect(tableSource).toContain('className="flex h-full min-h-0 flex-1 flex-col gap-2"');
+    expect(tableSource).toContain('className="relative flex h-full min-h-0 flex-1 flex-col gap-2"');
     expect(tableSource).toContain('<div ref={tableSurfaceRef} className={TABLE_CONTAINER}>');
     expect(styleSource).toContain("TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto");
   });

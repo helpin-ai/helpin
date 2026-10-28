@@ -161,6 +161,11 @@ export interface SupportSLAPolicy {
   priorities: ConversationPriority[];
   mailbox_ids: string[];
   channels: string[];
+  /** SLA tier ids, or "none" for conversations whose company has no tier. */
+  company_tier_ids: string[];
+  company_ids: string[];
+  /** Names of the companies in company_ids. */
+  companies: { id: string; name: string }[];
   first_response_minutes?: number | null;
   next_response_minutes?: number | null;
   resolution_minutes?: number | null;
@@ -177,11 +182,47 @@ export interface SupportSLAPolicyInput {
   priorities: string[];
   mailbox_ids: string[];
   channels: string[];
+  company_tier_ids: string[];
+  company_ids: string[];
   first_response_minutes?: number | null;
   next_response_minutes?: number | null;
   resolution_minutes?: number | null;
   business_hours: boolean;
   pause_while_waiting: boolean;
+}
+
+/** In a policy's company_tier_ids: companies without a tier, and conversations without a company. */
+export const SUPPORT_SLA_NO_TIER = 'none';
+
+/** A level of support promised to companies, such as Gold. */
+export interface SupportSLATier {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string;
+  position: number;
+  company_count: number;
+  policy_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A company's tier and the enabled policies that can apply to it, in order. */
+export interface SupportCompanySLA {
+  company_id: string;
+  tier_id: string | null;
+  tier_name: string | null;
+  has_custom: boolean;
+  policies: {
+    id: string;
+    name: string;
+    custom: boolean;
+    priorities: ConversationPriority[];
+    first_response_minutes?: number | null;
+    next_response_minutes?: number | null;
+    resolution_minutes?: number | null;
+    business_hours: boolean;
+  }[];
 }
 
 export interface SupportConversationCSAT {

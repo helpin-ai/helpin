@@ -44,6 +44,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { DesktopDetailRail } from '@/components/crm/DesktopDetailRail';
 import { CompanyContactsView, CompanyDealsView, CompanyMeetingsView, CompanySupportView } from '@/components/crm/CompanyDetailCollections';
+import { CompanySLASection } from '@/components/crm/CompanySLASection';
 import { CompanyPortalPanel } from '@/components/crm/CompanyPortalPanel';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
@@ -100,7 +101,9 @@ export function CompanyDetailPage({ companyId, activeTab: requestedTab = 'overvi
   const wsSlug = currentWorkspace?.slug ?? '';
   const { data: workspaceAccess } = useWorkspaceAccess(wsId);
   // Portal access is managed by support admins, as on the contact page.
-  const canManagePortal = usePermissions(workspaceAccess).has('support.admin');
+  const permissions = usePermissions(workspaceAccess);
+  const canManagePortal = permissions.has('support.admin');
+  const canReadSupport = permissions.has('support.read');
   const visibleTabLabels = companyDetailTabLabels.filter((tab) => tab.value !== 'portal' || canManagePortal);
   const activeTab = visibleCompanyDetailTab(requestedTab, canManagePortal, workspaceAccess !== undefined);
   const navigate = useNavigate();
@@ -357,6 +360,9 @@ export function CompanyDetailPage({ companyId, activeTab: requestedTab = 'overvi
 		</MetadataRow>
         <CustomPropertyMetadataRows properties={company.custom_properties} />
       </div>
+      {canReadSupport ? (
+        <CompanySLASection workspaceId={wsId} workspaceSlug={wsSlug} companyId={companyId} companyName={form.name || company.name} canManage={canManagePortal} />
+      ) : null}
 		{company.commercial_state_health ? (
 			<div className="mt-5 rounded-md border border-border/70 bg-muted/20 p-3">
 				<div className="flex items-center gap-2">

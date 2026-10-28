@@ -256,6 +256,9 @@ export const queryKeys = {
     reportSLAConversations: (wsId: string, params: unknown, metric: string, outcome: string) =>
       ['support', wsId, 'reports', 'sla-conversations', params, metric, outcome] as const,
     slaPolicies: (wsId: string) => ['support', wsId, 'sla-policies'] as const,
+    slaTiers: (wsId: string) => ['support', wsId, 'sla-tiers'] as const,
+    companySLAAll: (wsId: string) => ['support', wsId, 'company-sla'] as const,
+    companySLA: (wsId: string, companyId: string) => ['support', wsId, 'company-sla', companyId] as const,
     webhooks: (wsId: string) => ['support', wsId, 'webhooks'] as const,
     webhookDeliveries: (wsId: string, webhookId: string) => ['support', wsId, 'webhooks', webhookId, 'deliveries'] as const,
   },

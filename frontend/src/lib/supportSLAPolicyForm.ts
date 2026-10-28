@@ -14,6 +14,8 @@ export interface SLAPolicyDraft {
   priorities: string[]
   mailboxIds: string[]
   channels: string[]
+  companyTierIds: string[]
+  companies: { id: string; name: string }[]
   firstResponse: SLATargetDraft
   nextResponse: SLATargetDraft
   resolution: SLATargetDraft
@@ -23,6 +25,7 @@ export interface SLAPolicyDraft {
 
 const UNIT_MINUTES: Record<SLATargetUnit, number> = { minutes: 1, hours: 60, days: 24 * 60 }
 export const MAX_SLA_TARGET_MINUTES = 90 * 24 * 60
+export const MAX_SLA_POLICY_COMPANIES = 50
 
 /** Splits minutes into the largest whole unit for editing. */
 export function targetDraft(minutes: number | null | undefined, fallback: SLATargetDraft): SLATargetDraft {
@@ -39,6 +42,8 @@ export function emptySLAPolicyDraft(): SLAPolicyDraft {
     priorities: [],
     mailboxIds: [],
     channels: [],
+    companyTierIds: [],
+    companies: [],
     firstResponse: { enabled: true, amount: '1', unit: 'hours' },
     nextResponse: { enabled: false, amount: '4', unit: 'hours' },
     resolution: { enabled: false, amount: '1', unit: 'days' },
@@ -55,6 +60,8 @@ export function policyToDraft(policy: SupportSLAPolicy): SLAPolicyDraft {
     priorities: [...policy.priorities],
     mailboxIds: [...policy.mailbox_ids],
     channels: [...policy.channels],
+    companyTierIds: [...(policy.company_tier_ids ?? [])],
+    companies: [...(policy.companies ?? [])],
     firstResponse: targetDraft(policy.first_response_minutes, empty.firstResponse),
     nextResponse: targetDraft(policy.next_response_minutes, empty.nextResponse),
     resolution: targetDraft(policy.resolution_minutes, empty.resolution),
@@ -84,6 +91,7 @@ export function draftToPolicyInput(draft: SLAPolicyDraft): { input: SupportSLAPo
   const name = draft.name.trim().replace(/\s+/g, ' ')
   if (!name) errors.push('Give the policy a name.')
   if (name.length > 120) errors.push('Keep the name under 120 characters.')
+  if (draft.companies.length > MAX_SLA_POLICY_COMPANIES) errors.push(`Name at most ${MAX_SLA_POLICY_COMPANIES} companies.`)
   const first = targetMinutes(draft.firstResponse, 'First response', errors)
   const next = targetMinutes(draft.nextResponse, 'Next response', errors)
   const resolution = targetMinutes(draft.resolution, 'Resolution', errors)
@@ -98,6 +106,8 @@ export function draftToPolicyInput(draft: SLAPolicyDraft): { input: SupportSLAPo
       priorities: draft.priorities,
       mailbox_ids: draft.mailboxIds,
       channels: draft.channels,
+      company_tier_ids: draft.companyTierIds,
+      company_ids: draft.companies.map((company) => company.id),
       first_response_minutes: first,
       next_response_minutes: next,
       resolution_minutes: resolution,
