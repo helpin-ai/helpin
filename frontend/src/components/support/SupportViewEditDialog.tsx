@@ -38,7 +38,7 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
   };
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !isPending) onClose(); }}>
-      <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-hidden flex flex-col">
+      <DialogContent aria-describedby={undefined} className="sm:max-w-2xl max-h-[90dvh] overflow-hidden flex flex-col">
         <DialogHeader><DialogTitle>Edit view</DialogTitle></DialogHeader>
         <div className="space-y-4 overflow-y-auto min-h-0 pr-1">
           <div className="space-y-2">
