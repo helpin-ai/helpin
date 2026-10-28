@@ -137,23 +137,19 @@ func ProcessSupportCustomerReplyNotification(
 		return
 	}
 
-	selection, err := selectSupportConversationRecipient(
+	selection, err := selectSupportReplyAlertRecipient(
 		ctx,
 		notifService.workspaceRepo,
 		notifService.mailboxRepo,
+		notifService.supportMessageRepo,
 		notifService.installationRepo,
 		notifService.prefRepo,
 		notifService.presence,
 		notifService.statusOverrideRepo,
-		supportRecipientSelectorInput{
-			WorkspaceID:        conv.WorkspaceID,
-			MailboxID:          conv.MailboxID,
-			OwnerUserID:        conv.OpenedByUserID,
-			EventType:          "support_conversation.customer_reply",
-			Channel:            "any",
-			RequirePreferences: true,
-			Now:                time.Now(),
-		},
+		notifService.supportResponders,
+		conv,
+		"support_conversation.customer_reply",
+		time.Now(),
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "select support customer reply recipient", "error", err, "conversation_id", conv.ID)

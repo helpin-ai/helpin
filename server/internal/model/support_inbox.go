@@ -156,6 +156,13 @@ const (
 	HandoffStateAfterHours = "after_hours"
 )
 
+// Default email handoff messages. Email customers expect a reply later, so the
+// message says who will reply rather than who is online right now.
+const (
+	DefaultEmailHandoffMessage           = "Thanks for getting in touch. I've passed your message to our support team, and someone from the team will reply to this email as soon as they can.\n\nIf there's anything you'd like to add in the meantime, just reply here."
+	DefaultEmailHandoffMessageAfterHours = "Thanks for getting in touch. I've passed your message to our support team.\n\nThe team is away right now and back {next_open}. Someone will reply to this email once they're back.\n\nIf there's anything you'd like to add in the meantime, just reply here."
+)
+
 const (
 	SupportConversationListFilterWaiting  = "waiting"
 	SupportConversationListFilterInbox    = "inbox"
@@ -1321,11 +1328,34 @@ type CsatSurveyRequest struct {
 	Feedback string `json:"feedback"`
 }
 
+// BusinessHoursSlot is one open time range in a day, as "HH:MM" in the
+// business-hours timezone. End may be "24:00" for midnight.
+type BusinessHoursSlot struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
 // BusinessHoursDay defines a single day's business hours.
 type BusinessHoursDay struct {
+	// Start and End mirror the first slot for clients that predate Slots.
 	Start   string `json:"start"` // "09:00"
 	End     string `json:"end"`   // "17:00"
 	Enabled bool   `json:"enabled"`
+	// Slots are the day's open time ranges in order. Settings saved before
+	// slots existed have only Start and End.
+	Slots []BusinessHoursSlot `json:"slots,omitempty"`
+}
+
+// OpenSlots returns the day's open time ranges, falling back to Start and End
+// for settings saved before slots existed.
+func (d BusinessHoursDay) OpenSlots() []BusinessHoursSlot {
+	if len(d.Slots) > 0 {
+		return d.Slots
+	}
+	if d.Start == "" && d.End == "" {
+		return nil
+	}
+	return []BusinessHoursSlot{{Start: d.Start, End: d.End}}
 }
 
 const (
@@ -1384,6 +1414,10 @@ type SupportInboxSettings struct {
 	EscalationMessage              string `json:"escalation_message"`             // message shown when AI hands off to human (live)
 	EscalationMessageBusy          string `json:"escalation_message_busy"`        // message shown when AI hands off while team is busy
 	EscalationMessageAfterHours    string `json:"escalation_message_after_hours"` // message shown when AI hands off after hours
+	// Email handoffs go by business hours only. The greeting and sign-off are
+	// added around these messages when the email is sent.
+	EmailHandoffMessage           string `json:"email_handoff_message"`
+	EmailHandoffMessageAfterHours string `json:"email_handoff_message_after_hours"`
 
 	// Handoff Routing
 	HandoffBehavior    string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
@@ -1522,6 +1556,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		EscalationMessage:              "Let me connect you with a team member — they typically reply in {reply_time}.",
 		EscalationMessageBusy:          "I've notified the team. Everyone's helping other customers right now — expect a reply within {reply_time}.",
 		EscalationMessageAfterHours:    "I've passed this on to the team. We're away right now and back {next_open}.",
+		EmailHandoffMessage:            DefaultEmailHandoffMessage,
+		EmailHandoffMessageAfterHours:  DefaultEmailHandoffMessageAfterHours,
 		HandoffBehavior:                "unassigned",
 		HandoffTeamID:                  nil,
 		DefaultMailboxID:               nil,
@@ -1622,6 +1658,8 @@ type UpdateInstallationSettingsRequest struct {
 	EscalationMessage               *string                     `json:"escalation_message,omitempty"`
 	EscalationMessageBusy           *string                     `json:"escalation_message_busy,omitempty"`
 	EscalationMessageAfterHours     *string                     `json:"escalation_message_after_hours,omitempty"`
+	EmailHandoffMessage             *string                     `json:"email_handoff_message,omitempty"`
+	EmailHandoffMessageAfterHours   *string                     `json:"email_handoff_message_after_hours,omitempty"`
 	HandoffBehavior                 *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID                   *string                     `json:"handoff_team_id,omitempty"`
 	DefaultMailboxID                *string                     `json:"default_mailbox_id,omitempty"`

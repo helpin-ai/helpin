@@ -154,6 +154,25 @@ describe('MessageBubble', () => {
     } finally { rendered.cleanup(); }
   });
 
+  it('closes the AI sources list on an outside click', async () => {
+    const rendered = renderBubble({
+      id: 'sourced', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'ai',
+      message_type: 'reply', is_internal: false, content: 'Here is the answer.',
+      metadata: JSON.stringify({ ai_auto_reply: true, ai_sources: [{ docId: 'doc-1', title: 'Refund policy', url: 'https://help.example.com/refunds' }] }),
+      created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z',
+    });
+    try {
+      const trigger = [...rendered.container.querySelectorAll('button')].find((button) => button.textContent === '1 source')!;
+      await act(async () => { trigger.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(document.body.textContent).toContain('Refund policy');
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+      await act(async () => { document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); });
+      expect(document.body.textContent).not.toContain('Refund policy');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    } finally { rendered.cleanup(); }
+  });
+
   it.each(['queued', 'preparing', 'sending', 'translating'] as const)('keeps %s delivery status below the bubble', (pending) => {
     const rendered = renderBubble({ id: 'sending', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user', message_type: 'reply', is_internal: false, content: 'Hello', pending_send: pending, created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' });
     try {
@@ -1431,7 +1450,7 @@ Can I export my data?`,
       expect(deliveryLabel(rendered.container)).toContain('Email sent')
       expect(rendered.container.textContent).toContain('87% confident')
       act(() => findButtonByText(rendered.container, '1 source')?.click())
-      expect(rendered.container.textContent).toContain('Help article')
+      expect(document.body.textContent).toContain('Help article')
     } finally { rendered.cleanup() }
   })
 

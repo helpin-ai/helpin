@@ -434,6 +434,37 @@ func TestSupportInvestigationTimeoutRequiresCancellation(t *testing.T) {
 			if count != want {
 				t.Fatalf("notes=%d want=%d", count, want)
 			}
+			if !fail {
+				var note model.SupportMessage
+				if err := db.First(&note, "id = ?", job.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(note.Content, "timed out before completing its report") || strings.Contains(note.Content, "no findings") {
+					t.Fatalf("misleading timeout card: %q", note.Content)
+				}
+			}
 		})
+	}
+}
+
+func TestSupportInvestigationContinuesBeforeFifteenMinutes(t *testing.T) {
+	ctx := context.Background()
+	svc, db, conv, _ := setupAIControlTest(t)
+	mustExec(t, db, `CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT, target_type TEXT, target_id TEXT, status TEXT, input BLOB)`)
+	started := time.Now().UTC().Add(-14 * time.Minute)
+	job := newSupportInvestigation(conv, "bug", SupportHandoffBrief{InvestigationKind: "suspected_product_bug", InvestigationQuestion: "inspect"}, started)
+	job.StartedAt = &started
+	input, err := supportInvestigationRunInput(*job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `INSERT INTO agent_runs(id,workspace_id,target_type,target_id,status,input) VALUES (?,?,?,?,?,?)`, job.RunID, "ws", supportInvestigationTarget, job.RunID, "running", input)
+	closer := &investigationRunCloser{err: fmt.Errorf("run must not be cancelled before deadline")}
+	chat := &SupportChatService{conversationRepo: svc.conversationRepo, runRepo: repository.NewAgentRunRepository(db), runCloser: closer}
+	if err := chat.processSupportInvestigation(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if closer.calls != 0 {
+		t.Fatalf("cancelled before fifteen-minute limit: %d calls", closer.calls)
 	}
 }

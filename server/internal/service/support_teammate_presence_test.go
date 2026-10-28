@@ -264,3 +264,62 @@ func TestUpdateMyTeammatePresence_ManualOverrideWinsAndCanBeCleared(t *testing.T
 		t.Fatalf("manual_status = %#v, want nil after clear", status.ManualStatus)
 	}
 }
+
+func TestResolveTeammatePresence_ManualOnlineWearsOffWhenIdle(t *testing.T) {
+	tests := []struct {
+		name      string
+		connected bool
+		idle      time.Duration
+		want      string
+	}{
+		{name: "using Helpin", connected: true, idle: time.Minute, want: model.SupportTeammateStatusOnline},
+		{name: "idle within fifteen minutes", connected: true, idle: 10 * time.Minute, want: model.SupportTeammateStatusOnline},
+		{name: "idle past fifteen minutes", connected: true, idle: 20 * time.Minute, want: model.SupportTeammateStatusAway},
+		{name: "just closed Helpin", connected: false, idle: time.Minute, want: model.SupportTeammateStatusAway},
+		{name: "closed Helpin a while ago", connected: false, idle: 20 * time.Minute, want: model.SupportTeammateStatusOffline},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			ctx := context.Background()
+			ensureSupportModuleGrantsTable(t, db)
+
+			workspaceID := "ws-manual-online"
+			userID := "user-manual-online"
+			seedUser(t, db, "owner-manual-online", "owner-manual@example.com", "Owner", "hash")
+			seedWorkspace(t, db, workspaceID, "Manual", "manual-online", "owner-manual-online")
+			seedUser(t, db, userID, "manual@example.com", "Manual User", "hash")
+			seedWorkspaceMember(t, db, "wm-manual-online", workspaceID, userID, "manual@example.com", "Manual User", "member")
+			seedSupportModuleGrant(t, db, "grant-manual-online", workspaceID, model.ModuleGrantSubjectWorkspaceMember, "wm-manual-online")
+
+			presence := websocket.NewPresenceState()
+			if _, err := presence.SetAgentOnline(ctx, workspaceID, userID, "conn-1"); err != nil {
+				t.Fatalf("SetAgentOnline: %v", err)
+			}
+			if !tt.connected {
+				if _, err := presence.SetAgentOffline(ctx, workspaceID, userID, "conn-1"); err != nil {
+					t.Fatalf("SetAgentOffline: %v", err)
+				}
+			}
+			overrides := repository.NewSupportTeammateStatusOverrideRepository(db)
+			if _, err := overrides.Upsert(ctx, workspaceID, userID, model.SupportTeammateStatusOnline); err != nil {
+				t.Fatalf("set manual online: %v", err)
+			}
+
+			statuses, err := resolveSupportTeammatePresenceStatuses(ctx, repository.NewWorkspaceRepository(db), presence, overrides, workspaceID, time.Now().Add(tt.idle))
+			if err != nil {
+				t.Fatalf("resolveSupportTeammatePresenceStatuses: %v", err)
+			}
+			if len(statuses) != 1 {
+				t.Fatalf("expected 1 status, got %d", len(statuses))
+			}
+			if statuses[0].Status != tt.want {
+				t.Fatalf("status = %q, want %q", statuses[0].Status, tt.want)
+			}
+			if statuses[0].ManualStatus == nil || *statuses[0].ManualStatus != model.SupportTeammateStatusOnline {
+				t.Fatalf("manual_status = %v, want the saved Online choice", statuses[0].ManualStatus)
+			}
+		})
+	}
+}

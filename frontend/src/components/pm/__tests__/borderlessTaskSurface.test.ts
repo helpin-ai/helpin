@@ -10,7 +10,7 @@ describe('borderless task surfaces', () => {
     const source = readFileSync(resolve(__dirname, '../CreateTaskModal.tsx'), 'utf8');
     const layoutSource = readFileSync(resolve(__dirname, '../CreateEntityModalLayout.tsx'), 'utf8');
 
-    expect(source).toContain('<CreateEntityDialogContent>');
+    expect(source).toMatch(/<CreateEntityDialogContent(?:\s|>)/);
     expect(source).toContain('<CreateEntityTitleInput');
     expect(source).toContain('variant="divider"');
     expect(source).toContain("'borderless'");

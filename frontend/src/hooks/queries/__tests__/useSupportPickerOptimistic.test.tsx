@@ -31,12 +31,12 @@ const infiniteKey = ['support', 'ws-1', 'conversations', 'infinite', { view: 'al
 const pageKey = ['support', 'ws-1', 'conversations', { page: 1 }]
 
 type Hooks = { priority: ReturnType<typeof useUpdateConversationPriority>; assign: ReturnType<typeof useAssignConversationUser> }
-let hooks: Hooks | null = null
+let unmounts: Array<() => void> = []
 
-function Harness() {
+function Harness({ onHooks }: { onHooks: (hooks: Hooks) => void }) {
   const priority = useUpdateConversationPriority('ws-1')
   const assign = useAssignConversationUser('ws-1')
-  useEffect(() => { hooks = { priority, assign } }, [priority, assign])
+  useEffect(() => { onHooks({ priority, assign }) }, [onHooks, priority, assign])
   return null
 }
 
@@ -56,10 +56,15 @@ async function setup() {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
+  // Each test keeps its own hooks: a root left over from an earlier test that
+  // re-renders late must not point this test's calls at the earlier cache.
+  let current: Hooks | null = null
+  const onHooks = (next: Hooks) => { current = next }
   await act(async () => {
-    root.render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
+    root.render(<QueryClientProvider client={client}><Harness onHooks={onHooks} /></QueryClientProvider>)
   })
-  return client
+  unmounts.push(() => act(() => root.unmount()))
+  return { client, hooks: () => current! }
 }
 
 function cached(client: QueryClient, field: 'priority' | 'assigned_user_id') {
@@ -75,7 +80,8 @@ function cached(client: QueryClient, field: 'priority' | 'assigned_user_id') {
 
 describe('support picker changes', () => {
   afterEach(() => {
-    hooks = null
+    unmounts.forEach((unmount) => unmount())
+    unmounts = []
     vi.clearAllMocks()
     document.body.innerHTML = ''
   })
@@ -83,11 +89,11 @@ describe('support picker changes', () => {
   it('shows a new priority everywhere before the server answers', async () => {
     const response = deferred<unknown>()
     vi.mocked(supportService.updateConversationPriority).mockReturnValue(response.promise as never)
-    const client = await setup()
+    const { client, hooks } = await setup()
 
-    await act(async () => { hooks!.priority.mutate({ conversationId: 'conv-1', priority: 'urgent' }) })
+    await act(async () => { hooks().priority.mutate({ conversationId: 'conv-1', priority: 'urgent' }) })
     // onMutate is async; wait for the optimistic update instead of racing it.
-    await vi.waitFor(() => expect(cached(client, 'priority')).toEqual({ detail: 'urgent', infinite: 'urgent', page: 'urgent', untouched: 'medium' }), { timeout: 5000 })
+    await vi.waitFor(() => expect(cached(client, 'priority')).toEqual({ detail: 'urgent', infinite: 'urgent', page: 'urgent', untouched: 'medium' }))
 
     await act(async () => { response.resolve({ data: { ...conversation, priority: 'urgent' }, error: null, status: 200 }) })
     expect(cached(client, 'priority').detail).toBe('urgent')
@@ -95,28 +101,28 @@ describe('support picker changes', () => {
 
   it('puts the old priority back when saving fails', async () => {
     vi.mocked(supportService.updateConversationPriority).mockResolvedValue({ data: null, error: 'Conversation not found', status: 404 } as never)
-    const client = await setup()
+    const { client, hooks } = await setup()
 
-    await act(async () => { await hooks!.priority.mutateAsync({ conversationId: 'conv-1', priority: 'high' }).catch(() => undefined) })
+    await act(async () => { await hooks().priority.mutateAsync({ conversationId: 'conv-1', priority: 'high' }).catch(() => undefined) })
     expect(cached(client, 'priority')).toEqual({ detail: 'medium', infinite: 'medium', page: 'medium', untouched: 'medium' })
   })
 
   it('shows a new assignee everywhere before the server answers', async () => {
     const response = deferred<unknown>()
     vi.mocked(supportService.assignConversationUser).mockReturnValue(response.promise as never)
-    const client = await setup()
+    const { client, hooks } = await setup()
 
-    await act(async () => { hooks!.assign.mutate({ conversationId: 'conv-1', userId: null }) })
-    await vi.waitFor(() => expect(cached(client, 'assigned_user_id')).toEqual({ detail: undefined, infinite: undefined, page: undefined, untouched: 'user-a' }), { timeout: 5000 })
+    await act(async () => { hooks().assign.mutate({ conversationId: 'conv-1', userId: null }) })
+    await vi.waitFor(() => expect(cached(client, 'assigned_user_id')).toEqual({ detail: undefined, infinite: undefined, page: undefined, untouched: 'user-a' }))
 
     await act(async () => { response.resolve({ data: { ...conversation, assigned_user_id: undefined }, error: null, status: 200 }) })
   })
 
   it('puts the old assignee back when saving fails', async () => {
     vi.mocked(supportService.assignConversationUser).mockResolvedValue({ data: null, error: 'Not allowed', status: 403 } as never)
-    const client = await setup()
+    const { client, hooks } = await setup()
 
-    await act(async () => { await hooks!.assign.mutateAsync({ conversationId: 'conv-1', userId: 'user-b' }).catch(() => undefined) })
+    await act(async () => { await hooks().assign.mutateAsync({ conversationId: 'conv-1', userId: 'user-b' }).catch(() => undefined) })
     expect(cached(client, 'assigned_user_id')).toEqual({ detail: 'user-a', infinite: 'user-a', page: 'user-a', untouched: 'user-a' })
   })
 })

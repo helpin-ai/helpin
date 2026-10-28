@@ -89,22 +89,14 @@ func (s *SupportInboxService) sendDelayedTeamReply(ctx context.Context, conversa
 		if err := tx.Unscoped().Model(&model.SupportMessage{}).Where("conversation_id = ? AND workspace_id = ? AND created_at >= ? AND is_internal = ? AND message_type = ? AND sender_type IN ?", conv.ID, conv.WorkspaceID, *conv.AIEscalatedAt, false, "reply", []string{"user", "agent"}).Count(&replies).Error; err != nil {
 			return err
 		}
-		if replies == 0 {
+		// An after-hours handoff already said when the team is back and asked
+		// for an email, so a "needs more time" notice would only repeat it.
+		if replies == 0 && derefString(conv.HandoffState) != model.HandoffStateAfterHours {
 			canEmail := s.emailFallbackService != nil && s.emailFallbackService.emailClient != nil && s.emailFallbackService.redis != nil && !conv.EmailUnsubscribed
 			capture := canEmail && strings.TrimSpace(derefString(conv.CustomerEmail)) == ""
-			defaults := model.DefaultSupportInboxSettings()
-			content := strings.TrimSpace(settings.DelayedTeamReplyMessage)
-			if content == "" {
-				content = defaults.DelayedTeamReplyMessage
-			}
-			if capture {
-				content = strings.TrimSpace(settings.DelayedTeamReplyMessageNoEmail)
-				if content == "" {
-					content = defaults.DelayedTeamReplyMessageNoEmail
-				}
-			}
-			if !canEmail {
-				content = "Our team hasn’t been able to reply yet. Your conversation is still waiting for a teammate. You can return to this chat to check for a reply."
+			content := delayedTeamReplyContent(settings, canEmail, capture)
+			if settings.BusinessHoursEnabled && !resolveSupportAvailability(settings, now).IsWithinOfficeHours {
+				content = delayedTeamReplyAwayContent(supportNextOpenForCustomer(ctx, s.sessionRepo, &conv, settings, now), canEmail, capture)
 			}
 			metadata, _ := json.Marshal(map[string]any{"delayed_team_reply": true, "capture_email": capture})
 			sent = &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", MessageType: "system", SystemEventType: strPtr("delayed_team_reply"), SenderDisplayName: strPtr(helpinAIDisplayName), Content: content, Metadata: string(metadata), CreatedAt: now}
@@ -121,4 +113,38 @@ func (s *SupportInboxService) sendDelayedTeamReply(ctx context.Context, conversa
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(sent.WorkspaceID, sent, "support:delayed_team_reply"))
 	}
 	return sent, nil
+}
+
+// delayedTeamReplyContent is the workspace's notice for a handoff nobody has
+// answered yet during business hours.
+func delayedTeamReplyContent(settings model.SupportInboxSettings, canEmail, capture bool) string {
+	if !canEmail {
+		return "Our team hasn’t been able to reply yet. Your conversation is still waiting for a teammate. You can return to this chat to check for a reply."
+	}
+	defaults := model.DefaultSupportInboxSettings()
+	custom, fallback := settings.DelayedTeamReplyMessage, defaults.DelayedTeamReplyMessage
+	if capture {
+		custom, fallback = settings.DelayedTeamReplyMessageNoEmail, defaults.DelayedTeamReplyMessageNoEmail
+	}
+	if content := strings.TrimSpace(custom); content != "" {
+		return content
+	}
+	return fallback
+}
+
+// delayedTeamReplyAwayContent replaces the notice when business hours ended
+// before anyone answered, so the customer learns when the team is back.
+func delayedTeamReplyAwayContent(nextOpen string, canEmail, capture bool) string {
+	away := "Our team is away right now"
+	if nextOpen != "" {
+		away += " and back " + nextOpen
+	}
+	switch {
+	case !canEmail:
+		return away + ". You can return to this chat to check for a reply."
+	case capture:
+		return away + ". Leave your email and we’ll let you know when someone replies, so you don’t have to wait here."
+	default:
+		return away + ". We’ll reply in this chat and email you if you miss it."
+	}
 }

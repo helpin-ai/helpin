@@ -5,8 +5,10 @@ import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { TriageSuggestions } from '@/components/pm/TriageSuggestions';
 import { getVisibleTriageSuggestions } from '@/components/pm/triageSuggestionRows';
 import type { PreparedTaskDraft } from '@/components/pm/preparedTaskDraft';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { CreateEntityDialogContent } from '@/components/pm/CreateEntityModalLayout';
 import { QuietTextAction } from '@/components/design-system/quiet';
+import { SupportTaskPreparation } from './SupportTaskPreparation';
 import { useConversation, useInboxScopes, useCreateTaskFromConversation } from '@/hooks/queries/useSupport';
 import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -39,22 +41,23 @@ export function SupportCreateTaskModal({ workspaceId, workspaceSlug, conversatio
     access?.membership.support_default_team_id,
     teams[0]?.id,
   ].find(id => teams.some(team => team.id === id));
-  let loadingMessage = '';
-  if (!conversation || !scopes || !access || teamsLoading || !teams.length) {
-    loadingMessage = conversationError || scopesError || accessError
-      ? 'Couldn’t load conversation settings. Close and try again.'
-      : !teamsLoading && access && !teams.length
-        ? 'No accessible team is available. Ask an admin to add you to a team.'
-        : 'Loading inbox and team…';
+  const settingsLoading = !conversation || !scopes || !access || teamsLoading;
+  let settingsError = '';
+  if (settingsLoading || !teams.length) {
+    if (conversationError || scopesError || accessError) {
+      settingsError = 'Couldn’t load conversation settings. Close and try again.';
+    } else if (!teamsLoading && access && !teams.length) {
+      settingsError = 'No accessible team is available. Ask an admin to add you to a team.';
+    }
   } else if (linkedTeam && !teams.some(team => team.id === linkedTeam)) {
-    loadingMessage = 'This inbox’s team is unavailable to you. Ask an admin for access.';
+    settingsError = 'This inbox’s team is unavailable to you. Ask an admin for access.';
   }
-  if (loadingMessage) return (
+  if (settingsLoading || settingsError) return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Create task</DialogTitle></DialogHeader>
-        <p role="status" className="text-sm text-muted-foreground">{loadingMessage}</p>
-      </DialogContent>
+      <CreateEntityDialogContent className="w-[480px]">
+        <SupportTaskPreparation phase={settingsError ? 'blocked' : 'loading'} error={settingsError}
+          onCancel={() => onOpenChange(false)} />
+      </CreateEntityDialogContent>
     </Dialog>
   );
   return (
@@ -156,10 +159,11 @@ function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inb
       if (mounted.current) setReviewing(false);
     }
   };
-  const content = (
-    <div className="px-6 py-3 text-sm">
+  const hasMatches = !!view && getVisibleTriageSuggestions(view).length > 0;
+  const content = phase === 'draft' && !notice && !reviewing && !hasMatches ? null : (
+    <div className={prepared ? 'px-6 py-3 text-sm' : 'mt-4 text-sm'}>
       {phase === 'matching' && <p role="status" className="text-muted-foreground">Checking for existing tasks…</p>}
-      {notice && <p role="alert" className="text-muted-foreground">{notice}</p>}
+      {notice && (prepared || phase !== 'failed') && <p role="alert" className="text-muted-foreground">{notice}</p>}
       {reviewing && <p role="status" className="text-muted-foreground">Saving your choice…</p>}
       {phase === 'matches' && view && (
         <TriageSuggestions view={view} disabled={reviewing} showComparisonSummary={false}
@@ -172,12 +176,9 @@ function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inb
           <QuietTextAction disabled={reviewing} onClick={() => { setNotice(''); setPhase('matching'); setMatchRetry(n => n + 1); }}>Refresh matches</QuietTextAction>
         </div>
       )}
-      {phase === 'draft' && (
+      {phase === 'draft' && hasMatches && (
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <a className="underline underline-offset-4" href={`/w/${encodeURIComponent(workspaceSlug)}/support/${encodeURIComponent(conversationId)}`} target="_blank" rel="noopener noreferrer">Source conversation</a>
-          {!!view && getVisibleTriageSuggestions(view).length > 0 && (
-            <QuietTextAction onClick={() => setPhase('matches')}>View matches</QuietTextAction>
-          )}
+          <QuietTextAction onClick={() => setPhase('matches')}>View matches</QuietTextAction>
         </div>
       )}
     </div>
@@ -185,6 +186,12 @@ function SupportCreateTaskForm({ workspaceId, workspaceSlug, conversationId, inb
   return <>
     <CreateTaskModal open workspaceId={workspaceId} initialTeamId={teamDefault}
       onOpenChange={open => { if (!reviewing) onOpenChange(open); }} onCreate={onCreate}
+      renderPreparation={prepared ? undefined : ({ error, retry, cancel }) => (
+        <SupportTaskPreparation phase={phase}
+          error={error} checkedExistingTasks={view?.status === 'ready'} reviewing={reviewing} onRetry={retry} onCancel={cancel}>
+          {(phase === 'matches' || phase === 'failed') && content}
+        </SupportTaskPreparation>
+      )}
       supportSource preparationContent={content} prepareDraft={phase === 'draft' && !taskCreated ? prepareDraft : undefined}
       onDraftPrepared={onPrepared} creationBlocked={phase !== 'draft' || !prepared || taskCreated} />
     <UpgradeRequiredDialog open={upgradeReason !== null} onOpenChange={open => { if (!open) setUpgradeReason(null); }} reason={upgradeReason} onUpgrade={() => onOpenChange(false)} />

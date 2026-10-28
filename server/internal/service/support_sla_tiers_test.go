@@ -867,3 +867,27 @@ func TestSupportSLAImportedConversationsCountFromCutover(t *testing.T) {
 		t.Fatalf("reopened import %+v", record)
 	}
 }
+
+func TestSupportSLAClockSubAcrossSplitDays(t *testing.T) {
+	split := model.BusinessHoursDay{Enabled: true, Start: "09:00", End: "12:00",
+		Slots: []model.BusinessHoursSlot{{Start: "09:00", End: "12:00"}, {Start: "13:00", End: "17:00"}}}
+	week := map[string]model.BusinessHoursDay{"mon": split, "tue": split}
+	clock := newSupportSLAClock(model.SupportInboxSettings{BusinessHoursEnabled: true, BusinessHoursTimezone: "UTC", BusinessHoursSchedule: week}, true)
+	monday := func(hour, minute int) time.Time { return time.Date(2026, 10, 5, hour, minute, 0, 0, time.UTC) }
+	for _, tc := range []struct {
+		end  time.Time
+		lead time.Duration
+		want time.Time
+	}{
+		{monday(13, 10), 30 * time.Minute, monday(11, 40)},                                // skips lunch
+		{monday(15, 0), 30 * time.Minute, monday(14, 30)},                                 // inside the afternoon
+		{time.Date(2026, 10, 6, 9, 15, 0, 0, time.UTC), 30 * time.Minute, monday(16, 45)}, // back to Monday
+	} {
+		if got := clock.Sub(tc.end, tc.lead); !got.Equal(tc.want) {
+			t.Errorf("Sub(%v, %v) = %v, want %v", tc.end, tc.lead, got, tc.want)
+		}
+		if back := clock.Between(clock.Sub(tc.end, tc.lead), tc.end); back != tc.lead {
+			t.Errorf("Between after Sub(%v) = %v", tc.end, back)
+		}
+	}
+}

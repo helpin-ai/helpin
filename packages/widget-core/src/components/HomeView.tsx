@@ -52,6 +52,8 @@ export const HomeView: FunctionComponent<HomeViewProps> = ({
                   className="helpin-home-header-presence helpin-avatar-tooltip"
                   aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
                   data-tooltip={teammate.name}
+                  // Earlier avatars sit on top so the next one never covers their status dot.
+                  style={{ zIndex: teammates.length - index }}
                 >
                   <div className="helpin-home-teammate-avatar-wrap">
                     {teammate.avatarUrl ? (

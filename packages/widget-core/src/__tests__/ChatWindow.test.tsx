@@ -383,7 +383,9 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(container.querySelectorAll('.helpin-home-header-presence')).toHaveLength(2);
+    const avatars = container.querySelectorAll<HTMLElement>('.helpin-home-header-presence');
+    expect(avatars).toHaveLength(2);
+    expect(Number(avatars[0].style.zIndex)).toBeGreaterThan(Number(avatars[1].style.zIndex));
     expect(container.querySelector('.helpin-presence-dot--online')).toBeTruthy();
     expect(container.querySelector('.helpin-presence-dot--away')).toBeTruthy();
   });
