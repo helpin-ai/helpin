@@ -602,7 +602,7 @@ func TestApplySupportSLAWarnings(t *testing.T) {
 		{name: "warnings off", record: model.SupportConversationSLARecord{FirstResponseState: model.SupportSLAStatePending, FirstResponseDueAt: at(10)}},
 	} {
 		record := tc.record
-		got := applySupportSLAWarnings(&record, tc.previous, tc.warn, now)
+		got := applySupportSLAWarnings(&record, tc.previous, tc.warn, newSupportSLAClock(model.SupportInboxSettings{}, false), now, false)
 		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
 			t.Errorf("%s: warned %v, want %v", tc.name, got, tc.want)
 		}
@@ -612,9 +612,54 @@ func TestApplySupportSLAWarnings(t *testing.T) {
 	}
 	// Recording a late warning keeps it from firing later.
 	record := model.SupportConversationSLARecord{ResolutionState: model.SupportSLAStatePending, ResolutionDueAt: at(2)}
-	applySupportSLAWarnings(&record, nil, &fifteen, now)
+	calendar := newSupportSLAClock(model.SupportInboxSettings{}, false)
+	applySupportSLAWarnings(&record, nil, &fifteen, calendar, now, false)
 	if record.ResolutionWarnedFor == nil || !record.ResolutionWarnedFor.Equal(*at(2)) {
 		t.Fatalf("late warning not recorded: %+v", record.ResolutionWarnedFor)
+	}
+
+	// A pause moves the resolution due time; it does not warn twice.
+	moved := model.SupportConversationSLARecord{ResolutionState: model.SupportSLAStatePending, ResolutionDueAt: at(10)}
+	if got := applySupportSLAWarnings(&moved, &model.SupportConversationSLARecord{ResolutionWarnedFor: at(7)}, &fifteen, calendar, now, false); len(got) != 0 {
+		t.Fatalf("warned again after a pause: %v", got)
+	}
+	// New targets after a switch may warn again.
+	moved = model.SupportConversationSLARecord{ResolutionState: model.SupportSLAStatePending, ResolutionDueAt: at(10)}
+	if got := applySupportSLAWarnings(&moved, &model.SupportConversationSLARecord{ResolutionWarnedFor: at(7)}, &fifteen, calendar, now, true); strings.Join(got, ",") != model.SupportSLAMetricResolution {
+		t.Fatalf("switched targets did not warn: %v", got)
+	}
+	// A lead time as long as the conversation's own target never warns.
+	short := model.SupportConversationSLARecord{NextResponseState: model.SupportSLAStatePending, NextResponseDueAt: at(10), TargetNextResponseMinutes: &fifteen}
+	if got := applySupportSLAWarnings(&short, nil, &fifteen, calendar, now, false); len(got) != 0 || short.NextResponseWarnedFor != nil {
+		t.Fatalf("warned on a target shorter than the lead: %v", got)
+	}
+}
+
+func TestSupportSLAWarningsCountBusinessHours(t *testing.T) {
+	week := map[string]model.BusinessHoursDay{}
+	for _, day := range []string{"mon", "tue", "wed", "thu", "fri"} {
+		week[day] = model.BusinessHoursDay{Enabled: true, Start: "09:00", End: "17:00"}
+	}
+	clock := newSupportSLAClock(model.SupportInboxSettings{BusinessHoursEnabled: true, BusinessHoursTimezone: "UTC", BusinessHoursSchedule: week}, true)
+	monday := time.Date(2026, 10, 5, 9, 10, 0, 0, time.UTC)
+	if got := clock.Sub(monday, 30*time.Minute); !got.Equal(time.Date(2026, 10, 2, 16, 40, 0, 0, time.UTC)) {
+		t.Fatalf("Sub across the weekend = %v", got)
+	}
+	if got := clock.Sub(monday, 5*time.Minute); !got.Equal(monday.Add(-5 * time.Minute)) {
+		t.Fatalf("Sub inside a day = %v", got)
+	}
+	thirty := 30
+	// The worker wakes on Friday at 16:40, half an hour of business time
+	// before Monday 09:10.
+	record := model.SupportConversationSLARecord{FirstResponseState: model.SupportSLAStatePending, FirstResponseDueAt: &monday}
+	friday := time.Date(2026, 10, 2, 16, 41, 0, 0, time.UTC)
+	if got := applySupportSLAWarnings(&record, nil, &thirty, clock, time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC), false); len(got) != 0 ||
+		!record.WakeAt.Equal(time.Date(2026, 10, 2, 16, 40, 0, 0, time.UTC)) {
+		t.Fatalf("business-hours wake %v %v", got, record.WakeAt)
+	}
+	record.WakeAt = nil
+	if got := applySupportSLAWarnings(&record, nil, &thirty, clock, friday, false); strings.Join(got, ",") != model.SupportSLAMetricFirstResponse {
+		t.Fatalf("business-hours warning %v", got)
 	}
 }
 
@@ -688,5 +733,44 @@ func TestSupportSLAAlertRecipients(t *testing.T) {
 	}
 	if got := f.sla.alertRecipients(ctx, conversation, nil, company); strings.Join(got, ",") != assignee {
 		t.Fatalf("without a policy %v", got)
+	}
+}
+
+func TestSupportSLAPolicyDropsTeammatesWhoLostAccess(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	other, member := uuid.NewString(), uuid.NewString()
+	seedUser(t, f.db, other, "leaver@example.com", "Lee Leaver", "hash")
+	seedWorkspaceMember(t, f.db, member, f.workspaceID, other, "leaver@example.com", "Lee Leaver", model.RoleAdmin)
+	policy := f.policy(t, model.SupportSLAPolicyRequest{Name: "Warn", FirstResponseMinutes: intPtr(60), WarnBeforeMinutes: intPtr(10),
+		NotifyUserIDs: []string{f.userID, other}, AssignUnassignedUserID: &other})
+	mustExec(t, f.db, `UPDATE workspace_members SET status = 'inactive' WHERE id = ?`, member)
+
+	// Saving the policy again keeps working and drops the former teammate.
+	updated, err := f.sla.UpdatePolicy(ctx, f.workspaceID, policy.ID, model.SupportSLAPolicyRequest{Name: "Warn", FirstResponseMinutes: intPtr(60), WarnBeforeMinutes: intPtr(10),
+		NotifyUserIDs: []string{f.userID, other}, AssignUnassignedUserID: &other})
+	if err != nil || strings.Join(updated.NotifyUserIDs, ",") != f.userID || updated.AssignUnassignedUserID != nil {
+		t.Fatalf("stale teammates kept: %+v %v", updated, err)
+	}
+	teammates, err := f.sla.SLATeammates(ctx, f.workspaceID)
+	if err != nil || len(teammates) != 1 || *teammates[0].UserID != f.userID {
+		t.Fatalf("teammates %+v %v", teammates, err)
+	}
+}
+
+func TestSupportSLAWarningKeepsAFreshAssignment(t *testing.T) {
+	f := newSLATierFixture(t)
+	other, member := uuid.NewString(), uuid.NewString()
+	seedUser(t, f.db, other, "taker@example.com", "Tia Taker", "hash")
+	seedWorkspaceMember(t, f.db, member, f.workspaceID, other, "taker@example.com", "Tia Taker", model.RoleAdmin)
+	policy := f.policy(t, model.SupportSLAPolicyRequest{Name: "Warn", FirstResponseMinutes: intPtr(60), WarnBeforeMinutes: intPtr(10), AssignUnassignedUserID: &f.userID})
+	conversation := f.conversation(t, "", f.start.Add(time.Minute))
+	// Loaded as unassigned, then a teammate takes it before the warning assigns.
+	loaded := &model.SupportConversation{ID: conversation, WorkspaceID: f.workspaceID}
+	mustExec(t, f.db, `UPDATE support_conversations SET assigned_user_id = ? WHERE id = ?`, other, conversation)
+	f.sla.assignBeforeBreach(context.Background(), loaded, policy)
+	var current model.SupportConversation
+	if err := f.db.Where("id = ?", conversation).Take(&current).Error; err != nil || *current.AssignedUserID != other || *loaded.AssignedUserID != other {
+		t.Fatalf("fresh assignment overwritten: %v %v", current.AssignedUserID, err)
 	}
 }

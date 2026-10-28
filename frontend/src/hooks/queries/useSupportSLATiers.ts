@@ -14,6 +14,16 @@ export function useSLATiers(workspaceId: string, enabled = true) {
   })
 }
 
+/** Teammates who can work on support conversations, to notify or assign. */
+export function useSLATeammates(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.slaTeammates(workspaceId),
+    queryFn: () => supportService.listSLATeammates(workspaceId).then(unwrap),
+    enabled: Boolean(workspaceId) && enabled,
+    staleTime: 60_000,
+  })
+}
+
 /** A company's tier and the policies that can apply to it. */
 export function useCompanySLA(workspaceId: string, companyId: string | null | undefined, enabled = true) {
   return useQuery({

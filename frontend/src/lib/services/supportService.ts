@@ -295,6 +295,8 @@ export const supportService = {
     api.del<void>(`/support/sla-policies/${policyId}${qs(workspaceId)}`),
   reorderSLAPolicies: (workspaceId: string, policyIds: string[]) =>
     api.post<SupportSLAPolicy[]>(`/support/sla-policies/reorder${qs(workspaceId)}`, { policy_ids: policyIds }),
+  listSLATeammates: (workspaceId: string) =>
+    api.get<AssignableMember[]>(`/support/sla-teammates${qs(workspaceId)}`),
   listSLATiers: (workspaceId: string) =>
     api.get<SupportSLATier[]>(`/support/sla-tiers${qs(workspaceId)}`),
   createSLATier: (workspaceId: string, input: { name: string; description: string }) =>

@@ -257,6 +257,7 @@ export const queryKeys = {
       ['support', wsId, 'reports', 'sla-conversations', params, metric, outcome] as const,
     slaPolicies: (wsId: string) => ['support', wsId, 'sla-policies'] as const,
     slaTiers: (wsId: string) => ['support', wsId, 'sla-tiers'] as const,
+    slaTeammates: (wsId: string) => ['support', wsId, 'sla-teammates'] as const,
     companySLAAll: (wsId: string) => ['support', wsId, 'company-sla'] as const,
     companySLA: (wsId: string, companyId: string) => ['support', wsId, 'company-sla', companyId] as const,
     webhooks: (wsId: string) => ['support', wsId, 'webhooks'] as const,

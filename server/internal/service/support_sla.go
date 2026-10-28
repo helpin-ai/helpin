@@ -440,7 +440,7 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 		if policy != nil {
 			warnBefore = policy.WarnBeforeMinutes
 		}
-		warned := applySupportSLAWarnings(&evaluation.Record, previous, warnBefore, now)
+		warned := applySupportSLAWarnings(&evaluation.Record, previous, warnBefore, in.Clock, now, in.Switched)
 		changed = previous == nil || supportSLAVisibleChange(*previous, evaluation.Record)
 		if err := repo.SaveRecord(ctx, &evaluation.Record); err != nil {
 			return err

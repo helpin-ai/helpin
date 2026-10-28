@@ -59,6 +59,20 @@ Company visibility is deliberately conservative:
 - Each time a member opens a colleague's request, the portal audit log records a `company_request_viewed` event. It records at most one per member and request each hour.
 - The conversation sidebar tells teammates how many colleagues besides the requester can read the conversation in the portal.
 
+## When to expect a reply
+
+With **Show when to expect a reply** on in **Settings → Customer portal**, a
+request shows "Expect a reply by …" on its page and "Reply by …" in request
+lists, in the customer's time zone. The time is the due time of the running
+SLA target:
+- the first response, until a teammate first replies;
+- after that, the next response, while the customer waits for the team.
+
+Nothing is shown while no target runs, while the clock is paused (the AI is
+answering, or the team waits on the customer), or once the target is
+overdue. Customers never see resolution targets, policy names, tiers or
+missed targets. The setting is off by default.
+
 ## AI on portal requests
 
 People answer portal requests. **Settings → Customer portal → AI suggestions** is either off or **Private suggestions**: a support agent drafts a private note for the teammate on new unassigned requests. Customers never see it.

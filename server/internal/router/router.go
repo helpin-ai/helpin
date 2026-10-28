@@ -1301,6 +1301,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-policies/{policyId}", h.SupportSLA.Update)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-policies/{policyId}", h.SupportSLA.Delete)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-tiers", h.SupportSLA.ListTiers)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-teammates", h.SupportSLA.SLATeammates)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-tiers", h.SupportSLA.CreateTier)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-tiers/reorder", h.SupportSLA.ReorderTiers)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-tiers/{tierId}", h.SupportSLA.UpdateTier)

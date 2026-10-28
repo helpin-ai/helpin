@@ -20,7 +20,7 @@ import { SettingsSaveStatus } from './SettingsSaveStatus';
 
 type PortalSettingsDraft = Pick<
   SupportInboxSettings,
-  'portal_enabled' | 'portal_intake_enabled' | 'portal_anonymous_intake_enabled'
+  'portal_enabled' | 'portal_intake_enabled' | 'portal_anonymous_intake_enabled' | 'portal_show_reply_by'
 > & { widget_help_space_ids: string[] } & { portal_access_mode: CustomerPortalAccessMode; portal_ai_mode: 'off' | 'internal_note'; portal_ai_agent_id: string };
 
 const accessModes: { value: CustomerPortalAccessMode; label: string; description: string }[] = [
@@ -69,6 +69,7 @@ export function CustomerPortalSettings({ workspaceId, workspaceSlug, editable }:
     portal_enabled: settings.portal_enabled ?? false,
     portal_intake_enabled: settings.portal_intake_enabled ?? false,
     portal_anonymous_intake_enabled: settings.portal_anonymous_intake_enabled ?? false,
+    portal_show_reply_by: settings.portal_show_reply_by ?? false,
     portal_access_mode: settings.portal_access_mode === 'any_verified_email' || settings.portal_access_mode === 'company_members' ? settings.portal_access_mode : 'approved_contacts',
     // The retired customer-reply mode became private suggestions on the server.
     portal_ai_mode: settings.portal_ai_mode === 'off' || !settings.portal_ai_mode ? 'off' : 'internal_note',
@@ -184,6 +185,13 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
               disabled={!editable || (deliveryUnavailable && !draft.portal_anonymous_intake_enabled)}
               onCheckedChange={(value) => setDraft((current) => ({ ...current, portal_anonymous_intake_enabled: value }))}
             />
+          </div>
+          <div className="flex items-center justify-between gap-6 py-5">
+            <div className="min-w-0">
+              <Label htmlFor="portal-show-reply-by" className="text-sm font-medium">Show when to expect a reply</Label>
+              <p className="mt-1 text-sm text-muted-foreground">While an SLA response target is running, show its due time on the request. Overdue targets and policy details stay internal.</p>
+            </div>
+            <Switch id="portal-show-reply-by" checked={draft.portal_show_reply_by} disabled={!editable} onCheckedChange={(value) => setDraft((current) => ({ ...current, portal_show_reply_by: value }))} />
           </div>
         </div>
         {deliveryUnavailable && (

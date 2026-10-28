@@ -1445,6 +1445,8 @@ export interface SupportInboxSettings {
   portal_requests_only: boolean;
   portal_anonymous_intake_enabled: boolean;
   portal_intake_enabled: boolean;
+  /** Show customers when the team's reply is due on portal requests. */
+  portal_show_reply_by?: boolean;
   /** Ask AI help assistant on the help center and in the customer portal. */
   help_assistant_enabled?: boolean;
   portal_access_mode?: CustomerPortalAccessMode;

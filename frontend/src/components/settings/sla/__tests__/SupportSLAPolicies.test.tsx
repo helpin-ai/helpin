@@ -24,15 +24,10 @@ vi.mock('@/hooks/queries/useSupportOperations', () => ({
 }))
 vi.mock('@/hooks/queries/useSupportSLATiers', () => ({
   useSLATiers: () => ({ data: [{ id: 'tier-gold', name: 'Gold', description: '', position: 0, company_count: 2, policy_count: 1 }] }),
+  useSLATeammates: () => ({ data: [{ id: 'm1', user_id: 'u-ada', role: 'admin', email: 'ada@acme.test', display_name: 'Ada Admin' }] }),
 }))
 vi.mock('@/lib/services/crmService', () => ({
   crmSearchService: { search: vi.fn(async () => ({ data: [{ id: 'co-1', type: 'company', name: 'Acme', detail: 'acme.com' }], error: null })) },
-}))
-vi.mock('@/hooks/queries/useWorkspaces', () => ({
-  useWorkspaceMembers: () => ({ data: [
-    { id: 'm1', user_id: 'u-ada', role: 'admin', email: 'ada@acme.test', full_name: 'Ada Admin' },
-    { id: 'm2', user_id: 'u-vic', role: 'viewer', email: 'vic@acme.test', full_name: 'Vic Viewer' },
-  ] }),
 }))
 vi.mock('@/components/ui/confirm-dialog', () => ({ useConfirm: () => async () => true }))
 

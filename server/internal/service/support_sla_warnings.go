@@ -44,13 +44,23 @@ func (s *SupportSLAService) normalizePolicyAlerts(ctx context.Context, workspace
 		if err != nil {
 			return err
 		}
+		// Teammates saved earlier who lost support access since are dropped,
+		// so the policy stays editable; newly chosen ones must have access.
+		kept := notify[:0]
 		for _, id := range notify {
-			if !teammates[id] {
+			switch {
+			case teammates[id]:
+				kept = append(kept, id)
+			case !slices.Contains([]string(policy.NotifyUserIDs), id):
 				return invalidSLAPolicy("a teammate to notify cannot work on support conversations")
 			}
 		}
+		notify = kept
 		if assignee != nil && !teammates[*assignee] {
-			return invalidSLAPolicy("the teammate to assign cannot work on support conversations")
+			if policy.AssignUnassignedUserID == nil || *policy.AssignUnassignedUserID != *assignee {
+				return invalidSLAPolicy("the teammate to assign cannot work on support conversations")
+			}
+			assignee = nil
 		}
 	}
 	policy.NotifyUserIDs, policy.NotifyCSOwner, policy.AssignUnassignedUserID = notify, req.NotifyCSOwner, assignee
@@ -65,6 +75,19 @@ func shortestSLATarget(policy *model.SupportSLAPolicy) int {
 		}
 	}
 	return shortest
+}
+
+// SLATeammates lists the teammates a policy can notify or assign: members
+// who can work on support conversations.
+func (s *SupportSLAService) SLATeammates(ctx context.Context, workspaceID string) ([]model.AssignableMember, error) {
+	if s.inbox == nil || s.inbox.workspaceRepo == nil {
+		return []model.AssignableMember{}, nil
+	}
+	members, err := s.inbox.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
+	if members == nil {
+		members = []model.AssignableMember{}
+	}
+	return members, err
 }
 
 // supportTeammates returns the user IDs of the workspace's active support
@@ -94,10 +117,15 @@ const supportSLAWarningGrace = 2
 
 // applySupportSLAWarnings decides which running targets of record need a
 // warning now, records them, and moves the wake-up to the next warning.
-// warnBefore is the policy's lead time; nil turns warnings off. It returns
-// the metrics to warn about.
-func applySupportSLAWarnings(record *model.SupportConversationSLARecord, previous *model.SupportConversationSLARecord, warnBefore *int, now time.Time) []string {
-	if previous != nil {
+// warnBefore is the policy's lead time, counted on the targets' clock; nil
+// turns warnings off. switched means new targets replaced earlier ones, so
+// they may warn again. It returns the metrics to warn about.
+//
+// First response and resolution warn once: their due time moves with every
+// pause, which must not repeat the warning. Next response warns once per
+// due time, so every cycle warns.
+func applySupportSLAWarnings(record *model.SupportConversationSLARecord, previous *model.SupportConversationSLARecord, warnBefore *int, clock supportSLAClock, now time.Time, switched bool) []string {
+	if previous != nil && !switched {
 		record.FirstResponseWarnedFor = previous.FirstResponseWarnedFor
 		record.NextResponseWarnedFor = previous.NextResponseWarnedFor
 		record.ResolutionWarnedFor = previous.ResolutionWarnedFor
@@ -107,14 +135,19 @@ func applySupportSLAWarnings(record *model.SupportConversationSLARecord, previou
 	}
 	lead := time.Duration(*warnBefore) * time.Minute
 	var warn []string
-	check := func(metric, state string, due *time.Time, warnedFor **time.Time) {
+	check := func(metric, state string, due *time.Time, warnedFor **time.Time, target *int, oncePerDue bool) {
 		if state != model.SupportSLAStatePending || due == nil || !now.Before(*due) {
 			return
 		}
-		if *warnedFor != nil && (*warnedFor).Equal(*due) {
+		// A conversation keeps the targets it started with; the lead time
+		// comes from the policy now and may not fit an older, shorter target.
+		if target != nil && time.Duration(*target)*time.Minute <= lead {
 			return
 		}
-		warnAt := due.Add(-lead)
+		if *warnedFor != nil && (!oncePerDue || (*warnedFor).Equal(*due)) {
+			return
+		}
+		warnAt := clock.Sub(*due, lead)
 		if now.Before(warnAt) {
 			if record.WakeAt == nil || warnAt.Before(*record.WakeAt) {
 				record.WakeAt = timePtr(warnAt)
@@ -122,13 +155,13 @@ func applySupportSLAWarnings(record *model.SupportConversationSLARecord, previou
 			return
 		}
 		*warnedFor = timePtr(*due)
-		if now.Sub(warnAt) <= lead/supportSLAWarningGrace {
+		if clock.Between(warnAt, now) <= lead/supportSLAWarningGrace {
 			warn = append(warn, metric)
 		}
 	}
-	check(model.SupportSLAMetricFirstResponse, record.FirstResponseState, record.FirstResponseDueAt, &record.FirstResponseWarnedFor)
-	check(model.SupportSLAMetricNextResponse, record.NextResponseState, record.NextResponseDueAt, &record.NextResponseWarnedFor)
-	check(model.SupportSLAMetricResolution, record.ResolutionState, record.ResolutionDueAt, &record.ResolutionWarnedFor)
+	check(model.SupportSLAMetricFirstResponse, record.FirstResponseState, record.FirstResponseDueAt, &record.FirstResponseWarnedFor, record.TargetFirstResponseMinutes, false)
+	check(model.SupportSLAMetricNextResponse, record.NextResponseState, record.NextResponseDueAt, &record.NextResponseWarnedFor, record.TargetNextResponseMinutes, true)
+	check(model.SupportSLAMetricResolution, record.ResolutionState, record.ResolutionDueAt, &record.ResolutionWarnedFor, record.TargetResolutionMinutes, false)
 	return warn
 }
 
@@ -157,17 +190,11 @@ func (s *SupportSLAService) announceWarning(ctx context.Context, warning *suppor
 	if due != nil {
 		payload["due_at"] = due.UTC().Format(time.RFC3339)
 	}
-	s.webhooks.Emit(ctx, conversation.WorkspaceID, model.WebhookEventSLAWarning, conversation.ID, map[string]any{"sla": payload})
-
-	unassigned := conversation.AssignedUserID == nil || *conversation.AssignedUserID == ""
-	if unassigned && policy.AssignUnassignedUserID != nil && s.inbox != nil {
-		if err := s.inbox.assignConversationUser(ctx, conversation.WorkspaceID, conversation.ID, policy.AssignUnassignedUserID, nil); err != nil {
-			// The teammate may have lost access since the policy was saved.
-			slog.WarnContext(ctx, "assign conversation before SLA breach", "conversation_id", conversation.ID, "policy_id", policy.ID, "error", err)
-		} else {
-			conversation.AssignedUserID = policy.AssignUnassignedUserID
-		}
+	if policy.AssignUnassignedUserID != nil && s.inbox != nil {
+		s.assignBeforeBreach(ctx, conversation, &policy)
 	}
+	// After the assignment, so receivers see the new assignee.
+	s.webhooks.Emit(ctx, conversation.WorkspaceID, model.WebhookEventSLAWarning, conversation.ID, map[string]any{"sla": payload})
 	if s.notifications == nil {
 		return
 	}
@@ -190,6 +217,27 @@ func (s *SupportSLAService) announceWarning(ctx context.Context, warning *suppor
 	}); err != nil {
 		slog.ErrorContext(ctx, "emit SLA warning notification", "conversation_id", conversation.ID, "error", err)
 	}
+}
+
+// assignBeforeBreach gives a still unassigned conversation to the policy's
+// teammate. It reads the conversation again first, so a teammate who took it
+// meanwhile keeps it.
+func (s *SupportSLAService) assignBeforeBreach(ctx context.Context, conversation *model.SupportConversation, policy *model.SupportSLAPolicy) {
+	current, err := s.inbox.loadConversationUnscoped(ctx, conversation.WorkspaceID, conversation.ID)
+	if err != nil || current == nil {
+		slog.ErrorContext(ctx, "reload conversation before SLA assignment", "conversation_id", conversation.ID, "error", err)
+		return
+	}
+	if current.AssignedUserID != nil && *current.AssignedUserID != "" {
+		conversation.AssignedUserID = current.AssignedUserID
+		return
+	}
+	if err := s.inbox.assignConversationUser(ctx, conversation.WorkspaceID, conversation.ID, policy.AssignUnassignedUserID, nil); err != nil {
+		// The teammate may have lost access since the policy was saved.
+		slog.WarnContext(ctx, "assign conversation before SLA breach", "conversation_id", conversation.ID, "policy_id", policy.ID, "error", err)
+		return
+	}
+	conversation.AssignedUserID = policy.AssignUnassignedUserID
 }
 
 func supportSLAMetricDue(record model.SupportConversationSLARecord, metric string) *time.Time {

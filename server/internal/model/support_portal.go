@@ -121,6 +121,10 @@ type SupportPortalRequest struct {
 	LastMessageFrom string `json:"last_message_from,omitempty" gorm:"-"`
 	// Unread is true when support replied after the customer last opened it.
 	Unread bool `json:"unread" gorm:"-"`
+	// ReplyExpectedBy is when the team's reply is due, shown when the
+	// workspace turns it on and a response target is running.
+	ReplyExpectedBy *time.Time `json:"reply_expected_by,omitempty" gorm:"-"`
+	ConversationID  string     `json:"-"`
 
 	LastPublicSenderType     *string    `json:"-"`
 	CustomerAwaitingResponse bool       `json:"-"`

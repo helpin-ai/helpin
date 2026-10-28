@@ -265,6 +265,16 @@ func (h *SupportSLAHandler) RemoveCompanySLA(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SLATeammates handles GET /api/support/sla-teammates.
+func (h *SupportSLAHandler) SLATeammates(w http.ResponseWriter, r *http.Request) {
+	members, err := h.sla.SLATeammates(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeSLAPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
+}
+
 // SupportConversationActionsHandler applies macros and bulk actions.
 type SupportConversationActionsHandler struct {
 	actions *service.SupportConversationActionService

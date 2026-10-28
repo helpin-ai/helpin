@@ -14,8 +14,7 @@ import {
 } from '@/hooks/queries/useSupportOperations'
 import { ArrowDown01Icon, ArrowUp01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons'
 import { SUPPORT_SLA_NO_TIER, type SupportSLAPolicy, type SupportSLAPolicyInput } from '@/lib/pmTypes'
-import { useSLATiers } from '@/hooks/queries/useSupportSLATiers'
-import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces'
+import { useSLATeammates, useSLATiers } from '@/hooks/queries/useSupportSLATiers'
 import { formatSLATarget, policyToDraft, draftToPolicyInput } from '@/lib/supportSLAPolicyForm'
 import { SupportSLAPolicyDialog } from './SupportSLAPolicyDialog'
 
@@ -39,11 +38,10 @@ export function SupportSLAPolicies({ workspaceId, editable }: { workspaceId: str
   const { data: scopes } = useInboxScopes(workspaceId)
   const { data: installation } = useChatSettings(workspaceId)
   const { data: tiers } = useSLATiers(workspaceId)
-  const { data: members } = useWorkspaceMembers(workspaceId)
-  // The server checks that each one can work on support conversations.
+  const { data: members } = useSLATeammates(workspaceId, editable)
   const teammates = useMemo(() => (members ?? [])
-    .filter((member) => member.user_id && member.role !== 'viewer')
-    .map((member) => ({ id: member.user_id, name: member.full_name || member.email || 'Teammate' })), [members])
+    .filter((member) => member.user_id)
+    .map((member) => ({ id: member.user_id!, name: member.display_name || member.email || 'Teammate' })), [members])
   const tierNames = useMemo(() => new Map((tiers ?? []).map((tier) => [tier.id, tier.name])), [tiers])
   const createPolicy = useCreateSLAPolicy(workspaceId)
   const updatePolicy = useUpdateSLAPolicy(workspaceId)

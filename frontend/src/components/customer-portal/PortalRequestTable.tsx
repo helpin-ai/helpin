@@ -6,7 +6,7 @@ import { ArrowReloadHorizontalIcon, ArrowRight01Icon } from '@/lib/icons'
 import type { CustomerPortalRequest } from '@/lib/services/customerPortalService'
 import { cn } from '@/lib/utils'
 import { requestedBy, requestNumber } from './portalRequestFormat'
-import { formatPortalAbsoluteTime, formatPortalRelativeTime } from './portalTime'
+import { formatPortalReplyBy, formatPortalAbsoluteTime, formatPortalRelativeTime } from './portalTime'
 
 type RequestStatus = CustomerPortalRequest['status']
 type RequestFilter = 'all' | RequestStatus
@@ -207,6 +207,7 @@ function RequestRow({ request, slug, supportName, now, company }: { request: Cus
           {request.unread ? <span className="shrink-0 font-semibold uppercase tracking-[0.03em] text-quiet-accent">New reply</span> : null}
           {company ? <span className="shrink-0 font-medium text-quiet-text-secondary">Asked by {requestedBy(request)}</span> : null}
           {who ? <span className="shrink-0">{who}</span> : null}
+          {request.reply_expected_by ? <span className="shrink-0 font-medium text-quiet-text-secondary">Reply by {formatPortalReplyBy(request.reply_expected_by)}</span> : null}
           {request.last_message_preview ? <span className="min-w-0 flex-1 basis-40 truncate">{request.last_message_preview}</span> : null}
           <span className="flex w-full items-center gap-2 @min-[720px]:hidden">
             <RequestStatusText status={status} />
