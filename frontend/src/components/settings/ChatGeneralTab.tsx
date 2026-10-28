@@ -7,7 +7,7 @@ import { WidgetOriginSettings } from './chat-widget/WidgetOriginSettings';
 import { brandingDescription } from '@edition';
 import { AIReplyChannelsSelect, getAIReplyChannels, type AIReplyChannels } from './chat-widget/AIReplyChannelsSelect';
 import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
 import { SettingsAutosaveGuard } from './SettingsAutosaveGuard';
 import { SettingsSaveBar } from './SettingsSaveBar';
@@ -127,6 +127,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [aiReplyChannels, setAiReplyChannels] = useState<AIReplyChannels>('chat');
   const [aiResponseMode, setAiResponseMode] = useState(DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE);
   const [aiFollowUpEnabled, setAiFollowUpEnabled] = useState(true);
+  const [aiEmailCodeCheck, setAiEmailCodeCheck] = useState(false);
   const [aiFollowUpDelay, setAiFollowUpDelay] = useState(24);
   const [aiFollowUpClose, setAiFollowUpClose] = useState(1);
   const [aiFollowUpSecondDelay, setAiFollowUpSecondDelay] = useState(24);
@@ -168,72 +169,72 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
 
   const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
-    if (data?.settings && !billingLoading && !hydrated) {
-      const s = data.settings;
-      const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
-      const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
+  // Load the saved settings into the form once, before the first paint.
+  if (data?.settings && !billingLoading && !hydrated) {
+    const s = data.settings;
+    const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
+    const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
 
-      setHydrated(true);
-      // A widget with no allowed websites cannot connect, so open that section.
-      if (!data.allowed_origins?.length) {
-        setExpandedSections(prev => new Set(prev).add('allowed-origins'));
-      }
-
-      setEmailCaptureTiming(s.email_capture_timing ?? (s.require_email_before_chat ? 'before_handoff' : 'never'));
-      setRequirePhone(s.require_phone_after_email);
-      setWelcomeMessage(s.welcome_message);
-      setPrivacyNoticeEnabled(s.privacy_notice_enabled ?? false);
-      setPrivacyPolicyUrl(s.privacy_policy_url ?? '');
-      setPrivacyNoticeText(s.privacy_notice_text || DEFAULT_PRIVACY_NOTICE_TEXT);
-      setBrandColor(s.brand_color);
-      setShowBranding(canRemoveBranding ? s.show_branding : true);
-      setLauncherPosition(s.launcher_position);
-      setLauncherIcon(s.launcher_icon);
-      setColorScheme(s.color_scheme || 'light');
-      setButtonColor(s.button_color || '#000000');
-      setButtonIconColor(s.button_icon_color || '#FFFFFF');
-      setLogoUrl(s.logo_url || '');
-      setWidgetName(s.widget_name || '');
-      setWidgetAvatarUrl(s.widget_avatar_url || '');
-      setWidgetHelpSpaceIds(sortedHelpSpaceIds);
-      setAiEnabled(s.ai_enabled && isChatWidgetAIResponseModeActive(s.ai_response_mode));
-      setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
-      setConfidenceThreshold(String(s.ai_confidence_threshold));
-      setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
-      setAiReplyChannels(getAIReplyChannels(s.ai_reply_channels));
-      setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
-      setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
-      setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
-      setAiFollowUpSecondDelay(s.ai_follow_up_second_delay_hours ?? 24);
-      setAiMaxFollowups(s.ai_max_followups ?? DEFAULT_AI_HANDOFF_FOLLOWUPS);
-      setShowTalkToHuman(s.show_talk_to_human);
-      setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
-      setEscalationMessageBusy(s.escalation_message_busy ?? '');
-      setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
-      setEmailHandoffMessage(s.email_handoff_message || DEFAULT_EMAIL_HANDOFF_MESSAGE);
-      setEmailHandoffMessageAfterHours(s.email_handoff_message_after_hours || DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS);
-      setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
-      setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
-      setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
-      setHandoffBehavior(s.handoff_behavior);
-      setHandoffTeamId(s.handoff_team_id);
-      setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
-      setBusinessHoursEnabled(s.business_hours_enabled);
-      setTimezone(s.business_hours_timezone);
-      setSchedule(normalizedSchedule);
-      setOutsideMessage(s.outside_hours_message);
-      setReplyTimePreset(s.reply_time_preset ?? 'few_minutes');
-      setReplyTimeCustomMinutes(s.reply_time_custom_minutes ?? null);
-      setSpecialNoticeText(s.special_notice_text ?? '');
-      setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? DEFAULT_EMAIL_FALLBACK_DELAY_SECS);
-      setEmailFallbackFromName(s.email_fallback_from_name ?? '');
-      setEmailFallbackMaxDeliveryAgeMins(Math.round((s.email_fallback_max_delivery_age_secs ?? 600) / 60));
-      setCsatEnabled(s.csat_enabled);
-      setFileUploadsEnabled(s.file_uploads_enabled ?? true);
-      setForceVisitorIdentity(s.force_visitor_identity ?? false);
+    setHydrated(true);
+    // A widget with no allowed websites cannot connect, so open that section.
+    if (!data.allowed_origins?.length) {
+      setExpandedSections(prev => new Set(prev).add('allowed-origins'));
     }
-  }, [data, billingLoading, canRemoveBranding, hydrated]);
+
+    setEmailCaptureTiming(s.email_capture_timing ?? (s.require_email_before_chat ? 'before_handoff' : 'never'));
+    setRequirePhone(s.require_phone_after_email);
+    setWelcomeMessage(s.welcome_message);
+    setPrivacyNoticeEnabled(s.privacy_notice_enabled ?? false);
+    setPrivacyPolicyUrl(s.privacy_policy_url ?? '');
+    setPrivacyNoticeText(s.privacy_notice_text || DEFAULT_PRIVACY_NOTICE_TEXT);
+    setBrandColor(s.brand_color);
+    setShowBranding(canRemoveBranding ? s.show_branding : true);
+    setLauncherPosition(s.launcher_position);
+    setLauncherIcon(s.launcher_icon);
+    setColorScheme(s.color_scheme || 'light');
+    setButtonColor(s.button_color || '#000000');
+    setButtonIconColor(s.button_icon_color || '#FFFFFF');
+    setLogoUrl(s.logo_url || '');
+    setWidgetName(s.widget_name || '');
+    setWidgetAvatarUrl(s.widget_avatar_url || '');
+    setWidgetHelpSpaceIds(sortedHelpSpaceIds);
+    setAiEnabled(s.ai_enabled && isChatWidgetAIResponseModeActive(s.ai_response_mode));
+    setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
+    setConfidenceThreshold(String(s.ai_confidence_threshold));
+    setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
+    setAiReplyChannels(getAIReplyChannels(s.ai_reply_channels));
+    setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
+    setAiEmailCodeCheck(s.ai_email_code_check_enabled ?? false);
+    setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
+    setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
+    setAiFollowUpSecondDelay(s.ai_follow_up_second_delay_hours ?? 24);
+    setAiMaxFollowups(s.ai_max_followups ?? DEFAULT_AI_HANDOFF_FOLLOWUPS);
+    setShowTalkToHuman(s.show_talk_to_human);
+    setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
+    setEscalationMessageBusy(s.escalation_message_busy ?? '');
+    setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
+    setEmailHandoffMessage(s.email_handoff_message || DEFAULT_EMAIL_HANDOFF_MESSAGE);
+    setEmailHandoffMessageAfterHours(s.email_handoff_message_after_hours || DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS);
+    setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
+    setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
+    setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
+    setHandoffBehavior(s.handoff_behavior);
+    setHandoffTeamId(s.handoff_team_id);
+    setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
+    setBusinessHoursEnabled(s.business_hours_enabled);
+    setTimezone(s.business_hours_timezone);
+    setSchedule(normalizedSchedule);
+    setOutsideMessage(s.outside_hours_message);
+    setReplyTimePreset(s.reply_time_preset ?? 'few_minutes');
+    setReplyTimeCustomMinutes(s.reply_time_custom_minutes ?? null);
+    setSpecialNoticeText(s.special_notice_text ?? '');
+    setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? DEFAULT_EMAIL_FALLBACK_DELAY_SECS);
+    setEmailFallbackFromName(s.email_fallback_from_name ?? '');
+    setEmailFallbackMaxDeliveryAgeMins(Math.round((s.email_fallback_max_delivery_age_secs ?? 600) / 60));
+    setCsatEnabled(s.csat_enabled);
+    setFileUploadsEnabled(s.file_uploads_enabled ?? true);
+    setForceVisitorIdentity(s.force_visitor_identity ?? false);
+  }
 
   const aiAssistantEnableBlocker = getChatWidgetAIAssistantEnableBlocker({
     aiAgentId,
@@ -275,6 +276,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     ai_reply_channels: aiReplyChannels,
     ai_max_followups: aiMaxFollowups,
     ai_follow_up_enabled: aiFollowUpEnabled,
+    ai_email_code_check_enabled: aiEmailCodeCheck,
     ai_follow_up_delay_hours: aiFollowUpDelay,
     ai_follow_up_close_hours: aiFollowUpClose,
     ai_follow_up_second_delay_hours: aiFollowUpSecondDelay,
@@ -782,6 +784,15 @@ function Dashboard() {
               <p id="ai-confidence-help" className="text-xs text-quiet-text-secondary">Higher confidence means fewer AI answers and more human handoffs.</p>
             </div>
           </div>
+          {aiReplyChannels !== 'chat' && (
+            <div className="flex items-start justify-between gap-4 border-t border-quiet-divider pt-5">
+              <div className="space-y-2">
+                <Label htmlFor="ai-email-code-check">Check the code before replying by email</Label>
+                <p id="ai-email-code-check-help" className="text-xs text-quiet-text-secondary">When help articles don't explain how something works, the AI checks your connected repository and answers only what it confirms. Otherwise it hands off with what it found.</p>
+              </div>
+              <Switch id="ai-email-code-check" aria-describedby="ai-email-code-check-help" checked={aiEmailCodeCheck} onCheckedChange={setAiEmailCodeCheck} />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -804,7 +815,7 @@ function Dashboard() {
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
                 <Label htmlFor="ai-talk-to-human">Show “Talk to Human”</Label>
-                <p className="text-xs text-quiet-text-secondary">Let customers request a teammate from the chat widget.</p>
+                <p className="text-xs text-quiet-text-secondary">Let customers ask for a teammate from the chat widget and from AI emails.</p>
               </div>
               <Switch id="ai-talk-to-human" checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
             </div>

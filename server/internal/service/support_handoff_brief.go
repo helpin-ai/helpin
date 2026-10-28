@@ -36,6 +36,9 @@ type SupportHandoffBrief struct {
 	HelpArticleGap  string   `json:"-"`
 	// HeldReply is the AI answer the reply check stopped from being sent.
 	HeldReply string `json:"-"`
+	// CustomerNotified means the customer already saw the handoff confirmed
+	// (the team-reply page), so no handoff message is sent to them.
+	CustomerNotified bool `json:"-"`
 }
 
 // SupportHandoffCheck is one "AI checked" line. Source names where the finding

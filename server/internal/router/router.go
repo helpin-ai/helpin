@@ -104,6 +104,7 @@ type Handlers struct {
 	CRMImport           *handler.CRMImportHandler
 	CRMEmail            *handler.CRMEmailHandler
 	CRMOutreach         *handler.CRMOutreachHandler
+	SupportTeamReply    *handler.SupportTeamReplyHandler
 	CRMCalendar         *handler.CRMCalendarHandler
 	CRMEnrichment       *handler.CRMEnrichmentHandler
 	CRMSignal           *handler.CRMSignalHandler
@@ -346,6 +347,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 
 		// ---- Public routes ----
+		if h.SupportTeamReply != nil {
+			// The "Ask our team to reply" page from AI emails; the token is the credential.
+			r.Route("/public/support/team-reply/{token}", func(r chi.Router) {
+				if h.WidgetRateLimit != nil {
+					r.Use(h.WidgetRateLimit)
+				}
+				r.Get("/", h.SupportTeamReply.Page)
+				r.Post("/", h.SupportTeamReply.Request)
+			})
+		}
 		if h.CustomerPortal != nil {
 			r.Route("/public/portal/{slug}", func(r chi.Router) {
 				if h.WidgetRateLimit != nil {

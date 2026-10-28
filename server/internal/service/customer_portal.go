@@ -182,22 +182,30 @@ func (s *CustomerPortalService) Configuration(ctx context.Context, ws *PortalWor
 // same name, logo, and colour customers see in the chat widget, falling
 // back to the workspace's name and logo.
 func (s *CustomerPortalService) branding(ctx context.Context, ws *PortalWorkspace) map[string]string {
-	name := strings.TrimSpace(ws.Settings.WidgetName)
+	branding := supportPublicBranding(ws.Name, ws.LogoURL, ws.WebsiteURL, ws.Settings)
+	branding["assistant_name"] = s.assistantName(ctx, ws)
+	return branding
+}
+
+// supportPublicBranding is the name, logo, and colour customer-facing pages
+// show: the chat widget's, falling back to the workspace's own.
+func supportPublicBranding(workspaceName, workspaceLogo, website string, settings model.SupportInboxSettings) map[string]string {
+	name := strings.TrimSpace(settings.WidgetName)
 	if name == "" {
-		name = strings.TrimSpace(ws.Name)
+		name = strings.TrimSpace(workspaceName)
 	}
 	if name == "" {
 		name = "Customer support"
 	}
-	branding := map[string]string{"name": name, "assistant_name": s.assistantName(ctx, ws)}
+	branding := map[string]string{"name": name}
 	// As in the app: the widget logo, the workspace logo, then the site's favicon.
-	for _, logo := range []string{ws.Settings.LogoURL, ws.LogoURL, portalFaviconURL(ws.WebsiteURL)} {
+	for _, logo := range []string{settings.LogoURL, workspaceLogo, portalFaviconURL(website)} {
 		if logo = strings.TrimSpace(logo); logo != "" {
 			branding["logo_url"] = logo
 			break
 		}
 	}
-	if color := strings.TrimSpace(ws.Settings.BrandColor); color != "" {
+	if color := strings.TrimSpace(settings.BrandColor); color != "" {
 		branding["brand_color"] = color
 	}
 	return branding

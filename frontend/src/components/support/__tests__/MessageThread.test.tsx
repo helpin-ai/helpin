@@ -15,6 +15,7 @@ const supportHooks = vi.hoisted(() => ({
   markConversationRead: vi.fn(),
   deleteMessage: vi.fn(),
   currentUser: null as { id: string; full_name?: string; email?: string; avatar_url?: string } | null,
+  access: null as { permissions: string[] } | null,
 }))
 
 function createTestQueryClient() {
@@ -63,7 +64,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
 }))
 
 vi.mock('@/hooks/queries/useSession', () => ({
-  useWorkspaceAccess: () => ({ data: null }),
+  useWorkspaceAccess: () => ({ data: supportHooks.access }),
   useUpdateSupportTaskPreferences: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
@@ -87,11 +88,11 @@ vi.mock('@edition', () => ({
 }))
 
 vi.mock('../ReplyComposer', () => ({
-  ReplyComposer: ({ conversationId }: { conversationId: string }) => <div data-testid="reply-composer" data-conversation-id={conversationId} />,
+  ReplyComposer: ({ conversationId, editingNote }: { conversationId: string; editingNote?: { id: string } | null }) => <div data-testid="reply-composer" data-conversation-id={conversationId} data-editing-note={editingNote?.id ?? ''} />,
 }))
 
 vi.mock('../MessageBubble', () => ({
-  MessageBubble: ({ message, isConsecutive, fallbackAvatarUrl }: { message: { content: string }; isConsecutive: boolean; fallbackAvatarUrl?: string }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)} data-avatar={fallbackAvatarUrl}>{message.content}</div>,
+  MessageBubble: ({ message, isConsecutive, fallbackAvatarUrl, onEditNote }: { message: { content: string }; isConsecutive: boolean; fallbackAvatarUrl?: string; onEditNote?: (message: unknown) => void }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)} data-avatar={fallbackAvatarUrl}>{message.content}{onEditNote && <button type="button" data-testid="edit-note" onClick={() => onEditNote(message)} />}</div>,
 }))
 
 vi.mock('../AIRunApprovalCard', () => ({
@@ -113,6 +114,7 @@ describe('MessageThread', () => {
       isFetchNextPageError: false,
     })
     supportHooks.markConversationRead.mockReset()
+    supportHooks.access = null
     useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', name: 'Acme', slug: 'acme' } })
   })
 
@@ -388,6 +390,62 @@ describe('MessageThread', () => {
     })
 
     expect(container.querySelector('[data-support-message-thread]')?.getAttribute('data-transitioning')).toBeNull()
+
+    act(() => root.unmount())
+  })
+
+  it('does not fade the thread on first open and fades until the last of several quick switches settles', () => {
+    const conversation = (id: string) => ({ isFetched: true, data: { id, workspace_id: 'ws-1', display_id: 1, subject: 'Question', status: 'open', priority: 'medium', source: 'widget', unread_count: 0, created_at: '2026-06-03T09:00:00.000Z', updated_at: '2026-06-03T10:01:00.000Z' } })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([]) })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const queryClient = createTestQueryClient()
+    const show = (id: string) => {
+      supportHooks.useConversation.mockReturnValue(conversation(id))
+      act(() => {
+        root.render(<QueryClientProvider client={queryClient}><MessageThread workspaceId="ws-1" conversationId={id} /></QueryClientProvider>)
+      })
+    }
+    const fading = () => container.querySelector('[data-support-message-thread]')?.getAttribute('data-transitioning')
+
+    show('conv-1')
+    expect(fading()).toBeNull()
+    show('conv-2')
+    act(() => { vi.advanceTimersByTime(100) })
+    show('conv-3')
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(fading()).toBe('true')
+    act(() => { vi.advanceTimersByTime(80) })
+    expect(fading()).toBeNull()
+
+    act(() => root.unmount())
+  })
+
+  it('drops the note being edited when another conversation opens', () => {
+    supportHooks.access = { permissions: ['support.edit'] }
+    const note = { id: 'note-1', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'user', message_type: 'note', is_internal: true, content: 'Internal note', created_at: '2026-06-03T10:00:00.000Z', updated_at: '2026-06-03T10:00:00.000Z' }
+    const open = (id: string) => {
+      supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id, workspace_id: 'ws-1', display_id: 1, subject: 'Question', status: 'open', priority: 'medium', source: 'widget', unread_count: 0, created_at: '2026-06-03T09:00:00.000Z', updated_at: '2026-06-03T10:01:00.000Z' } })
+      supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages(id === 'conv-1' ? [note] : []) })
+      act(() => {
+        root.render(<QueryClientProvider client={queryClient}><MessageThread workspaceId="ws-1" conversationId={id} /></QueryClientProvider>)
+      })
+      act(() => { vi.runAllTimers() })
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const queryClient = createTestQueryClient()
+    const editing = () => container.querySelector('[data-testid="reply-composer"]')?.getAttribute('data-editing-note')
+
+    open('conv-1')
+    act(() => { container.querySelector<HTMLButtonElement>('[data-testid="edit-note"]')!.click() })
+    expect(editing()).toBe('note-1')
+    open('conv-2')
+    expect(editing()).toBe('')
+    open('conv-1')
+    expect(editing()).toBe('')
 
     act(() => root.unmount())
   })

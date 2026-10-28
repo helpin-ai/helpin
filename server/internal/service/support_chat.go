@@ -190,15 +190,6 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	}
 	defer supportAI.releaseLock(ctx, lockKey)
 
-	// Hard escalation phrases bypass the agent entirely.
-	if reason := checkHardEscalation(msg.Content); reason != "" {
-		if err := supportAI.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, reason); err != nil {
-			return fmt.Errorf("hard escalation: %w", err)
-		}
-		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
-		return nil
-	}
-
 	// Turn caps.
 	history, err := s.messageRepo.ListForSupportAI(ctx, workspaceID, conversationID, false)
 	if err != nil {

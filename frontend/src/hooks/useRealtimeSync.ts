@@ -41,6 +41,7 @@ const AGENT_RUN_INVALIDATE_MS = 400
 const SUPPORT_COUNTER_INVALIDATE_MS = 250
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
+const AI_THINKING_TIMEOUT_MS = 3 * 60_000
 const DOC_EDITING_TIMEOUT_MS = 20_000
 const AGENT_RUN_PAUSE_REASONS = new Set(['none', 'human_input', 'human_approval', 'authentication', 'awaiting_user_message'])
 const SUPPORT_CONVERSATION_STATUSES = new Set(['open', 'waiting_on_customer', 'resolved', 'spam'])
@@ -581,6 +582,27 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
               s.clearOneAgentTyping(convId, event.actor_id)
             }
           }, TYPING_TIMEOUT_MS)
+          typingTimers.current.set(timerKey, timer)
+        }
+      } else if (event.action === 'ai_thinking_started' || event.action === 'ai_thinking_stopped') {
+        // The AI is working on its next step. Nothing about the conversation
+        // changed, so no queries are refetched.
+        if (!event.entity_id) return
+        const convId = event.entity_id
+        const timerKey = `${convId}:ai-thinking`
+        const prevTimer = typingTimers.current.get(timerKey)
+        if (prevTimer) {
+          clearTimeout(prevTimer)
+          typingTimers.current.delete(timerKey)
+        }
+        const thinking = event.action === 'ai_thinking_started'
+        useSupportPresenceStore.getState().setAIThinking(convId, thinking)
+        // Clear in case the stop event is missed.
+        if (thinking) {
+          const timer = setTimeout(() => {
+            typingTimers.current.delete(timerKey)
+            useSupportPresenceStore.getState().setAIThinking(convId, false)
+          }, AI_THINKING_TIMEOUT_MS)
           typingTimers.current.set(timerKey, timer)
         }
       } else if (event.action === 'viewing_started' || event.action === 'viewing_stopped') {

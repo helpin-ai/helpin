@@ -61,6 +61,8 @@ export interface SupportCodeCheckTask {
 /** Code-check card saved in the note metadata; filled in place when done. */
 export interface SupportCodeCheck {
   status: 'running' | 'done' | 'failed';
+  /** before_reply: the AI checks the code before answering an email. */
+  phase?: 'before_reply';
   focus?: string;
   message?: string;
   found?: string;

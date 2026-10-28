@@ -11,6 +11,8 @@ export interface AgentTypingState {
 interface SupportPresenceState {
   typingIndicators: Record<string, string | false>
   agentTyping: Record<string, Record<string, AgentTypingState>>
+  /** Conversations where the support AI is working on its next step. */
+  aiThinking: Record<string, true>
   viewingAgents: Record<string, string[]>
   onlineVisitors: Record<string, true>
   hasOnlineVisitorsSnapshot: boolean
@@ -25,6 +27,7 @@ interface SupportPresenceState {
     metadata?: { name?: string; avatarUrl?: string },
   ) => void
   clearOneAgentTyping: (conversationId: string, actorId: string) => void
+  setAIThinking: (conversationId: string, thinking: boolean) => void
   setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void
   replaceViewingAgents: (conversationId: string, actorIds: string[]) => void
   setVisitorOnline: (anonymousId: string) => void
@@ -37,6 +40,7 @@ interface SupportPresenceState {
 export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
   typingIndicators: {},
   agentTyping: {},
+  aiThinking: {},
   viewingAgents: {},
   onlineVisitors: {},
   hasOnlineVisitorsSnapshot: false,
@@ -97,6 +101,14 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
       const { [actorId]: ignored, ...rest } = current
       void ignored
       return { agentTyping: { ...state.agentTyping, [conversationId]: rest } }
+    }),
+  setAIThinking: (conversationId, thinking) =>
+    set((state) => {
+      if (thinking === Boolean(state.aiThinking[conversationId])) return state
+      if (thinking) return { aiThinking: { ...state.aiThinking, [conversationId]: true as const } }
+      const { [conversationId]: ignored, ...rest } = state.aiThinking
+      void ignored
+      return { aiThinking: rest }
     }),
   setViewingAgent: (conversationId, actorId, viewing) =>
     set((state) => {
