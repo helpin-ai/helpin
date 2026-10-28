@@ -2,6 +2,7 @@ import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { CheckListIcon, Copy01Icon, File01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon, SparklesIcon, UserGroupIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { InlineDeleteConfirm } from '@/components/ui/inline-delete-confirm';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
@@ -465,22 +466,13 @@ export function TaskTemplatesSettings({
         <div className="space-y-2">
           {templates.map((template) =>
             deleteConfirmId === template.id ? (
-              <div
+              <InlineDeleteConfirm
                 key={template.id}
-                className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 sm:flex-row sm:items-center"
-              >
-                <span className="flex-1 text-sm text-foreground">
-                  Delete <span className="font-medium">{template.name}</span>?
-                </span>
-                <div className="flex items-center gap-1">
-                  <Button variant="destructive" size="xs" onClick={() => handleDelete(template.id)}>
-                    Delete
-                  </Button>
-                  <Button variant="ghost" size="xs" onClick={() => setDeleteConfirmId(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
+                name={template.name}
+                className="flex-col items-stretch sm:flex-row sm:items-center"
+                onConfirm={() => handleDelete(template.id)}
+                onCancel={() => setDeleteConfirmId(null)}
+              />
             ) : (
               <TemplateCard
                 key={template.id}

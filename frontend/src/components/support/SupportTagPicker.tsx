@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { onSupportShortcut } from '@/lib/supportShortcuts';
-import { ArrowLeft02Icon, Cancel01Icon, Delete01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon } from '@/lib/icons';
+import { ArrowLeft02Icon, Cancel01Icon, Delete01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, Tag01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { InlineDeleteConfirm } from '@/components/ui/inline-delete-confirm';
 import { Input } from '@/components/ui/input';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
@@ -137,6 +138,7 @@ function ManageTagsDialog({
   const [formName, setFormName] = useState('');
   const [formColor, setFormColor] = useState(PRESET_COLORS[0]);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [listDeleteId, setListDeleteId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const updateTag = useUpdateSupportTag(workspaceId);
@@ -177,6 +179,7 @@ function ManageTagsDialog({
     setFormName('');
     setFormColor(PRESET_COLORS[0]);
     setDeleteConfirm(false);
+    setListDeleteId(null);
     setSubmitAttempted(false);
   };
 
@@ -250,7 +253,16 @@ function ManageTagsDialog({
                 </div>
               ) : (
                 <div className="max-h-[380px] space-y-1 overflow-y-auto">
-                  {filteredTags.map((tag) => (
+                  {filteredTags.map((tag) => listDeleteId === tag.id ? (
+                    <InlineDeleteConfirm
+                      key={tag.id}
+                      name={tag.name}
+                      className="rounded-md px-2 py-1"
+                      pending={deleteTag.isPending}
+                      onConfirm={() => deleteTag.mutate(tag.id, { onSuccess: () => setListDeleteId(null) })}
+                      onCancel={() => setListDeleteId(null)}
+                    />
+                  ) : (
                     <div
                       key={tag.id}
                       role="button"
@@ -310,15 +322,13 @@ function ManageTagsDialog({
                                 className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-background/60 hover:text-destructive"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  startEdit(tag);
-                                  setDeleteConfirm(true);
+                                  setListDeleteId(tag.id);
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault();
                                     event.stopPropagation();
-                                    startEdit(tag);
-                                    setDeleteConfirm(true);
+                                    setListDeleteId(tag.id);
                                   }
                                 }}
                               >
@@ -410,6 +420,32 @@ function ManageTagsDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Settings icon that opens Manage tags, for section headers. */
+export function SupportManageTagsButton({ workspaceId }: { workspaceId: string }) {
+  const [open, setOpen] = useState(false);
+  const { data: tags = [] } = useSupportTags(workspaceId);
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="Manage tags"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            onClick={() => setOpen(true)}
+          >
+            <Settings02Icon className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <span className="text-xs">Manage tags</span>
+        </TooltipContent>
+      </Tooltip>
+      <ManageTagsDialog workspaceId={workspaceId} tags={tags} open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
