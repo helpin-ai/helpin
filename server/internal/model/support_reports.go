@@ -62,6 +62,33 @@ type SupportReportSLA struct {
 	Resolution    SupportReportSLATarget `json:"resolution"`
 }
 
+// SupportReportSLAConversation is one conversation behind an SLA report
+// count. OutcomeAt is when the target was met or missed; it is empty for met
+// next-response targets, which finish over several replies.
+type SupportReportSLAConversation struct {
+	ID                   string     `json:"id"`
+	DisplayID            int        `json:"display_id"`
+	Subject              string     `json:"subject"`
+	Status               string     `json:"status"`
+	Priority             string     `json:"priority"`
+	CustomerName         *string    `json:"customer_name"`
+	CustomerEmail        *string    `json:"customer_email"`
+	CompanyName          *string    `json:"company_name"`
+	PolicyName           string     `json:"policy_name"`
+	AssigneeName         *string    `json:"assignee_name"`
+	CreatedAt            time.Time  `json:"created_at"`
+	OutcomeAt            *time.Time `json:"outcome_at"`
+	NextResponseBreaches int        `json:"next_response_breaches"`
+}
+
+// SupportReportSLAConversations is one page of an SLA report drill-down.
+type SupportReportSLAConversations struct {
+	Data    []SupportReportSLAConversation `json:"data"`
+	Total   int64                          `json:"total"`
+	Page    int                            `json:"page"`
+	PerPage int                            `json:"per_page"`
+}
+
 // SupportReportDay is one calendar day in the report timezone.
 type SupportReportDay struct {
 	Date                      string `json:"date"`

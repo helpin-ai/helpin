@@ -512,6 +512,7 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 	}
 	var interaction *model.AgentRunInteraction
 	var supportConversationID *string
+	codeCheck := false
 	switch kind {
 	case orchestratorRunSupport:
 		conversationID := strings.TrimSpace(chatRun.TargetID)
@@ -519,7 +520,12 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		if err := s.checkSupportChildCaps(ctx, meta.WorkspaceID, conversationID); err != nil {
 			return nil, err
 		}
-		if !supportStepsAreCustomerResearch(steps) {
+		if supportStepsUseRepository(steps) {
+			if err := s.checkSupportCodeCheckLaunch(ctx, meta, conversationID, steps); err != nil {
+				return nil, err
+			}
+			codeCheck = true
+		} else if !supportStepsAreCustomerResearch(steps) {
 			return nil, errCommandInput("support customer research requires an explicit allowed_tools list containing only web_search, fetch_url, crawl_url, find_skills, read_skill, knowledge/document reads or conversation history. Do not request approval. Narrow the tools and retry; repository, release and task investigation belongs in the background investigation requested during handover. Use assigned read-only customer MCP lookups directly, not through a child agent")
 		}
 		for _, step := range steps {
@@ -574,6 +580,9 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		instructions := withDockChildHandoffInstruction(step.Instructions)
 		if kind == orchestratorRunSupport {
 			instructions = withSupportChildHandoffInstruction(step.Instructions)
+			if codeCheck {
+				instructions = withSupportCodeCheckInstruction(step.Instructions)
+			}
 		}
 		planSteps = append(planSteps, model.CommandBarPlanStep{
 			AgentID:              agentID,
@@ -603,6 +612,9 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 	runIDs := make([]string, 0, len(resp.Runs))
 	for _, run := range resp.Runs {
 		runIDs = append(runIDs, run.ID)
+	}
+	if codeCheck && len(runIDs) > 0 {
+		s.postSupportCodeCheckRunning(ctx, meta.WorkspaceID, derefString(supportConversationID), resp.PlanID, runIDs[0], steps[0].Instructions)
 	}
 	return mustJSON(map[string]interface{}{
 		"plan_id":  resp.PlanID,

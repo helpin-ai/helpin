@@ -14,6 +14,7 @@ const (
 	WebhookEventConversationSnoozed         = "conversation.snoozed"
 	WebhookEventMessageCreated              = "message.created"
 	WebhookEventSLABreached                 = "sla.breached"
+	WebhookEventSLAWarning                  = "sla.warning"
 	WebhookEventCSATSubmitted               = "csat.submitted"
 	// WebhookEventPing is sent only by "Send test event".
 	WebhookEventPing = "ping"
@@ -23,7 +24,7 @@ const (
 var WebhookEventTypes = []string{
 	WebhookEventConversationCreated, WebhookEventConversationStatusChanged, WebhookEventConversationAssigned,
 	WebhookEventConversationPriorityChanged, WebhookEventConversationSnoozed, WebhookEventMessageCreated,
-	WebhookEventSLABreached, WebhookEventCSATSubmitted,
+	WebhookEventSLAWarning, WebhookEventSLABreached, WebhookEventCSATSubmitted,
 }
 
 // IsWebhookEventType reports whether event is subscribable.

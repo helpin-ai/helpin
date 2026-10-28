@@ -88,6 +88,8 @@ export function fileRejection(file: File, policy: SupportAttachmentPolicy): stri
     return `${file.name} is larger than ${formatFileSize(policy.max_bytes)}. Choose a smaller file or share a link.`
   }
   if (!policy.content_types.includes(file.type)) {
+    // Customers can't send SVG, which can carry script; agents can.
+    if (file.type === 'image/svg+xml') return `${file.name} can’t be sent. Please send it as a PNG or PDF.`
     return `${file.name} isn’t a supported file type.`
   }
   return null

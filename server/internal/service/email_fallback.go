@@ -479,12 +479,16 @@ type EmailFallbackService struct {
 	replyDomain            string
 	appBaseURL             string
 	portalLinks            portalRequestLinker
+	emailLinkScanner       supportEmailLinkScanner
+	teamReplyLinks         supportTeamReplyLinker
 	logger                 *slog.Logger
 	podID                  string
 	pollInterval           time.Duration
 	leaseTTL               time.Duration
 	processingTTL          time.Duration
 	now                    func() time.Time
+	// runAsync starts background follow-up work; tests run it inline.
+	runAsync func(task func())
 }
 
 type EmailFallbackBackfillOptions struct {
@@ -509,6 +513,17 @@ type EmailFallbackBackfillResult struct {
 // portalRequestLinker links to a request in a workspace's customer portal.
 type portalRequestLinker interface {
 	PortalRequestURL(ctx context.Context, workspaceID, slug, reference string) string
+}
+
+// supportTeamReplyLinker issues the "Ask our team to reply" link that
+// AI-written emails carry.
+type supportTeamReplyLinker interface {
+	TeamReplyURL(workspaceID, conversationID string) string
+}
+
+// SetTeamReplyLinks enables the team-reply link in AI-written emails.
+func (s *EmailFallbackService) SetTeamReplyLinks(links supportTeamReplyLinker) {
+	s.teamReplyLinks = links
 }
 
 // SetPortalLinks links reply emails to each workspace's portal address.
@@ -1460,6 +1475,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 		actorID = *teammate.UserID
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, actorID))
+	s.scanInboundEmailLinksAsync(createdMsg, actorID)
 	if recipientsUpdated != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, recipientsUpdated, ""))
 	}
@@ -2235,7 +2251,11 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 		chatLink = ""
 	}
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
-	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
+	teamReplyURL := ""
+	if s.teamReplyLinks != nil && aiOnly && settings.ShowTalkToHuman && !model.SupportAIConversationBlocked(conv) {
+		teamReplyURL = s.teamReplyLinks.TeamReplyURL(conv.WorkspaceID, conv.ID)
+	}
+	htmlBody, textBody := s.renderBodiesWithTeamReply(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail, teamReplyURL)
 	// The portal link is advisory: signing in claims eligible email conversations
 	// (see CustomerPortalRepository.AssociateVerifiedEmail), so sending never
 	// changes visibility or creates identities for an unverified address.
@@ -3024,6 +3044,19 @@ func (s *EmailFallbackService) buildChatLink(ctx context.Context, conv *model.Su
 }
 
 func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, agentName, workspaceName, chatLink, unsubscribeEmail string) (string, string) {
+	return s.renderBodiesWithTeamReply(messages, agentName, workspaceName, chatLink, unsubscribeEmail, "")
+}
+
+// supportTeamReplyLinkLead and supportTeamReplyLinkText make up the footer line
+// on AI-written emails that lets the customer ask for a person.
+const (
+	supportTeamReplyLinkLead = "Written by our AI assistant. Prefer a person?"
+	supportTeamReplyLinkText = "Ask our team to reply"
+)
+
+// renderBodiesWithTeamReply renders the email; a non-empty teamReplyURL adds
+// the "Ask our team to reply" line under the signature.
+func (s *EmailFallbackService) renderBodiesWithTeamReply(messages []model.SupportMessage, agentName, workspaceName, chatLink, unsubscribeEmail, teamReplyURL string) (string, string) {
 	htmlChunks := make([]string, 0, len(messages))
 	textChunks := make([]string, 0, len(messages))
 	for _, msg := range messages {
@@ -3074,6 +3107,15 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	htmlBody.WriteString(" via ")
 	htmlBody.WriteString(html.EscapeString(workspaceName))
 	htmlBody.WriteString("</p>")
+	if teamReplyURL != "" {
+		htmlBody.WriteString(`<p style="color:#6b7280;font-size:13px;line-height:20px;">`)
+		htmlBody.WriteString(html.EscapeString(supportTeamReplyLinkLead))
+		htmlBody.WriteString(` <a href="`)
+		htmlBody.WriteString(html.EscapeString(teamReplyURL))
+		htmlBody.WriteString(`">`)
+		htmlBody.WriteString(html.EscapeString(supportTeamReplyLinkText))
+		htmlBody.WriteString("</a></p>")
+	}
 	if chatLink != "" {
 		htmlBody.WriteString(`<p><a href="`)
 		htmlBody.WriteString(html.EscapeString(chatLink))
@@ -3088,6 +3130,9 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 		textBody += "\n\n"
 	}
 	textBody += "--\n" + agentName + " via " + workspaceName
+	if teamReplyURL != "" {
+		textBody += "\n\n" + supportTeamReplyLinkLead + " " + supportTeamReplyLinkText + ":\n" + teamReplyURL
+	}
 	if chatLink != "" {
 		textBody += "\n\nView conversation in browser:\n" + chatLink
 	}
@@ -4037,6 +4082,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		})
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(conversation.WorkspaceID, message, "email:"+message.ID))
 	}
+	s.scanInboundEmailLinksAsync(message, "email:"+message.ID)
 
 	s.logger.InfoContext(ctx, "postmark inbound created support conversation from route",
 		"message_id", strings.TrimSpace(payload.MessageID),

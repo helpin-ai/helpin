@@ -235,7 +235,7 @@ export function SupportInboxLayout() {
       ...(routeSearch.priority ? { priorities: parseConversationPriorities(routeSearch.priority) } : {}),
       aiStates: parseRouteAIStates(routeSearch.ai, routeSearch.system_tags, effectiveNavFilter),
       sort: parseConversationSortOrder(routeSearch.sort),
-      ...(routeSearch.sla === 'breached' ? { slaBreached: true } : {}),
+      ...(routeSearch.sla ? { sla: routeSearch.sla } : {}),
     };
     const hasExplicitRouteFilters = !!(
       routeSearch.status ||

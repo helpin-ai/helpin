@@ -12,6 +12,8 @@ interface CollapsibleSectionProps {
   /** Remembers this person's open/closed choice for the section across conversations. */
   persistKey?: string;
   onAdd?: () => void;
+  /** Quiet header control beside the chevron; its clicks and keys never toggle the section. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -41,6 +43,7 @@ export function CollapsibleSection({
   autoOpenWhenPopulated = false,
   persistKey,
   onAdd,
+  action,
   children,
 }: CollapsibleSectionProps) {
   const [userOpen, setUserOpen] = useState<boolean | undefined>(() => {
@@ -96,6 +99,16 @@ export function CollapsibleSection({
           >
             <PlusSignIcon className="h-3.5 w-3.5" />
           </button>
+        )}
+        {action && (
+          // Also stops events from dialogs the action portals, which bubble through React.
+          <span
+            className="flex shrink-0 items-center"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            {action}
+          </span>
         )}
         <ArrowRight01Icon
           className={cn(

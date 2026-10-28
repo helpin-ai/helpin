@@ -151,3 +151,37 @@ func (c supportSLAClock) Between(from, to time.Time) time.Duration {
 	}
 	return total
 }
+
+// Sub returns the moment that lies duration of counted time before end.
+func (c supportSLAClock) Sub(end time.Time, duration time.Duration) time.Time {
+	if duration <= 0 {
+		return end
+	}
+	if c.calendar() {
+		return end.Add(-duration)
+	}
+	local := end.In(c.location)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, c.location)
+	upper, remaining := end, duration
+	// Ten years of days bounds the walk; targets are at most 90 days.
+	for range 3660 {
+		ranges := c.ranges(day)
+		for i := len(ranges) - 1; i >= 0; i-- {
+			open, close := ranges[i].open, ranges[i].close
+			if upper.Before(close) {
+				close = upper
+			}
+			if !close.After(open) {
+				continue
+			}
+			available := close.Sub(open)
+			if remaining <= available {
+				return close.Add(-remaining)
+			}
+			remaining -= available
+		}
+		upper = day
+		day = time.Date(day.Year(), day.Month(), day.Day()-1, 0, 0, 0, 0, c.location)
+	}
+	return end.Add(-duration)
+}

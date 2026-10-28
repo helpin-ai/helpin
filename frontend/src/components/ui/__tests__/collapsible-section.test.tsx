@@ -59,3 +59,21 @@ it('shows the count right after the title', async () => {
   expect(title?.nextElementSibling?.textContent).toBe('3');
   await act(async () => root.unmount());
 });
+
+it('keeps the section open when its header action is clicked or used from the keyboard', async () => {
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  let used = 0;
+  await act(async () => root.render(
+    <CollapsibleSection title="Tags" defaultOpen action={<button type="button" onClick={() => { used += 1; }}>Manage</button>}>
+      Content
+    </CollapsibleSection>,
+  ));
+  const action = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Manage') as HTMLElement;
+  await act(async () => action.click());
+  await act(async () => action.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  await act(async () => action.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
+  expect(used).toBe(1);
+  expect(container.textContent).toContain('Content');
+  await act(async () => root.unmount());
+});

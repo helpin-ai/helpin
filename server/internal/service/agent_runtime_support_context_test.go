@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -79,6 +81,48 @@ func TestAgentRuntimeHostSupportContactDetailsReachPromptSummary(t *testing.T) {
 				if tc.wantChannel == "email" && product["is_current_website_product"] == true {
 					t.Error("email context must not claim an active website visit")
 				}
+			}
+		})
+	}
+}
+
+func TestAgentRuntimeHostOffersCodeCheckOnlyWhenAvailable(t *testing.T) {
+	for _, tc := range []struct {
+		name, channel string
+		enabled, repo bool
+		want          bool
+	}{
+		{name: "email, on, repository", channel: "email", enabled: true, repo: true, want: true},
+		{name: "chat", channel: "widget", enabled: true, repo: true},
+		{name: "setting off", channel: "email", repo: true},
+		{name: "no repository", channel: "email", enabled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newTestDB(t)
+			settings := model.DefaultSupportInboxSettings()
+			settings.AIEmailCodeCheckEnabled = tc.enabled
+			raw, err := json.Marshal(settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('inst','ws-1','key','secret',?,true)`, string(raw))
+			if tc.repo {
+				mustExec(t, db, `INSERT INTO git_repositories(id,workspace_id,integration_id,full_name) VALUES ('repo','ws-1','integration','acme/app')`)
+			}
+			mustExec(t, db, `INSERT INTO support_conversations (id, workspace_id, display_id, subject, status, channel, source, created_at, updated_at)
+				VALUES ('conversation-1', 'ws-1', 1, 'A question', 'open', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, tc.channel, tc.channel)
+			host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil,
+				repository.NewSupportConversationRepository(db), nil, nil, nil, nil, nil, nil)
+			resolved, err := host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+				AppID:    "helpin",
+				Target:   agentruntime.TargetRef{Type: "support_conversation", ID: "conversation-1"},
+				Metadata: map[string]interface{}{"workspace_id": "ws-1"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(resolved.Summary, supportCodeCheckAvailableLine); got != tc.want {
+				t.Fatalf("code check offered = %v, want %v\n%s", got, tc.want, resolved.Summary)
 			}
 		})
 	}

@@ -22,6 +22,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, Building03Icon, ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon } from '@/lib/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Favicon } from '@/components/ui/favicon';
 import { format, parseISO } from 'date-fns';
 import { crmCompanyService } from '@/lib/services/crmService';
@@ -48,6 +49,7 @@ import {
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   ACTIONS_COL_SIZE,
+  CHECKBOX_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
   resolveColumnRuntimeSize,
@@ -92,6 +94,11 @@ interface CompaniesTableProps {
   toolbarContainer?: HTMLElement | null;
   /** Custom property keys in use; each becomes a column, hidden until shown. */
   customPropertyKeys?: string[];
+  /**
+   * Actions for selected companies. When given, rows can be selected and the
+   * actions float over the table while a selection exists.
+   */
+  renderBulkActions?: (selectedIds: string[], clearSelection: () => void) => React.ReactNode;
 }
 
 const NO_CUSTOM_PROPERTY_KEYS: string[] = [];
@@ -112,7 +119,9 @@ export function CompaniesTable({
   onCompanyDeleted,
   toolbarContainer,
   customPropertyKeys = NO_CUSTOM_PROPERTY_KEYS,
+  renderBulkActions,
 }: CompaniesTableProps) {
+  const selectable = Boolean(renderBulkActions);
   const [localCompanies, setLocalCompanies] = useState<CRMCompany[]>(companies);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -175,6 +184,22 @@ export function CompaniesTable({
 
   const tableColumns = useMemo(
     () => [
+      ...(selectable ? [columnHelper.display({
+        id: 'select',
+        size: CHECKBOX_COL_SIZE,
+        enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
+        header: ({ table }) => (
+          <Checkbox
+            checked={table.getIsAllRowsSelected() ? true : table.getIsSomeRowsSelected() ? 'indeterminate' : false}
+            onCheckedChange={(value) => table.toggleAllRowsSelected(value === true)}
+            aria-label="Select all companies"
+          />
+        ),
+        // DataRow renders the row checkbox from its isSelected prop.
+        cell: () => null,
+      })] : []),
       columnHelper.accessor('name', {
         id: 'name',
         header: 'Name',
@@ -322,7 +347,7 @@ export function CompaniesTable({
         ),
       }),
     ],
-    [ownerNameMap, assignableMembers, onRowClick, updateCompanyField, handleDelete, customPropertyKeys],
+    [selectable, ownerNameMap, assignableMembers, onRowClick, updateCompanyField, handleDelete, customPropertyKeys],
   );
 
   const grouping: GroupingState = useMemo(() => {
@@ -426,9 +451,18 @@ export function CompaniesTable({
     );
   }
 
+  const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id] && localCompanies.some((company) => company.id === id));
+  const bulkActions = renderBulkActions && selectedIds.length > 0 ? (
+    // Sits above the floating Ask Agent dock at the bottom of the page.
+    <div className="pointer-events-none absolute inset-x-0 bottom-16 z-20 flex justify-center px-3">
+      {renderBulkActions(selectedIds, () => setRowSelection({}))}
+    </div>
+  ) : null;
+
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col gap-2">
       {toolbarPortal}
+      {bulkActions}
       {/* Table */}
       <div ref={tableSurfaceRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
@@ -512,6 +546,7 @@ export function CompaniesTable({
                     <MemoDataRow
                       key={`${row.id}:${columnVisibilityVersion}`}
                       row={row}
+                      isSelected={row.getIsSelected()}
                       columnSizing={columnSizing}
                       columnSizingVersion={columnSizingVersion}
                       columnVisibilityVersion={columnVisibilityVersion}
@@ -565,6 +600,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
 
 interface CompanyDataRowProps {
   row: Row<CRMCompany>;
+  isSelected: boolean;
   columnSizing: Record<string, number>;
   columnSizingVersion: string;
   columnVisibilityVersion: string;
@@ -574,6 +610,7 @@ function areCompanyDataRowPropsEqual(prev: CompanyDataRowProps, next: CompanyDat
   return (
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
+    prev.isSelected === next.isSelected &&
     prev.columnSizingVersion === next.columnSizingVersion &&
     prev.columnVisibilityVersion === next.columnVisibilityVersion
   );
@@ -581,6 +618,7 @@ function areCompanyDataRowPropsEqual(prev: CompanyDataRowProps, next: CompanyDat
 
 const MemoDataRow = memo(function DataRow({
   row,
+  isSelected,
   columnSizing,
   columnSizingVersion,
   columnVisibilityVersion,
@@ -603,7 +641,15 @@ const MemoDataRow = memo(function DataRow({
             className={`${colId === 'select' ? TABLE_CELL_SELECT : TABLE_CELL} ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
           >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {colId === 'select' ? (
+              // The checkbox reads isSelected so a memoized row redraws it.
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={(value) => row.toggleSelected(value === true)}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`Select ${row.original.name}`}
+              />
+            ) : flexRender(cell.column.columnDef.cell, cell.getContext())}
           </div>
         );
       })}

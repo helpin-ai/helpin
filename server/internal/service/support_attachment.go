@@ -55,8 +55,8 @@ func (s *SupportAttachmentService) Create(
 	if req.ContentType == "" {
 		return nil, rejectSupportAttachment("the file type of %s could not be determined", req.FileName)
 	}
-	if !supportAttachmentContentTypes[req.ContentType] {
-		return nil, rejectSupportAttachment("%s files are not supported", req.ContentType)
+	if !supportAttachmentTypeAllowed(req.ContentType, uploaderType) {
+		return nil, refuseSupportAttachmentType(req.FileName, req.ContentType)
 	}
 
 	conversationID = strings.TrimSpace(conversationID)
@@ -132,6 +132,9 @@ func (s *SupportAttachmentService) ConfirmUpload(ctx context.Context, id, upload
 	if attachment.IsUploaded {
 		return nil // idempotent for the owning uploader
 	}
+	if err := s.checkUploadedContent(ctx, attachment); err != nil {
+		return err
+	}
 	return s.attachmentRepo.ConfirmUpload(ctx, id)
 }
 
@@ -201,8 +204,11 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	if !supportAttachmentContentTypes[contentType] {
-		return nil, fmt.Errorf("file type %s is not allowed", contentType)
+	if !supportAttachmentTypeAllowed(contentType, supportUploaderCustomer) {
+		if contentType == "image/svg+xml" {
+			return nil, rejectSupportAttachment("%s was not saved because SVG files from customers aren't accepted", fileName)
+		}
+		return nil, rejectSupportAttachment("%s was not saved because this file type isn't accepted", fileName)
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Base64Content))
 	if err != nil {
@@ -214,6 +220,11 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	fileSize := int64(len(data))
 	if fileSize > maxSupportFileSize {
 		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxSupportFileSize))
+	}
+	if !supportAttachmentContentMatches(contentType, data[:min(len(data), supportAttachmentSniffBytes)]) {
+		slog.WarnContext(ctx, "inbound support attachment refused: content does not match its type",
+			"workspace_id", req.WorkspaceID, "attachment_id", req.AttachmentID, "content_type", contentType)
+		return nil, rejectSupportAttachment("%s was not saved because its contents don't match its file type", fileName)
 	}
 
 	messageID := strings.TrimSpace(req.MessageID)

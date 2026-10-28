@@ -11,7 +11,9 @@ interface SupportPendingAttachmentProps {
 
 export function SupportPendingAttachment({ attachment, onRetry }: SupportPendingAttachmentProps) {
   const [retrying, setRetrying] = useState(false);
-  const failed = attachment.processing_status === 'failed';
+  // A refused file fails the same way on every retry, so it offers none.
+  const rejected = attachment.processing_status === 'rejected';
+  const failed = rejected || attachment.processing_status === 'failed';
 
   async function retry() {
     if (!onRetry || retrying) return;
@@ -41,7 +43,7 @@ export function SupportPendingAttachment({ attachment, onRetry }: SupportPending
             : 'The message has arrived. Its attachment is still being processed.'}
         </TooltipContent>
       </Tooltip>
-      {failed && onRetry && (
+      {failed && !rejected && onRetry && (
         <button type="button" disabled={retrying} onClick={() => void retry()} className="font-medium text-primary hover:underline disabled:opacity-50">
           {retrying ? 'Retrying…' : 'Retry'}
         </button>

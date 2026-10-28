@@ -32,13 +32,16 @@ function PendingFileRow({ file, onRetry, onRemove }: { file: PortalPendingFile; 
         <span className={cn('block text-[11.5px]', file.status === 'error' ? 'break-words text-destructive' : 'truncate text-quiet-muted')}>
           {formatFileSize(file.size)} · {fileStatus(file)}
         </span>
+        {file.status === 'error' && file.refused ? (
+          <span className="block text-[11.5px] text-quiet-muted">Remove this file to send your message.</span>
+        ) : null}
         {inProgress ? (
           <span className="mt-1 block h-0.5 w-full overflow-hidden rounded-full bg-quiet-divider-strong">
             <span className="block h-full bg-quiet-text-primary transition-[width]" style={{ width: `${file.status === 'queued' ? 0 : file.progress}%` }} />
           </span>
         ) : null}
       </span>
-      {file.status === 'error' ? <QuietTextAction type="button" onClick={onRetry}>Retry</QuietTextAction> : null}
+      {file.status === 'error' && !file.refused ? <QuietTextAction type="button" onClick={onRetry}>Retry</QuietTextAction> : null}
       <QuietIconAction type="button" aria-label={`Remove ${file.name}`} onClick={onRemove}>
         <Cancel01Icon className="size-3.5" />
       </QuietIconAction>

@@ -78,8 +78,10 @@ var runtimeToolRiskLevels = map[string]string{
 	"link_support_conversation_task":    RiskLevelRoutine,
 	"set_support_conversation_status":   RiskLevelRoutine,
 	"set_support_conversation_priority": RiskLevelRoutine,
-	"snooze_support_conversation":       RiskLevelRoutine,
-	"unsnooze_support_conversation":     RiskLevelRoutine,
+	// A tier changes what a company is promised.
+	"set_company_sla_tier":          RiskLevelSensitive,
+	"snooze_support_conversation":   RiskLevelRoutine,
+	"unsnooze_support_conversation": RiskLevelRoutine,
 	// Customer-visible sends cannot be taken back.
 	"reply_to_support_conversation":     RiskLevelDestructive,
 	"create_support_conversation":       RiskLevelDestructive,
@@ -789,6 +791,23 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		Category:    "Support / Discovery",
 		Description: "Get one support conversation in the current workspace.",
 		InputSchema: requiredEntityIDSchema("conversation_id"),
+	},
+	{
+		CommandName: "support.list_sla_tiers",
+		Alias:       "list_support_sla_tiers",
+		Category:    "Support / Discovery",
+		Description: "List the workspace's SLA tiers, such as Gold or Standard, and how many companies carry each.",
+		InputSchema: closedObjectSchema(map[string]any{}, nil),
+	},
+	{
+		CommandName: "support.set_company_sla_tier",
+		Alias:       "set_company_sla_tier",
+		Category:    "Support / Triage",
+		Description: "Set a company's SLA tier by tier name or ID, or clear it with an empty tier. SLA policies that match the tier apply to the company's open conversations from now on. Requires support admin access.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"company_id": optionalIDSchema("CRM company ID."),
+			"tier":       map[string]any{"type": []string{"string", "null"}, "description": "Tier name or ID; empty or null clears the tier."},
+		}, []string{"company_id"}),
 	},
 	{
 		CommandName: "support.list_tags",

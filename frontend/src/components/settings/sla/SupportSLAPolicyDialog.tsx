@@ -1,12 +1,14 @@
 import { useState } from 'react'
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { SupportSLAPolicy, SupportSLAPolicyInput } from '@/lib/pmTypes'
+import { SUPPORT_SLA_NO_TIER, type SupportSLAPolicy, type SupportSLAPolicyInput, type SupportSLATier } from '@/lib/pmTypes'
 import {
+  MAX_SLA_POLICY_COMPANIES,
   draftToPolicyInput,
   emptySLAPolicyDraft,
   policyToDraft,
@@ -16,6 +18,7 @@ import {
 } from '@/lib/supportSLAPolicyForm'
 import { toggleListValue } from '@/lib/toggleListValue'
 import { SettingsPill } from '../SettingsPill'
+import { SLACompanyPicker } from './SLACompanyPicker'
 
 const PRIORITIES = [
   { value: 'urgent', label: 'Urgent' },
@@ -81,14 +84,18 @@ interface SupportSLAPolicyDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   policy: SupportSLAPolicy | null
+  workspaceId: string
   inboxes: { id: string; name: string }[]
+  tiers: SupportSLATier[]
+  /** Teammates who can be notified or assigned, by user ID. */
+  teammates: { id: string; name: string }[]
   businessHoursConfigured: boolean
   saving: boolean
   onSave: (input: SupportSLAPolicyInput) => Promise<boolean>
 }
 
 /** Create or edit one SLA policy. */
-export function SupportSLAPolicyDialog({ open, onOpenChange, policy, inboxes, businessHoursConfigured, saving, onSave }: SupportSLAPolicyDialogProps) {
+export function SupportSLAPolicyDialog({ open, onOpenChange, policy, workspaceId, inboxes, tiers, teammates, businessHoursConfigured, saving, onSave }: SupportSLAPolicyDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
@@ -104,7 +111,10 @@ export function SupportSLAPolicyDialog({ open, onOpenChange, policy, inboxes, bu
             // A fresh form for each opening starts from the policy being edited.
             key={policy?.id ?? 'new'}
             policy={policy}
+            workspaceId={workspaceId}
             inboxes={inboxes}
+            tiers={tiers}
+            teammates={teammates}
             businessHoursConfigured={businessHoursConfigured}
             saving={saving}
             onCancel={() => onOpenChange(false)}
@@ -120,14 +130,20 @@ export function SupportSLAPolicyDialog({ open, onOpenChange, policy, inboxes, bu
 
 function SupportSLAPolicyForm({
   policy,
+  workspaceId,
   inboxes,
+  tiers,
+  teammates,
   businessHoursConfigured,
   saving,
   onCancel,
   onSave,
 }: {
   policy: SupportSLAPolicy | null
+  workspaceId: string
   inboxes: { id: string; name: string }[]
+  tiers: SupportSLATier[]
+  teammates: { id: string; name: string }[]
   businessHoursConfigured: boolean
   saving: boolean
   onCancel: () => void
@@ -184,6 +200,21 @@ function SupportSLAPolicyForm({
             ))}
           </div>
         </div>
+        {tiers.length > 0 || draft.companyTierIds.length > 0 ? (
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">Company tier</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[...tiers.map((tier) => ({ id: tier.id, name: tier.name })), { id: SUPPORT_SLA_NO_TIER, name: 'No tier' }].map((tier) => (
+                <SettingsPill key={tier.id} selected={draft.companyTierIds.includes(tier.id)} onClick={() => update({ companyTierIds: toggleListValue(draft.companyTierIds, tier.id) })}>{tier.name}</SettingsPill>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">“No tier” matches companies without a tier and conversations without a company.</p>
+          </div>
+        ) : null}
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">Company</div>
+          <SLACompanyPicker workspaceId={workspaceId} value={draft.companies} limit={MAX_SLA_POLICY_COMPANIES} onChange={(companies) => update({ companies })} />
+        </div>
       </fieldset>
 
       <fieldset className="space-y-2">
@@ -192,6 +223,8 @@ function SupportSLAPolicyForm({
         <TargetRow id="sla-next" label="Next response" help="From each later customer message to the next teammate reply." value={draft.nextResponse} onChange={(nextResponse) => update({ nextResponse })} />
         <TargetRow id="sla-resolution" label="Resolution" help="From creation until the conversation is resolved." value={draft.resolution} onChange={(resolution) => update({ resolution })} />
       </fieldset>
+
+      <SLAAlertFields draft={draft} teammates={teammates} update={update} />
 
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-4">
@@ -232,5 +265,71 @@ function SupportSLAPolicyForm({
         <Button type="submit" disabled={saving}>{saving ? 'Saving…' : policy ? 'Save policy' : 'Create policy'}</Button>
       </DialogFooter>
     </form>
+  )
+}
+
+const NOBODY = '__nobody__'
+
+/** Warnings before a target is missed, and who else hears about them. */
+function SLAAlertFields({
+  draft,
+  teammates,
+  update,
+}: {
+  draft: SLAPolicyDraft
+  teammates: { id: string; name: string }[]
+  update: (patch: Partial<SLAPolicyDraft>) => void
+}) {
+  const names = new Map(teammates.map((teammate) => [teammate.id, teammate.name]))
+  const name = (id: string) => names.get(id) ?? 'Former teammate'
+  const notified = draft.notifyUserIds.map(name)
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-1 text-sm font-medium">Before a breach</legend>
+      <TargetRow
+        id="sla-warn"
+        label="Warn before a target is missed"
+        help="Notifies the assignee, or the inbox's teammates when nobody is assigned. Each due time warns once."
+        value={draft.warnBefore}
+        onChange={(warnBefore) => update({ warnBefore })}
+      />
+      <div className="space-y-3 rounded-md border border-border/70 px-3 py-2.5">
+        <div className="space-y-1.5">
+          <Label className="text-sm">Also notify, on warnings and breaches</Label>
+          <QuietDropdown
+            label="Teammates to notify"
+            multiple
+            selected={draft.notifyUserIds}
+            options={teammates.map((teammate) => ({ value: teammate.id, label: teammate.name }))}
+            onSelect={(id) => update({ notifyUserIds: toggleListValue(draft.notifyUserIds, id) })}
+            trigger={(
+              <button type="button" aria-label="Teammates to notify" className="flex w-full items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left text-xs hover:bg-muted">
+                <span className={notified.length ? 'truncate' : 'truncate text-muted-foreground'}>{notified.length ? notified.join(', ') : 'Nobody else'}</span>
+              </button>
+            )}
+          />
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label htmlFor="sla-notify-cs-owner" className="text-sm">Notify the company's customer success owner</Label>
+            <p className="text-xs text-muted-foreground">When the conversation's company has one.</p>
+          </div>
+          <Switch id="sla-notify-cs-owner" checked={draft.notifyCSOwner} onCheckedChange={(notifyCSOwner) => update({ notifyCSOwner })} />
+        </div>
+        {draft.warnBefore.enabled ? (
+          <div className="space-y-1.5">
+            <Label className="text-sm">If nobody is assigned at the warning, assign to</Label>
+            <Select value={draft.assignUserId ?? NOBODY} onValueChange={(value) => update({ assignUserId: value === NOBODY ? null : value })}>
+              <SelectTrigger aria-label="Assign at the warning" className="h-8 w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NOBODY}>Nobody, only notify</SelectItem>
+                {draft.assignUserId && !names.has(draft.assignUserId) ? <SelectItem value={draft.assignUserId}>Former teammate</SelectItem> : null}
+                {teammates.map((teammate) => <SelectItem key={teammate.id} value={teammate.id}>{teammate.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+      </div>
+    </fieldset>
   )
 }

@@ -181,8 +181,9 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
                   </span>
                   {att.status === 'uploading' && <progress max={100} value={att.progress} aria-label={`Uploading ${att.fileName}`} />}
                   {att.status === 'error' && <span className="helpin-compose-upload-error" role="alert">{att.error || 'Upload failed. Please try again.'}</span>}
+                  {att.status === 'error' && att.refused && <span className="helpin-compose-upload-hint">Remove this file to send your message.</span>}
                 </div>
-                {att.status === 'error' && onRetryAttachment && <button type="button" className="helpin-compose-upload-retry" onClick={() => onRetryAttachment(att.id)}>Retry</button>}
+                {att.status === 'error' && !att.refused && onRetryAttachment && <button type="button" className="helpin-compose-upload-retry" onClick={() => onRetryAttachment(att.id)}>Retry</button>}
                 {onRemoveAttachment && <button type="button" className="helpin-compose-upload-remove" onClick={() => onRemoveAttachment(att.id)} aria-label={`${att.status === 'uploading' ? 'Cancel upload of' : 'Remove'} ${att.fileName}`}><XIcon size={14} /></button>}
               </div>
             ))}

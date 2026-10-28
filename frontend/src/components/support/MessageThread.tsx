@@ -42,6 +42,8 @@ import { flattenSupportMessagePages } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getInitial, isAIActiveConversation } from './helpers';
+import { getSupportCodeCheck } from './supportAIActivityModel';
+import { AIThinkingBubble } from './AIThinkingBubble';
 import { CREATE_SUPPORT_TASK_EVENT } from './supportAICardActions';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
@@ -280,7 +282,7 @@ export function MessageThread({
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const previousConversationIdRef = useRef<string | null>(conversationId);
+  const [transitionConversationId, setTransitionConversationId] = useState<string | null>(conversationId);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const lastDateScrollTopRef = useRef(0);
   const isNearBottomRef = useRef(true);
@@ -327,7 +329,13 @@ export function MessageThread({
   const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
 
   const [editingNote, setEditingNote] = useState<SupportMessage | null>(null);
-  useEffect(() => { setEditingNote(null); }, [workspaceId, conversationId]);
+  // Switching conversation or workspace drops the note being edited.
+  const editingNoteScope = `${workspaceId}:${conversationId ?? ''}`;
+  const [editingNoteScopeSeen, setEditingNoteScopeSeen] = useState(editingNoteScope);
+  if (editingNoteScopeSeen !== editingNoteScope) {
+    setEditingNoteScopeSeen(editingNoteScope);
+    setEditingNote(null);
+  }
   // Opening a conversation puts the celebration away.
   useEffect(() => {
     if (conversationId) useSupportInboxCelebrationStore.getState().dismissCelebration();
@@ -394,19 +402,16 @@ export function MessageThread({
     return null;
   }, [conversation, inboxScopes]);
 
+  // Opening another conversation fades the thread in.
+  if (transitionConversationId !== conversationId) {
+    setTransitionConversationId(conversationId);
+    setIsThreadTransitioning(Boolean(conversationId));
+  }
   useEffect(() => {
-    if (previousConversationIdRef.current === conversationId) {
-      return undefined;
-    }
-    previousConversationIdRef.current = conversationId;
-    if (!conversationId) {
-      setIsThreadTransitioning(false);
-      return undefined;
-    }
-    setIsThreadTransitioning(true);
+    if (!isThreadTransitioning) return undefined;
     const timer = window.setTimeout(() => setIsThreadTransitioning(false), THREAD_SELECTION_FADE_MS);
     return () => window.clearTimeout(timer);
-  }, [conversationId]);
+  }, [isThreadTransitioning, conversationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -554,6 +559,7 @@ export function MessageThread({
   }, [conversationId, canCreateTasks]);
 
   const { data: mergeHistory } = useConversationMerges(workspaceId, conversationId);
+  const codeCheckRunning = useMemo(() => messages.some((message) => getSupportCodeCheck(message)?.status === 'running'), [messages]);
 
   const followUpStage = conversation ? getSupportFollowUpStage(conversation, latestPublicMessage) : null;
   const followUpStageKey = followUpStage ? `${conversation?.ai_follow_up?.id}:${followUpStage.kind}:${followUpStage.deadline ?? ''}` : null;
@@ -1126,6 +1132,7 @@ export function MessageThread({
           )}
           <TypingIndicatorBar conversationId={conversationId} />
           <AgentTypingBubble conversationId={conversationId} workspaceId={workspaceId} />
+          <AIThinkingBubble conversationId={conversationId} hidden={codeCheckRunning} />
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>

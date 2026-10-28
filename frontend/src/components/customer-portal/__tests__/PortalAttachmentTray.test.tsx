@@ -58,6 +58,17 @@ describe('PortalAttachmentTray', () => {
     expect(state.remove).toHaveBeenCalledWith('1')
   })
 
+  it('offers no retry for a refused file and says how to send', async () => {
+    const state = uploads({
+      files: [{ id: '1', name: 'drawing.svg', size: 512, type: 'image/svg+xml', status: 'error', progress: 0, error: 'drawing.svg can’t be sent. Please send it as a PNG or PDF.', refused: true }],
+      blocked: true,
+    })
+    await act(async () => root.render(<PortalAttachmentTray uploads={state} />))
+    expect(container.textContent).toContain('Remove this file to send your message.')
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === 'Retry')).toBe(false)
+    expect(container.querySelector('button[aria-label="Remove drawing.svg"]')).not.toBeNull()
+  })
+
   it('attaches dropped files and shows a cue while dragging', async () => {
     const addFiles = vi.fn()
     function DropTarget() {

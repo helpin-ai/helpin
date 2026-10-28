@@ -30,7 +30,7 @@ it('cancels without saving a draft', () => {
 });
 it.each([true, false])('uses settings for SLA availability: %s', (enabled) => {
   const { root, button } = setup(enabled);
-  expect(button('Breached only').disabled).toBe(!enabled); expect(button('Next SLA due').disabled).toBe(!enabled);
+  expect(button('Breached').disabled).toBe(!enabled); expect(button('Due within an hour').disabled).toBe(!enabled); expect(button('Next SLA due').disabled).toBe(!enabled);
   act(() => root.unmount());
 });
 
@@ -44,7 +44,7 @@ it('creates a shared view from shared inbox defaults without inheriting current 
   for (const label of ['Open', 'Waiting', 'AI handoff', 'Assigned to me', 'Mentioned me', 'Opened by me', 'Unassigned', 'Assigned to others', 'Main inbox', 'Newest']) {
     expect(button(label).getAttribute('aria-pressed')).toBe('true');
   }
-  for (const label of ['High', 'Urgent', 'Breached only']) expect(button(label).getAttribute('aria-pressed')).toBe('false');
+  for (const label of ['High', 'Urgent', 'Breached', 'Due within an hour']) expect(button(label).getAttribute('aria-pressed')).toBe('false');
   const name = document.body.querySelector('input')!;
   expect(name.value).toBe(''); expect(button('Create view').disabled).toBe(true);
   act(() => {

@@ -22,6 +22,7 @@ import { MessageDeleteDialog } from './MessageDeleteDialog';
 import { MessageInfoDialog } from './MessageInfoDialog';
 import { SupportAttachmentGallery } from './SupportAttachmentGallery';
 import { useShortcutComposerStore } from './shortcutDialogStore';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
@@ -302,7 +303,7 @@ function LinkPreviewCard({ preview, security }: { preview: SupportLinkPreview; s
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
-            {security?.status === 'malicious' ? <span className="shrink-0 text-red-600 dark:text-red-400">Potentially harmful</span> : preview.url.toLowerCase().startsWith('http://') ? <span className="shrink-0 text-amber-600 dark:text-amber-400" title="This link starts with HTTP. The site may redirect to HTTPS.">HTTP link</span> : null}
+            {security?.status === 'malicious' ? <span className="shrink-0 text-red-600 dark:text-red-400">Potentially harmful</span> : null}
           </div>
           <div className="truncate text-sm font-semibold leading-snug">{preview.title}</div>
         </div>
@@ -997,7 +998,7 @@ export const MessageBubble = memo(function MessageBubble({
                     >
                       {hasEmailBody && !renderEmailBodyAsForwardedText ? (
                         <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                          <EmailBodyRenderer themeAware html={message.html_body ?? ''} collapsedByDefault />
+                          <EmailBodyRenderer themeAware html={message.html_body ?? ''} collapsedByDefault linkSecurity={linkSecurity} />
                         </div>
                       ) : (
                         visibleContent && (
@@ -1090,16 +1091,39 @@ export const MessageBubble = memo(function MessageBubble({
                       </span>
                     )}
                     {!!aiMeta?.ai_sources?.length && (
-                      <button
-                        type="button"
-                        onClick={() => setSourcesOpen(!sourcesOpen)}
-                        aria-expanded={sourcesOpen}
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
-                      >
-                        <File01Icon className="h-3 w-3" />
-                        {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
-                        <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
-                      </button>
+                      <Popover open={sourcesOpen} onOpenChange={setSourcesOpen}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
+                          >
+                            <File01Icon className="h-3 w-3" />
+                            {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                            <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-fit max-w-sm gap-0 p-1">
+                          {aiMeta.ai_sources.map((src, idx) => {
+                            const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
+                            const linkProps = src.url
+                              ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
+                              : {};
+                            return (
+                              <Tag
+                                key={src.docId}
+                                {...linkProps}
+                                className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-muted hover:text-primary' : 'text-foreground'}`}
+                              >
+                                <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <span className={`min-w-0 break-words font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
+                                {src.url && (
+                                  <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                                )}
+                              </Tag>
+                            );
+                          })}
+                        </PopoverContent>
+                      </Popover>
                     )}
                   </div>
                 )}
@@ -1115,29 +1139,6 @@ export const MessageBubble = memo(function MessageBubble({
                   </button>
                 )}
               </div>
-              {sourcesOpen && !!aiMeta?.ai_sources?.length && (
-                <div className="ml-auto mt-1.5 w-fit max-w-full overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
-                  {aiMeta.ai_sources.map((src, idx) => {
-                    const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
-                    const linkProps = src.url
-                      ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
-                      : {};
-                    return (
-                      <Tag
-                        key={src.docId}
-                        {...linkProps}
-                        className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
-                      >
-                        <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className={`min-w-0 break-words font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
-                        {src.url && (
-                          <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-                        )}
-                      </Tag>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
         </div>

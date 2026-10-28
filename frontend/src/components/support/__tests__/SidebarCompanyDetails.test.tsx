@@ -38,6 +38,11 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useUpdateConversationCRMCompany: () => ({ mutate: mockState.mutate, isPending: false }),
 }))
 
+const companySLA = vi.hoisted(() => vi.fn(() => ({ data: undefined as unknown })))
+vi.mock('@/hooks/queries/useSupportSLATiers', () => ({
+  useCompanySLA: (...args: unknown[]) => companySLA(...args),
+}))
+
 vi.mock('@/hooks/queries', () => ({
   useWorkspaceAccess: () => ({ data: {} }),
   usePermissions: () => ({ has: () => mockState.canEdit }),
@@ -70,6 +75,7 @@ describe('SidebarCompanyDetails', () => {
     }
     mockState.context.company_options = [{ id: 'company-1', display_id: 'COM-1', name: 'Acme', domain: 'acme.example' }]
     vi.clearAllMocks()
+    companySLA.mockReturnValue({ data: undefined })
   })
 
   function renderCompanyDetails() {
@@ -83,8 +89,11 @@ describe('SidebarCompanyDetails', () => {
   }
 
   it('shows live subscription details and hides technical SDK attributes', () => {
+    companySLA.mockReturnValue({ data: { company_id: 'company-1', tier_id: 't1', tier_name: 'Gold', has_custom: false, policies: [] } })
     const { container, root } = renderCompanyDetails()
 
+    expect(companySLA).toHaveBeenLastCalledWith('ws-1', 'company-1', true)
+    expect(container.textContent).toContain('SLA tierGold')
     expect(container.textContent).toContain('Company details')
     expect(container.textContent).toContain('Acme')
     expect(container.textContent).toContain('Enterprise')
@@ -96,6 +105,13 @@ describe('SidebarCompanyDetails', () => {
     expect(container.textContent).not.toContain('Agent Enrichment')
     expect(container.textContent).not.toContain('internal-source')
 
+    act(() => root.unmount())
+  })
+
+  it('marks a custom SLA next to the tier', () => {
+    companySLA.mockReturnValue({ data: { company_id: 'company-1', tier_id: 't1', tier_name: 'Gold', has_custom: true, policies: [] } })
+    const { container, root } = renderCompanyDetails()
+    expect(container.textContent).toContain('SLA tierGold, custom SLA')
     act(() => root.unmount())
   })
 

@@ -4,7 +4,7 @@ import { useLocation } from '@tanstack/react-router';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function isSupportModulePath(pathname: string) {
-  return /^\/w\/[^/]+\/support(?:\/|$)/.test(pathname) || /^\/portal(?:\/|$)/.test(pathname);
+  return /^\/w\/[^/]+\/support(?:\/|$)/.test(pathname) || /^\/(?:portal|team-reply)(?:\/|$)/.test(pathname);
 }
 
 export function HelpinWidgetVisibility() {

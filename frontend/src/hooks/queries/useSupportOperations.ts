@@ -76,6 +76,9 @@ function useSLAPolicyMutation<TVariables>(
     mutationFn,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.support.slaPolicies(workspaceId) })
+      // Tiers count the policies that use them; companies list the policies that apply.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.slaTiers(workspaceId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.companySLAAll(workspaceId) })
       // Policies re-evaluate open conversations in the background.
       void queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
     },
@@ -122,6 +125,7 @@ export function useReorderSLAPolicies(workspaceId: string) {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.support.slaPolicies(workspaceId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.companySLAAll(workspaceId) })
     },
   })
 }

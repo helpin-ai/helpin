@@ -51,6 +51,15 @@ describe('widget attachment lifecycle', () => {
     await waitFor(() => expect(getByText(/Ready to send/)).toBeTruthy());
     expect(upload).toHaveBeenCalledTimes(2);
   });
+  it('offers no retry for a file the server refused and says how to send', async () => {
+    const refusal = Object.assign(new Error("invoice.pdf can't be sent because its contents don't match its file type"), { refused: true });
+    const upload = vi.fn().mockRejectedValue(refusal);
+    const { getByText, queryByText } = render(<Harness upload={upload} files={[sizedFile('invoice.pdf', 100, 'application/pdf')]} />);
+    fireEvent.click(getByText('Select'));
+    await waitFor(() => expect(getByText(refusal.message)).toBeTruthy());
+    expect(getByText('Remove this file to send your message.')).toBeTruthy();
+    expect(queryByText('Retry')).toBeNull();
+  });
   it('shows progress and cancels removed uploads without reviving them', async () => {
     let complete!: (result: { attachmentId: string; url: string }) => void;
     const upload = vi.fn((_file, _id, options) => { options.onProgress(42); return new Promise<{ attachmentId: string; url: string }>(resolve => { complete = resolve; }); });

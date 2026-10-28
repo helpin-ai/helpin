@@ -104,6 +104,7 @@ type Handlers struct {
 	CRMImport           *handler.CRMImportHandler
 	CRMEmail            *handler.CRMEmailHandler
 	CRMOutreach         *handler.CRMOutreachHandler
+	SupportTeamReply    *handler.SupportTeamReplyHandler
 	CRMCalendar         *handler.CRMCalendarHandler
 	CRMEnrichment       *handler.CRMEnrichmentHandler
 	CRMSignal           *handler.CRMSignalHandler
@@ -346,6 +347,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 
 		// ---- Public routes ----
+		if h.SupportTeamReply != nil {
+			// The "Ask our team to reply" page from AI emails; the token is the credential.
+			r.Route("/public/support/team-reply/{token}", func(r chi.Router) {
+				if h.WidgetRateLimit != nil {
+					r.Use(h.WidgetRateLimit)
+				}
+				r.Get("/", h.SupportTeamReply.Page)
+				r.Post("/", h.SupportTeamReply.Request)
+			})
+		}
 		if h.CustomerPortal != nil {
 			r.Route("/public/portal/{slug}", func(r chi.Router) {
 				if h.WidgetRateLimit != nil {
@@ -1300,6 +1311,17 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies/reorder", h.SupportSLA.Reorder)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-policies/{policyId}", h.SupportSLA.Update)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-policies/{policyId}", h.SupportSLA.Delete)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-tiers", h.SupportSLA.ListTiers)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-teammates", h.SupportSLA.SLATeammates)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-tiers", h.SupportSLA.CreateTier)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-tiers/reorder", h.SupportSLA.ReorderTiers)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-tiers/{tierId}", h.SupportSLA.UpdateTier)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-tiers/{tierId}", h.SupportSLA.DeleteTier)
+					// A company's tier and custom SLA change what it is promised.
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-companies/tier", h.SupportSLA.SetCompanyTier)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-companies/{companyId}", h.SupportSLA.CompanySLA)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-companies/{companyId}/custom-sla", h.SupportSLA.CustomizeCompanySLA)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-companies/{companyId}/custom-sla", h.SupportSLA.RemoveCompanySLA)
 					if h.SupportImports != nil {
 						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/imports", h.SupportImports.List)
 						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/intercom/preview", h.SupportImports.PreviewIntercom)
@@ -1321,6 +1343,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.SupportReports != nil {
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/overview", h.SupportReports.Overview)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/conversations.csv", h.SupportReports.ExportConversations)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/sla/conversations", h.SupportReports.SLAConversations)
 				}
 
 				// Docs coverage

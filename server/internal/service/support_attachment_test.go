@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -84,7 +87,8 @@ func TestSupportAttachmentConfirmUploadRequiresOwningWidgetSession(t *testing.T)
 	db := newTestDB(t)
 	createSupportAttachmentTestTable(t, db)
 	repo := repository.NewSupportAttachmentRepository(db)
-	svc := NewSupportAttachmentService(repo, nil)
+	store := newTestSupportObjectStore(t, map[string][]byte{"private.pdf": []byte("%PDF-1.7\n")})
+	svc := NewSupportAttachmentService(repo, store.client)
 	ownerSessionID := "owner-session"
 	attachment := &model.SupportAttachment{
 		WorkspaceID: "workspace-1", FileName: "private.pdf", FileSize: 256, ContentType: "application/pdf",
@@ -121,7 +125,8 @@ func TestSupportAttachmentCreateSizeAndTypeValidation(t *testing.T) {
 		{"empty", 0, "video/mp4", "recording is empty"},
 		{"negative", -1, "video/mp4", "recording is empty"},
 		{"missing content type", 512, "", "the file type of recording could not be determined"},
-		{"unsupported type", 512, "application/x-executable", "application/x-executable files are not supported"},
+		{"unsupported type", 512, "application/x-executable", "recording can't be sent because this file type isn't accepted"},
+		{"svg from a customer", 512, "image/svg+xml", "recording can't be sent. Please send it as a PNG or PDF."},
 		{"quicktime video", 512, "video/quicktime", ""},
 		{"webm video", 512, "video/webm", ""},
 		{"heic photo", 512, "image/heic", ""},
@@ -219,5 +224,51 @@ func TestSupportAttachmentPolicyMatchesValidation(t *testing.T) {
 	}
 	if allowedMIMETypes["image/heic"] {
 		t.Fatal("HEIC must stay out of the shared PM attachment types")
+	}
+}
+
+// An SVG can run script when its file link is opened, so only agents send them.
+func TestSupportAttachmentSVGIsForAgentsOnly(t *testing.T) {
+	customer := CustomerSupportAttachmentPolicy()
+	for _, contentType := range customer.ContentTypes {
+		if contentType == "image/svg+xml" {
+			t.Fatal("customer policy lists SVG")
+		}
+		if !supportAttachmentTypeAllowed(contentType, supportUploaderCustomer) {
+			t.Fatalf("customer policy lists %s, which validation rejects", contentType)
+		}
+	}
+	if len(customer.ContentTypes) != len(supportAttachmentContentTypes)-1 {
+		t.Fatalf("customer policy lists %d types, want all %d but SVG", len(customer.ContentTypes), len(supportAttachmentContentTypes))
+	}
+	if !slices.Contains(CurrentSupportAttachmentPolicy().ContentTypes, "image/svg+xml") {
+		t.Fatal("agent policy dropped SVG")
+	}
+
+	db := newTestDB(t)
+	createSupportAttachmentTestTable(t, db)
+	svc := NewSupportAttachmentService(repository.NewSupportAttachmentRepository(db), storage.NewS3Client("key", "secret", "bucket", "us-east-1", "http://storage.test", ""))
+	userID := "agent"
+	req := model.CreateSupportAttachmentRequest{FileName: "diagram.svg", FileSize: 512, ContentType: "image/svg+xml"}
+	if _, err := svc.Create(context.Background(), req, "workspace", "conversation", "user", &userID, nil); err != nil {
+		t.Fatalf("agent SVG refused: %v", err)
+	}
+}
+
+func TestSupportAttachmentRejectionCodeMarksFinalRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"wrong contents", fmt.Errorf("confirm: %w", rejectSupportAttachment("a.pdf can't be sent")), SupportAttachmentRefusedCode},
+		{"unfinished upload", &SupportAttachmentRejectedError{Message: "a.pdf did not finish uploading", Retryable: true}, ""},
+		{"other failure", errors.New("database unavailable"), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SupportAttachmentRejectionCode(tc.err); got != tc.want {
+				t.Fatalf("code = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

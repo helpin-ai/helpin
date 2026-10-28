@@ -352,6 +352,35 @@ func TestSupportHandoffCustomerUpdatePrecedesHandoffMessage(t *testing.T) {
 	}
 }
 
+// After the team-reply page confirms the handoff, the customer gets no
+// handoff message; the team still gets the event and the handoff card.
+func TestSupportHandoffSkipsCustomerMessageWhenCustomerWasNotified(t *testing.T) {
+	svc, db, conv, settings := setupAIControlTest(t)
+	raw, _ := json.Marshal(settings)
+	mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('install','ws','key','secret',?,true)`, string(raw))
+	ai := &SupportAIService{conversationRepo: svc.conversationRepo, messageRepo: svc.messageRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), handoffRepo: repository.NewAgentHandoffRepository(db)}
+	if err := ai.EscalateToHumanForMessageWithIssue(context.Background(), "ws", conv.ID, "", "customer_requested_human", "", "", SupportHandoffBrief{ReasonNote: supportTeamReplyReasonNote, CustomerNotified: true}); err != nil {
+		t.Fatal(err)
+	}
+	var replies int64
+	if err := db.Model(&model.SupportMessage{}).Where("sender_type = 'ai' AND message_type = 'reply'").Count(&replies).Error; err != nil {
+		t.Fatal(err)
+	}
+	if replies != 0 {
+		t.Fatalf("customer got %d handoff messages", replies)
+	}
+	var notes []model.SupportMessage
+	if err := db.Where("message_type = 'note'").Find(&notes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0].Metadata, "link in an AI email") {
+		t.Fatalf("handoff card = %+v", notes)
+	}
+	if current := readControlConversation(t, db); derefString(current.AIState) != "escalated" || current.CustomerRequestedHumanAt == nil {
+		t.Fatalf("conversation not handed off: %+v", current)
+	}
+}
+
 func TestSupportAIControlAssignsConfiguredAIOnUnownedConversation(t *testing.T) {
 	svc, db, conv, settings := setupAIControlTest(t)
 	mustExec(t, db, `UPDATE support_conversations SET assigned_agent_id=NULL,ai_state=NULL,ai_active_run_id=NULL`)

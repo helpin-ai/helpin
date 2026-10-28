@@ -23,24 +23,6 @@ export const DAYS = [
   { key: 'sun', label: 'Sunday' },
 ];
 
-export const COMMON_TIMEZONES = [
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Anchorage',
-  'Pacific/Honolulu',
-  'Europe/London',
-  'Europe/Berlin',
-  'Europe/Paris',
-  'Asia/Tokyo',
-  'Asia/Shanghai',
-  'Asia/Kolkata',
-  'Australia/Sydney',
-  'Pacific/Auckland',
-  'UTC',
-];
-
 export const NO_AGENT_VALUE = '__none__';
 export const DEFAULT_ONLINE_REPLY_TEXT = 'We typically reply in a few minutes';
 export const DEFAULT_EMAIL_FALLBACK_DELAY_SECS = 10;

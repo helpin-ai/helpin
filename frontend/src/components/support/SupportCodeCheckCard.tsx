@@ -46,6 +46,11 @@ function TaskStep({ task, workspaceId, conversationId, linkedTaskId, readOnly }:
   </CardRow>;
 }
 
+function runningText(check: SupportCodeCheck) {
+  if (check.phase === 'before_reply') return check.focus ? `Checking the code before replying: ${check.focus}` : 'Checking the code before replying.';
+  return check.focus ? `Checking the code: ${check.focus}` : 'Checking the code for the cause.';
+}
+
 /**
  * Code check card: a running placeholder posted at handoff that the findings
  * fill in place. Rows appear only for what the check found.
@@ -66,7 +71,7 @@ export function SupportCodeCheckCard({ message, check, linkedTaskId, readOnly = 
   let body: ReactNode;
   if (running) {
     body = <div className="text-sm">
-      <p className="flex items-center gap-2"><Loading03Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 motion-reduce:animate-none" />{check.focus ? `Checking the code: ${check.focus}` : 'Checking the code for the cause.'}</p>
+      <p className="flex items-center gap-2"><Loading03Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 motion-reduce:animate-none" />{runningText(check)}</p>
       <p className="mt-0.5 pl-[1.375rem] text-xs text-muted-foreground">Details will appear here when done.</p>
     </div>;
   } else if (check.status === 'failed') {

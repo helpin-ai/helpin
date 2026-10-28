@@ -27,7 +27,7 @@ import { SidebarLifecyclePicker } from './SidebarLifecyclePicker';
 import { SidebarPortalContext } from './SidebarPortalContext';
 import { SidebarPortalConfirmation } from './SidebarPortalConfirmation';
 import { SidebarCompanyDetails } from './SidebarCompanyDetails';
-import { SupportTagPicker } from './SupportTagPicker';
+import { SupportManageTagsButton, SupportTagPicker } from './SupportTagPicker';
 import { CustomerProfileDrawer } from './CustomerProfileDrawer';
 import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useUpdateConversationCustomerName, useUpdateConversationEmailRecipients } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -712,7 +712,14 @@ export function ConversationDetailSidebar({
             </div>
           ) : null}
 
-          <CollapsibleSection title="Tags" icon={Tag01Icon} count={0} defaultOpen persistKey="support-details.tags">
+          <CollapsibleSection
+            title="Tags"
+            icon={Tag01Icon}
+            count={0}
+            defaultOpen
+            persistKey="support-details.tags"
+            action={<SupportManageTagsButton workspaceId={workspaceId} />}
+          >
             <SupportTagPicker
               workspaceId={workspaceId}
               conversationId={conversation.id}

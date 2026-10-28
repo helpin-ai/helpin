@@ -154,6 +154,25 @@ describe('MessageBubble', () => {
     } finally { rendered.cleanup(); }
   });
 
+  it('closes the AI sources list on an outside click', async () => {
+    const rendered = renderBubble({
+      id: 'sourced', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'ai',
+      message_type: 'reply', is_internal: false, content: 'Here is the answer.',
+      metadata: JSON.stringify({ ai_auto_reply: true, ai_sources: [{ docId: 'doc-1', title: 'Refund policy', url: 'https://help.example.com/refunds' }] }),
+      created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z',
+    });
+    try {
+      const trigger = [...rendered.container.querySelectorAll('button')].find((button) => button.textContent === '1 source')!;
+      await act(async () => { trigger.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(document.body.textContent).toContain('Refund policy');
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+      await act(async () => { document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); });
+      expect(document.body.textContent).not.toContain('Refund policy');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    } finally { rendered.cleanup(); }
+  });
+
   it.each(['queued', 'preparing', 'sending', 'translating'] as const)('keeps %s delivery status below the bubble', (pending) => {
     const rendered = renderBubble({ id: 'sending', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user', message_type: 'reply', is_internal: false, content: 'Hello', pending_send: pending, created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' });
     try {
@@ -859,7 +878,7 @@ describe('MessageBubble', () => {
     queryClient.clear()
   })
 
-  it('identifies HTTP links and previews without blocking navigation', () => {
+  it('preserves HTTP destinations without showing a warning for the protocol alone', () => {
     const message: SupportMessage = {
       id: 'msg-http', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer',
       content: 'Open [the page](http://example.com/path)', message_type: 'reply', is_internal: false,
@@ -868,27 +887,40 @@ describe('MessageBubble', () => {
     }
     const rendered = renderBubble(message)
 
-    expect(rendered.container.querySelector('[aria-label="HTTP link"]')).toBeTruthy()
-    expect(rendered.container.textContent).toContain('HTTP link')
-    expect(rendered.container.querySelector('a[href="http://example.com/path"]')?.getAttribute('rel')).toBe('noopener noreferrer')
-    rendered.cleanup()
+    try {
+      expect(rendered.container.querySelector('[aria-label="HTTP link"]')).toBeNull()
+      expect(rendered.container.textContent).not.toContain('HTTP link')
+      expect(rendered.container.querySelector('[aria-label="Potentially harmful"]')).toBeNull()
+      const links = rendered.container.querySelectorAll('a[href="http://example.com/path"]')
+      expect(links).toHaveLength(2)
+      for (const link of links) {
+        expect(link.getAttribute('title')).toBe('http://example.com/path')
+        expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+      }
+    } finally {
+      rendered.cleanup()
+    }
   })
 
-  it('intercepts confirmed malicious links until risk is acknowledged', () => {
+  it.each(['http', 'https'])('intercepts confirmed malicious %s links until risk is acknowledged', (protocol) => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const href = `${protocol}://bad.example/invoice`
     const message: SupportMessage = {
       id: 'msg-malicious', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer',
-      content: 'Open [the invoice](https://bad.example/invoice)', message_type: 'reply', is_internal: false,
+      content: `Open [the invoice](${href})`, message_type: 'reply', is_internal: false,
       metadata: JSON.stringify({
+        link_previews: [{ url: href, host: 'bad.example', title: 'Invoice' }],
         link_security: [{
-          url: 'https://bad.example/invoice', status: 'malicious', threat_types: ['SOCIAL_ENGINEERING'],
+          url: href, status: 'malicious', threat_types: ['SOCIAL_ENGINEERING'],
           checked_at: '2026-08-18T12:00:00Z', expires_at: '2099-08-18T12:30:00Z',
         }],
       }),
       created_at: '2026-08-18T12:00:00Z', updated_at: '2026-08-18T12:00:00Z',
     }
     const rendered = renderBubble(message)
-    const link = rendered.container.querySelector('a[href="https://bad.example/invoice"]') as HTMLAnchorElement
+    const link = rendered.container.querySelector(`a[href="${href}"]`) as HTMLAnchorElement
+    expect(link.querySelector('[aria-label="Potentially harmful"]')).not.toBeNull()
+    expect(rendered.container.querySelectorAll(`a[href="${href}"]`)[1].textContent).toContain('Potentially harmful')
 
     act(() => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
     expect(document.body.textContent).toContain('Potentially harmful link')
@@ -900,7 +932,7 @@ describe('MessageBubble', () => {
     act(() => checkbox.click())
     expect(continueButton.disabled).toBe(false)
     act(() => continueButton.click())
-    expect(open).toHaveBeenCalledWith('https://bad.example/invoice', '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledWith(href, '_blank', 'noopener,noreferrer')
 
     open.mockRestore()
     rendered.cleanup()
@@ -1431,7 +1463,7 @@ Can I export my data?`,
       expect(deliveryLabel(rendered.container)).toContain('Email sent')
       expect(rendered.container.textContent).toContain('87% confident')
       act(() => findButtonByText(rendered.container, '1 source')?.click())
-      expect(rendered.container.textContent).toContain('Help article')
+      expect(document.body.textContent).toContain('Help article')
     } finally { rendered.cleanup() }
   })
 

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -358,5 +360,47 @@ func TestSupportSLABroadenedConditionsDoNotBackdate(t *testing.T) {
 	record := slaRecord(t, db, conversation.ID)
 	if record.Breached || record.FirstResponseState != model.SupportSLAStatePending || !record.FirstResponseDueAt.Equal(changedAt.Add(30*time.Minute)) {
 		t.Fatalf("widened policy back-dated the target: %+v", record)
+	}
+}
+
+func TestSupportSLAInboxFilters(t *testing.T) {
+	_, db, workspaceID, _, _ := newSLATestService(t)
+	now := time.Now().UTC()
+	ids := map[string]string{}
+	for i, tc := range []struct {
+		name     string
+		due      *time.Time
+		breached bool
+	}{
+		{name: "overdue", due: ptrTime(now.Add(-time.Minute)), breached: true},
+		{name: "soon", due: ptrTime(now.Add(20 * time.Minute))},
+		{name: "later", due: ptrTime(now.Add(3 * time.Hour))},
+		{name: "finished"},
+	} {
+		conversation := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspaceID, DisplayID: i + 1, Subject: tc.name, Status: model.SupportConversationStatusOpen, Priority: "medium", Channel: "widget"}
+		if err := db.Create(&conversation).Error; err != nil {
+			t.Fatal(err)
+		}
+		record := model.SupportConversationSLARecord{ConversationID: conversation.ID, WorkspaceID: workspaceID, NextDueAt: tc.due, Breached: tc.breached}
+		if err := db.Create(&record).Error; err != nil {
+			t.Fatal(err)
+		}
+		ids[conversation.ID] = tc.name
+	}
+	conversations := repository.NewSupportConversationRepository(db)
+	for filter, want := range map[string]string{"breached": "overdue", "due_soon": "soon", "active": "later,overdue,soon"} {
+		list, _, err := conversations.List(context.Background(), repository.ConversationRepositoryListParams{
+			ConversationListParams: repository.ConversationListParams{WorkspaceID: workspaceID, SLA: filter}, Role: model.RoleOwner})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, conversation := range list {
+			names = append(names, ids[conversation.ID])
+		}
+		slices.Sort(names)
+		if got := strings.Join(names, ","); got != want {
+			t.Fatalf("sla=%s: %s, want %s", filter, got, want)
+		}
 	}
 }

@@ -80,6 +80,12 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 	if err != nil {
 		return err
 	}
+	// The team sees the code check even when a person took over meanwhile.
+	if conv != nil {
+		if check, runID, ok := s.supportPlanCodeCheck(ctx, plan); ok {
+			s.fillSupportCodeCheckCard(ctx, plan, conv.ID, runID, check)
+		}
+	}
 	if conv == nil || supportPlanDeliveryBlocked(conv) || (conv.AIResumedAt != nil && !plan.CreatedAt.After(*conv.AIResumedAt)) {
 		// Orphaned plan, or the conversation left AI handling (takeover /
 		// escalation / visitor asked for a human): a human owns it now, so the
@@ -121,11 +127,11 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 		return nil
 	}
 
-	block, err := buildChildRunResultBlockWith(ctx, plan, s.runRepo, s.agentService.runMessageRepo, s.agentService)
+	block, evidence, err := s.supportChildResult(ctx, plan)
 	if err != nil {
 		return err
 	}
-	if evidence := s.prepareSupportChildEvidence(ctx, plan, block); len(evidence) > 0 && s.persistSupportChildEvidence(ctx, chatRun.ID, evidence) {
+	if len(evidence) > 0 && s.persistSupportChildEvidence(ctx, chatRun.ID, evidence) {
 		block, err = addSupportEvidenceToChildRunResultBlock(block, evidence)
 		if err != nil {
 			return err
@@ -170,11 +176,10 @@ func (s *SupportChatService) deliverPlanResultViaSuccessor(ctx context.Context, 
 	if err != nil || agent == nil {
 		return err
 	}
-	block, err := buildChildRunResultBlockWith(ctx, plan, s.runRepo, s.agentService.runMessageRepo, s.agentService)
+	block, evidence, err := s.supportChildResult(ctx, plan)
 	if err != nil {
 		return err
 	}
-	evidence := s.prepareSupportChildEvidence(ctx, plan, block)
 	if len(evidence) > 0 {
 		block, err = addSupportEvidenceToChildRunResultBlock(block, evidence)
 		if err != nil {
@@ -186,6 +191,20 @@ func (s *SupportChatService) deliverPlanResultViaSuccessor(ctx context.Context, 
 	}
 	s.supportAIService.publishTypingIndicator(ctx, conv.WorkspaceID, conv.ID, true)
 	return s.planRepo.MarkParentNotified(ctx, conv.WorkspaceID, plan.ID)
+}
+
+// supportChildResult builds the result block the support run receives and the
+// evidence it may cite. A code check arrives as its verdict-first report.
+func (s *SupportChatService) supportChildResult(ctx context.Context, plan *model.CommandBarPlanRecord) (string, []model.SupportRunEvidence, error) {
+	block, err := buildChildRunResultBlockWith(ctx, plan, s.runRepo, s.agentService.runMessageRepo, s.agentService)
+	if err != nil {
+		return "", nil, err
+	}
+	if check, _, ok := s.supportPlanCodeCheck(ctx, plan); ok {
+		block, err = replaceChildRunSummaries(block, renderSupportCodeCheckForAgent(check))
+		return block, supportCodeCheckEvidence(plan, check), err
+	}
+	return block, s.prepareSupportChildEvidence(ctx, plan, block), nil
 }
 
 // prepareSupportChildEvidence converts a completed read-only child handoff

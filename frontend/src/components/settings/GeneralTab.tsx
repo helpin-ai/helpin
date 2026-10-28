@@ -11,28 +11,15 @@ import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Camera01Icon, ArrowRight01Icon, GlobeIcon, Loading01Icon, Delete01Icon } from '@/lib/icons';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { Camera01Icon, Loading01Icon, Delete01Icon } from '@/lib/icons';
+import { TimezoneSelector } from './TimezoneSelector';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useCreateSupportContentSource, useSupportContentSources } from '@/hooks/queries/useSupport';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
-
-const TIMEZONE_LIST: { id: string; offset: string; searchKey: string }[] = (() => {
-  const names = Intl.supportedValuesOf('timeZone');
-  const now = new Date();
-  return names.map((tz) => {
-    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
-    const parts = fmt.formatToParts(now);
-    const gmtStr = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
-    const offset = gmtStr === 'GMT' ? 'UTC+00:00' : gmtStr.replace('GMT', 'UTC');
-    return { id: tz, offset, searchKey: `${tz} ${offset}`.toLowerCase() };
-  });
-})();
 
 export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
   workspaceId: string;
@@ -52,7 +39,6 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
   const [logoUrl, setLogoUrl] = useState(workspace?.logo_url ?? '');
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tzSearch, setTzSearch] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -83,8 +69,6 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
     [savedWebsiteUrl, contentSources],
   );
 
-  const selectedTz = useMemo(() => TIMEZONE_LIST.find((tz) => tz.id === timezone), [timezone]);
-
   const formatNow = useCallback(() =>
     new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
@@ -100,12 +84,6 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
     const id = setInterval(() => setCurrentTime(formatNow()), 60_000);
     return () => clearInterval(id);
   }, [formatNow]);
-
-  const filteredTimezones = useMemo(() => {
-    if (!tzSearch) return TIMEZONE_LIST;
-    const q = tzSearch.toLowerCase();
-    return TIMEZONE_LIST.filter((tz) => tz.searchKey.includes(q));
-  }, [tzSearch]);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -410,47 +388,7 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between font-normal" disabled={!editable}>
-                    <span className="flex items-center gap-2">
-                      <GlobeIcon className="h-4 w-4 text-muted-foreground" />
-                      {timezone}
-                      {selectedTz && <span className="text-muted-foreground">({selectedTz.offset})</span>}
-                    </span>
-                    <ArrowRight01Icon className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[320px] p-0" align="start">
-                  <div className="border-b p-2">
-                      <QuietSearchInput
-                        placeholder="Search timezones..."
-                        value={tzSearch}
-                        onChange={(e) => setTzSearch(e.target.value)}
-                      />
-                  </div>
-                  <div className="max-h-[280px] overflow-y-auto p-1">
-                    {filteredTimezones.length === 0 ? (
-                      <p className="py-4 text-center text-xs text-muted-foreground">No timezones found</p>
-                    ) : (
-                      filteredTimezones.map((tz) => (
-                        <button
-                          key={tz.id}
-                          type="button"
-                          className={cn(
-                            'w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center justify-between',
-                            tz.id === timezone && 'bg-accent font-medium',
-                          )}
-                          onClick={() => { setTimezone(tz.id); setTzSearch(''); }}
-                        >
-                          <span>{tz.id}</span>
-                          <span className="text-xs text-muted-foreground ml-2 shrink-0">{tz.offset}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              <TimezoneSelector id="ws-tz" value={timezone} onChange={setTimezone} disabled={!editable} />
               <p className="text-xs text-muted-foreground">
                 Current date and time: <span className="font-medium text-foreground">{currentTime}</span>
               </p>

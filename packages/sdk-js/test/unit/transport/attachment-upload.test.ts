@@ -152,6 +152,19 @@ describe('attachment upload transport', () => {
     await rejected;
     expect(onProgress).not.toHaveBeenCalledWith(100);
   });
+  it.each([
+    ['attachment_refused', true],
+    [undefined, false],
+  ])('marks a confirmation refused for good (code %s)', async (code, refused) => {
+    const message = "recording.mp4 can't be sent because its contents don't match its file type";
+    fetchMock.mockReset().mockResolvedValueOnce({ ok: true, json: async () => initialized }).mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: message, code }) });
+    const result = start();
+    const failure = result.catch((error: unknown) => error);
+    (await storage()).onload?.();
+    const error = await failure as Error & { refused?: boolean };
+    expect(error.message).toBe(message);
+    expect(error.refused === true).toBe(refused);
+  });
   it('reports malformed initialization responses', async () => {
     fetchMock.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
     await expect(start()).rejects.toThrow(/upload details/i);

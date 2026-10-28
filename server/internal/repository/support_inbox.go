@@ -188,6 +188,19 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 	return messages, nil
 }
 
+// FillNote replaces a note's content and metadata in place, for cards that
+// are posted while work runs and filled when it finishes. It reports whether
+// the note exists.
+func (r *SupportMessageRepository) FillNote(ctx context.Context, workspaceID, conversationID, id, content, metadata string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("id = ? AND workspace_id = ? AND conversation_id = ? AND message_type = ? AND is_internal = ?", id, workspaceID, conversationID, "note", true).
+		Updates(map[string]any{"content": content, "metadata": metadata, "updated_at": time.Now()})
+	if result.Error != nil {
+		return false, fmt.Errorf("fill note: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // UpdateMetadata updates only the persisted metadata for a support message.
 // Link previews are enriched after message creation so a slow external page
 // cannot delay the reply acknowledgement.
@@ -1008,8 +1021,9 @@ type ConversationListParams struct {
 	TagIDs      []string
 	SystemTags  []string
 	AIFilters   []string
-	// SLA narrows to conversations with an overdue target ("breached") or
-	// any SLA target ("active").
+	// SLA narrows to conversations with an overdue target ("breached"), a
+	// target due within model.SupportSLADueSoonWindow ("due_soon"), or any
+	// running SLA target ("active").
 	SLA string
 }
 
@@ -1376,6 +1390,9 @@ func (r *SupportConversationRepository) applyConversationListParams(query *gorm.
 	switch strings.ToLower(strings.TrimSpace(params.SLA)) {
 	case "breached":
 		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND sla.breached)", alias))
+	case "due_soon":
+		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND NOT sla.breached AND sla.next_due_at < ?)", alias),
+			time.Now().UTC().Add(model.SupportSLADueSoonWindow))
 	case "active":
 		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND sla.next_due_at IS NOT NULL)", alias))
 	}

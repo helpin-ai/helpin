@@ -807,6 +807,39 @@ describe('useRealtimeSync task ordering events', () => {
     container.remove()
   })
 
+  it('tracks AI thinking without refetching the conversation', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    useSupportPresenceStore.setState({ aiThinking: {} })
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+    const emit = (action: string) => captured.onEvent?.({ action, entity: 'support_conversation', entity_id: 'conv-1', workspace_id: 'ws-1', actor_id: 'ai' })
+
+    await act(async () => {
+      emit('ai_thinking_started')
+      await Promise.resolve()
+    })
+    expect(useSupportPresenceStore.getState().aiThinking['conv-1']).toBe(true)
+    await act(async () => {
+      emit('ai_thinking_stopped')
+      await Promise.resolve()
+    })
+    expect(useSupportPresenceStore.getState().aiThinking['conv-1']).toBeUndefined()
+    expect(invalidateQueries).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
   it('invalidates custom support view counts for conversation and message updates', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidateQueries = vi.spyOn(client, 'invalidateQueries')

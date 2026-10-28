@@ -348,9 +348,9 @@ type SupportReportSLARow struct {
 	ResolutionState      string
 }
 
-// ListReportSLA returns SLA outcomes of conversations created in [from, to)
+// reportSLAQuery selects SLA records of conversations created in [from, to)
 // that the actor can open.
-func (r *SupportConversationRepository) ListReportSLA(ctx context.Context, scope SupportReportScope, from, to time.Time) ([]SupportReportSLARow, error) {
+func (r *SupportConversationRepository) reportSLAQuery(ctx context.Context, scope SupportReportScope, from, to time.Time) *gorm.DB {
 	query := r.db.WithContext(ctx).Table("support_conversation_slas AS sla").
 		Joins("JOIN support_conversations AS c ON c.id = sla.conversation_id AND c.workspace_id = sla.workspace_id").
 		Where("sla.workspace_id = ? AND c.merged_into_id IS NULL AND c.status <> ? AND c.created_at >= ? AND c.created_at < ?",
@@ -360,12 +360,72 @@ func (r *SupportConversationRepository) ListReportSLA(ctx context.Context, scope
 	if channels := compactStrings(scope.Channels); len(channels) > 0 {
 		query = query.Where("c.channel IN ?", channels)
 	}
+	return query
+}
+
+// ListReportSLA returns SLA outcomes of conversations created in [from, to)
+// that the actor can open.
+func (r *SupportConversationRepository) ListReportSLA(ctx context.Context, scope SupportReportScope, from, to time.Time) ([]SupportReportSLARow, error) {
 	var rows []SupportReportSLARow
-	if err := query.Select(`sla.conversation_id, sla.first_response_state, sla.next_response_breaches,
+	if err := r.reportSLAQuery(ctx, scope, from, to).Select(`sla.conversation_id, sla.first_response_state, sla.next_response_breaches,
 		sla.next_response_state, sla.resolution_state`).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list support report SLA outcomes: %w", err)
 	}
 	return rows, nil
+}
+
+// supportReportSLAOutcomes maps a metric and outcome to the condition that
+// summarizeSupportReportSLA counts, and to the time the outcome happened.
+// A next-response conversation is met only when it finished without a miss.
+var supportReportSLAOutcomes = map[string]map[string]struct{ where, at string }{
+	model.SupportSLAMetricFirstResponse: {
+		model.SupportSLAStateAchieved: {"sla.first_response_state = 'achieved'", "sla.first_response_achieved_at"},
+		model.SupportSLAStateBreached: {"sla.first_response_state = 'breached'", "sla.first_response_breached_at"},
+	},
+	model.SupportSLAMetricNextResponse: {
+		model.SupportSLAStateAchieved: {"sla.next_response_breaches = 0 AND sla.next_response_state = 'achieved'", "CAST(NULL AS timestamp)"},
+		model.SupportSLAStateBreached: {"sla.next_response_breaches > 0", "sla.next_response_breached_at"},
+	},
+	model.SupportSLAMetricResolution: {
+		model.SupportSLAStateAchieved: {"sla.resolution_state = 'achieved'", "sla.resolution_achieved_at"},
+		model.SupportSLAStateBreached: {"sla.resolution_state = 'breached'", "sla.resolution_breached_at"},
+	},
+}
+
+// ValidSupportReportSLAOutcome reports whether metric and outcome name a
+// count the SLA report shows.
+func ValidSupportReportSLAOutcome(metric, outcome string) bool {
+	_, ok := supportReportSLAOutcomes[metric][outcome]
+	return ok
+}
+
+// ListReportSLAConversations returns one page of the conversations behind
+// an SLA report count, newest outcome first, and the total count.
+func (r *SupportConversationRepository) ListReportSLAConversations(ctx context.Context, scope SupportReportScope, from, to time.Time, metric, outcome string, limit, offset int) ([]model.SupportReportSLAConversation, int64, error) {
+	spec, ok := supportReportSLAOutcomes[metric][outcome]
+	if !ok {
+		return nil, 0, fmt.Errorf("unknown SLA outcome %s/%s", metric, outcome)
+	}
+	var total int64
+	if err := r.reportSLAQuery(ctx, scope, from, to).Where(spec.where).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count support report SLA conversations: %w", err)
+	}
+	rows := []model.SupportReportSLAConversation{}
+	if total == 0 {
+		return rows, 0, nil
+	}
+	err := r.reportSLAQuery(ctx, scope, from, to).Where(spec.where).
+		Joins("LEFT JOIN crm_companies AS company ON company.id = c.crm_company_id AND company.workspace_id = c.workspace_id").
+		Joins("LEFT JOIN users AS assignee ON assignee.id = c.assigned_user_id").
+		Select(`c.id, c.display_id, c.subject, c.status, c.priority, c.customer_name, c.customer_email,
+			company.name AS company_name, sla.policy_name, assignee.full_name AS assignee_name,
+			c.created_at, ` + spec.at + ` AS outcome_at, sla.next_response_breaches`).
+		Order(spec.at + " IS NULL").Order(spec.at + " DESC").Order("c.created_at DESC").Order("c.id").
+		Limit(limit).Offset(offset).Scan(&rows).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("list support report SLA conversations: %w", err)
+	}
+	return rows, total, nil
 }
 
 // PortalIntakeDeflectionWindow is how long after opening an article a form

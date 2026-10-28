@@ -94,6 +94,7 @@ func (s *CustomerPortalService) CompanyRequests(ctx context.Context, access *Por
 	if err != nil {
 		return nil, err
 	}
+	s.attachReplyExpectedBy(ctx, &access.Workspace, requests)
 	for i := range requests {
 		// Read state belongs to the requester; colleagues get no unread marks.
 		if requests[i].OwnerIdentityID != access.Identity.ID {

@@ -752,6 +752,7 @@ func main() {
 	)
 	emailFallbackService.SetCRMContactRepository(crmContactRepo)
 	emailFallbackService.SetPortalLinks(customerPortalService)
+	emailFallbackService.SetEmailLinkScanner(supportLinkPreviewService)
 	supportMessageActionsService := service.NewSupportMessageActionsService(supportMessageRepo, emailFallbackService, supportEmailLogRepo, wsPublisher)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	emailFallbackService.SetAttachmentService(supportAttachmentService)
@@ -1560,6 +1561,8 @@ func main() {
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportAIService.SetPortalReplyNotifier(emailFallbackService)
+	supportTeamReplyService := service.NewSupportTeamReplyService(cfg.JWTSecret, cfg.AppBaseURL, supportConversationRepo, workspaceRepo, supportInboxService, supportAIService)
+	emailFallbackService.SetTeamReplyLinks(supportTeamReplyService)
 	supportAIService.SetCuratedGuidanceRepository(curatedGuidanceRepo)
 	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
 		supportAIService.SetKnowledgeReranker(service.NewGovernedSupportKnowledgeReranker(reranker, aiActionRegistry, aiActionExecutionRepo))
@@ -1679,6 +1682,7 @@ func main() {
 	}).SetSLAService(supportSLAService)
 	supportInboxService.SetWebhookService(webhookService)
 	supportSLAService.SetWebhookService(webhookService)
+	commandService.SetSupportSLAService(supportSLAService)
 	supportImportService := service.NewSupportImportService(repository.NewSupportImportRepository(db), supportInboxService, resolvePMImportEncryptionKey(cfg)).
 		SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	supportInboxTriageService.SetEntitlementService(entitlementService)
@@ -2015,6 +2019,7 @@ func main() {
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
 		CRMOutreach:         handler.NewCRMOutreachHandler(crmOutreachService),
+		SupportTeamReply:    handler.NewSupportTeamReplyHandler(supportTeamReplyService),
 		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),
 		CRMEnrichment:       handler.NewCRMEnrichmentHandler(crmEnrichmentService),
 		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),

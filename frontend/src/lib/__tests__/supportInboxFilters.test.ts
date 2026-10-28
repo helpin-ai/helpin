@@ -484,24 +484,41 @@ describe('snooze and SLA filters', () => {
     ];
     const sorted = filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', userId: 'user-1', searchQuery: '', sortOrder: 'sla' });
     expect(sorted.map((c) => c.id)).toEqual(['overdue', 'soon', 'later', 'none']);
-    const breached = filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', userId: 'user-1', searchQuery: '', slaBreached: true });
+    const breached = filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', userId: 'user-1', searchQuery: '', sla: 'breached' });
     expect(breached.map((c) => c.id)).toEqual(['overdue']);
+  });
+
+  it('filters to SLA targets due within the hour, not overdue ones', () => {
+    const dueIn = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+    const conversations = [
+      buildConversation({ id: 'none' }),
+      buildConversation({ id: 'soon', sla: { policy_name: 'P', metrics: [], next_due_at: dueIn(20), breached: false } }),
+      buildConversation({ id: 'later', sla: { policy_name: 'P', metrics: [], next_due_at: dueIn(90), breached: false } }),
+      buildConversation({ id: 'overdue', sla: { policy_name: 'P', metrics: [], next_due_at: dueIn(-5), breached: true } }),
+    ];
+    const dueSoon = filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', userId: 'user-1', searchQuery: '', sla: 'due_soon' });
+    expect(dueSoon.map((c) => c.id)).toEqual(['soon']);
+    const filters = { ...defaultConversationListFiltersForNav('inbox'), sla: 'due_soon' as const };
+    expect(buildConversationListRequestFilters({ navFilter: 'inbox', selectedMailboxId: 'all', searchQuery: '', listFilters: filters })).toMatchObject({ sla: 'due_soon' });
+    const restored = parseSupportInboxViewFilters(buildSupportInboxViewFilters({ navFilter: 'inbox', selectedMailboxId: 'all', searchQuery: '', listFilters: filters }), 'inbox');
+    expect(restored.listFilters.sla).toBe('due_soon');
+    expect(parseSupportInboxViewFilters({ nav_filter: 'inbox', sla: 'whenever' }, 'inbox').listFilters.sla).toBeUndefined();
   });
 
   it('requests the Snoozed view, the SLA sort and the breached filter from the API', () => {
     expect(buildConversationListRequestFilters({ navFilter: 'snoozed', selectedMailboxId: 'all', searchQuery: '', listFilters: defaultConversationListFiltersForNav('snoozed') })).toEqual({ filter: 'snoozed' });
-    const filters = { ...defaultConversationListFiltersForNav('inbox'), sort: 'sla' as const, slaBreached: true };
+    const filters = { ...defaultConversationListFiltersForNav('inbox'), sort: 'sla' as const, sla: 'breached' as const };
     expect(buildConversationListRequestFilters({ navFilter: 'inbox', selectedMailboxId: 'all', searchQuery: '', listFilters: filters })).toMatchObject({ sort: 'sla', sla: 'breached', filter: 'inbox' });
-    expect(hasConversationListChanges({ navFilter: 'inbox', searchQuery: '', listFilters: { ...defaultConversationListFiltersForNav('inbox'), slaBreached: true } })).toBe(true);
+    expect(hasConversationListChanges({ navFilter: 'inbox', searchQuery: '', listFilters: { ...defaultConversationListFiltersForNav('inbox'), sla: 'breached' as const } })).toBe(true);
   });
 
   it('saves and restores the SLA sort and filter in views', () => {
-    const listFilters = { ...defaultConversationListFiltersForNav('snoozed'), sort: 'sla' as const, slaBreached: true };
+    const listFilters = { ...defaultConversationListFiltersForNav('snoozed'), sort: 'sla' as const, sla: 'breached' as const };
     const saved = buildSupportInboxViewFilters({ navFilter: 'snoozed', selectedMailboxId: 'all', searchQuery: '', listFilters });
     expect(saved).toMatchObject({ nav_filter: 'snoozed', sort: 'sla', sla: 'breached' });
     const restored = parseSupportInboxViewFilters(saved, 'inbox');
     expect(restored.navFilter).toBe('snoozed');
-    expect(restored.listFilters).toMatchObject({ sort: 'sla', slaBreached: true });
+    expect(restored.listFilters).toMatchObject({ sort: 'sla', sla: 'breached' });
   });
 });
 

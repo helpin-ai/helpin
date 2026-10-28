@@ -30,5 +30,6 @@ describe('supportAttachmentFiles', () => {
     expect(fileRejection(new File(['x'.repeat(2048)], 'big.png', { type: 'image/png' }), policy)).toContain('larger than 1 KB')
     expect(fileRejection(new File(['x'], 'tool.exe', { type: 'application/x-msdownload' }), policy)).toContain('isn’t a supported file type')
     expect(fileRejection(new File(['x'], 'ok.png', { type: 'image/png' }), policy)).toBeNull()
+    expect(fileRejection(new File(['<svg/>'], 'drawing.svg', { type: 'image/svg+xml' }), policy)).toBe('drawing.svg can’t be sent. Please send it as a PNG or PDF.')
   })
 })

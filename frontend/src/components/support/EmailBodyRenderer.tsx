@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import { useTheme } from 'next-themes';
+import type { SupportLinkSecurity } from '@/lib/pmTypes';
 import {
   COLLAPSED_BODY_ATTR,
   COLLAPSE_HOST_ATTR,
@@ -9,6 +10,9 @@ import {
   measureVisibleEmailContentHeight,
   prepareCollapsedEmailLayout,
 } from './EmailBodyRendererLayout';
+import { markRiskyEmailLinks, riskyEmailLinkHref } from './emailLinkSecurity';
+import { findSupportLinkSecurity } from './helpers';
+import { SupportLinkWarningDialog } from './SupportLink';
 
 interface EmailBodyRendererProps {
   /** Backend-sanitized HTML. Still re-sanitized here as defense-in-depth. */
@@ -17,6 +21,8 @@ interface EmailBodyRendererProps {
   constrainHeight?: boolean;
   /** Shows the email in the app's theme colors instead of the sender's. */
   themeAware?: boolean;
+  /** Link verdicts from the message metadata; flagged links ask before opening. */
+  linkSecurity?: SupportLinkSecurity[];
 }
 
 interface EmailBodyFrameProps {
@@ -24,6 +30,7 @@ interface EmailBodyFrameProps {
   collapsedByDefault: boolean;
   constrainHeight: boolean;
   themed: boolean;
+  linkSecurity?: SupportLinkSecurity[];
 }
 
 // Emails render on a light canvas for authored colors. Theme-aware surfaces
@@ -171,25 +178,27 @@ function hasCollapsibleContent(doc: Document): boolean {
   return doc.querySelector(COLLAPSIBLE_SELECTOR) !== null;
 }
 
-export function EmailBodyRenderer({ html, collapsedByDefault = true, constrainHeight = true, themeAware = false }: EmailBodyRendererProps) {
+export function EmailBodyRenderer({ html, collapsedByDefault = true, constrainHeight = true, themeAware = false, linkSecurity }: EmailBodyRendererProps) {
   const sanitized = useMemo(() => sanitize(html), [html]);
   const srcDoc = useMemo(() => buildSrcDoc(sanitized, themeAware), [sanitized, themeAware]);
   const rendererKey = `${collapsedByDefault ? 'collapsed' : 'expanded'}:${constrainHeight ? 'constrained' : 'full'}:${srcDoc}`;
 
   return (
     <div className="min-w-0">
-      <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} themed={themeAware} collapsedByDefault={collapsedByDefault} constrainHeight={constrainHeight} />
+      <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} themed={themeAware} collapsedByDefault={collapsedByDefault} constrainHeight={constrainHeight} linkSecurity={linkSecurity} />
     </div>
   );
 }
 
-function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight, themed }: EmailBodyFrameProps) {
+function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight, themed, linkSecurity }: EmailBodyFrameProps) {
   const { resolvedTheme } = useTheme();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(40);
   const [ready, setReady] = useState(false);
   const [collapsed, setCollapsed] = useState(collapsedByDefault);
   const [hasCollapsible, setHasCollapsible] = useState(false);
+  const [riskyLink, setRiskyLink] = useState<{ href: string; security: SupportLinkSecurity } | null>(null);
+  const [riskyLinkOpen, setRiskyLinkOpen] = useState(false);
   const collapseSheetRef = useRef<HTMLStyleElement | null>(null);
   const initializedDocumentRef = useRef<Document | null>(null);
   const measureTimerRef = useRef<number | null>(null);
@@ -235,6 +244,7 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight, themed }:
     root.style.setProperty('--email-border', host.getPropertyValue('--border').trim() || '#dedede');
     root.style.setProperty('--email-link', host.getPropertyValue(resolvedTheme === 'dark' ? '--brand-400' : '--brand-500').trim() || (resolvedTheme === 'dark' ? '#8aabff' : '#3e63dd'));
     root.style.setProperty('--email-scheme', resolvedTheme === 'dark' ? 'dark' : 'light');
+    root.style.setProperty('--email-risk', resolvedTheme === 'dark' ? '#f87171' : '#dc2626');
   }, [resolvedTheme, themed]);
 
   useEffect(() => {
@@ -293,6 +303,28 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight, themed }:
     scheduleMeasure();
   }, [collapsed, scheduleMeasure]);
 
+  // Verdicts can arrive after the email renders, so mark links whenever they change.
+  useEffect(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!ready || !doc || !linkSecurity?.length) return;
+    if (markRiskyEmailLinks(doc, linkSecurity) > 0) scheduleMeasure();
+    const openWarning = (event: Event) => {
+      if (event.type === 'keydown' && (event as KeyboardEvent).key !== 'Enter') return;
+      const href = riskyEmailLinkHref(event.target);
+      const security = href ? findSupportLinkSecurity(linkSecurity, href) : undefined;
+      if (!href || security?.status !== 'malicious') return;
+      event.preventDefault();
+      setRiskyLink({ href, security });
+      setRiskyLinkOpen(true);
+    };
+    doc.addEventListener('click', openWarning);
+    doc.addEventListener('keydown', openWarning);
+    return () => {
+      doc.removeEventListener('click', openWarning);
+      doc.removeEventListener('keydown', openWarning);
+    };
+  }, [ready, linkSecurity, scheduleMeasure]);
+
   useEffect(() => {
     if (!ready) return;
     const doc = iframeRef.current?.contentDocument;
@@ -326,6 +358,9 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight, themed }:
           {collapsed ? '··· Show quoted content' : '··· Hide quoted content'}
         </button>
       )}
+      {riskyLink ? (
+        <SupportLinkWarningDialog href={riskyLink.href} security={riskyLink.security} open={riskyLinkOpen} onOpenChange={setRiskyLinkOpen} />
+      ) : null}
     </div>
   );
 }
