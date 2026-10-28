@@ -125,6 +125,7 @@ interface CreateTaskModalProps {
   initialOwnerMemberId?: string;
   initialSprintId?: string;
   preparationContent?: ReactNode;
+  renderPreparation?: (state: { error: string; retry: () => void; cancel: () => void }) => ReactNode;
   prepareDraft?: (teamId: string) => Promise<PreparedTaskDraft>;
   onDraftPrepared?: (draft: PreparedTaskDraft, teamId: string) => void;
   creationBlocked?: boolean;
@@ -305,7 +306,7 @@ export function CreateTaskModal({
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
-  preparationContent, prepareDraft, onDraftPrepared, creationBlocked = false, supportSource = false,
+  preparationContent, renderPreparation, prepareDraft, onDraftPrepared, creationBlocked = false, supportSource = false,
   stackedOverDrawer = false,
   mode = 'task',
   editingTemplate,
@@ -1139,7 +1140,13 @@ export function CreateTaskModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <CreateEntityDialogContent>
+      <CreateEntityDialogContent className={renderPreparation ? 'w-[480px]' : undefined}>
+        {renderPreparation ? renderPreparation({
+          error: draftError,
+          retry: () => setDraftRetry(n => n + 1),
+          cancel: () => { void handleOpenChange(false); },
+        }) : <>
+        <DialogTitle className="sr-only">{isTemplateMode ? 'Task template' : 'Create task'}</DialogTitle>
         {stackedOverDrawer ? (
           <div
             aria-hidden="true"
@@ -1972,6 +1979,7 @@ export function CreateTaskModal({
             </Button>
           </CreateEntityModalFooter>
         </CreateEntityModalFrame>
+        </>}
 
         <UpgradeRequiredDialog
           open={upgradeDialogReason !== null}
