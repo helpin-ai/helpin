@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -94,7 +95,7 @@ func TestListWidgetTeammates_ShowsSupportAccessibleMembersIncludingOffline(t *te
 	svc.SetWorkspaceRepo(repository.NewWorkspaceRepository(db))
 	svc.SetPresenceProvider(presence)
 
-	teammates := svc.listWidgetTeammates(ctx, workspaceID, 10)
+	teammates := svc.listWidgetTeammates(ctx, workspaceID, svc.customerTeammates(ctx, workspaceID, "", time.Now()), 10)
 	if len(teammates) != 4 {
 		t.Fatalf("teammate count = %d, want 4", len(teammates))
 	}

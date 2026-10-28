@@ -250,6 +250,12 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.EscalationMessageAfterHours != nil {
 		current.EscalationMessageAfterHours = *patch.EscalationMessageAfterHours
 	}
+	if patch.EmailHandoffMessage != nil {
+		current.EmailHandoffMessage = strings.TrimSpace(*patch.EmailHandoffMessage)
+	}
+	if patch.EmailHandoffMessageAfterHours != nil {
+		current.EmailHandoffMessageAfterHours = strings.TrimSpace(*patch.EmailHandoffMessageAfterHours)
+	}
 	if patch.HandoffBehavior != nil {
 		current.HandoffBehavior = *patch.HandoffBehavior
 	}
@@ -572,12 +578,6 @@ func isOnline(s model.SupportInboxSettings) bool {
 	return resolveSupportAvailability(s, time.Now()).IsWithinOfficeHours
 }
 
-func parseTimeToMinutes(t string) int {
-	var h, m int
-	fmt.Sscanf(t, "%d:%d", &h, &m)
-	return h*60 + m
-}
-
 func weekdayKey(day time.Weekday) string {
 	switch day {
 	case time.Monday:
@@ -605,40 +605,33 @@ func defaultOutsideHoursMessage(settings model.SupportInboxSettings) string {
 }
 
 func isWithinBusinessHours(settings model.SupportInboxSettings, localNow time.Time) bool {
-	day, ok := settings.BusinessHoursSchedule[weekdayKey(localNow.Weekday())]
-	if !ok || !day.Enabled {
-		return false
-	}
-
 	currentMinutes := localNow.Hour()*60 + localNow.Minute()
-	startMinutes := parseTimeToMinutes(day.Start)
-	endMinutes := parseTimeToMinutes(day.End)
-	return currentMinutes >= startMinutes && currentMinutes < endMinutes
+	for _, window := range businessHoursWindows(settings.BusinessHoursSchedule[weekdayKey(localNow.Weekday())]) {
+		if currentMinutes >= window.start && currentMinutes < window.end {
+			return true
+		}
+	}
+	return false
 }
 
 func nextBusinessHoursStart(settings model.SupportInboxSettings, localNow time.Time) *time.Time {
 	loc := localNow.Location()
 	for dayOffset := 0; dayOffset < 8; dayOffset += 1 {
 		candidateDay := localNow.AddDate(0, 0, dayOffset)
-		day, ok := settings.BusinessHoursSchedule[weekdayKey(candidateDay.Weekday())]
-		if !ok || !day.Enabled {
-			continue
-		}
-
-		startMinutes := parseTimeToMinutes(day.Start)
-		candidateStart := time.Date(
-			candidateDay.Year(),
-			candidateDay.Month(),
-			candidateDay.Day(),
-			startMinutes/60,
-			startMinutes%60,
-			0,
-			0,
-			loc,
-		)
-
-		if candidateStart.After(localNow) {
-			return &candidateStart
+		for _, window := range businessHoursWindows(settings.BusinessHoursSchedule[weekdayKey(candidateDay.Weekday())]) {
+			candidateStart := time.Date(
+				candidateDay.Year(),
+				candidateDay.Month(),
+				candidateDay.Day(),
+				window.start/60,
+				window.start%60,
+				0,
+				0,
+				loc,
+			)
+			if candidateStart.After(localNow) {
+				return &candidateStart
+			}
 		}
 	}
 
@@ -776,6 +769,13 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
+	if req.BusinessHoursSchedule != nil {
+		schedule, err := normalizeBusinessHoursSchedule(merged.BusinessHoursSchedule)
+		if err != nil {
+			return nil, nil, err
+		}
+		merged.BusinessHoursSchedule = schedule
+	}
 	if merged.TranslationCustomerLanguage != "" && supportTranslationLanguages[merged.TranslationCustomerLanguage] == "" {
 		return nil, nil, fmt.Errorf("unsupported customer translation language")
 	}
@@ -797,6 +797,15 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 	}
 	if len([]rune(merged.DelayedTeamReplyMessage)) > 2000 || len([]rune(merged.DelayedTeamReplyMessageNoEmail)) > 2000 {
 		return nil, nil, fmt.Errorf("delayed team reply messages must be at most 2000 characters")
+	}
+	if strings.TrimSpace(merged.EmailHandoffMessage) == "" {
+		merged.EmailHandoffMessage = defaults.EmailHandoffMessage
+	}
+	if strings.TrimSpace(merged.EmailHandoffMessageAfterHours) == "" {
+		merged.EmailHandoffMessageAfterHours = defaults.EmailHandoffMessageAfterHours
+	}
+	if len([]rune(merged.EmailHandoffMessage)) > 2000 || len([]rune(merged.EmailHandoffMessageAfterHours)) > 2000 {
+		return nil, nil, fmt.Errorf("email handoff messages must be at most 2000 characters")
 	}
 
 	if req.AllowedOrigins != nil {

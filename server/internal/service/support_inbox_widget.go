@@ -985,20 +985,12 @@ func (s *SupportInboxService) enrichWidgetConversationOwners(ctx context.Context
 	}
 
 	owners := make(map[string]model.WidgetActiveTeammate, len(ownerIDs))
-	statusByUserID := make(map[string]string, len(ownerIDs))
-	statuses, err := resolveSupportTeammatePresenceStatuses(
-		ctx,
-		s.workspaceRepo,
-		s.presence,
-		s.statusOverrideRepo,
-		workspaceID,
-		time.Now(),
-	)
-	if err == nil {
-		for _, status := range statuses {
-			statusByUserID[status.UserID] = status.Status
-		}
+	now := time.Now()
+	settings, _, err := loadSupportAvailability(ctx, s.installationRepo, workspaceID, now)
+	if err != nil {
+		slog.WarnContext(ctx, "load support settings for widget conversation owners", "error", err, "workspace_id", workspaceID)
 	}
+	statusByUserID := s.customerTeammates(ctx, workspaceID, settings.BusinessHoursTimezone, now).statusByUserID()
 	if s.workspaceRepo != nil {
 		if members, err := s.workspaceRepo.ListMembers(ctx, workspaceID); err == nil {
 			for _, member := range members {
@@ -1064,15 +1056,21 @@ func supportTeammateStatusRank(status string) int {
 	}
 }
 
-// hasOnlineSupportTeammate reports whether at least one support-accessible
-// teammate is currently online (presence-based). It drives the widget's
-// pre-chat IsOnline flag so availability reflects real presence, not just
-// business hours.
-func (s *SupportInboxService) hasOnlineSupportTeammate(ctx context.Context, workspaceID string, now time.Time) bool {
-	return anySupportTeammateOnline(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, workspaceID, now)
+// customerTeammates resolves what customers are told about support teammates.
+// If that fails nobody is available, so customers are never promised a reply
+// that may not come.
+func (s *SupportInboxService) customerTeammates(ctx context.Context, workspaceID, timezone string, now time.Time) supportCustomerTeammates {
+	teammates, err := resolveSupportCustomerTeammates(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, s.responderDirectory, workspaceID, timezone, now)
+	if err != nil {
+		slog.WarnContext(ctx, "resolve teammates available to customers failed; treating as unavailable", "error", err, "workspace_id", workspaceID)
+	}
+	return teammates
 }
 
-func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspaceID string, limit int) []model.WidgetActiveTeammate {
+// listWidgetTeammates returns the support team the widget shows customers:
+// the teammates who answer customers, or everyone with support access while
+// the workspace has no reply history yet.
+func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspaceID string, customerTeammates supportCustomerTeammates, limit int) []model.WidgetActiveTeammate {
 	if s.workspaceRepo == nil {
 		return []model.WidgetActiveTeammate{}
 	}
@@ -1081,25 +1079,16 @@ func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspace
 	if err != nil || len(supportUserIDs) == 0 {
 		return []model.WidgetActiveTeammate{}
 	}
+	responderIDs := customerTeammates.responderUserIDs()
 	supportUserIDSet := make(map[string]struct{}, len(supportUserIDs))
 	for _, userID := range supportUserIDs {
+		if _, ok := responderIDs[userID]; responderIDs != nil && !ok {
+			continue
+		}
 		supportUserIDSet[userID] = struct{}{}
 	}
 
-	statusByUserID := map[string]string{}
-	statuses, err := resolveSupportTeammatePresenceStatuses(
-		ctx,
-		s.workspaceRepo,
-		s.presence,
-		s.statusOverrideRepo,
-		workspaceID,
-		time.Now(),
-	)
-	if err == nil {
-		for _, status := range statuses {
-			statusByUserID[status.UserID] = status.Status
-		}
-	}
+	statusByUserID := customerTeammates.statusByUserID()
 
 	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
 	if err != nil {
@@ -1187,7 +1176,7 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 	}
 
 	now := time.Now()
-	hasOnlineAgent := s.hasOnlineSupportTeammate(ctx, inst.WorkspaceID, now)
+	customerTeammates := s.customerTeammates(ctx, inst.WorkspaceID, settings.BusinessHoursTimezone, now)
 
 	return &model.WidgetConfigResponse{
 		PrivacyNotice: model.WidgetConfigPrivacyNotice{Enabled: settings.PrivacyNoticeEnabled, PolicyURL: settings.PrivacyPolicyURL, Text: settings.PrivacyNoticeText},
@@ -1216,8 +1205,8 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			CSATRating:         settings.CSATEnabled,
 			ForceIdentify:      settings.ForceVisitorIdentity,
 		},
-		Availability:       buildWidgetAvailability(settings, now, hasOnlineAgent),
-		AvailableTeammates: s.listWidgetTeammates(ctx, inst.WorkspaceID, 5),
+		Availability:       buildWidgetAvailability(settings, now, customerTeammates.anyAvailable()),
+		AvailableTeammates: s.listWidgetTeammates(ctx, inst.WorkspaceID, customerTeammates, 5),
 		HelpSpaces:         helpSpaces,
 	}, nil
 }

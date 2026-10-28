@@ -36,11 +36,12 @@ import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
-import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, DEFAULT_EMAIL_FALLBACK_DELAY_SECS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
+import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DEFAULT_EMAIL_FALLBACK_DELAY_SECS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
 import { PreviewLayout } from './chat-widget/PreviewLayout';
+import { BusinessHoursEditor } from './chat-widget/BusinessHoursEditor';
+import { businessHoursDayIssue } from './chat-widget/businessHours';
 import {
   buildPreviewAvailability,
-  normalizeBusinessHoursDay,
   normalizeBusinessHoursSchedule,
   previewEscalationMessage,
   sortHelpSpaceIds,
@@ -48,6 +49,8 @@ import {
 } from './chat-widget/utils';
 import { DelayedTeamReplySettings } from './chat-widget/DelayedTeamReplySettings';
 import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './chat-widget/delayedTeamReply';
+import { EmailHandoffSettings } from './chat-widget/EmailHandoffSettings';
+import { DEFAULT_EMAIL_HANDOFF_MESSAGE, DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS } from './chat-widget/emailHandoff';
 import { CHAT_WIDGET_ESCALATION_TABS } from './chat-widget/escalationTabs';
 import {
   CHAT_WIDGET_AI_RESPONSE_MODES,
@@ -132,6 +135,8 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
   const [escalationMessageBusy, setEscalationMessageBusy] = useState('');
   const [escalationMessageAfterHours, setEscalationMessageAfterHours] = useState('');
+  const [emailHandoffMessage, setEmailHandoffMessage] = useState(DEFAULT_EMAIL_HANDOFF_MESSAGE);
+  const [emailHandoffMessageAfterHours, setEmailHandoffMessageAfterHours] = useState(DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS);
   const [delayedTeamReplyMinutes, setDelayedTeamReplyMinutes] = useState(DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
   const [delayedTeamReplyMessage, setDelayedTeamReplyMessage] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
   const [delayedTeamReplyMessageNoEmail, setDelayedTeamReplyMessageNoEmail] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
@@ -206,6 +211,8 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
       setEscalationMessageBusy(s.escalation_message_busy ?? '');
       setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
+      setEmailHandoffMessage(s.email_handoff_message || DEFAULT_EMAIL_HANDOFF_MESSAGE);
+      setEmailHandoffMessageAfterHours(s.email_handoff_message_after_hours || DEFAULT_EMAIL_HANDOFF_MESSAGE_AFTER_HOURS);
       setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
       setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
       setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
@@ -234,6 +241,9 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   });
   const showAIAssistantEnableBlocker = Boolean(aiAssistantEnableBlocker && (aiEnableAttempted || aiEnabled));
 
+  const businessHoursSchedule = normalizeBusinessHoursSchedule(schedule);
+  // Days whose times cannot be saved show their own message; saving waits until they are fixed.
+  const scheduleHasIssue = businessHoursEnabled && Object.values(businessHoursSchedule).some((day) => businessHoursDayIssue(day) !== null);
   const privacyNoticeError = privacyNoticeEnabled && !getPrivacyPolicyURL(privacyPolicyUrl)
     ? 'Enter a valid Privacy Policy URL to save your changes.'
     : privacyNoticeEnabled && !privacyNoticeText.trim()
@@ -274,6 +284,8 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     escalation_message: escalationMessage,
     escalation_message_busy: escalationMessageBusy || undefined,
     escalation_message_after_hours: escalationMessageAfterHours || undefined,
+    email_handoff_message: emailHandoffMessage,
+    email_handoff_message_after_hours: emailHandoffMessageAfterHours,
     delayed_team_reply_minutes: delayedTeamReplyMinutes,
     delayed_team_reply_message: delayedTeamReplyMessage,
     delayed_team_reply_message_no_email: delayedTeamReplyMessageNoEmail,
@@ -283,7 +295,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     ai_handoff_mailbox_id: aiHandoffMailboxId,
     business_hours_enabled: businessHoursEnabled,
     business_hours_timezone: timezone,
-    business_hours_schedule: normalizeBusinessHoursSchedule(schedule),
+    business_hours_schedule: businessHoursSchedule,
     outside_hours_message: outsideMessage,
     reply_time_preset: replyTimePreset,
     reply_time_custom_minutes: replyTimePreset === 'custom' ? replyTimeCustomMinutes : null,
@@ -304,7 +316,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   };
   const autosave = useSettingsAutosave({
     scopeKey: workspaceId,
-    enabled: hydrated && !billingLoading && !privacyNoticeError,
+    enabled: hydrated && !billingLoading && !privacyNoticeError && !scheduleHasIssue,
     value: settingsDraft,
     // The hook captures this baseline only once after the form is hydrated.
     // Later query refreshes must not replace edits made while a save is pending.
@@ -312,13 +324,6 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     save: (draft: ChatSettingsDraft) => updateMutation.mutateAsync(draft),
     delayMs: 800,
   });
-
-  const updateDay = (dayKey: string, patch: Partial<BusinessHoursDay>) => {
-    setSchedule(prev => ({
-      ...prev,
-      [dayKey]: { ...normalizeBusinessHoursDay(prev[dayKey]), ...patch },
-    }));
-  };
 
   const toggleSection = (key: string) => {
     setExpandedSections(prev => {
@@ -815,6 +820,14 @@ function Dashboard() {
                     </TabsTrigger>
                   ))}
                 </TabsList>
+                <TabsContent value="email" className="mt-0">
+                  <EmailHandoffSettings
+                    message={emailHandoffMessage}
+                    messageAfterHours={emailHandoffMessageAfterHours}
+                    onMessageChange={setEmailHandoffMessage}
+                    onMessageAfterHoursChange={setEmailHandoffMessageAfterHours}
+                  />
+                </TabsContent>
                 <TabsContent value="delayed_team_reply" className="mt-0">
                   <DelayedTeamReplySettings
                     minutes={delayedTeamReplyMinutes}
@@ -1546,37 +1559,7 @@ function Dashboard() {
 
                     <div className="space-y-2">
                       <Label className="text-sm">Schedule</Label>
-                      <div className="space-y-1.5">
-                        {DAYS.map(({ key, label }) => {
-                          const day = normalizeBusinessHoursDay(schedule[key]);
-                          return (
-                            <div key={key} className="flex items-center gap-3">
-                              <div className="w-24">
-                                <Switch
-                                  checked={day.enabled}
-                                  onCheckedChange={(v) => updateDay(key, { enabled: v })}
-                                />
-                                <span className="ml-2 text-sm">{label.slice(0, 3)}</span>
-                              </div>
-                              <Input
-                                type="time"
-                                value={day.start}
-                                onChange={(e) => updateDay(key, { start: e.target.value })}
-                                disabled={!day.enabled}
-                                className="w-28 h-8 text-sm"
-                              />
-                              <span className="text-xs text-muted-foreground">to</span>
-                              <Input
-                                type="time"
-                                value={day.end}
-                                onChange={(e) => updateDay(key, { end: e.target.value })}
-                                disabled={!day.enabled}
-                                className="w-28 h-8 text-sm"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <BusinessHoursEditor schedule={businessHoursSchedule} onChange={setSchedule} />
                     </div>
 
                     <div className="space-y-2">

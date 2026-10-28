@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -142,29 +141,16 @@ func loadSupportAvailability(
 	return settings, resolveSupportAvailability(settings, now), nil
 }
 
-// anySupportTeammateOnline reports whether at least one support-accessible
-// teammate is currently online (presence-based). Shared by the widget's
-// pre-chat availability and AI escalation so both surfaces use one source of
-// truth for "is someone available".
-func anySupportTeammateOnline(
-	ctx context.Context,
-	workspaceRepo *repository.WorkspaceRepository,
-	presence websocket.PresenceProvider,
-	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
-	workspaceID string,
-	now time.Time,
-) bool {
-	statuses, err := resolveSupportTeammatePresenceStatuses(ctx, workspaceRepo, presence, statusOverrideRepo, workspaceID, now)
-	if err != nil {
-		slog.WarnContext(ctx, "resolve teammate presence failed; treating as offline", "error", err, "workspace_id", workspaceID)
-		return false
-	}
-	for _, status := range statuses {
-		if status.Status == model.SupportTeammateStatusOnline {
-			return true
-		}
-	}
-	return false
+// supportTeammatePresence is a support teammate's resolved status plus whether
+// Helpin is open for them right now.
+type supportTeammatePresence struct {
+	status    model.SupportTeammatePresenceStatus
+	connected bool
+}
+
+// activeWithin reports whether the teammate used Helpin within window of now.
+func (p supportTeammatePresence) activeWithin(window time.Duration, now time.Time) bool {
+	return p.status.LastSeenAt != nil && now.UTC().Sub(*p.status.LastSeenAt) <= window
 }
 
 func resolveSupportTeammatePresenceStatuses(
@@ -175,8 +161,27 @@ func resolveSupportTeammatePresenceStatuses(
 	workspaceID string,
 	now time.Time,
 ) ([]model.SupportTeammatePresenceStatus, error) {
+	teammates, err := resolveSupportTeammatePresence(ctx, workspaceRepo, presence, statusOverrideRepo, workspaceID, now)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make([]model.SupportTeammatePresenceStatus, 0, len(teammates))
+	for _, teammate := range teammates {
+		statuses = append(statuses, teammate.status)
+	}
+	return statuses, nil
+}
+
+func resolveSupportTeammatePresence(
+	ctx context.Context,
+	workspaceRepo *repository.WorkspaceRepository,
+	presence websocket.PresenceProvider,
+	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
+	workspaceID string,
+	now time.Time,
+) ([]supportTeammatePresence, error) {
 	if workspaceID == "" || workspaceRepo == nil {
-		return []model.SupportTeammatePresenceStatus{}, nil
+		return nil, nil
 	}
 
 	supportUserIDs, err := workspaceRepo.ListSupportAccessibleUserIDs(ctx, workspaceID)
@@ -184,7 +189,7 @@ func resolveSupportTeammatePresenceStatuses(
 		return nil, err
 	}
 	if len(supportUserIDs) == 0 {
-		return []model.SupportTeammatePresenceStatus{}, nil
+		return nil, nil
 	}
 
 	onlineSet := make(map[string]struct{})
@@ -214,39 +219,51 @@ func resolveSupportTeammatePresenceStatuses(
 	}
 
 	now = now.UTC()
-	statuses := make([]model.SupportTeammatePresenceStatus, 0, len(supportUserIDs))
+	teammates := make([]supportTeammatePresence, 0, len(supportUserIDs))
 	for _, rawUserID := range supportUserIDs {
 		userID := strings.TrimSpace(rawUserID)
 		if userID == "" {
 			continue
 		}
-		entry := model.SupportTeammatePresenceStatus{
-			UserID: userID,
-			Status: model.SupportTeammateStatusOffline,
-			Source: model.SupportTeammateStatusSourceAuto,
+		_, connected := onlineSet[userID]
+		teammate := supportTeammatePresence{
+			status: model.SupportTeammatePresenceStatus{
+				UserID: userID,
+				Source: model.SupportTeammateStatusSourceAuto,
+			},
+			connected: connected,
 		}
 		if ts, ok := lastSeen[userID]; ok && !ts.IsZero() {
 			t := ts.UTC()
-			entry.LastSeenAt = &t
+			teammate.status.LastSeenAt = &t
 		}
+		teammate.status.Status = automaticSupportTeammateStatus(teammate, now)
 		if manualStatus, ok := manualOverrides[userID]; ok {
-			entry.Status = manualStatus
-			entry.Source = model.SupportTeammateStatusSourceManual
-			entry.ManualStatus = &manualStatus
-		} else {
-			recentlyActive := entry.LastSeenAt != nil && now.Sub(*entry.LastSeenAt) <= supportTeammateAwayThreshold
-			if _, ok := onlineSet[userID]; ok {
-				if recentlyActive {
-					entry.Status = model.SupportTeammateStatusOnline
-				} else {
-					entry.Status = model.SupportTeammateStatusAway
-				}
-			} else if recentlyActive {
-				entry.Status = model.SupportTeammateStatusAway
+			teammate.status.Source = model.SupportTeammateStatusSourceManual
+			teammate.status.ManualStatus = &manualStatus
+			// A manual Online holds only while the teammate keeps Helpin open and
+			// uses it; after that they show what Automatic would.
+			if manualStatus != model.SupportTeammateStatusOnline || (connected && teammate.activeWithin(supportTeammateActiveWindow, now)) {
+				teammate.status.Status = manualStatus
 			}
 		}
-		statuses = append(statuses, entry)
+		teammates = append(teammates, teammate)
 	}
 
-	return statuses, nil
+	return teammates, nil
+}
+
+// automaticSupportTeammateStatus is the status Automatic shows: online while
+// connected and recently active, away while idle or just disconnected, and
+// offline otherwise.
+func automaticSupportTeammateStatus(teammate supportTeammatePresence, now time.Time) string {
+	recentlyActive := teammate.activeWithin(supportTeammateAwayThreshold, now)
+	switch {
+	case teammate.connected && recentlyActive:
+		return model.SupportTeammateStatusOnline
+	case teammate.connected || recentlyActive:
+		return model.SupportTeammateStatusAway
+	default:
+		return model.SupportTeammateStatusOffline
+	}
 }

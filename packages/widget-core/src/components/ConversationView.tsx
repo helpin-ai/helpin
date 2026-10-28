@@ -15,6 +15,7 @@ import { AIThinkingMark } from './AIThinkingMark';
 import { CsatRating } from './CsatRating';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 import { resolveWelcomeMessage } from '../welcomeMessage';
+import { availabilityStatusText } from '../utils';
 
 
 interface ConversationViewProps {
@@ -446,7 +447,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
                     ? availability?.replyTimeText || availability?.outsideHoursMessage || 'Our team will follow up as soon as someone is available.'
                     : aiFirst
                       ? 'Our AI assistant will reply first'
-                      : availability?.statusText || 'Online now'}
+                      : availabilityStatusText(availability) || 'Online now'}
                 </span>
               </>
             )}

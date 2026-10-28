@@ -1308,10 +1308,18 @@ export interface UpdateConversationEmailRecipientsRequest {
 
 // ── Support Installation Settings ───────────────────────────────────
 
+/** One open time range as "HH:MM"; end may be "24:00" for midnight. */
+export interface BusinessHoursSlot {
+  start: string;
+  end: string;
+}
+
 export interface BusinessHoursDay {
+  /** Mirrors the first slot for settings saved before slots existed. */
   start: string;
   end: string;
   enabled: boolean;
+  slots?: BusinessHoursSlot[];
 }
 
 export interface SupportInboxSettings {
@@ -1344,6 +1352,8 @@ export interface SupportInboxSettings {
   escalation_message: string;
   escalation_message_busy?: string;
   escalation_message_after_hours?: string;
+  email_handoff_message?: string;
+  email_handoff_message_after_hours?: string;
   delayed_team_reply_minutes?: number;
   delayed_team_reply_message?: string;
   delayed_team_reply_message_no_email?: string;

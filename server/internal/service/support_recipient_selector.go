@@ -19,6 +19,9 @@ type supportRecipientSelection struct {
 	Status model.SupportTeammatePresenceStatus
 }
 
+// supportRecipientAvailability reports whether a candidate can take a conversation now.
+type supportRecipientAvailability func(teammate supportTeammatePresence) bool
+
 type supportRecipientSelectorInput struct {
 	WorkspaceID            string
 	MailboxID              *string
@@ -42,6 +45,7 @@ func selectSupportConversationRecipient(
 	prefRepo *repository.NotificationPreferenceRepository,
 	presence websocket.PresenceProvider,
 	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
+	responderDirectory *SupportResponderDirectory,
 	input supportRecipientSelectorInput,
 ) (*supportRecipientSelection, error) {
 	if workspaceRepo == nil || strings.TrimSpace(input.WorkspaceID) == "" {
@@ -53,7 +57,7 @@ func selectSupportConversationRecipient(
 		now = time.Now()
 	}
 
-	settings, availability, err := loadSupportAvailability(ctx, installationRepo, input.WorkspaceID, now)
+	settings, officeHours, err := loadSupportAvailability(ctx, installationRepo, input.WorkspaceID, now)
 	if err != nil {
 		return nil, err
 	}
@@ -64,19 +68,30 @@ func selectSupportConversationRecipient(
 		input.HandoffTeamID = settings.HandoffTeamID
 	}
 
-	statuses, err := resolveSupportTeammatePresenceStatuses(ctx, workspaceRepo, presence, statusOverrideRepo, input.WorkspaceID, now)
+	teammates, err := resolveSupportTeammatePresence(ctx, workspaceRepo, presence, statusOverrideRepo, input.WorkspaceID, now)
 	if err != nil {
 		return nil, err
 	}
-	if len(statuses) == 0 {
+	if len(teammates) == 0 {
 		return nil, nil
 	}
 
-	statusByUserID := make(map[string]model.SupportTeammatePresenceStatus, len(statuses))
-	allUserIDs := make([]string, 0, len(statuses))
-	for _, status := range statuses {
-		statusByUserID[status.UserID] = status
-		allUserIDs = append(allUserIDs, status.UserID)
+	presenceByUserID := make(map[string]supportTeammatePresence, len(teammates))
+	allUserIDs := make([]string, 0, len(teammates))
+	for _, teammate := range teammates {
+		presenceByUserID[teammate.status.UserID] = teammate
+		allUserIDs = append(allUserIDs, teammate.status.UserID)
+	}
+
+	// Within business hours anyone can take a conversation; outside them only a
+	// teammate who is available to customers right now.
+	availability := supportRecipientAvailability(func(supportTeammatePresence) bool { return true })
+	if input.RequireAvailability && !officeHours.IsWithinOfficeHours {
+		customerTeammates, err := newSupportCustomerTeammates(ctx, responderDirectory, teammates, input.WorkspaceID, settings.BusinessHoursTimezone, now)
+		if err != nil {
+			return nil, err
+		}
+		availability = customerTeammates.available
 	}
 
 	ownerID := strings.TrimSpace(derefString(input.OwnerUserID))
@@ -96,7 +111,7 @@ func selectSupportConversationRecipient(
 					return nil, err
 				}
 				input.PreserveCandidateOrder = true
-				return buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, candidates, "", "mailbox_assignment")
+				return buildSupportRecipientSelection(ctx, prefRepo, availability, input, presenceByUserID, candidates, "", "mailbox_assignment")
 			}
 		}
 		mailboxUserIDs, err := mailboxRepo.ListActiveMemberUserIDs(ctx, input.WorkspaceID, mailboxID)
@@ -109,18 +124,18 @@ func selectSupportConversationRecipient(
 		}
 		mailboxCandidates := append(mailboxUserIDs, adminIDs...)
 		if ownerID != "" && slices.Contains(mailboxCandidates, ownerID) {
-			if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, []string{ownerID}, "", "owner"); err != nil || selection != nil {
+			if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, presenceByUserID, []string{ownerID}, "", "owner"); err != nil || selection != nil {
 				return selection, err
 			}
 		}
-		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, mailboxCandidates, "", "mailbox"); err != nil || selection != nil {
+		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, presenceByUserID, mailboxCandidates, "", "mailbox"); err != nil || selection != nil {
 			return selection, err
 		}
 		return nil, nil
 	}
 
 	if ownerID != "" {
-		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, []string{ownerID}, "", "owner"); err != nil || selection != nil {
+		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, presenceByUserID, []string{ownerID}, "", "owner"); err != nil || selection != nil {
 			return selection, err
 		}
 	}
@@ -131,12 +146,12 @@ func selectSupportConversationRecipient(
 		if err != nil {
 			return nil, err
 		}
-		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, teamUserIDs, teamID, "team"); err != nil || selection != nil {
+		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, presenceByUserID, teamUserIDs, teamID, "team"); err != nil || selection != nil {
 			return selection, err
 		}
 	}
 
-	if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, allUserIDs, "", "workspace"); err != nil || selection != nil {
+	if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, presenceByUserID, allUserIDs, "", "workspace"); err != nil || selection != nil {
 		return selection, err
 	}
 
@@ -146,9 +161,9 @@ func selectSupportConversationRecipient(
 func buildSupportRecipientSelection(
 	ctx context.Context,
 	prefRepo *repository.NotificationPreferenceRepository,
-	availability supportAvailabilitySnapshot,
+	availability supportRecipientAvailability,
 	input supportRecipientSelectorInput,
-	statusByUserID map[string]model.SupportTeammatePresenceStatus,
+	presenceByUserID map[string]supportTeammatePresence,
 	candidateUserIDs []string,
 	teamID string,
 	reason string,
@@ -160,7 +175,7 @@ func buildSupportRecipientSelection(
 		if userID == "" {
 			continue
 		}
-		if _, ok := statusByUserID[userID]; !ok {
+		if _, ok := presenceByUserID[userID]; !ok {
 			continue
 		}
 		if _, ok := seen[userID]; ok {
@@ -175,10 +190,10 @@ func buildSupportRecipientSelection(
 
 	if !input.PreserveCandidateOrder {
 		sort.Slice(uniqueIDs, func(i, j int) bool {
-			left := statusByUserID[uniqueIDs[i]]
-			right := statusByUserID[uniqueIDs[j]]
-			leftRank := supportRecipientStatusRank(left.Status)
-			rightRank := supportRecipientStatusRank(right.Status)
+			left := presenceByUserID[uniqueIDs[i]]
+			right := presenceByUserID[uniqueIDs[j]]
+			leftRank := supportRecipientStatusRank(left.status.Status)
+			rightRank := supportRecipientStatusRank(right.status.Status)
 			if leftRank != rightRank {
 				return leftRank < rightRank
 			}
@@ -187,8 +202,8 @@ func buildSupportRecipientSelection(
 	}
 
 	for _, userID := range uniqueIDs {
-		status := statusByUserID[userID]
-		if input.RequireAvailability && !supportRecipientIsAvailable(availability, status) {
+		teammate := presenceByUserID[userID]
+		if input.RequireAvailability && !availability(teammate) {
 			continue
 		}
 		if input.RequirePreferences {
@@ -215,18 +230,11 @@ func buildSupportRecipientSelection(
 			UserID: userID,
 			TeamID: teamID,
 			Reason: reason,
-			Status: status,
+			Status: teammate.status,
 		}, nil
 	}
 
 	return nil, nil
-}
-
-func supportRecipientIsAvailable(availability supportAvailabilitySnapshot, status model.SupportTeammatePresenceStatus) bool {
-	if availability.IsWithinOfficeHours {
-		return true
-	}
-	return status.Status == model.SupportTeammateStatusOnline
 }
 
 func supportRecipientStatusRank(status string) int {
