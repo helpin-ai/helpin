@@ -327,24 +327,29 @@ func extractSupportPreviewURLs(content string, limit int) []string {
 	seen := make(map[string]struct{}, len(matches))
 	result := make([]string, 0, min(limit, len(matches)))
 	for _, candidate := range matches {
-		normalized, err := normalizeSupportLinkURL(candidate, true)
-		if err != nil {
-			continue
-		}
-		parsed, err := url.Parse(normalized)
-		if err != nil || !isAllowedSupportPreviewURL(parsed) {
-			continue
-		}
-		if _, ok := seen[normalized]; ok {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		result = append(result, normalized)
+		result = appendSupportLinkURL(result, seen, candidate, true)
 		if len(result) == limit {
 			break
 		}
 	}
 	return result
+}
+
+// appendSupportLinkURL normalizes one candidate and appends it when it is a new public web link.
+func appendSupportLinkURL(result []string, seen map[string]struct{}, candidate string, trimMessagePunctuation bool) []string {
+	normalized, err := normalizeSupportLinkURL(candidate, trimMessagePunctuation)
+	if err != nil {
+		return result
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil || !isAllowedSupportPreviewURL(parsed) {
+		return result
+	}
+	if _, ok := seen[normalized]; ok {
+		return result
+	}
+	seen[normalized] = struct{}{}
+	return append(result, normalized)
 }
 
 func trimSupportPreviewURL(raw string) string {

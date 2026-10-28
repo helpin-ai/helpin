@@ -479,12 +479,15 @@ type EmailFallbackService struct {
 	replyDomain            string
 	appBaseURL             string
 	portalLinks            portalRequestLinker
+	emailLinkScanner       supportEmailLinkScanner
 	logger                 *slog.Logger
 	podID                  string
 	pollInterval           time.Duration
 	leaseTTL               time.Duration
 	processingTTL          time.Duration
 	now                    func() time.Time
+	// runAsync starts background follow-up work; tests run it inline.
+	runAsync func(task func())
 }
 
 type EmailFallbackBackfillOptions struct {
@@ -1460,6 +1463,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 		actorID = *teammate.UserID
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, actorID))
+	s.scanInboundEmailLinksAsync(createdMsg, actorID)
 	if recipientsUpdated != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, recipientsUpdated, ""))
 	}
@@ -4037,6 +4041,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		})
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(conversation.WorkspaceID, message, "email:"+message.ID))
 	}
+	s.scanInboundEmailLinksAsync(message, "email:"+message.ID)
 
 	s.logger.InfoContext(ctx, "postmark inbound created support conversation from route",
 		"message_id", strings.TrimSpace(payload.MessageID),

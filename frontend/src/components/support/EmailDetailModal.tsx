@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { InformationCircleIcon } from '@/lib/icons';
 import { useMessageEmailDetail } from '@/hooks/queries/useSupport';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
+import { parseSupportLinkSecurity } from './helpers';
 import { SupportAttachmentGallery } from './SupportAttachmentGallery';
 
 interface EmailDetailModalProps {
@@ -47,6 +49,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
   const cc = formatAddresses(data?.cc_emails);
   const bcc = formatAddresses(data?.bcc_emails);
   const htmlBody = (data?.html_body && data.html_body.trim()) || '';
+  const linkSecurity = useMemo(() => parseSupportLinkSecurity(message.metadata), [message.metadata]);
   const textBody = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
   const timestamp = data?.created_at ?? message.created_at;
   const forwardedAttribution = data?.forwarded_attribution;
@@ -178,7 +181,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
               <div className="mt-6 min-h-0 border-t border-border/60 pt-6">
                 <div data-testid="email-body-scroll" className="max-h-[46vh] min-h-0 overflow-y-auto pb-8 pr-1">
                   {htmlBody ? (
-                    <EmailBodyRenderer themeAware html={htmlBody} collapsedByDefault={false} constrainHeight={false} />
+                    <EmailBodyRenderer themeAware html={htmlBody} collapsedByDefault={false} constrainHeight={false} linkSecurity={linkSecurity} />
                   ) : textBody ? (
                     <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
                       {textBody}
