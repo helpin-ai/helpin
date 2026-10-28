@@ -1,0 +1,493 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+)
+
+func TestSupportSLAPolicyMatchesCompany(t *testing.T) {
+	gold, silver := "tier-gold", "tier-silver"
+	conversation := model.SupportConversation{Priority: "medium", Channel: "email"}
+	acme := &repository.SupportSLACompany{ID: "acme", TierID: &gold}
+	untiered := &repository.SupportSLACompany{ID: "beta"}
+	for _, tc := range []struct {
+		name    string
+		policy  model.SupportSLAPolicy
+		company *repository.SupportSLACompany
+		want    bool
+	}{
+		{"tier matches", model.SupportSLAPolicy{CompanyTierIDs: model.DocsStringArray{gold}}, acme, true},
+		{"other tier", model.SupportSLAPolicy{CompanyTierIDs: model.DocsStringArray{silver}}, acme, false},
+		{"no tier matches untiered company", model.SupportSLAPolicy{CompanyTierIDs: model.DocsStringArray{model.SupportSLANoTier}}, untiered, true},
+		{"no tier matches no company", model.SupportSLAPolicy{CompanyTierIDs: model.DocsStringArray{model.SupportSLANoTier}}, nil, true},
+		{"no tier skips tiered company", model.SupportSLAPolicy{CompanyTierIDs: model.DocsStringArray{model.SupportSLANoTier}}, acme, false},
+		{"tier skips no company", model.SupportSLAPolicy{CompanyTierIDs: model.DocsStringArray{gold}}, nil, false},
+		{"company matches", model.SupportSLAPolicy{CompanyIDs: model.DocsStringArray{"acme"}}, acme, true},
+		{"other company", model.SupportSLAPolicy{CompanyIDs: model.DocsStringArray{"beta"}}, acme, false},
+		{"company skips no company", model.SupportSLAPolicy{CompanyIDs: model.DocsStringArray{"acme"}}, nil, false},
+		{"no company conditions", model.SupportSLAPolicy{}, nil, true},
+	} {
+		tc.policy.Enabled = true
+		if got := supportSLAPolicyMatches(tc.policy, conversation, tc.company); got != tc.want {
+			t.Errorf("%s: got %v", tc.name, got)
+		}
+	}
+	if supportSLACompanyKey(nil) == supportSLACompanyKey(untiered) || supportSLACompanyKey(untiered) == supportSLACompanyKey(acme) {
+		t.Fatal("company keys must differ by company and tier")
+	}
+}
+
+func TestSupportSLAPolicyStart(t *testing.T) {
+	created := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	now := created.Add(3 * time.Hour)
+	tierChanged := created.Add(2 * time.Hour)
+	gold := "gold"
+	company := &repository.SupportSLACompany{ID: "acme", TierID: &gold, TierChangedAt: &tierChanged}
+	key := supportSLACompanyKey(company)
+	conversation := model.SupportConversation{CreatedAt: created}
+	tierPolicy := model.SupportSLAPolicy{CompanyTierIDs: model.DocsStringArray{gold}}
+	original := created.Add(time.Minute)
+
+	for _, tc := range []struct {
+		name     string
+		policy   model.SupportSLAPolicy
+		previous *model.SupportConversationSLARecord
+		want     *time.Time
+	}{
+		{"priority change keeps the original start", tierPolicy, &model.SupportConversationSLARecord{CompanyKey: key, TargetsFrom: &original}, &original},
+		{"company or tier change counts from now", tierPolicy, &model.SupportConversationSLARecord{CompanyKey: "company:none"}, &now},
+		{"record from before tiers keeps the original start", tierPolicy, &model.SupportConversationSLARecord{TargetsFrom: &original}, &original},
+		{"reattaching counts from now", model.SupportSLAPolicy{}, &model.SupportConversationSLARecord{CompanyKey: key, DetachedAt: &original}, &now},
+		{"first tier policy counts from the tier change", tierPolicy, nil, &tierChanged},
+		{"first default policy counts from the start", model.SupportSLAPolicy{}, nil, nil},
+	} {
+		_, from := supportSLAPolicyStart(tc.policy, conversation, company, tc.previous, key, now)
+		if (from == nil) != (tc.want == nil) || (from != nil && !from.Equal(*tc.want)) {
+			t.Errorf("%s: from %v, want %v", tc.name, from, tc.want)
+		}
+	}
+	// A tier set before the conversation started does not move its start.
+	before := created.Add(-time.Hour)
+	early := &repository.SupportSLACompany{ID: "acme", TierID: &gold, TierChangedAt: &before}
+	if _, from := supportSLAPolicyStart(tierPolicy, conversation, early, nil, key, now); from != nil {
+		t.Fatalf("old tier moved the start to %v", from)
+	}
+}
+
+type slaTierFixture struct {
+	sla         *SupportSLAService
+	db          *gorm.DB
+	workspaceID string
+	userID      string
+	start       time.Time
+	displayID   int
+}
+
+func newSLATierFixture(t *testing.T) *slaTierFixture {
+	t.Helper()
+	sla, db, workspaceID, userID, start := newSLATestService(t)
+	return &slaTierFixture{sla: sla, db: db, workspaceID: workspaceID, userID: userID, start: start}
+}
+
+func (f *slaTierFixture) company(t *testing.T, name string) string {
+	t.Helper()
+	company := model.CRMCompany{ID: uuid.NewString(), WorkspaceID: f.workspaceID, DisplayID: name, Name: name}
+	if err := f.db.Create(&company).Error; err != nil {
+		t.Fatal(err)
+	}
+	return company.ID
+}
+
+// conversation creates an open conversation with a customer message at
+// created, for companyID ("" for none).
+func (f *slaTierFixture) conversation(t *testing.T, companyID string, created time.Time) string {
+	t.Helper()
+	f.displayID++
+	conversation := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: f.workspaceID, DisplayID: f.displayID, Subject: "Help",
+		Status: model.SupportConversationStatusOpen, Priority: "medium", Channel: "email", CreatedAt: created}
+	if companyID != "" {
+		conversation.CRMCompanyID = &companyID
+	}
+	if err := f.db.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Create(&model.SupportMessage{ID: uuid.NewString(), WorkspaceID: f.workspaceID, ConversationID: conversation.ID, SenderType: "customer",
+		MessageType: "reply", Content: "Hi", CreatedAt: created, UpdatedAt: created}).Error; err != nil {
+		t.Fatal(err)
+	}
+	return conversation.ID
+}
+
+// runQueue processes the queue as the worker would at at.
+func (f *slaTierFixture) runQueue(t *testing.T, at time.Time) {
+	t.Helper()
+	f.sla.now = func() time.Time { return at }
+	if _, err := f.sla.ProcessQueue(context.Background(), 50); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *slaTierFixture) queued(t *testing.T, conversationID string) bool {
+	t.Helper()
+	var count int64
+	if err := f.db.Model(&model.SupportSLAWork{}).Where("conversation_id = ?", conversationID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	return count > 0
+}
+
+func (f *slaTierFixture) policy(t *testing.T, req model.SupportSLAPolicyRequest) *model.SupportSLAPolicy {
+	t.Helper()
+	policy, err := f.sla.CreatePolicy(context.Background(), f.workspaceID, f.userID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return policy
+}
+
+func (f *slaTierFixture) tier(t *testing.T, name string) *model.SupportSLATier {
+	t.Helper()
+	tier, err := f.sla.CreateTier(context.Background(), f.workspaceID, model.SupportSLATierRequest{Name: name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tier
+}
+
+func (f *slaTierFixture) setTier(t *testing.T, at time.Time, tierID *string, companyIDs ...string) {
+	t.Helper()
+	f.sla.now = func() time.Time { return at }
+	if _, err := f.sla.SetCompanyTier(context.Background(), f.workspaceID, model.SetSupportSLATierRequest{CompanyIDs: companyIDs, TierID: tierID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSupportSLATiersManage(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	gold := f.tier(t, "  Gold   plus ")
+	silver := f.tier(t, "Silver")
+	if gold.Name != "Gold plus" || gold.Position != 0 || silver.Position != 1 {
+		t.Fatalf("tiers %+v %+v", gold, silver)
+	}
+	for name, req := range map[string]model.SupportSLATierRequest{
+		"duplicate": {Name: "gold PLUS"},
+		"reserved":  {Name: "None"},
+		"empty":     {Name: "  "},
+		"too long":  {Name: strings.Repeat("x", 61)},
+	} {
+		if _, err := f.sla.CreateTier(ctx, f.workspaceID, req); !errors.Is(err, ErrSupportSLAPolicyInvalid) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if renamed, err := f.sla.UpdateTier(ctx, f.workspaceID, gold.ID, model.SupportSLATierRequest{Name: "Gold", Description: "Enterprise"}); err != nil || renamed.Name != "Gold" {
+		t.Fatalf("rename: %+v %v", renamed, err)
+	}
+	if _, err := f.sla.UpdateTier(ctx, f.workspaceID, silver.ID, model.SupportSLATierRequest{Name: "gold"}); !errors.Is(err, ErrSupportSLAPolicyInvalid) {
+		t.Fatalf("rename onto another tier: %v", err)
+	}
+	if tiers, err := f.sla.ReorderTiers(ctx, f.workspaceID, []string{silver.ID, gold.ID}); err != nil || tiers[0].ID != silver.ID {
+		t.Fatalf("reorder: %+v %v", tiers, err)
+	}
+	if _, err := f.sla.ReorderTiers(ctx, f.workspaceID, []string{silver.ID}); !errors.Is(err, repository.ErrSupportSLATierNotFound) {
+		t.Fatalf("partial reorder: %v", err)
+	}
+
+	// Policies validate tiers and companies.
+	acme := f.company(t, "Acme")
+	for name, req := range map[string]model.SupportSLAPolicyRequest{
+		"unknown tier":    {Name: "X", FirstResponseMinutes: intPtr(10), CompanyTierIDs: []string{uuid.NewString()}},
+		"unknown company": {Name: "X", FirstResponseMinutes: intPtr(10), CompanyIDs: []string{uuid.NewString()}},
+	} {
+		if _, err := f.sla.CreatePolicy(ctx, f.workspaceID, f.userID, req); !errors.Is(err, ErrSupportSLAPolicyInvalid) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	policy := f.policy(t, model.SupportSLAPolicyRequest{Name: "Gold", FirstResponseMinutes: intPtr(30),
+		CompanyTierIDs: []string{gold.ID, model.SupportSLANoTier}, CompanyIDs: []string{acme}})
+	if len(policy.Companies) != 1 || policy.Companies[0].Name != "Acme" {
+		t.Fatalf("policy companies %+v", policy.Companies)
+	}
+
+	f.setTier(t, f.start, &gold.ID, acme)
+	tiers, err := f.sla.ListTiers(ctx, f.workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tier := range tiers {
+		if tier.ID == gold.ID && (tier.CompanyCount != 1 || tier.PolicyCount != 1) {
+			t.Fatalf("gold usage %+v", tier)
+		}
+	}
+
+	// Deleting a tier clears it from companies and policy conditions.
+	if err := f.sla.DeleteTier(ctx, f.workspaceID, gold.ID); err != nil {
+		t.Fatal(err)
+	}
+	company, err := f.sla.repo.GetCompany(ctx, f.workspaceID, acme)
+	if err != nil || company.TierID != nil || company.TierChangedAt == nil {
+		t.Fatalf("company after tier delete: %+v %v", company, err)
+	}
+	policies, err := f.sla.ListPolicies(ctx, f.workspaceID)
+	if err != nil || len(policies) != 1 || strings.Join(policies[0].CompanyTierIDs, ",") != model.SupportSLANoTier || policies[0].ConditionsChangedAt == nil {
+		t.Fatalf("policy after tier delete: %+v %v", policies, err)
+	}
+	if err := f.sla.DeleteTier(ctx, f.workspaceID, gold.ID); !errors.Is(err, repository.ErrSupportSLATierNotFound) {
+		t.Fatalf("second delete: %v", err)
+	}
+}
+
+func TestSupportSLASetCompanyTierValidates(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	acme := f.company(t, "Acme")
+	gold := f.tier(t, "Gold")
+	tooMany := make([]string, model.SupportSLASetTierLimit+1)
+	for i := range tooMany {
+		tooMany[i] = uuid.NewString()
+	}
+	unknownTier := uuid.NewString()
+	for name, tc := range map[string]struct {
+		req  model.SetSupportSLATierRequest
+		want error
+	}{
+		"no companies":    {model.SetSupportSLATierRequest{TierID: &gold.ID}, ErrSupportSLAPolicyInvalid},
+		"too many":        {model.SetSupportSLATierRequest{CompanyIDs: tooMany, TierID: &gold.ID}, ErrSupportSLAPolicyInvalid},
+		"unknown company": {model.SetSupportSLATierRequest{CompanyIDs: []string{acme, uuid.NewString()}, TierID: &gold.ID}, ErrSupportSLACompanyNotFound},
+		"unknown tier":    {model.SetSupportSLATierRequest{CompanyIDs: []string{acme}, TierID: &unknownTier}, repository.ErrSupportSLATierNotFound},
+	} {
+		if _, err := f.sla.SetCompanyTier(ctx, f.workspaceID, tc.req); !errors.Is(err, tc.want) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if updated, err := f.sla.SetCompanyTier(ctx, f.workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{acme, acme}, TierID: &gold.ID}); err != nil || updated != 1 {
+		t.Fatalf("set: %d %v", updated, err)
+	}
+	// Setting the same tier again changes nothing.
+	if updated, err := f.sla.SetCompanyTier(ctx, f.workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{acme}, TierID: &gold.ID}); err != nil || updated != 0 {
+		t.Fatalf("set again: %d %v", updated, err)
+	}
+	if updated, err := f.sla.SetCompanyTier(ctx, f.workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{acme}}); err != nil || updated != 1 {
+		t.Fatalf("clear: %d %v", updated, err)
+	}
+	f.sla.SetEntitlementService(deniedSLAEntitlements{})
+	var entitlementErr *EntitlementError
+	if _, err := f.sla.SetCompanyTier(ctx, f.workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{acme}, TierID: &gold.ID}); !errors.As(err, &entitlementErr) {
+		t.Fatalf("entitlement: %v", err)
+	}
+}
+
+func TestSupportSLATierChangeCountsFromTheChange(t *testing.T) {
+	f := newSLATierFixture(t)
+	gold := f.tier(t, "Gold")
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Gold", FirstResponseMinutes: intPtr(30), CompanyTierIDs: []string{gold.ID}})
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(480)})
+	acme := f.company(t, "Acme")
+	created := f.start.Add(time.Minute)
+	conversation := f.conversation(t, acme, created)
+	processSLAAt(t, f.sla, f.workspaceID, conversation, created)
+	if record := slaRecord(t, f.db, conversation); record.PolicyName != "Standard" || !record.FirstResponseDueAt.Equal(created.Add(8*time.Hour)) {
+		t.Fatalf("standard record %+v", record)
+	}
+
+	// Three hours in, Acme moves to Gold: its 30 minutes count from the change.
+	upgraded := created.Add(3 * time.Hour)
+	f.setTier(t, upgraded, &gold.ID, acme)
+	if !f.queued(t, conversation) {
+		t.Fatal("tier change did not queue the company's conversation")
+	}
+	f.runQueue(t, upgraded)
+	record := slaRecord(t, f.db, conversation)
+	if record.PolicyName != "Gold" || record.Breached || !record.FirstResponseDueAt.Equal(upgraded.Add(30*time.Minute)) {
+		t.Fatalf("gold record %+v", record)
+	}
+
+	// Raising the priority keeps that start: same company, same tier.
+	if err := f.db.Model(&model.SupportConversation{}).Where("id = ?", conversation).Update("priority", "urgent").Error; err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, f.sla, f.workspaceID, conversation, upgraded.Add(10*time.Minute))
+	if record := slaRecord(t, f.db, conversation); !record.FirstResponseDueAt.Equal(upgraded.Add(30 * time.Minute)) {
+		t.Fatalf("priority change moved the start: %+v", record)
+	}
+
+	// A conversation of another company without a tier stays on Standard.
+	other := f.conversation(t, f.company(t, "Beta"), created)
+	processSLAAt(t, f.sla, f.workspaceID, other, upgraded)
+	if record := slaRecord(t, f.db, other); record.PolicyName != "Standard" {
+		t.Fatalf("other company %+v", record)
+	}
+}
+
+func TestSupportSLAFirstTierPolicyCountsFromTierChange(t *testing.T) {
+	f := newSLATierFixture(t)
+	gold := f.tier(t, "Gold")
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Gold", FirstResponseMinutes: intPtr(30), CompanyTierIDs: []string{gold.ID}})
+	acme := f.company(t, "Acme")
+	created := f.start.Add(time.Minute)
+	conversation := f.conversation(t, acme, created)
+	processSLAAt(t, f.sla, f.workspaceID, conversation, created)
+	var count int64
+	f.db.Model(&model.SupportConversationSLARecord{}).Where("conversation_id = ?", conversation).Count(&count)
+	if count != 0 {
+		t.Fatal("no policy applies yet, but a record was written")
+	}
+	upgraded := created.Add(2 * time.Hour)
+	f.setTier(t, upgraded, &gold.ID, acme)
+	f.runQueue(t, upgraded.Add(time.Minute))
+	if record := slaRecord(t, f.db, conversation); record.Breached || !record.FirstResponseDueAt.Equal(upgraded.Add(30*time.Minute)) {
+		t.Fatalf("first tier policy %+v", record)
+	}
+}
+
+func TestSupportSLACompanyChangeCountsFromTheChange(t *testing.T) {
+	f := newSLATierFixture(t)
+	gold := f.tier(t, "Gold")
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Gold", FirstResponseMinutes: intPtr(30), CompanyTierIDs: []string{gold.ID}})
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(480)})
+	acme := f.company(t, "Acme")
+	f.setTier(t, f.start, &gold.ID, acme)
+	created := f.start.Add(time.Minute)
+	conversation := f.conversation(t, "", created)
+	processSLAAt(t, f.sla, f.workspaceID, conversation, created)
+	if record := slaRecord(t, f.db, conversation); record.PolicyName != "Standard" {
+		t.Fatalf("without company %+v", record)
+	}
+	linked := created.Add(2 * time.Hour)
+	if err := f.db.Model(&model.SupportConversation{}).Where("id = ?", conversation).Update("crm_company_id", acme).Error; err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, f.sla, f.workspaceID, conversation, linked)
+	if record := slaRecord(t, f.db, conversation); record.PolicyName != "Gold" || record.Breached || !record.FirstResponseDueAt.Equal(linked.Add(30*time.Minute)) {
+		t.Fatalf("after linking the company %+v", record)
+	}
+}
+
+func TestSupportSLACustomCompanySLA(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	gold := f.tier(t, "Gold")
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Gold urgent", Priorities: []string{"urgent"}, FirstResponseMinutes: intPtr(15), CompanyTierIDs: []string{gold.ID}})
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Silver", FirstResponseMinutes: intPtr(60), CompanyTierIDs: []string{model.SupportSLANoTier}})
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(480), ResolutionMinutes: intPtr(2880)})
+	disabled := false
+	off := f.policy(t, model.SupportSLAPolicyRequest{Name: "Off", FirstResponseMinutes: intPtr(5)})
+	if _, err := f.sla.UpdatePolicy(ctx, f.workspaceID, off.ID, model.SupportSLAPolicyRequest{Name: "Off", Enabled: &disabled, FirstResponseMinutes: intPtr(5)}); err != nil {
+		t.Fatal(err)
+	}
+	acme := f.company(t, "Acme")
+	f.setTier(t, f.start, &gold.ID, acme)
+
+	view, err := f.sla.CompanySLA(ctx, f.workspaceID, acme)
+	if err != nil || view.TierName == nil || *view.TierName != "Gold" || view.HasCustom || len(view.Policies) != 2 ||
+		view.Policies[0].Name != "Gold urgent" || view.Policies[1].Name != "Standard" {
+		t.Fatalf("company SLA %+v %v", view, err)
+	}
+
+	later := f.start.Add(time.Hour)
+	f.sla.now = func() time.Time { return later }
+	policies, err := f.sla.CustomizeCompanySLA(ctx, f.workspaceID, f.userID, acme)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, policy := range policies {
+		names = append(names, policy.Name)
+	}
+	if strings.Join(names, ",") != "Acme · Gold urgent,Acme · Standard,Gold urgent,Silver,Standard,Off" {
+		t.Fatalf("policies after customize: %v", names)
+	}
+	custom := policies[0]
+	if len(custom.CompanyTierIDs) != 0 || strings.Join(custom.CompanyIDs, ",") != acme || !custom.ActiveSince.Equal(later) ||
+		strings.Join(custom.Priorities, ",") != "urgent" || *custom.FirstResponseMinutes != 15 || custom.Companies[0].Name != "Acme" {
+		t.Fatalf("custom policy %+v", custom)
+	}
+	if _, err := f.sla.CustomizeCompanySLA(ctx, f.workspaceID, f.userID, acme); !errors.Is(err, ErrSupportSLACustomExists) {
+		t.Fatalf("second customize: %v", err)
+	}
+	if view, err := f.sla.CompanySLA(ctx, f.workspaceID, acme); err != nil || !view.HasCustom || !view.Policies[0].Custom || len(view.Policies) != 4 {
+		t.Fatalf("company SLA after customize %+v %v", view, err)
+	}
+
+	// New conversations of Acme get the custom policy.
+	conversation := f.conversation(t, acme, later.Add(time.Minute))
+	processSLAAt(t, f.sla, f.workspaceID, conversation, later.Add(time.Minute))
+	if record := slaRecord(t, f.db, conversation); record.PolicyName != "Acme · Standard" {
+		t.Fatalf("custom policy not applied: %+v", record)
+	}
+
+	if err := f.sla.RemoveCompanySLA(ctx, f.workspaceID, acme); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.sla.RemoveCompanySLA(ctx, f.workspaceID, acme); !errors.Is(err, repository.ErrSupportSLAPolicyNotFound) {
+		t.Fatalf("second remove: %v", err)
+	}
+	f.runQueue(t, later.Add(2*time.Minute))
+	if record := slaRecord(t, f.db, conversation); record.PolicyName != "Standard" {
+		t.Fatalf("after removing the custom SLA: %+v", record)
+	}
+	if _, err := f.sla.CompanySLA(ctx, f.workspaceID, uuid.NewString()); !errors.Is(err, ErrSupportSLACompanyNotFound) {
+		t.Fatalf("unknown company: %v", err)
+	}
+	empty := newSLATierFixture(t)
+	if _, err := empty.sla.CustomizeCompanySLA(ctx, empty.workspaceID, empty.userID, empty.company(t, "Solo")); !errors.Is(err, ErrSupportSLAPolicyInvalid) {
+		t.Fatalf("customize without policies: %v", err)
+	}
+}
+
+func TestSupportSLATierCommands(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	gold := f.tier(t, "Gold")
+	acme := f.company(t, "Acme")
+	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	commands.SetSupportSLAService(f.sla)
+	def, ok := commands.Definition("support.set_company_sla_tier")
+	if !ok || !def.Mutating || len(def.RequiredPermissionsAll) != 1 || def.RequiredPermissionsAll[0] != authorization.PermSupportAdmin {
+		t.Fatalf("set tier definition %+v", def)
+	}
+	member := model.InternalCommandContext{WorkspaceID: f.workspaceID, ActorID: f.userID, ActorRole: model.RoleAdmin}
+	run := func(meta model.InternalCommandContext, input string) (map[string]any, error) {
+		raw, err := commands.executeSupportSetCompanySLATier(ctx, meta, json.RawMessage(input))
+		if err != nil {
+			return nil, err
+		}
+		var out map[string]any
+		return out, json.Unmarshal(raw, &out)
+	}
+
+	out, err := run(member, `{"company_id":"`+acme+`","tier":"gold"}`)
+	if err != nil || out["changed"] != true || out["tier"].(map[string]any)["id"] != gold.ID {
+		t.Fatalf("set by name: %+v %v", out, err)
+	}
+	if out, err := run(member, `{"company_id":"`+acme+`","tier":"`+gold.ID+`"}`); err != nil || out["changed"] != false {
+		t.Fatalf("set again by id: %+v %v", out, err)
+	}
+	if _, err := run(member, `{"company_id":"`+acme+`","tier":"Platinum"}`); err == nil || !strings.Contains(err.Error(), "tiers are: Gold") {
+		t.Fatalf("unknown tier: %v", err)
+	}
+	if _, err := run(member, `{"company_id":"`+uuid.NewString()+`","tier":"Gold"}`); err == nil || !strings.Contains(err.Error(), "company") {
+		t.Fatalf("unknown company: %v", err)
+	}
+	if _, err := run(model.InternalCommandContext{WorkspaceID: f.workspaceID}, `{"company_id":"`+acme+`"}`); err == nil {
+		t.Fatal("set without a workspace member")
+	}
+	if out, err := run(member, `{"company_id":"`+acme+`","tier":null}`); err != nil || out["changed"] != true || out["tier"] != nil {
+		t.Fatalf("clear: %+v %v", out, err)
+	}
+	raw, err := commands.executeSupportListSLATiers(ctx, member, nil)
+	if err != nil || !strings.Contains(string(raw), `"name":"Gold"`) {
+		t.Fatalf("list: %s %v", raw, err)
+	}
+}

@@ -6114,6 +6114,106 @@
         "x-helpin-toolset": "pm"
       }
     },
+    "/support/companies/{company_id}/sla-tier": {
+      "put": {
+        "description": "Set a company's SLA tier by tier name or ID, or clear it with an empty tier. SLA policies that match the tier apply to the company's open conversations from now on. Requires support admin access.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "setCompanySlaTier",
+        "parameters": [
+          {
+            "description": "CRM company ID.",
+            "in": "path",
+            "name": "company_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "tier": {
+                    "description": "Tier name or ID; empty or null clears the tier.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Set a company's SLA tier",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "set_company_sla_tier",
+        "x-helpin-scope": "helpin.support.write",
+        "x-helpin-toolset": "support"
+      }
+    },
     "/support/conversations": {
       "get": {
         "description": "List support conversations with optional status and search filters.\n\n**Required scope:** `helpin.support.read`.",
@@ -7690,6 +7790,62 @@
           "Support"
         ],
         "x-helpin-mcp-tool": "get_support_setup",
+        "x-helpin-scope": "helpin.support.read",
+        "x-helpin-toolset": "support"
+      }
+    },
+    "/support/sla-tiers": {
+      "get": {
+        "description": "List the workspace's SLA tiers, such as Gold or Standard, and how many companies carry each.\n\n**Required scope:** `helpin.support.read`.",
+        "operationId": "listSupportSlaTiers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "List SLA tiers",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "list_support_sla_tiers",
         "x-helpin-scope": "helpin.support.read",
         "x-helpin-toolset": "support"
       }

@@ -1300,6 +1300,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies/reorder", h.SupportSLA.Reorder)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-policies/{policyId}", h.SupportSLA.Update)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-policies/{policyId}", h.SupportSLA.Delete)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-tiers", h.SupportSLA.ListTiers)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-tiers", h.SupportSLA.CreateTier)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-tiers/reorder", h.SupportSLA.ReorderTiers)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-tiers/{tierId}", h.SupportSLA.UpdateTier)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-tiers/{tierId}", h.SupportSLA.DeleteTier)
+					// A company's tier and custom SLA change what it is promised.
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-companies/tier", h.SupportSLA.SetCompanyTier)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-companies/{companyId}", h.SupportSLA.CompanySLA)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-companies/{companyId}/custom-sla", h.SupportSLA.CustomizeCompanySLA)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-companies/{companyId}/custom-sla", h.SupportSLA.RemoveCompanySLA)
 					if h.SupportImports != nil {
 						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/imports", h.SupportImports.List)
 						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/intercom/preview", h.SupportImports.PreviewIntercom)

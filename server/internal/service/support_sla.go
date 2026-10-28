@@ -135,6 +135,9 @@ func (s *SupportSLAService) normalizePolicy(ctx context.Context, workspaceID str
 	if policy.MailboxIDs, err = normalizeSLAList(req.MailboxIDs, func(v string) bool { return mailboxes[v] }, "inbox"); err != nil {
 		return err
 	}
+	if err := s.normalizePolicyCompanies(ctx, workspaceID, req, policy); err != nil {
+		return err
+	}
 	policy.Name = name
 	policy.BusinessHours = req.BusinessHours
 	policy.PauseWhileWaiting = req.PauseWhileWaiting == nil || *req.PauseWhileWaiting
@@ -144,10 +147,17 @@ func (s *SupportSLAService) normalizePolicy(ctx context.Context, workspaceID str
 // ListPolicies returns the workspace's policies in evaluation order.
 func (s *SupportSLAService) ListPolicies(ctx context.Context, workspaceID string) ([]model.SupportSLAPolicy, error) {
 	policies, err := s.repo.ListPolicies(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
 	if policies == nil {
 		policies = []model.SupportSLAPolicy{}
 	}
-	return policies, err
+	targets := make([]*model.SupportSLAPolicy, len(policies))
+	for i := range policies {
+		targets[i] = &policies[i]
+	}
+	return policies, s.attachPolicyCompanies(ctx, workspaceID, targets...)
 }
 
 // CreatePolicy adds a policy after the existing ones. It applies to
@@ -171,7 +181,7 @@ func (s *SupportSLAService) CreatePolicy(ctx context.Context, workspaceID, actor
 	if err := s.repo.CreatePolicy(ctx, policy); err != nil {
 		return nil, err
 	}
-	return policy, nil
+	return policy, s.attachPolicyCompanies(ctx, workspaceID, policy)
 }
 
 // UpdatePolicy replaces a policy's settings. New targets apply to
@@ -188,7 +198,7 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 		return nil, err
 	}
 	wasEnabled := policy.Enabled
-	before := [3][]string{policy.Priorities, policy.MailboxIDs, policy.Channels}
+	before := [5][]string{policy.Priorities, policy.MailboxIDs, policy.Channels, policy.CompanyTierIDs, policy.CompanyIDs}
 	if req.Enabled != nil {
 		policy.Enabled = *req.Enabled
 	}
@@ -198,7 +208,7 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 	if err := s.normalizePolicy(ctx, workspaceID, req, policy); err != nil {
 		return nil, err
 	}
-	after := [3][]string{policy.Priorities, policy.MailboxIDs, policy.Channels}
+	after := [5][]string{policy.Priorities, policy.MailboxIDs, policy.Channels, policy.CompanyTierIDs, policy.CompanyIDs}
 	for i := range before {
 		if !sameSLAConditionValues(before[i], after[i]) {
 			policy.ConditionsChangedAt = timePtr(s.now())
@@ -206,6 +216,9 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 		}
 	}
 	if err := s.repo.SavePolicy(ctx, policy); err != nil {
+		return nil, err
+	}
+	if err := s.attachPolicyCompanies(ctx, workspaceID, policy); err != nil {
 		return nil, err
 	}
 	return policy, s.repo.EnqueueOpenRecords(ctx, workspaceID, s.now())
@@ -358,7 +371,8 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 			return nil
 		}
 		closed := conversation.Status == model.SupportConversationStatusResolved || conversation.Status == model.SupportConversationStatusSpam
-		in := supportSLAInput{Conversation: *conversation, Now: now, Previous: previous}
+		companyKey := supportSLACompanyKey(inputs.Company)
+		in := supportSLAInput{Conversation: *conversation, Now: now, Previous: previous, CompanyKey: companyKey}
 		var snapshot supportSLATargets
 		hasSnapshot := false
 		if previous != nil && previous.DetachedAt == nil {
@@ -385,7 +399,7 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 			}
 			var policy *model.SupportSLAPolicy
 			for i := range policies {
-				if supportSLAPolicyMatches(policies[i], *conversation) {
+				if supportSLAPolicyMatches(policies[i], *conversation, inputs.Company) {
 					policy = &policies[i]
 					break
 				}
@@ -395,23 +409,15 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 				return nil
 			case policy == nil:
 				record := detachSupportSLARecord(*previous, now)
+				record.CompanyKey = companyKey
 				changed = supportSLAVisibleChange(*previous, record)
 				return repo.SaveRecord(ctx, &record)
 			case hasSnapshot && snapshot.PolicyID == policy.ID:
 				in.Targets, in.AppliedAt, in.TargetsFrom = snapshot, previous.PolicyAppliedAt, previous.TargetsFrom
 			default:
 				in.Targets = supportSLATargetsFromPolicy(*policy)
-				switch {
-				case previous != nil && previous.DetachedAt != nil:
-					// A policy applying again after none did starts from now,
-					// so a pause in SLA tracking never back-dates breaches.
-					in.Switched, in.AppliedAt, in.TargetsFrom = true, timePtr(now), timePtr(now)
-				case previous != nil:
-					in.Switched, in.AppliedAt, in.TargetsFrom = true, timePtr(now), previous.TargetsFrom
-				case policy.ConditionsChangedAt != nil && conversation.CreatedAt.Before(*policy.ConditionsChangedAt):
-					// The conversation matches through a later condition change.
-					in.AppliedAt, in.TargetsFrom = policy.ConditionsChangedAt, policy.ConditionsChangedAt
-				}
+				in.AppliedAt, in.TargetsFrom = supportSLAPolicyStart(*policy, *conversation, inputs.Company, previous, companyKey, now)
+				in.Switched = previous != nil
 			}
 		}
 		in.Replies = make([]supportSLAReply, 0, len(inputs.Replies))
@@ -441,6 +447,35 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 		s.inbox.publishConversationUpdated(&model.SupportConversation{ID: conversationID, WorkspaceID: workspaceID}, "")
 	}
 	return nil
+}
+
+// supportSLAPolicyStart returns when a newly selected policy applies and the
+// earliest time its targets count from.
+//   - Applying again after no policy did, or after the conversation's company
+//     or its tier changed, counts from now: the promise did not exist before.
+//   - Replacing another policy for any other reason (priority, inbox,
+//     channel) keeps the original start, so a stricter policy can make a
+//     target overdue at once.
+//   - A first policy counts from the conversation's start, unless the
+//     conversation only matches through a later condition or tier change.
+func supportSLAPolicyStart(policy model.SupportSLAPolicy, conversation model.SupportConversation, company *repository.SupportSLACompany, previous *model.SupportConversationSLARecord, companyKey string, now time.Time) (appliedAt, targetsFrom *time.Time) {
+	switch {
+	case previous != nil && previous.DetachedAt != nil:
+		return timePtr(now), timePtr(now)
+	case previous != nil && previous.CompanyKey != "" && previous.CompanyKey != companyKey:
+		return timePtr(now), timePtr(now)
+	case previous != nil:
+		return timePtr(now), previous.TargetsFrom
+	}
+	var from *time.Time
+	if policy.ConditionsChangedAt != nil && conversation.CreatedAt.Before(*policy.ConditionsChangedAt) {
+		from = policy.ConditionsChangedAt
+	}
+	if len(policy.CompanyTierIDs) > 0 && company != nil && company.TierChangedAt != nil &&
+		conversation.CreatedAt.Before(*company.TierChangedAt) && (from == nil || company.TierChangedAt.After(*from)) {
+		from = company.TierChangedAt
+	}
+	return from, from
 }
 
 // supportSLAVisibleChange reports whether teammates would see a difference.

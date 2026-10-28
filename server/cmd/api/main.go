@@ -1673,6 +1673,7 @@ func main() {
 	}).SetSLAService(supportSLAService)
 	supportInboxService.SetWebhookService(webhookService)
 	supportSLAService.SetWebhookService(webhookService)
+	commandService.SetSupportSLAService(supportSLAService)
 	supportImportService := service.NewSupportImportService(repository.NewSupportImportRepository(db), supportInboxService, resolvePMImportEncryptionKey(cfg)).
 		SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	supportInboxTriageService.SetEntitlementService(entitlementService)

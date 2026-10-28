@@ -232,36 +232,36 @@ func TestEvaluateSupportSLABusinessHours(t *testing.T) {
 func TestSupportSLAPolicyMatches(t *testing.T) {
 	policy := slaPolicy(intPtr(5), nil, nil)
 	conversation := slaConversation(model.SupportConversationStatusOpen)
-	if !supportSLAPolicyMatches(policy, conversation) {
+	if !supportSLAPolicyMatches(policy, conversation, nil) {
 		t.Fatal("empty conditions should match")
 	}
 	policy.Priorities = model.DocsStringArray{"urgent"}
-	if supportSLAPolicyMatches(policy, conversation) {
+	if supportSLAPolicyMatches(policy, conversation, nil) {
 		t.Fatal("priority condition ignored")
 	}
 	policy.Priorities = model.DocsStringArray{"high"}
 	policy.MailboxIDs = model.DocsStringArray{"shared"}
-	if !supportSLAPolicyMatches(policy, conversation) {
+	if !supportSLAPolicyMatches(policy, conversation, nil) {
 		t.Fatal("shared inbox should match conversations without an inbox")
 	}
 	mailbox := "billing"
 	conversation.MailboxID = &mailbox
-	if supportSLAPolicyMatches(policy, conversation) {
+	if supportSLAPolicyMatches(policy, conversation, nil) {
 		t.Fatal("inbox condition ignored")
 	}
 	policy.MailboxIDs = nil
 	policy.Channels = model.DocsStringArray{"email"}
-	if supportSLAPolicyMatches(policy, conversation) {
+	if supportSLAPolicyMatches(policy, conversation, nil) {
 		t.Fatal("channel condition ignored")
 	}
 	policy.Channels = nil
 	policy.ActiveSince = slaStart.Add(time.Minute)
-	if supportSLAPolicyMatches(policy, conversation) {
+	if supportSLAPolicyMatches(policy, conversation, nil) {
 		t.Fatal("policies must not apply to conversations created before they were enabled")
 	}
 	policy.ActiveSince = slaStart
 	policy.Enabled = false
-	if supportSLAPolicyMatches(policy, conversation) {
+	if supportSLAPolicyMatches(policy, conversation, nil) {
 		t.Fatal("disabled policy matched")
 	}
 }

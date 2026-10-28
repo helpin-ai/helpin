@@ -73,6 +73,36 @@ func (r *SupportSLARepository) CreatePolicy(ctx context.Context, policy *model.S
 	})
 }
 
+// CreatePoliciesFirst inserts policies ahead of the workspace's existing
+// ones, in the order given.
+func (r *SupportSLARepository) CreatePoliciesFirst(ctx context.Context, workspaceID string, policies []model.SupportSLAPolicy) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.SupportSLAPolicy{}).Where("workspace_id = ?", workspaceID).
+			Update("position", gorm.Expr("position + ?", len(policies))).Error; err != nil {
+			return fmt.Errorf("make room for SLA policies: %w", err)
+		}
+		for i := range policies {
+			policies[i].WorkspaceID, policies[i].Position = workspaceID, i
+			if policies[i].ID == "" {
+				policies[i].ID = uuid.NewString()
+			}
+			if err := tx.Create(&policies[i]).Error; err != nil {
+				return fmt.Errorf("create SLA policy: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// DeletePolicies removes several policies at once.
+func (r *SupportSLARepository) DeletePolicies(ctx context.Context, workspaceID string, policyIDs []string) error {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id IN ?", workspaceID, policyIDs).
+		Delete(&model.SupportSLAPolicy{}).Error; err != nil {
+		return fmt.Errorf("delete SLA policies: %w", err)
+	}
+	return nil
+}
+
 // CountPolicies returns how many policies the workspace has.
 func (r *SupportSLARepository) CountPolicies(ctx context.Context, workspaceID string) (int64, error) {
 	var count int64
@@ -87,6 +117,7 @@ func (r *SupportSLARepository) SavePolicy(ctx context.Context, policy *model.Sup
 		Updates(map[string]any{
 			"name": policy.Name, "enabled": policy.Enabled, "priorities": policy.Priorities,
 			"mailbox_ids": policy.MailboxIDs, "channels": policy.Channels,
+			"company_tier_ids": policy.CompanyTierIDs, "company_ids": policy.CompanyIDs,
 			"first_response_minutes": policy.FirstResponseMinutes, "next_response_minutes": policy.NextResponseMinutes,
 			"resolution_minutes": policy.ResolutionMinutes, "business_hours": policy.BusinessHours,
 			"pause_while_waiting": policy.PauseWhileWaiting, "active_since": policy.ActiveSince,
@@ -265,8 +296,10 @@ func (r *SupportSLARepository) ListDueWakes(ctx context.Context, now time.Time, 
 // SupportSLAInputs is what one evaluation reads.
 type SupportSLAInputs struct {
 	Conversation *model.SupportConversation
-	Replies      []SupportSLAReplyRow
-	Previous     *model.SupportConversationSLARecord
+	// Company is the conversation's company, nil without one.
+	Company  *SupportSLACompany
+	Replies  []SupportSLAReplyRow
+	Previous *model.SupportConversationSLARecord
 }
 
 // SupportSLAReplyRow is one public reply.
@@ -300,6 +333,11 @@ func (r *SupportSLARepository) LoadInputs(ctx context.Context, workspaceID, conv
 		return nil, fmt.Errorf("load conversation for SLA: %w", err)
 	}
 	inputs := &SupportSLAInputs{Conversation: &conversation}
+	if conversation.CRMCompanyID != nil && *conversation.CRMCompanyID != "" {
+		if inputs.Company, err = r.GetCompany(ctx, workspaceID, *conversation.CRMCompanyID); err != nil {
+			return nil, err
+		}
+	}
 	if err := db.Model(&model.SupportMessage{}).Select("sender_type, created_at").
 		Where("workspace_id = ? AND conversation_id = ? AND message_type = 'reply' AND is_internal = ? AND system_event_type IS NULL",
 			workspaceID, conversationID, false).
