@@ -21,6 +21,7 @@ it('edits saved filters locally and submits them with existing search and scope'
   const { root, click, onSave } = setup();
   click('High'); expect(onSave).not.toHaveBeenCalled(); click('Save');
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'Urgent work', filters: expect.objectContaining({ nav_filter: 'waiting', priority: 'urgent,high', search: 'billing', future_field: 'preserved' }) }));
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ is_shared: false }));
   expect(view.filters.priority).toBe('urgent'); act(() => root.unmount());
 });
 it('cancels without saving a draft', () => {
@@ -33,7 +34,7 @@ it.each([true, false])('uses settings for SLA availability: %s', (enabled) => {
   act(() => root.unmount());
 });
 
-it('creates a private view from shared inbox defaults without inheriting current filters', () => {
+it('creates a shared view from shared inbox defaults without inheriting current filters', () => {
   const original = useSupportInboxStore.getState();
   const currentFilters = { ...defaultConversationListFiltersForNav('resolved'), priorities: ['low'] as const };
   useSupportInboxStore.setState({ navFilter: 'resolved', searchQuery: 'old search', selectedMailboxId: 'another-inbox', conversationListFilters: { ...currentFilters, priorities: [...currentFilters.priorities] } });
@@ -51,7 +52,7 @@ it('creates a private view from shared inbox defaults without inheriting current
     name.dispatchEvent(new Event('input', { bubbles: true }));
   });
   act(() => button('Create view').click());
-  expect(onSave).toHaveBeenCalledWith({ name: 'New queue', is_shared: false, filters: { nav_filter: 'inbox', states: 'open,waiting_on_customer' } });
+  expect(onSave).toHaveBeenCalledWith({ name: 'New queue', is_shared: true, filters: { nav_filter: 'inbox', states: 'open,waiting_on_customer' } });
   expect(useSupportInboxStore.getState()).toMatchObject({ navFilter: 'resolved', searchQuery: 'old search', selectedMailboxId: 'another-inbox', conversationListFilters: currentFilters });
   useSupportInboxStore.setState(original);
   act(() => root.unmount());

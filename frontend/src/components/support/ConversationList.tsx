@@ -180,7 +180,7 @@ export function ConversationList({
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
-  const [saveViewShared, setSaveViewShared] = useState(false);
+  const [saveViewShared, setSaveViewShared] = useState(canCreateSharedViews);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const createInboxView = useCreateSupportInboxView(workspaceId);
@@ -428,7 +428,7 @@ export function ConversationList({
       onSuccess: (view) => {
         setSaveViewOpen(false);
         setSaveViewName('');
-        setSaveViewShared(false);
+        setSaveViewShared(canCreateSharedViews);
         onViewCreated?.(view);
       },
     });
@@ -645,6 +645,7 @@ export function ConversationList({
                         className="w-full justify-center"
                         onClick={() => {
                           setFilterPopoverOpen(false);
+                          setSaveViewShared(canCreateSharedViews);
                           setSaveViewOpen(true);
                         }}
                       >

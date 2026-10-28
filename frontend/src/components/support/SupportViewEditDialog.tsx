@@ -26,7 +26,7 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
   onClose: () => void;
 }) {
   const [name, setName] = useState(view?.name ?? '');
-  const [shared, setShared] = useState(view?.is_shared ?? false);
+  const [shared, setShared] = useState(view?.is_shared ?? canManageSettings);
   const [draft, setDraft] = useState(() => parseSupportInboxViewFilters(view?.filters, 'inbox'));
   const save = () => {
     if (!name.trim() || isPending) return;

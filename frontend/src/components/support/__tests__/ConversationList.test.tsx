@@ -642,8 +642,10 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
-  it('saves the current filters as a support view', () => {
-    const mutate = vi.fn((_payload, options?: { onSuccess?: () => void }) => options?.onSuccess?.())
+  it.each([true, false])('saves changed filters as a view with sharing %s', (shared) => {
+    const createdView = { id: 'new-view', name: 'Billing followups', filters: { nav_filter: 'waiting' } };
+    const onViewCreated = vi.fn();
+    const mutate = vi.fn((_payload, options?: { onSuccess?: (view: typeof createdView) => void }) => options?.onSuccess?.(createdView))
     mockUseCreateSupportInboxView.mockReturnValue({
       mutate,
       isPending: false,
@@ -667,7 +669,7 @@ describe('ConversationList presence resync', () => {
     const root = createRoot(container)
 
     act(() => {
-      root.render(<ConversationList workspaceId="ws-1" userId="user-1" canCreateSharedViews />)
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" canCreateSharedViews onViewCreated={onViewCreated} />)
     })
 
     const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
@@ -693,9 +695,8 @@ describe('ConversationList presence resync', () => {
     })
 
     const sharedSwitch = document.body.querySelector('#support-view-shared') as HTMLButtonElement
-    act(() => {
-      sharedSwitch.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    expect(sharedSwitch.getAttribute('aria-checked')).toBe('true')
+    if (!shared) act(() => sharedSwitch.click())
 
     const saveButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Save') as HTMLButtonElement
     act(() => {
@@ -704,7 +705,7 @@ describe('ConversationList presence resync', () => {
 
     expect(mutate).toHaveBeenCalledWith({
       name: 'Billing followups',
-      is_shared: true,
+      is_shared: shared,
       filters: {
         nav_filter: 'waiting',
         states: 'waiting_on_customer',
@@ -718,6 +719,8 @@ describe('ConversationList presence resync', () => {
       },
     }, expect.any(Object))
 
+    expect(onViewCreated).toHaveBeenCalledWith(createdView)
+    expect(document.body.querySelector('#support-view-name')).toBeNull()
     act(() => root.unmount())
   })
 
