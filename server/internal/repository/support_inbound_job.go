@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,4 +56,41 @@ func (r *SupportInboundJobRepository) Finish(ctx context.Context, job *model.Sup
 		values = map[string]any{"status": status, "last_error": "Processing failed; inspect server logs using the job ID.", "lease_token": "", "available_at": now.Add(delay)}
 	}
 	return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).Where("id = ? AND lease_token = ? AND status = ?", job.ID, job.LeaseToken, "processing").Updates(values).Error
+}
+
+// SupportInboundWaitingSummary counts unfinished jobs of one kind.
+type SupportInboundWaitingSummary struct {
+	Waiting int64
+	// Retrying counts waiting jobs that already failed at least once.
+	Retrying int64
+	// OldestSince is when the longest-waiting job began waiting; nil when none wait.
+	OldestSince *time.Time
+}
+
+// WaitingSummary reports unfinished jobs of a kind. A recovery request starts a
+// new wait, so a recovered job counts from the request, not the original receipt.
+func (r *SupportInboundJobRepository) WaitingSummary(ctx context.Context, kind string) (SupportInboundWaitingSummary, error) {
+	var summary SupportInboundWaitingSummary
+	waiting := func() *gorm.DB {
+		return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).Where("kind = ? AND status IN ?", kind, []string{"pending", "processing"})
+	}
+	if err := waiting().Count(&summary.Waiting).Error; err != nil {
+		return summary, fmt.Errorf("count waiting inbound jobs: %w", err)
+	}
+	if summary.Waiting == 0 {
+		return summary, nil
+	}
+	if err := waiting().Where("attempts > 0").Count(&summary.Retrying).Error; err != nil {
+		return summary, fmt.Errorf("count retrying inbound jobs: %w", err)
+	}
+	var oldest model.SupportInboundJob
+	if err := waiting().Select("created_at", "recovery_requested_at").Order("COALESCE(recovery_requested_at, created_at) ASC").Limit(1).Find(&oldest).Error; err != nil {
+		return summary, fmt.Errorf("find oldest waiting inbound job: %w", err)
+	}
+	since := oldest.CreatedAt
+	if oldest.RecoveryRequestedAt != nil && oldest.RecoveryRequestedAt.After(since) {
+		since = *oldest.RecoveryRequestedAt
+	}
+	summary.OldestSince = &since
+	return summary, nil
 }
