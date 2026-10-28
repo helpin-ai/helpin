@@ -72,7 +72,6 @@ export function SupportLinkWarningDialog({ href, security, open, onOpenChange }:
 
 export function SupportLink({ href, security, children, className = '', showInlineIndicator = true, ...props }: SupportLinkProps) {
   const [warningOpen, setWarningOpen] = useState(false);
-  const isHTTP = href?.toLowerCase().startsWith('http://') ?? false;
   const isMalicious = security?.status === 'malicious';
 
   const handleClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
@@ -81,11 +80,11 @@ export function SupportLink({ href, security, children, className = '', showInli
     setWarningOpen(true);
   };
 
-  const indicator = showInlineIndicator && (isMalicious || isHTTP) ? (
+  const indicator = showInlineIndicator && isMalicious ? (
     <span
-      aria-label={isMalicious ? 'Potentially harmful' : 'HTTP link'}
-      title={isMalicious ? 'Potentially harmful link' : 'This link starts with HTTP. The site may redirect to HTTPS.'}
-      className={`ml-0.5 inline-flex align-text-bottom ${isMalicious ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
+      aria-label="Potentially harmful"
+      title="Potentially harmful link"
+      className="ml-0.5 inline-flex align-text-bottom text-red-600 dark:text-red-400"
     >
       <AlertCircleIcon className="h-3.5 w-3.5" aria-hidden="true" />
     </span>
