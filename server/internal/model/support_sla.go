@@ -103,13 +103,14 @@ const SupportSLAPolicyCompanyLimit = 50
 // SupportSLATier is a level of support promised to companies, such as Gold.
 // Companies carry at most one tier; policies match it.
 type SupportSLATier struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ID string `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	// The unique (workspace_id, lower(name)) index serves workspace lookups.
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null"`
 	Name        string    `json:"name" gorm:"not null"`
 	Description string    `json:"description" gorm:"not null;default:''"`
 	Position    int       `json:"position" gorm:"type:integer;not null;default:0"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	CreatedAt   time.Time `json:"created_at" gorm:"type:timestamptz;not null;default:now();autoCreateTime"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"type:timestamptz;not null;default:now();autoUpdateTime"`
 	// CompanyCount and PolicyCount show where the tier is used.
 	CompanyCount int64 `json:"company_count" gorm:"-"`
 	PolicyCount  int   `json:"policy_count" gorm:"-"`
