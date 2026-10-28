@@ -435,39 +435,15 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	return nil
 }
 
-// nextOpenForCustomer says when business hours start again. It uses the
-// customer's own clock when their widget reported a timezone, and otherwise
-// the business-hours timezone with its zone name.
+// nextOpenForCustomer says when business hours start again, on the customer's
+// clock when it is known.
 func (s *SupportAIService) nextOpenForCustomer(ctx context.Context, conv *model.SupportConversation, settings model.SupportInboxSettings, now time.Time) string {
-	loc, err := time.LoadLocation(settings.BusinessHoursTimezone)
-	if err != nil {
-		return ""
-	}
-	nextOpen := nextBusinessHoursStart(settings, now.In(loc))
-	if customerLoc := s.customerLocation(ctx, conv); customerLoc != nil {
-		return humanizeNextOpenForCustomer(nextOpen, now.In(customerLoc))
-	}
-	return humanizeNextOpen(nextOpen, now.In(loc))
+	return supportNextOpenForCustomer(ctx, s.sessionRepo, conv, settings, now)
 }
 
 // customerLocation returns the timezone the customer's widget reported, or nil when it is unknown.
 func (s *SupportAIService) customerLocation(ctx context.Context, conv *model.SupportConversation) *time.Location {
-	if s.sessionRepo == nil || conv == nil {
-		return nil
-	}
-	session, err := s.sessionRepo.GetLatestByConversation(ctx, conv.WorkspaceID, conv.ID)
-	if err != nil {
-		slog.WarnContext(ctx, "load widget session for customer timezone", "error", err, "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID)
-		return nil
-	}
-	if session == nil || session.Timezone == nil || strings.TrimSpace(*session.Timezone) == "" {
-		return nil
-	}
-	loc, err := time.LoadLocation(strings.TrimSpace(*session.Timezone))
-	if err != nil {
-		return nil
-	}
-	return loc
+	return supportCustomerLocation(ctx, s.sessionRepo, conv)
 }
 
 func (s *SupportAIService) publishVisitorConversationsRefresh(ctx context.Context, workspaceID, anonymousID string) {

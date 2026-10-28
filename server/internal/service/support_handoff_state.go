@@ -1,11 +1,14 @@
 package service
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // resolveHandoffState maps availability at handoff time to a customer-facing state.
@@ -88,6 +91,41 @@ func selectEmailHandoffTemplate(s model.SupportInboxSettings, withinOfficeHours 
 		return custom
 	}
 	return fallback
+}
+
+// supportNextOpenForCustomer says when business hours start again. It uses the
+// customer's own clock when their widget reported a timezone, and otherwise
+// the business-hours timezone with its zone name.
+func supportNextOpenForCustomer(ctx context.Context, sessionRepo *repository.SupportInboxSessionRepository, conv *model.SupportConversation, settings model.SupportInboxSettings, now time.Time) string {
+	loc, err := time.LoadLocation(settings.BusinessHoursTimezone)
+	if err != nil {
+		return ""
+	}
+	nextOpen := nextBusinessHoursStart(settings, now.In(loc))
+	if customerLoc := supportCustomerLocation(ctx, sessionRepo, conv); customerLoc != nil {
+		return humanizeNextOpenForCustomer(nextOpen, now.In(customerLoc))
+	}
+	return humanizeNextOpen(nextOpen, now.In(loc))
+}
+
+// supportCustomerLocation returns the timezone the customer's widget reported, or nil when it is unknown.
+func supportCustomerLocation(ctx context.Context, sessionRepo *repository.SupportInboxSessionRepository, conv *model.SupportConversation) *time.Location {
+	if sessionRepo == nil || conv == nil {
+		return nil
+	}
+	session, err := sessionRepo.GetLatestByConversation(ctx, conv.WorkspaceID, conv.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "load widget session for customer timezone", "error", err, "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID)
+		return nil
+	}
+	if session == nil || session.Timezone == nil || strings.TrimSpace(*session.Timezone) == "" {
+		return nil
+	}
+	loc, err := time.LoadLocation(strings.TrimSpace(*session.Timezone))
+	if err != nil {
+		return nil
+	}
+	return loc
 }
 
 // humanizeNextOpen renders a next-open time relative to localNow in the
