@@ -95,7 +95,8 @@ Imported history is kept out of live features:
 - it is never judged against SLA targets. An imported conversation that is
   open, or that a customer reopens later, gets the targets of its matching
   policy counted from that moment, the cutover. A conversation a teammate
-  already answered in Intercom has no first-response target; the customer's
+  already answered in Intercom has no first-response target, while a reply
+  made in Helpin after the import counts as usual; the customer's
   open question gets a next-response target from the cutover. Closed
   imports get no targets;
 - it sends no webhooks, and neither do the messages copied with it;

@@ -68,9 +68,9 @@ SLA target:
 - the first response, until a teammate first replies;
 - after that, the next response, while the customer waits for the team.
 
-Nothing is shown while no target runs, while the clock is paused (the AI is
-answering, or the team waits on the customer), or once the target is
-overdue. Customers never see resolution targets, policy names, tiers or
+It shows only on active requests, the ones waiting on the team. Nothing is
+shown while no response target runs, while the AI is answering, or once the
+time has passed, including on a page left open. Customers never see resolution targets, policy names, tiers or
 missed targets. The setting is off by default.
 
 ## AI on portal requests

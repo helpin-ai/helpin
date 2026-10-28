@@ -161,10 +161,10 @@ type supportSLAInput struct {
 	TargetsFrom *time.Time
 	// CompanyKey is the company and tier the targets were selected with.
 	CompanyKey string
-	// HistoryBefore marks replies before it as history: an imported
-	// conversation a teammate already answered elsewhere has no
-	// first-response target.
-	HistoryBefore *time.Time
+	// HistoryThrough marks replies at or before it as history copied from
+	// another help desk: a conversation a teammate already answered there
+	// has no first-response target.
+	HistoryThrough *time.Time
 }
 
 // evaluateSupportSLA recomputes a conversation's SLA state. Only teammate
@@ -207,7 +207,7 @@ func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
 	state.aiHolding = in.AIOwnsNow && !state.closed
 	state.humanSince = in.HumanSince
 	state.targetsFrom = in.TargetsFrom
-	state.historyBefore = in.HistoryBefore
+	state.historyThrough = in.HistoryThrough
 	if state.aiHolding && in.HumanSince != nil {
 		record.AIHoldingSince = previous.AIHoldingSince
 		if record.AIHoldingSince == nil {
@@ -285,7 +285,7 @@ type supportSLAEvalState struct {
 	resolved, closed        bool
 	aiOnly, aiHolding       bool
 	humanSince, targetsFrom *time.Time
-	historyBefore           *time.Time
+	historyThrough          *time.Time
 	newBreaches             []string
 	openDue, wakeDue        []*time.Time
 	breachedNow             bool
@@ -334,7 +334,7 @@ func (st *supportSLAEvalState) firstResponse(record, previous *model.SupportConv
 	if firstCustomer == nil || (firstTeammate != nil && firstTeammate.Before(*firstCustomer)) {
 		return
 	}
-	if st.historyBefore != nil && firstTeammate != nil && firstTeammate.Before(*st.historyBefore) {
+	if st.historyThrough != nil && firstTeammate != nil && !firstTeammate.After(*st.historyThrough) {
 		return
 	}
 	if st.aiOnly && firstTeammate == nil {

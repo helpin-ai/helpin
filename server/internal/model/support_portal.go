@@ -144,6 +144,9 @@ type SupportPortalRequest struct {
 	CompanyName     *string `json:"-"`
 }
 
+// PortalRequestStatusActive is a portal request waiting on the team.
+const PortalRequestStatusActive = "active"
+
 // PortalRequestStatus exposes the customer-facing lifecycle. Open requests
 // awaiting a customer reply share the inbox's derived Waiting view.
 func PortalRequestStatus(status, lastPublicSenderType string, customerAwaitingResponse bool) string {
@@ -158,7 +161,7 @@ func PortalRequestStatus(status, lastPublicSenderType string, customerAwaitingRe
 		}
 	default:
 	}
-	return "active"
+	return PortalRequestStatusActive
 }
 
 // PortalMessagePreview turns message text (often Markdown) into a short

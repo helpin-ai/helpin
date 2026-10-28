@@ -10,8 +10,8 @@ import (
 
 // portalReplyExpectedBy is when the team's reply is due, for customers: the
 // running first-response target, else the running next-response target.
-// It is nil when nothing is running, the clock is paused (the AI is
-// answering, or the team waits on the customer), or the target is overdue:
+// It is nil when nothing is running, the clock is paused while the AI is
+// answering, or the target is overdue:
 // customers see a promise, never a late notice. Resolution targets and
 // policy names stay internal.
 func portalReplyExpectedBy(record model.SupportConversationSLARecord, now time.Time) *time.Time {
@@ -34,9 +34,11 @@ func portalReplyExpectedBy(record model.SupportConversationSLARecord, now time.T
 }
 
 // replyExpectedBy returns portalReplyExpectedBy for one conversation when
-// the workspace shows it.
-func (s *CustomerPortalService) replyExpectedBy(ctx context.Context, ws *PortalWorkspace, conversationID string) *time.Time {
-	if !ws.Settings.PortalShowReplyBy || s.inbox == nil || s.inbox.slaService == nil {
+// the workspace shows it. Only requests the customer sees as active show it:
+// the record updates in the background, so right after the team replies or
+// waits on the customer it may still say pending.
+func (s *CustomerPortalService) replyExpectedBy(ctx context.Context, ws *PortalWorkspace, conversationID, portalStatus string) *time.Time {
+	if !ws.Settings.PortalShowReplyBy || portalStatus != model.PortalRequestStatusActive || s.inbox == nil || s.inbox.slaService == nil {
 		return nil
 	}
 	records, err := s.inbox.slaService.repo.RecordsByConversation(ctx, ws.ID, []string{conversationID})
@@ -68,7 +70,7 @@ func (s *CustomerPortalService) attachReplyExpectedBy(ctx context.Context, ws *P
 	}
 	now := time.Now().UTC()
 	for i := range requests {
-		if record, ok := records[requests[i].ConversationID]; ok {
+		if record, ok := records[requests[i].ConversationID]; ok && requests[i].Status == model.PortalRequestStatusActive {
 			requests[i].ReplyExpectedBy = portalReplyExpectedBy(record, now)
 		}
 	}

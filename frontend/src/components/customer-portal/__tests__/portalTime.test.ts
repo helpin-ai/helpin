@@ -31,4 +31,9 @@ describe('formatPortalReplyBy', () => {
     expect(formatPortalReplyBy(at(10, 9), now)).toMatch(/ at /)
     expect(formatPortalReplyBy(at(10, 9), now)).not.toMatch(/day at/)
   })
+
+  it('shows nothing once the time has passed', () => {
+    expect(formatPortalReplyBy(at(0, 9), now)).toBeNull()
+    expect(formatPortalReplyBy(null, now)).toBeNull()
+  })
 })

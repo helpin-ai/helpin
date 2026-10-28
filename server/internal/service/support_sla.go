@@ -445,9 +445,9 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 				}
 			}
 		}
-		if imported {
-			in.HistoryBefore = in.TargetsFrom
-		}
+		// Only messages copied from the other help desk are history; a later
+		// cutover from a company change never turns live replies into it.
+		in.HistoryThrough = inputs.ImportedThrough
 		in.Replies = make([]supportSLAReply, 0, len(inputs.Replies))
 		for _, row := range inputs.Replies {
 			in.Replies = append(in.Replies, supportSLAReply{At: row.CreatedAt, SenderType: row.SenderType})

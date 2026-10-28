@@ -790,7 +790,7 @@ func (f *slaTierFixture) importedConversation(t *testing.T, status string, creat
 	}
 	add := func(sender string, at time.Time) {
 		if err := f.db.Create(&model.SupportMessage{ID: uuid.NewString(), WorkspaceID: f.workspaceID, ConversationID: conversation.ID, SenderType: sender,
-			MessageType: "reply", Content: "imported", CreatedAt: at, UpdatedAt: at}).Error; err != nil {
+			MessageType: "reply", Content: "imported", Metadata: `{"imported_from":"intercom"}`, CreatedAt: at, UpdatedAt: at}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -830,6 +830,18 @@ func TestSupportSLAImportedConversationsCountFromCutover(t *testing.T) {
 	processSLAAt(t, f.sla, f.workspaceID, answered, cutover.Add(time.Minute))
 	if again := slaRecord(t, f.db, answered); !again.TargetsFrom.Equal(cutover) || again.Breached {
 		t.Fatalf("cutover moved %+v", again)
+	}
+
+	// A live teammate reply after the import is not history: it meets the
+	// first response.
+	reply := cutover.Add(10 * time.Minute)
+	if err := f.db.Create(&model.SupportMessage{ID: uuid.NewString(), WorkspaceID: f.workspaceID, ConversationID: waiting, SenderType: "user",
+		MessageType: "reply", Content: "On it", CreatedAt: reply, UpdatedAt: reply}).Error; err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, f.sla, f.workspaceID, waiting, reply.Add(time.Minute))
+	if live := slaRecord(t, f.db, waiting); live.FirstResponseState != model.SupportSLAStateAchieved || !live.FirstResponseAchievedAt.Equal(reply) {
+		t.Fatalf("live reply after the import %+v", live)
 	}
 
 	// Closed imports stay out of SLA entirely.

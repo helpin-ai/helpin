@@ -299,9 +299,12 @@ func (r *SupportSLARepository) ListDueWakes(ctx context.Context, now time.Time, 
 type SupportSLAInputs struct {
 	Conversation *model.SupportConversation
 	// Company is the conversation's company, nil without one.
-	Company  *SupportSLACompany
-	Replies  []SupportSLAReplyRow
-	Previous *model.SupportConversationSLARecord
+	Company *SupportSLACompany
+	// ImportedThrough is the time of the latest message copied from another
+	// help desk; nil when none was.
+	ImportedThrough *time.Time
+	Replies         []SupportSLAReplyRow
+	Previous        *model.SupportConversationSLARecord
 }
 
 // SupportSLAReplyRow is one public reply.
@@ -353,6 +356,16 @@ func (r *SupportSLARepository) LoadInputs(ctx context.Context, workspaceID, conv
 			workspaceID, conversationID, false).
 		Order("created_at, id").Scan(&inputs.Replies).Error; err != nil {
 		return nil, fmt.Errorf("load replies for SLA: %w", err)
+	}
+	if conversation.Source == model.SupportImportSourceIntercom {
+		var latest struct{ CreatedAt *time.Time }
+		imported := supportMetadataValueSQL(r.db, "m", "imported_from")
+		if err := db.Table("support_messages AS m").Select("m.created_at").
+			Where("m.workspace_id = ? AND m.conversation_id = ? AND "+imported+" IS NOT NULL AND "+imported+" <> ''", workspaceID, conversationID).
+			Order("m.created_at DESC").Limit(1).Scan(&latest).Error; err != nil {
+			return nil, fmt.Errorf("load imported history for SLA: %w", err)
+		}
+		inputs.ImportedThrough = latest.CreatedAt
 	}
 	var previous model.SupportConversationSLARecord
 	err = db.Where("conversation_id = ?", conversationID).Take(&previous).Error

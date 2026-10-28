@@ -261,7 +261,8 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 		return nil, err
 	}
 	assistant := s.assistantName(ctx, &access.Workspace)
-	detail := &PortalRequestDetail{ReplyExpectedBy: s.replyExpectedBy(ctx, &access.Workspace, conv.ID),Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status, derefString(conv.LastPublicSenderType), conv.CustomerAwaitingResponse), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}, Own: request.Own}
+	status := model.PortalRequestStatus(conv.Status, derefString(conv.LastPublicSenderType), conv.CustomerAwaitingResponse)
+	detail := &PortalRequestDetail{ReplyExpectedBy: s.replyExpectedBy(ctx, &access.Workspace, conv.ID, status), Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: status, LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}, Own: request.Own}
 	if !request.Own {
 		detail.RequesterName = s.portalRequesterName(ctx, conv)
 		s.auditCompanyView(ctx, access, conv)
