@@ -13,7 +13,7 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useRealtimeFallbackPolling } from '@/hooks/useRealtimeFallbackPolling';
 import { useQuery } from '@tanstack/react-query';
 import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useSupportInboxViewCounts, useUnreadStats } from '@/hooks/queries/useSupport';
-import { useDeleteSupportInboxView, useSupportTags, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
+import { useCreateSupportInboxView, useDeleteSupportInboxView, useSupportTags, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { cn, getInitials } from '@/lib/utils';
@@ -79,13 +79,12 @@ export function Sidebar() {
   const {
     navFilter,
     setNavFilter,
-    statusFilter,
     selectedMailboxId,
     setSelectedMailboxId,
     activeCustomViewId,
     applyCustomView,
     searchQuery,
-    conversationListFilters,
+    createCustomViewOpen,
     setCreateCustomViewOpen,
     setBuiltinViewFilters,
     setTeamInboxDialogOpen,
@@ -102,10 +101,11 @@ export function Sidebar() {
   const globalUnreadStats = unreadStats;
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
   const updateSupportInboxView = useUpdateSupportInboxView(workspaceId ?? '');
+  const createSupportInboxView = useCreateSupportInboxView(workspaceId ?? '');
   const deleteSupportInboxView = useDeleteSupportInboxView(workspaceId ?? '');
   const [editingSupportView, setEditingSupportView] = useState<SupportInboxView | null>(null);
-  const { data: supportViewTags = [] } = useSupportTags(editingSupportView ? workspaceId ?? '' : '');
-  const { data: slaPolicies } = useSLAPolicies(workspaceId ?? '', !!editingSupportView);
+  const { data: supportViewTags = [] } = useSupportTags(editingSupportView || createCustomViewOpen ? workspaceId ?? '' : '');
+  const { data: slaPolicies } = useSLAPolicies(workspaceId ?? '', !!editingSupportView || createCustomViewOpen);
   const totalSupportUnread = supportModuleUnreadCount(unreadStats);
   const sortedCustomViews = useMemo(
     () => [...customViews].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
@@ -318,6 +318,23 @@ export function Sidebar() {
     });
   };
 
+  const selectSupportView = (view: SupportInboxView) => {
+    applyCustomView(view);
+    const next = useSupportInboxStore.getState();
+    navigate({
+      to: `/w/${wsSlug}/support`,
+      search: buildSupportInboxSearch({
+        navFilter: next.navFilter,
+        selectedMailboxId: next.selectedMailboxId,
+        statusFilter: next.statusFilter,
+        searchQuery: next.searchQuery,
+        activeCustomViewId: view.id,
+        listFilters: next.conversationListFilters,
+        includeFilterParams: false,
+      }),
+    });
+  };
+
   return (
     <>
     <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2] dark:border-transparent dark:bg-sidebar">
@@ -442,37 +459,8 @@ export function Sidebar() {
                   setSelectedMailboxId(id);
                   navigate({ to: `/w/${wsSlug}/support`, search: nextSearch });
                 }}
-                onCustomViewSelect={(view) => {
-                  applyCustomView(view);
-                  const next = useSupportInboxStore.getState();
-                  navigate({
-                    to: `/w/${wsSlug}/support`,
-                    search: buildSupportInboxSearch({
-                      navFilter: next.navFilter,
-                      selectedMailboxId: next.selectedMailboxId,
-                      statusFilter: next.statusFilter,
-                      searchQuery: next.searchQuery,
-                      activeCustomViewId: view.id,
-                      listFilters: next.conversationListFilters,
-                      includeFilterParams: false,
-                    }),
-                  });
-                }}
-                onCreateCustomView={() => {
-                  setCreateCustomViewOpen(true);
-                  if (location.pathname === `/w/${wsSlug}/support`) return;
-                  void navigate({
-                    to: `/w/${wsSlug}/support`,
-                    search: buildSupportInboxSearch({
-                      navFilter,
-                      selectedMailboxId,
-                      statusFilter,
-                      searchQuery,
-                      activeCustomViewId,
-                      listFilters: conversationListFilters,
-                    }),
-                  });
-                }}
+                onCustomViewSelect={selectSupportView}
+                onCreateCustomView={() => setCreateCustomViewOpen(true)}
                 onEditCustomView={(view) => {
                   setEditingSupportView(view);
                 }}
@@ -526,18 +514,26 @@ export function Sidebar() {
         <TrialBanner />
       </SidebarContent>
     </ShellSidebar>
-    {editingSupportView && <SupportViewEditDialog
-      key={editingSupportView.id}
-      view={editingSupportView}
+    {(editingSupportView || createCustomViewOpen) && <SupportViewEditDialog
+      key={editingSupportView?.id ?? 'create'}
+      view={editingSupportView ?? undefined}
       canManageSettings={canManageSettings}
       tags={supportViewTags}
       mailboxes={inboxScopes?.mailboxes ?? []}
       slaEnabled={slaPolicies?.some(policy => policy.enabled) ?? true}
-      isPending={updateSupportInboxView.isPending}
-      onClose={() => setEditingSupportView(null)}
-      onSave={(values) => updateSupportInboxView.mutate({ id: editingSupportView.id, ...values }, {
-        onSuccess: () => setEditingSupportView(null),
-      })}
+      isPending={editingSupportView ? updateSupportInboxView.isPending : createSupportInboxView.isPending}
+      onClose={() => { setEditingSupportView(null); setCreateCustomViewOpen(false); }}
+      onSave={(values) => {
+        if (editingSupportView) {
+          updateSupportInboxView.mutate({ id: editingSupportView.id, ...values }, {
+            onSuccess: () => setEditingSupportView(null),
+          });
+        } else {
+          createSupportInboxView.mutate({ ...values, is_shared: values.is_shared ?? false }, {
+            onSuccess: (view) => { setCreateCustomViewOpen(false); selectSupportView(view); },
+          });
+        }
+      }}
     />}
     </>
   );

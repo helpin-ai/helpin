@@ -175,8 +175,6 @@ export function ConversationList({
   const setBuiltinViewFilter = useSupportInboxStore((s) => s.setBuiltinViewFilter);
   const syncRouteState = useSupportInboxStore((s) => s.syncRouteState);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
-  const createCustomViewOpen = useSupportInboxStore((s) => s.createCustomViewOpen);
-  const setCreateCustomViewOpen = useSupportInboxStore((s) => s.setCreateCustomViewOpen);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const handoffConversationId = useSupportInboxStore((s) => s.conversationHandoff?.fromConversationId ?? null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
@@ -568,11 +566,8 @@ export function ConversationList({
             </TooltipContent>
           </Tooltip>
           <Popover
-            open={filterPopoverOpen || createCustomViewOpen}
-            onOpenChange={(open) => {
-              setFilterPopoverOpen(open);
-              if (!open) setCreateCustomViewOpen(false);
-            }}
+            open={filterPopoverOpen}
+            onOpenChange={setFilterPopoverOpen}
           >
             <Tooltip>
               <TooltipTrigger asChild>
@@ -597,7 +592,7 @@ export function ConversationList({
             <PopoverContent side="right" align="start" sideOffset={8} className="w-[380px] p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="min-w-0 text-sm font-semibold">
-                  <span className="block truncate">{createCustomViewOpen ? 'New view' : `${listTitle} filters`}</span>
+                  <span className="block truncate">{`${listTitle} filters`}</span>
                 </div>
                 {activeFilterCount > 0 && (
                   <Button
@@ -621,9 +616,9 @@ export function ConversationList({
                     teamInboxFilterOptions={teamInboxFilterOptions}
                     slaEnabled={slaPolicies?.some(policy => policy.enabled) ?? true}
                   />
-                  {(createCustomViewOpen || canSaveCurrentView || canUpdateCurrentView) && (
+                  {(canSaveCurrentView || canUpdateCurrentView) && (
                     <div className="space-y-2 border-t pt-3">
-                      {!createCustomViewOpen && canUpdateCurrentView && (
+                      {canUpdateCurrentView && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -650,11 +645,10 @@ export function ConversationList({
                         className="w-full justify-center"
                         onClick={() => {
                           setFilterPopoverOpen(false);
-                          setCreateCustomViewOpen(false);
                           setSaveViewOpen(true);
                         }}
                       >
-                        {createCustomViewOpen ? 'Create view' : 'Save as new view'}
+                        Save as new view
                       </Button>
                     </div>
                   )}

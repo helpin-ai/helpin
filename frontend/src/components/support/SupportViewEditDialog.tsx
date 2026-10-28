@@ -14,9 +14,9 @@ export interface SupportViewEditValues {
   filters: Record<string, string>;
 }
 
-// Mount per edit session so every draft starts from the selected saved view.
+// Mount per session: edit saved criteria or create with shared inbox defaults.
 export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes, slaEnabled, isPending, onSave, onClose }: {
-  view: SupportInboxView;
+  view?: SupportInboxView;
   canManageSettings: boolean;
   tags: SupportTag[];
   mailboxes: Pick<SupportInboxScope, 'id' | 'name'>[];
@@ -25,13 +25,13 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
   onSave: (values: SupportViewEditValues) => void;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(view.name);
-  const [shared, setShared] = useState(view.is_shared);
-  const [draft, setDraft] = useState(() => parseSupportInboxViewFilters(view.filters, 'inbox'));
+  const [name, setName] = useState(view?.name ?? '');
+  const [shared, setShared] = useState(view?.is_shared ?? false);
+  const [draft, setDraft] = useState(() => parseSupportInboxViewFilters(view?.filters, 'inbox'));
   const save = () => {
     if (!name.trim() || isPending) return;
     // Replace editable keys, retaining other saved criteria and future fields.
-    const filters = { ...view.filters };
+    const filters = { ...view?.filters };
     for (const key of ['nav_filter', 'states', 'mailbox_id', 'search', 'assignment', 'mailbox_ids', 'tag_ids', 'ai', 'system_tags', 'sort', 'sla', 'priority']) delete filters[key];
     Object.assign(filters, buildSupportInboxViewFilters(draft));
     onSave({ name: name.trim(), ...(canManageSettings ? { is_shared: shared } : {}), filters });
@@ -39,7 +39,7 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !isPending) onClose(); }}>
       <DialogContent aria-describedby={undefined} className="sm:max-w-2xl max-h-[90dvh] overflow-hidden flex flex-col">
-        <DialogHeader><DialogTitle>Edit view</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{view ? 'Edit view' : 'Create view'}</DialogTitle></DialogHeader>
         <div className="space-y-4 overflow-y-auto min-h-0 pr-1">
           <div className="space-y-2">
             <Label htmlFor="support-custom-view-name">Name</Label>
@@ -63,7 +63,7 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
         </div>
         <DialogFooter className="shrink-0 border-t pt-4">
           <Button variant="outline" disabled={isPending} onClick={onClose}>Cancel</Button>
-          <Button disabled={!name.trim() || isPending} onClick={save}>{isPending ? 'Saving…' : 'Save'}</Button>
+          <Button disabled={!name.trim() || isPending} onClick={save}>{isPending ? 'Saving…' : view ? 'Save' : 'Create view'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
