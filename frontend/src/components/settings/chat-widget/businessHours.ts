@@ -1,7 +1,7 @@
 import type { BusinessHoursDay, BusinessHoursSlot } from '@/lib/pmTypes';
 import { MINUTES_PER_DAY, clockToMinutes, minutesToClock } from '@/lib/timeOfDay';
 
-export const BUSINESS_HOURS_STEP_MINUTES = 15;
+const BUSINESS_HOURS_STEP_MINUTES = 15;
 export const DEFAULT_BUSINESS_HOURS_SLOT: BusinessHoursSlot = { start: '09:00', end: '17:00' };
 
 /** The day's time ranges, reading settings saved before ranges existed from start and end. */
