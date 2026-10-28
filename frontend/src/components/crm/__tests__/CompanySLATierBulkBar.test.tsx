@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 const setTier = vi.fn()
 vi.mock('@/hooks/queries/useSupportSLATiers', () => ({
-  useSetCompanySLATier: () => ({ mutate: setTier, isPending: false }),
+  useSetCompanySLATier: () => ({ mutateAsync: setTier, isPending: false }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }))
 vi.mock('@/components/ui/select', () => ({
@@ -24,26 +24,32 @@ import { CompanySLATierBulkBar } from '../CompanySLATierBulkBar'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 describe('CompanySLATierBulkBar', () => {
-  it('sets or clears the tier of the selected companies, then clears the selection', () => {
+  it('sets or clears the tier of the selected companies, then clears the selection', async () => {
+    setTier.mockImplementation(async ({ companyIds }: { companyIds: string[] }) => ({ updated: companyIds.length }))
     const container = document.body.appendChild(document.createElement('div'))
     const root = createRoot(container)
     const clear = vi.fn()
     const tiers = [{ id: 'tier-gold', workspace_id: 'ws', name: 'Gold', description: '', position: 0, company_count: 0, policy_count: 0, created_at: '', updated_at: '' }]
-    act(() => root.render(<CompanySLATierBulkBar workspaceId="ws" companyIds={['c1', 'c2']} tiers={tiers} onClearSelection={clear} />))
-    expect(container.textContent).toContain('2 selected')
+    const ids = Array.from({ length: 450 }, (_, index) => `c${index}`)
+    act(() => root.render(<CompanySLATierBulkBar workspaceId="ws" companyIds={ids} tiers={tiers} onClearSelection={clear} />))
+    expect(container.textContent).toContain('450 selected')
     const select = container.querySelector('select') as HTMLSelectElement
-    act(() => {
+    await act(async () => {
       select.value = 'tier-gold'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(setTier).toHaveBeenLastCalledWith({ companyIds: ['c1', 'c2'], tierId: 'tier-gold' }, expect.anything())
-    setTier.mock.lastCall![1].onSuccess({ updated: 2 })
-    expect(clear).toHaveBeenCalled()
-    act(() => {
+    // Large selections go in batches the server accepts.
+    expect(setTier.mock.calls.map(([args]) => args.companyIds.length)).toEqual([200, 200, 50])
+    expect(setTier).toHaveBeenLastCalledWith({ companyIds: ids.slice(400), tierId: 'tier-gold' })
+    expect(clear).toHaveBeenCalledTimes(1)
+
+    setTier.mockRejectedValueOnce(new Error('denied'))
+    await act(async () => {
       select.value = '__none__'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(setTier).toHaveBeenLastCalledWith({ companyIds: ['c1', 'c2'], tierId: null }, expect.anything())
+    expect(setTier).toHaveBeenLastCalledWith({ companyIds: ids.slice(0, 200), tierId: null })
+    expect(clear).toHaveBeenCalledTimes(1)
     act(() => root.unmount())
   })
 })

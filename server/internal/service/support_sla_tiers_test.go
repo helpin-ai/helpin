@@ -97,6 +97,8 @@ type slaTierFixture struct {
 func newSLATierFixture(t *testing.T) *slaTierFixture {
 	t.Helper()
 	sla, db, workspaceID, userID, start := newSLATestService(t)
+	seedWorkspaceMember(t, db, uuid.NewString(), workspaceID, userID, "agent@example.com", "Ada Agent", model.RoleOwner)
+	sla.inbox.SetWorkspaceRepo(repository.NewWorkspaceRepository(db))
 	return &slaTierFixture{sla: sla, db: db, workspaceID: workspaceID, userID: userID, start: start}
 }
 
@@ -489,5 +491,202 @@ func TestSupportSLATierCommands(t *testing.T) {
 	raw, err := commands.executeSupportListSLATiers(ctx, member, nil)
 	if err != nil || !strings.Contains(string(raw), `"name":"Gold"`) {
 		t.Fatalf("list: %s %v", raw, err)
+	}
+}
+
+func TestSupportSLALateCompanyLinkCountsFromTheLink(t *testing.T) {
+	f := newSLATierFixture(t)
+	gold := f.tier(t, "Gold")
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Gold", FirstResponseMinutes: intPtr(30), CompanyTierIDs: []string{gold.ID}})
+	acme := f.company(t, "Acme")
+	f.setTier(t, f.start, &gold.ID, acme)
+	created := f.start.Add(time.Minute)
+	conversation := f.conversation(t, "", created)
+	processSLAAt(t, f.sla, f.workspaceID, conversation, created)
+
+	// Hours later a teammate links Acme, Gold for months: no instant breach.
+	linked := created.Add(3 * time.Hour)
+	// SQLite has no triggers: record the change as Postgres would.
+	mustExec(t, f.db, `UPDATE support_conversations SET crm_company_id = ?, crm_company_changed_at = ? WHERE id = ?`, acme, linked, conversation)
+	processSLAAt(t, f.sla, f.workspaceID, conversation, linked)
+	if record := slaRecord(t, f.db, conversation); record.Breached || !record.FirstResponseDueAt.Equal(linked.Add(30*time.Minute)) {
+		t.Fatalf("late link %+v", record)
+	}
+}
+
+func TestSupportSLADeletingAPolicysOnlyTierTurnsItOff(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	gold := f.tier(t, "Gold")
+	only := f.policy(t, model.SupportSLAPolicyRequest{Name: "Gold only", FirstResponseMinutes: intPtr(30), CompanyTierIDs: []string{gold.ID}})
+	if err := f.sla.DeleteTier(ctx, f.workspaceID, gold.ID); err != nil {
+		t.Fatal(err)
+	}
+	policies, err := f.sla.ListPolicies(ctx, f.workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policies[0].ID != only.ID || policies[0].Enabled || len(policies[0].CompanyTierIDs) != 0 {
+		t.Fatalf("policy left matching everyone: %+v", policies[0])
+	}
+}
+
+func TestSupportSLADisabledCustomSLAStillCounts(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	acme := f.company(t, "Acme")
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(480)})
+	policies, err := f.sla.CustomizeCompanySLA(ctx, f.workspaceID, f.userID, acme)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	custom := policies[0]
+	if _, err := f.sla.UpdatePolicy(ctx, f.workspaceID, custom.ID, model.SupportSLAPolicyRequest{Name: custom.Name, Enabled: &disabled,
+		FirstResponseMinutes: custom.FirstResponseMinutes, CompanyIDs: []string{acme}}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := f.sla.CompanySLA(ctx, f.workspaceID, acme)
+	if err != nil || !view.HasCustom || len(view.Policies) != 1 || view.Policies[0].Custom {
+		t.Fatalf("company SLA with a disabled custom policy %+v %v", view, err)
+	}
+	if err := f.sla.RemoveCompanySLA(ctx, f.workspaceID, acme); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSupportSLARejectsMalformedIDs(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	acme := f.company(t, "Acme")
+	notATier := "gold"
+	if _, err := f.sla.CompanySLA(ctx, f.workspaceID, "acme"); !errors.Is(err, ErrSupportSLACompanyNotFound) {
+		t.Fatalf("company SLA: %v", err)
+	}
+	if _, err := f.sla.SetCompanyTier(ctx, f.workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{"acme"}}); !errors.Is(err, ErrSupportSLACompanyNotFound) {
+		t.Fatalf("set tier company: %v", err)
+	}
+	if _, err := f.sla.SetCompanyTier(ctx, f.workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{acme}, TierID: &notATier}); !errors.Is(err, repository.ErrSupportSLATierNotFound) {
+		t.Fatalf("set tier tier: %v", err)
+	}
+	if err := f.sla.DeleteTier(ctx, f.workspaceID, notATier); !errors.Is(err, repository.ErrSupportSLATierNotFound) {
+		t.Fatalf("delete tier: %v", err)
+	}
+	if _, err := f.sla.UpdateTier(ctx, f.workspaceID, notATier, model.SupportSLATierRequest{Name: "Gold"}); !errors.Is(err, repository.ErrSupportSLATierNotFound) {
+		t.Fatalf("update tier: %v", err)
+	}
+	if _, err := f.sla.CreatePolicy(ctx, f.workspaceID, f.userID, model.SupportSLAPolicyRequest{Name: "X", FirstResponseMinutes: intPtr(5), CompanyIDs: []string{"acme"}}); !errors.Is(err, ErrSupportSLAPolicyInvalid) {
+		t.Fatalf("policy company: %v", err)
+	}
+}
+
+func TestApplySupportSLAWarnings(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	at := func(minutes int) *time.Time { return timePtr(now.Add(time.Duration(minutes) * time.Minute)) }
+	fifteen := 15
+	for _, tc := range []struct {
+		name     string
+		record   model.SupportConversationSLARecord
+		previous *model.SupportConversationSLARecord
+		warn     *int
+		want     []string
+		wake     *time.Time
+	}{
+		{name: "before the warning, wake at it", record: model.SupportConversationSLARecord{FirstResponseState: model.SupportSLAStatePending, FirstResponseDueAt: at(40), WakeAt: at(40)}, warn: &fifteen, wake: at(25)},
+		{name: "inside the window, warn", record: model.SupportConversationSLARecord{FirstResponseState: model.SupportSLAStatePending, FirstResponseDueAt: at(10), WakeAt: at(10)}, warn: &fifteen, want: []string{model.SupportSLAMetricFirstResponse}, wake: at(10)},
+		{name: "already warned for this due time", record: model.SupportConversationSLARecord{FirstResponseState: model.SupportSLAStatePending, FirstResponseDueAt: at(10)}, previous: &model.SupportConversationSLARecord{FirstResponseWarnedFor: at(10)}, warn: &fifteen},
+		{name: "a new next-response cycle warns again", record: model.SupportConversationSLARecord{NextResponseState: model.SupportSLAStatePending, NextResponseDueAt: at(10)}, previous: &model.SupportConversationSLARecord{NextResponseWarnedFor: at(-60)}, warn: &fifteen, want: []string{model.SupportSLAMetricNextResponse}},
+		{name: "too late to be useful, record silently", record: model.SupportConversationSLARecord{ResolutionState: model.SupportSLAStatePending, ResolutionDueAt: at(2)}, warn: &fifteen},
+		{name: "paused targets never warn", record: model.SupportConversationSLARecord{ResolutionState: model.SupportSLAStatePaused, ResolutionDueAt: at(5)}, warn: &fifteen},
+		{name: "overdue targets never warn", record: model.SupportConversationSLARecord{FirstResponseState: model.SupportSLAStatePending, FirstResponseDueAt: at(-1)}, warn: &fifteen},
+		{name: "warnings off", record: model.SupportConversationSLARecord{FirstResponseState: model.SupportSLAStatePending, FirstResponseDueAt: at(10)}},
+	} {
+		record := tc.record
+		got := applySupportSLAWarnings(&record, tc.previous, tc.warn, now)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%s: warned %v, want %v", tc.name, got, tc.want)
+		}
+		if tc.wake != nil && (record.WakeAt == nil || !record.WakeAt.Equal(*tc.wake)) {
+			t.Errorf("%s: wake %v, want %v", tc.name, record.WakeAt, tc.wake)
+		}
+	}
+	// Recording a late warning keeps it from firing later.
+	record := model.SupportConversationSLARecord{ResolutionState: model.SupportSLAStatePending, ResolutionDueAt: at(2)}
+	applySupportSLAWarnings(&record, nil, &fifteen, now)
+	if record.ResolutionWarnedFor == nil || !record.ResolutionWarnedFor.Equal(*at(2)) {
+		t.Fatalf("late warning not recorded: %+v", record.ResolutionWarnedFor)
+	}
+}
+
+func TestSupportSLAWarningPolicyValidation(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	for name, req := range map[string]model.SupportSLAPolicyRequest{
+		"warning not before the target": {Name: "X", FirstResponseMinutes: intPtr(30), ResolutionMinutes: intPtr(600), WarnBeforeMinutes: intPtr(30)},
+		"negative warning":              {Name: "X", FirstResponseMinutes: intPtr(30), WarnBeforeMinutes: intPtr(-5)},
+		"unknown teammate":              {Name: "X", FirstResponseMinutes: intPtr(30), NotifyUserIDs: []string{uuid.NewString()}},
+		"unknown assignee":              {Name: "X", FirstResponseMinutes: intPtr(30), AssignUnassignedUserID: strPtr(uuid.NewString())},
+	} {
+		if _, err := f.sla.CreatePolicy(ctx, f.workspaceID, f.userID, req); !errors.Is(err, ErrSupportSLAPolicyInvalid) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	policy := f.policy(t, model.SupportSLAPolicyRequest{Name: "Warn", FirstResponseMinutes: intPtr(60), WarnBeforeMinutes: intPtr(15),
+		NotifyUserIDs: []string{f.userID}, NotifyCSOwner: true, AssignUnassignedUserID: &f.userID})
+	if *policy.WarnBeforeMinutes != 15 || strings.Join(policy.NotifyUserIDs, ",") != f.userID || !policy.NotifyCSOwner || *policy.AssignUnassignedUserID != f.userID {
+		t.Fatalf("policy alerts %+v", policy)
+	}
+	// Zero turns warnings off.
+	updated, err := f.sla.UpdatePolicy(ctx, f.workspaceID, policy.ID, model.SupportSLAPolicyRequest{Name: "Warn", FirstResponseMinutes: intPtr(60), WarnBeforeMinutes: intPtr(0)})
+	if err != nil || updated.WarnBeforeMinutes != nil || len(updated.NotifyUserIDs) != 0 || updated.AssignUnassignedUserID != nil {
+		t.Fatalf("cleared alerts %+v %v", updated, err)
+	}
+}
+
+func TestSupportSLAWarnsOnceAndAssigns(t *testing.T) {
+	f := newSLATierFixture(t)
+	f.policy(t, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(60), WarnBeforeMinutes: intPtr(15), AssignUnassignedUserID: &f.userID})
+	created := f.start.Add(time.Minute)
+	conversation := f.conversation(t, "", created)
+	processSLAAt(t, f.sla, f.workspaceID, conversation, created)
+	record := slaRecord(t, f.db, conversation)
+	if !record.WakeAt.Equal(created.Add(45*time.Minute)) || record.FirstResponseWarnedFor != nil {
+		t.Fatalf("before the warning %+v", record)
+	}
+
+	// The worker wakes at the warning time.
+	f.runQueue(t, created.Add(46*time.Minute))
+	record = slaRecord(t, f.db, conversation)
+	if record.FirstResponseWarnedFor == nil || !record.FirstResponseWarnedFor.Equal(created.Add(time.Hour)) || !record.WakeAt.Equal(created.Add(time.Hour)) {
+		t.Fatalf("after the warning %+v", record)
+	}
+	var assigned model.SupportConversation
+	if err := f.db.Where("id = ?", conversation).Take(&assigned).Error; err != nil || assigned.AssignedUserID == nil || *assigned.AssignedUserID != f.userID {
+		t.Fatalf("unassigned conversation not taken: %+v %v", assigned.AssignedUserID, err)
+	}
+
+	// Later evaluations before the breach do not warn again.
+	processSLAAt(t, f.sla, f.workspaceID, conversation, created.Add(50*time.Minute))
+	if again := slaRecord(t, f.db, conversation); !again.FirstResponseWarnedFor.Equal(*record.FirstResponseWarnedFor) {
+		t.Fatalf("warned again %+v", again)
+	}
+}
+
+func TestSupportSLAAlertRecipients(t *testing.T) {
+	f := newSLATierFixture(t)
+	ctx := context.Background()
+	other, ownerMember := uuid.NewString(), uuid.NewString()
+	seedUser(t, f.db, other, "cs@example.com", "Cass Success", "hash")
+	seedWorkspaceMember(t, f.db, ownerMember, f.workspaceID, other, "cs@example.com", "Cass Success", model.RoleMember)
+	assignee := f.userID
+	conversation := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: f.workspaceID, AssignedUserID: &assignee}
+	policy := &model.SupportSLAPolicy{NotifyUserIDs: model.DocsStringArray{f.userID}, NotifyCSOwner: true}
+	company := &repository.SupportSLACompany{ID: uuid.NewString(), CSOwnerMemberID: &ownerMember}
+	got := f.sla.alertRecipients(ctx, conversation, policy, company)
+	if strings.Join(got, ",") != assignee+","+other {
+		t.Fatalf("recipients %v", got)
+	}
+	if got := f.sla.alertRecipients(ctx, conversation, nil, company); strings.Join(got, ",") != assignee {
+		t.Fatalf("without a policy %v", got)
 	}
 }

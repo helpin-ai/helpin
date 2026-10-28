@@ -15,6 +15,7 @@ import {
 import { ArrowDown01Icon, ArrowUp01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons'
 import { SUPPORT_SLA_NO_TIER, type SupportSLAPolicy, type SupportSLAPolicyInput } from '@/lib/pmTypes'
 import { useSLATiers } from '@/hooks/queries/useSupportSLATiers'
+import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces'
 import { formatSLATarget, policyToDraft, draftToPolicyInput } from '@/lib/supportSLAPolicyForm'
 import { SupportSLAPolicyDialog } from './SupportSLAPolicyDialog'
 
@@ -38,6 +39,11 @@ export function SupportSLAPolicies({ workspaceId, editable }: { workspaceId: str
   const { data: scopes } = useInboxScopes(workspaceId)
   const { data: installation } = useChatSettings(workspaceId)
   const { data: tiers } = useSLATiers(workspaceId)
+  const { data: members } = useWorkspaceMembers(workspaceId)
+  // The server checks that each one can work on support conversations.
+  const teammates = useMemo(() => (members ?? [])
+    .filter((member) => member.user_id && member.role !== 'viewer')
+    .map((member) => ({ id: member.user_id, name: member.full_name || member.email || 'Teammate' })), [members])
   const tierNames = useMemo(() => new Map((tiers ?? []).map((tier) => [tier.id, tier.name])), [tiers])
   const createPolicy = useCreateSLAPolicy(workspaceId)
   const updatePolicy = useUpdateSLAPolicy(workspaceId)
@@ -148,11 +154,12 @@ export function SupportSLAPolicies({ workspaceId, editable }: { workspaceId: str
                       <span className="truncate text-sm font-medium">{policy.name}</span>
                       {!policy.enabled ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Off</span> : null}
                       {policy.business_hours ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Business hours</span> : null}
+                      {policy.warn_before_minutes ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Warns {formatSLATarget(policy.warn_before_minutes)} before</span> : null}
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
                       {targets.map(([label, value]) => `${label} ${value}`).join(' · ')}
                       {' — '}
-                      {conditions.length ? conditions.join(' · ') : 'All conversations'}
+                      {conditions.length ? conditions.join(' · ') : scope === 'All companies' ? 'All conversations' : 'Any priority, inbox and channel'}
                     </div>
                   </div>
                   {editable ? (
@@ -186,6 +193,7 @@ export function SupportSLAPolicies({ workspaceId, editable }: { workspaceId: str
         workspaceId={workspaceId}
         inboxes={inboxes}
         tiers={tiers ?? []}
+        teammates={teammates}
         businessHoursConfigured={businessHoursConfigured}
         saving={createPolicy.isPending || updatePolicy.isPending}
         onSave={save}

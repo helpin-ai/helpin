@@ -18,6 +18,13 @@ var ErrSupportSLACompanyNotFound = errors.New("company not found")
 // ErrSupportSLACustomExists means the company already has a custom SLA.
 var ErrSupportSLACustomExists = errors.New("this company already has a custom SLA; edit its policies instead")
 
+// validSupportSLAID reports whether id can name a row; uuid columns reject
+// anything else with a database error.
+func validSupportSLAID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
+}
+
 // normalizePolicyCompanies validates the company tier and company
 // conditions of a policy request.
 func (s *SupportSLAService) normalizePolicyCompanies(ctx context.Context, workspaceID string, req model.SupportSLAPolicyRequest, policy *model.SupportSLAPolicy) error {
@@ -35,7 +42,7 @@ func (s *SupportSLAService) normalizePolicyCompanies(ctx context.Context, worksp
 	if policy.CompanyTierIDs, err = normalizeSLAList(req.CompanyTierIDs, func(v string) bool { return tiers[v] }, "SLA tier"); err != nil {
 		return err
 	}
-	companyIDs, err := normalizeSLAList(req.CompanyIDs, func(string) bool { return true }, "company")
+	companyIDs, err := normalizeSLAList(req.CompanyIDs, validSupportSLAID, "company")
 	if err != nil {
 		return err
 	}
@@ -150,6 +157,9 @@ func (s *SupportSLAService) UpdateTier(ctx context.Context, workspaceID, tierID 
 	if err := s.requireFeature(ctx, workspaceID); err != nil {
 		return nil, err
 	}
+	if !validSupportSLAID(tierID) {
+		return nil, repository.ErrSupportSLATierNotFound
+	}
 	tier, err := s.repo.GetTier(ctx, workspaceID, tierID)
 	if err != nil {
 		return nil, err
@@ -167,6 +177,9 @@ func (s *SupportSLAService) UpdateTier(ctx context.Context, workspaceID, tierID 
 // policies stop matching it; their open conversations are re-checked and a
 // newly selected policy counts from now.
 func (s *SupportSLAService) DeleteTier(ctx context.Context, workspaceID, tierID string) error {
+	if !validSupportSLAID(tierID) {
+		return repository.ErrSupportSLATierNotFound
+	}
 	now := s.now()
 	companyIDs, err := s.repo.DeleteTier(ctx, workspaceID, tierID, now)
 	if err != nil {
@@ -199,6 +212,9 @@ func (s *SupportSLAService) SetCompanyTier(ctx context.Context, workspaceID stri
 	if len(companyIDs) == 0 || len(companyIDs) > model.SupportSLASetTierLimit {
 		return 0, invalidSLAPolicy("choose 1 to %d companies", model.SupportSLASetTierLimit)
 	}
+	if slices.ContainsFunc(companyIDs, func(id string) bool { return !validSupportSLAID(id) }) {
+		return 0, ErrSupportSLACompanyNotFound
+	}
 	existing, err := s.repo.ExistingCompanyIDs(ctx, workspaceID, companyIDs)
 	if err != nil {
 		return 0, err
@@ -208,6 +224,9 @@ func (s *SupportSLAService) SetCompanyTier(ctx context.Context, workspaceID stri
 	}
 	var tierID *string
 	if req.TierID != nil && strings.TrimSpace(*req.TierID) != "" {
+		if !validSupportSLAID(strings.TrimSpace(*req.TierID)) {
+			return 0, repository.ErrSupportSLATierNotFound
+		}
 		tier, err := s.repo.GetTier(ctx, workspaceID, strings.TrimSpace(*req.TierID))
 		if err != nil {
 			return 0, err
@@ -238,6 +257,9 @@ func supportSLAMayApplyToCompany(policy model.SupportSLAPolicy, company *reposit
 }
 
 func (s *SupportSLAService) company(ctx context.Context, workspaceID, companyID string) (*repository.SupportSLACompany, error) {
+	if !validSupportSLAID(strings.TrimSpace(companyID)) {
+		return nil, ErrSupportSLACompanyNotFound
+	}
 	company, err := s.repo.GetCompany(ctx, workspaceID, strings.TrimSpace(companyID))
 	if err != nil {
 		return nil, err
@@ -267,12 +289,19 @@ func (s *SupportSLAService) CompanySLA(ctx context.Context, workspaceID, company
 	if err != nil {
 		return nil, err
 	}
+	// A disabled custom policy still counts, so the company can remove it.
+	all, err := s.repo.ListPolicies(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range all {
+		result.HasCustom = result.HasCustom || supportSLACustomFor(policy, company.ID)
+	}
 	for _, policy := range policies {
 		if !supportSLAMayApplyToCompany(policy, company) {
 			continue
 		}
 		custom := supportSLACustomFor(policy, company.ID)
-		result.HasCustom = result.HasCustom || custom
 		result.Policies = append(result.Policies, model.SupportCompanySLAItem{
 			ID: policy.ID, Name: policy.Name, Custom: custom, Priorities: policy.Priorities,
 			FirstResponseMinutes: policy.FirstResponseMinutes, NextResponseMinutes: policy.NextResponseMinutes,

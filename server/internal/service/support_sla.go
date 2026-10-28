@@ -138,6 +138,9 @@ func (s *SupportSLAService) normalizePolicy(ctx context.Context, workspaceID str
 	if err := s.normalizePolicyCompanies(ctx, workspaceID, req, policy); err != nil {
 		return err
 	}
+	if err := s.normalizePolicyAlerts(ctx, workspaceID, req, policy); err != nil {
+		return err
+	}
 	policy.Name = name
 	policy.BusinessHours = req.BusinessHours
 	policy.PauseWhileWaiting = req.PauseWhileWaiting == nil || *req.PauseWhileWaiting
@@ -251,6 +254,10 @@ type supportSLABreach struct {
 	conversation *model.SupportConversation
 	record       model.SupportConversationSLARecord
 	metrics      []string
+	// policy and company add the policy's extra recipients; policy is nil
+	// for conversations that closed with the targets they had.
+	policy  *model.SupportSLAPolicy
+	company *repository.SupportSLACompany
 }
 
 // supportSLABatch caches per-workspace inputs across one queue pass.
@@ -355,6 +362,7 @@ func (s *SupportSLAService) EvaluateConversation(ctx context.Context, workspaceI
 
 func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *supportSLABatch, workspaceID, conversationID string) error {
 	var breach *supportSLABreach
+	var warning *supportSLAWarning
 	changed := false
 	now := s.now()
 	err := s.repo.WithConversationLock(ctx, conversationID, func(repo *repository.SupportSLARepository) error {
@@ -373,6 +381,7 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 		closed := conversation.Status == model.SupportConversationStatusResolved || conversation.Status == model.SupportConversationStatusSpam
 		companyKey := supportSLACompanyKey(inputs.Company)
 		in := supportSLAInput{Conversation: *conversation, Now: now, Previous: previous, CompanyKey: companyKey}
+		var policy *model.SupportSLAPolicy
 		var snapshot supportSLATargets
 		hasSnapshot := false
 		if previous != nil && previous.DetachedAt == nil {
@@ -397,7 +406,6 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 			if err != nil {
 				return err
 			}
-			var policy *model.SupportSLAPolicy
 			for i := range policies {
 				if supportSLAPolicyMatches(policies[i], *conversation, inputs.Company) {
 					policy = &policies[i]
@@ -428,12 +436,20 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 		in.Resumed = !in.Switched && previous != nil && previous.AIHoldingSince != nil && !in.AIOwnsNow
 		in.Clock = s.clockFor(ctx, batch, workspaceID, in.Targets.BusinessHours)
 		evaluation := evaluateSupportSLA(in)
+		var warnBefore *int
+		if policy != nil {
+			warnBefore = policy.WarnBeforeMinutes
+		}
+		warned := applySupportSLAWarnings(&evaluation.Record, previous, warnBefore, now)
 		changed = previous == nil || supportSLAVisibleChange(*previous, evaluation.Record)
 		if err := repo.SaveRecord(ctx, &evaluation.Record); err != nil {
 			return err
 		}
 		if len(evaluation.NewBreaches) > 0 {
-			breach = &supportSLABreach{conversation: conversation, record: evaluation.Record, metrics: evaluation.NewBreaches}
+			breach = &supportSLABreach{conversation: conversation, record: evaluation.Record, metrics: evaluation.NewBreaches, policy: policy, company: inputs.Company}
+		}
+		if len(warned) > 0 && policy != nil {
+			warning = &supportSLAWarning{conversation: conversation, record: evaluation.Record, policy: *policy, company: inputs.Company, metrics: warned}
 		}
 		return nil
 	})
@@ -442,6 +458,9 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 	}
 	if breach != nil {
 		s.announceBreach(ctx, breach)
+	}
+	if warning != nil {
+		s.announceWarning(ctx, warning)
 	}
 	if changed && s.inbox != nil {
 		s.inbox.publishConversationUpdated(&model.SupportConversation{ID: conversationID, WorkspaceID: workspaceID}, "")
@@ -467,13 +486,19 @@ func supportSLAPolicyStart(policy model.SupportSLAPolicy, conversation model.Sup
 	case previous != nil:
 		return timePtr(now), previous.TargetsFrom
 	}
+	// The latest change after the conversation started that made it match.
 	var from *time.Time
-	if policy.ConditionsChangedAt != nil && conversation.CreatedAt.Before(*policy.ConditionsChangedAt) {
-		from = policy.ConditionsChangedAt
+	later := func(at *time.Time) {
+		if at != nil && conversation.CreatedAt.Before(*at) && (from == nil || at.After(*from)) {
+			from = at
+		}
 	}
-	if len(policy.CompanyTierIDs) > 0 && company != nil && company.TierChangedAt != nil &&
-		conversation.CreatedAt.Before(*company.TierChangedAt) && (from == nil || company.TierChangedAt.After(*from)) {
-		from = company.TierChangedAt
+	later(policy.ConditionsChangedAt)
+	if company != nil && (len(policy.CompanyTierIDs) > 0 || len(policy.CompanyIDs) > 0) {
+		later(company.LinkedAt)
+		if len(policy.CompanyTierIDs) > 0 {
+			later(company.TierChangedAt)
+		}
 	}
 	return from, from
 }
@@ -509,7 +534,7 @@ func (s *SupportSLAService) announceBreach(ctx context.Context, breach *supportS
 	if s.notifications == nil || closed {
 		return
 	}
-	recipients := s.breachRecipients(ctx, conversation)
+	recipients := s.alertRecipients(ctx, conversation, breach.policy, breach.company)
 	if len(recipients) == 0 {
 		return
 	}

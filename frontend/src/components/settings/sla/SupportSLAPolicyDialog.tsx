@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -86,13 +87,15 @@ interface SupportSLAPolicyDialogProps {
   workspaceId: string
   inboxes: { id: string; name: string }[]
   tiers: SupportSLATier[]
+  /** Teammates who can be notified or assigned, by user ID. */
+  teammates: { id: string; name: string }[]
   businessHoursConfigured: boolean
   saving: boolean
   onSave: (input: SupportSLAPolicyInput) => Promise<boolean>
 }
 
 /** Create or edit one SLA policy. */
-export function SupportSLAPolicyDialog({ open, onOpenChange, policy, workspaceId, inboxes, tiers, businessHoursConfigured, saving, onSave }: SupportSLAPolicyDialogProps) {
+export function SupportSLAPolicyDialog({ open, onOpenChange, policy, workspaceId, inboxes, tiers, teammates, businessHoursConfigured, saving, onSave }: SupportSLAPolicyDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
@@ -111,6 +114,7 @@ export function SupportSLAPolicyDialog({ open, onOpenChange, policy, workspaceId
             workspaceId={workspaceId}
             inboxes={inboxes}
             tiers={tiers}
+            teammates={teammates}
             businessHoursConfigured={businessHoursConfigured}
             saving={saving}
             onCancel={() => onOpenChange(false)}
@@ -129,6 +133,7 @@ function SupportSLAPolicyForm({
   workspaceId,
   inboxes,
   tiers,
+  teammates,
   businessHoursConfigured,
   saving,
   onCancel,
@@ -138,6 +143,7 @@ function SupportSLAPolicyForm({
   workspaceId: string
   inboxes: { id: string; name: string }[]
   tiers: SupportSLATier[]
+  teammates: { id: string; name: string }[]
   businessHoursConfigured: boolean
   saving: boolean
   onCancel: () => void
@@ -218,6 +224,8 @@ function SupportSLAPolicyForm({
         <TargetRow id="sla-resolution" label="Resolution" help="From creation until the conversation is resolved." value={draft.resolution} onChange={(resolution) => update({ resolution })} />
       </fieldset>
 
+      <SLAAlertFields draft={draft} teammates={teammates} update={update} />
+
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -257,5 +265,71 @@ function SupportSLAPolicyForm({
         <Button type="submit" disabled={saving}>{saving ? 'Saving…' : policy ? 'Save policy' : 'Create policy'}</Button>
       </DialogFooter>
     </form>
+  )
+}
+
+const NOBODY = '__nobody__'
+
+/** Warnings before a target is missed, and who else hears about them. */
+function SLAAlertFields({
+  draft,
+  teammates,
+  update,
+}: {
+  draft: SLAPolicyDraft
+  teammates: { id: string; name: string }[]
+  update: (patch: Partial<SLAPolicyDraft>) => void
+}) {
+  const names = new Map(teammates.map((teammate) => [teammate.id, teammate.name]))
+  const name = (id: string) => names.get(id) ?? 'Former teammate'
+  const notified = draft.notifyUserIds.map(name)
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-1 text-sm font-medium">Before a breach</legend>
+      <TargetRow
+        id="sla-warn"
+        label="Warn before a target is missed"
+        help="Notifies the assignee, or the inbox's teammates when nobody is assigned. Each due time warns once."
+        value={draft.warnBefore}
+        onChange={(warnBefore) => update({ warnBefore })}
+      />
+      <div className="space-y-3 rounded-md border border-border/70 px-3 py-2.5">
+        <div className="space-y-1.5">
+          <Label className="text-sm">Also notify, on warnings and breaches</Label>
+          <QuietDropdown
+            label="Teammates to notify"
+            multiple
+            selected={draft.notifyUserIds}
+            options={teammates.map((teammate) => ({ value: teammate.id, label: teammate.name }))}
+            onSelect={(id) => update({ notifyUserIds: toggleListValue(draft.notifyUserIds, id) })}
+            trigger={(
+              <button type="button" aria-label="Teammates to notify" className="flex w-full items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left text-xs hover:bg-muted">
+                <span className={notified.length ? 'truncate' : 'truncate text-muted-foreground'}>{notified.length ? notified.join(', ') : 'Nobody else'}</span>
+              </button>
+            )}
+          />
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label htmlFor="sla-notify-cs-owner" className="text-sm">Notify the company's customer success owner</Label>
+            <p className="text-xs text-muted-foreground">When the conversation's company has one.</p>
+          </div>
+          <Switch id="sla-notify-cs-owner" checked={draft.notifyCSOwner} onCheckedChange={(notifyCSOwner) => update({ notifyCSOwner })} />
+        </div>
+        {draft.warnBefore.enabled ? (
+          <div className="space-y-1.5">
+            <Label className="text-sm">If nobody is assigned at the warning, assign to</Label>
+            <Select value={draft.assignUserId ?? NOBODY} onValueChange={(value) => update({ assignUserId: value === NOBODY ? null : value })}>
+              <SelectTrigger aria-label="Assign at the warning" className="h-8 w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NOBODY}>Nobody, only notify</SelectItem>
+                {draft.assignUserId && !names.has(draft.assignUserId) ? <SelectItem value={draft.assignUserId}>Former teammate</SelectItem> : null}
+                {teammates.map((teammate) => <SelectItem key={teammate.id} value={teammate.id}>{teammate.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+      </div>
+    </fieldset>
   )
 }

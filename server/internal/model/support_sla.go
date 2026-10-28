@@ -58,6 +58,16 @@ type SupportSLAPolicy struct {
 	// PauseWhileWaiting stops the resolution clock while the conversation is
 	// waiting on the customer or snoozed.
 	PauseWhileWaiting bool `json:"pause_while_waiting" gorm:"not null"`
+	// WarnBeforeMinutes warns this many minutes before a target is due; nil
+	// turns warnings off. It must be shorter than every target.
+	WarnBeforeMinutes *int `json:"warn_before_minutes,omitempty" gorm:"type:integer"`
+	// NotifyUserIDs and NotifyCSOwner (the company's customer success owner)
+	// hear about warnings and breaches as well as the usual recipients.
+	NotifyUserIDs DocsStringArray `json:"notify_user_ids" gorm:"type:text[];not null;default:'{}'"`
+	NotifyCSOwner bool            `json:"notify_cs_owner" gorm:"not null;default:false"`
+	// AssignUnassignedUserID takes an unassigned conversation when a target
+	// is about to be missed.
+	AssignUnassignedUserID *string `json:"assign_unassigned_user_id,omitempty" gorm:"type:uuid"`
 	// ActiveSince is when the policy was last enabled. It applies only to
 	// conversations created after this, so enabling it never back-dates
 	// breaches onto older conversations.
@@ -182,6 +192,11 @@ type SupportConversationSLARecord struct {
 	// TargetsFrom is the earliest time targets count from, set when a policy
 	// starts applying to a conversation that already existed.
 	TargetsFrom *time.Time `json:"-" gorm:"type:timestamptz"`
+	// The due time each target was last warned for: every due time warns
+	// once, and a new next-response cycle warns again.
+	FirstResponseWarnedFor *time.Time `json:"-" gorm:"type:timestamptz"`
+	NextResponseWarnedFor  *time.Time `json:"-" gorm:"type:timestamptz"`
+	ResolutionWarnedFor    *time.Time `json:"-" gorm:"type:timestamptz"`
 	// CompanyKey is the company and tier the record was matched with. When
 	// either changes, a newly selected policy counts from the change. Empty
 	// means the record predates SLA tiers.
@@ -283,19 +298,26 @@ func (SupportSLAWork) TableName() string { return "support_sla_work" }
 
 // SupportSLAPolicyRequest creates or replaces a policy.
 type SupportSLAPolicyRequest struct {
-	Name                 string   `json:"name"`
-	Enabled              *bool    `json:"enabled"`
-	Priorities           []string `json:"priorities"`
-	MailboxIDs           []string `json:"mailbox_ids"`
-	Channels             []string `json:"channels"`
-	CompanyTierIDs       []string `json:"company_tier_ids"`
-	CompanyIDs           []string `json:"company_ids"`
-	FirstResponseMinutes *int     `json:"first_response_minutes"`
-	NextResponseMinutes  *int     `json:"next_response_minutes"`
-	ResolutionMinutes    *int     `json:"resolution_minutes"`
-	BusinessHours        bool     `json:"business_hours"`
-	PauseWhileWaiting    *bool    `json:"pause_while_waiting"`
+	Name                   string   `json:"name"`
+	Enabled                *bool    `json:"enabled"`
+	Priorities             []string `json:"priorities"`
+	MailboxIDs             []string `json:"mailbox_ids"`
+	Channels               []string `json:"channels"`
+	CompanyTierIDs         []string `json:"company_tier_ids"`
+	CompanyIDs             []string `json:"company_ids"`
+	FirstResponseMinutes   *int     `json:"first_response_minutes"`
+	NextResponseMinutes    *int     `json:"next_response_minutes"`
+	ResolutionMinutes      *int     `json:"resolution_minutes"`
+	BusinessHours          bool     `json:"business_hours"`
+	PauseWhileWaiting      *bool    `json:"pause_while_waiting"`
+	WarnBeforeMinutes      *int     `json:"warn_before_minutes"`
+	NotifyUserIDs          []string `json:"notify_user_ids"`
+	NotifyCSOwner          bool     `json:"notify_cs_owner"`
+	AssignUnassignedUserID *string  `json:"assign_unassigned_user_id"`
 }
+
+// SupportSLANotifyLimit bounds the extra teammates a policy notifies.
+const SupportSLANotifyLimit = 10
 
 // ReorderSupportSLAPoliciesRequest sets the evaluation order.
 type ReorderSupportSLAPoliciesRequest struct {

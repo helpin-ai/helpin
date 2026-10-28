@@ -742,7 +742,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, crm_company_changed_at DATETIME, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -962,6 +962,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			channels TEXT NOT NULL DEFAULT '{}', company_tier_ids TEXT NOT NULL DEFAULT '{}', company_ids TEXT NOT NULL DEFAULT '{}',
 			first_response_minutes INTEGER, next_response_minutes INTEGER,
 			resolution_minutes INTEGER, business_hours BOOLEAN NOT NULL DEFAULT 0, pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
+			warn_before_minutes INTEGER, notify_user_ids TEXT NOT NULL DEFAULT '{}', notify_cs_owner BOOLEAN NOT NULL DEFAULT 0, assign_unassigned_user_id TEXT,
 			active_since DATETIME NOT NULL, conditions_changed_at DATETIME, created_by_id TEXT, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_conversation_slas (
@@ -971,6 +972,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			target_business_hours BOOLEAN NOT NULL DEFAULT 0, target_pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
 			ai_involved BOOLEAN NOT NULL DEFAULT 0, human_since DATETIME, ai_holding_since DATETIME, targets_from DATETIME, next_response_carried_breaches INTEGER NOT NULL DEFAULT 0,
 			company_key TEXT NOT NULL DEFAULT '',
+			first_response_warned_for DATETIME, next_response_warned_for DATETIME, resolution_warned_for DATETIME,
 			first_response_paused_seconds INTEGER NOT NULL DEFAULT 0,
 			first_response_state TEXT NOT NULL DEFAULT '', first_response_due_at DATETIME, first_response_achieved_at DATETIME,
 			first_response_breached_at DATETIME, next_response_state TEXT NOT NULL DEFAULT '', next_response_due_at DATETIME,

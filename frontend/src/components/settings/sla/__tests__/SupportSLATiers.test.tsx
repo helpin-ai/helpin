@@ -88,7 +88,7 @@ describe('SupportSLATiers', () => {
     render()
     await act(async () => { button('Delete Gold')?.click() })
     expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
-      description: expect.stringContaining('3 companies will have no tier, and 1 policy will stop matching it'),
+      description: expect.stringContaining('3 companies will have no tier, and 1 policy will stop matching it, and a policy for this tier alone is turned off'),
     }))
     expect(deleteTier).toHaveBeenCalledWith('t1')
   })

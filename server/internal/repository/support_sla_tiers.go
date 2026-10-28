@@ -20,8 +20,13 @@ var ErrSupportSLATierNotFound = errors.New("SLA tier not found")
 type SupportSLACompany struct {
 	ID     string
 	TierID *string
+	// CSOwnerMemberID is the company's customer success owner.
+	CSOwnerMemberID *string
 	// TierChangedAt is when the company's tier last changed.
 	TierChangedAt *time.Time
+	// LinkedAt is when the conversation was last moved to this company; nil
+	// when it has had it since it was created.
+	LinkedAt *time.Time
 }
 
 // ListTiers returns the workspace's tiers in display order, with how many
@@ -102,7 +107,8 @@ func (r *SupportSLARepository) UpdateTier(ctx context.Context, tier *model.Suppo
 }
 
 // DeleteTier removes a tier, clears it from companies and from policy
-// conditions, and returns the companies that carried it.
+// conditions, and returns the companies that carried it. A policy whose only
+// tier it was is turned off: with no tier left it would match everyone.
 func (r *SupportSLARepository) DeleteTier(ctx context.Context, workspaceID, tierID string, at time.Time) ([]string, error) {
 	var companyIDs []string
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -125,11 +131,12 @@ func (r *SupportSLARepository) DeleteTier(ctx context.Context, workspaceID, tier
 				continue
 			}
 			remaining := model.DocsStringArray(slices.DeleteFunc(slices.Clone([]string(policy.CompanyTierIDs)), func(id string) bool { return id == tierID }))
-			if remaining == nil {
-				remaining = model.DocsStringArray{}
+			updates := map[string]any{"company_tier_ids": remaining, "conditions_changed_at": at, "updated_at": at}
+			if len(remaining) == 0 {
+				updates["company_tier_ids"], updates["enabled"] = model.DocsStringArray{}, false
 			}
 			if err := tx.Model(&model.SupportSLAPolicy{}).Where("workspace_id = ? AND id = ?", workspaceID, policy.ID).
-				Updates(map[string]any{"company_tier_ids": remaining, "conditions_changed_at": at, "updated_at": at}).Error; err != nil {
+				Updates(updates).Error; err != nil {
 				return fmt.Errorf("remove SLA tier from policy: %w", err)
 			}
 		}
@@ -207,19 +214,36 @@ func (r *SupportSLARepository) CompanyNames(ctx context.Context, workspaceID str
 // in the workspace.
 func (r *SupportSLARepository) GetCompany(ctx context.Context, workspaceID, companyID string) (*SupportSLACompany, error) {
 	var rows []struct {
-		ID                      string
-		SupportSLATierID        *string
-		SupportSLATierChangedAt *time.Time
+		ID                           string
+		SupportSLATierID             *string
+		SupportSLATierChangedAt      *time.Time
+		CustomerSuccessOwnerMemberID *string
 	}
 	if err := r.db.WithContext(ctx).Table("crm_companies").
-		Select("id, support_sla_tier_id, support_sla_tier_changed_at").
+		Select("id, support_sla_tier_id, support_sla_tier_changed_at, customer_success_owner_member_id").
 		Where("workspace_id = ? AND id = ?", workspaceID, companyID).Limit(1).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load company SLA tier: %w", err)
 	}
 	if len(rows) == 0 {
 		return nil, nil
 	}
-	return &SupportSLACompany{ID: rows[0].ID, TierID: rows[0].SupportSLATierID, TierChangedAt: rows[0].SupportSLATierChangedAt}, nil
+	return &SupportSLACompany{ID: rows[0].ID, TierID: rows[0].SupportSLATierID, TierChangedAt: rows[0].SupportSLATierChangedAt,
+		CSOwnerMemberID: rows[0].CustomerSuccessOwnerMemberID}, nil
+}
+
+// MemberUserID returns the user of an active workspace member, or "" when
+// the member is gone or has not joined.
+func (r *SupportSLARepository) MemberUserID(ctx context.Context, workspaceID, memberID string) (string, error) {
+	var userIDs []string
+	if err := r.db.WithContext(ctx).Table("workspace_members").
+		Where("workspace_id = ? AND id = ? AND user_id IS NOT NULL AND status = ?", workspaceID, memberID, "active").
+		Limit(1).Pluck("user_id", &userIDs).Error; err != nil {
+		return "", fmt.Errorf("find workspace member user: %w", err)
+	}
+	if len(userIDs) == 0 {
+		return "", nil
+	}
+	return userIDs[0], nil
 }
 
 // SetCompanyTier gives companies a tier, or none when tierID is nil, and

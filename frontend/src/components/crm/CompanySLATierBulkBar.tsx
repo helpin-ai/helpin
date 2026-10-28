@@ -6,6 +6,8 @@ import { Cancel01Icon, Loading01Icon } from '@/lib/icons'
 import type { SupportSLATier } from '@/lib/pmTypes'
 
 const NO_TIER = '__none__'
+/** Matches the server's limit on companies per tier change. */
+const SET_TIER_BATCH = 200
 
 /** Floating actions for selected companies: set or clear their SLA tier. */
 export function CompanySLATierBulkBar({
@@ -23,15 +25,22 @@ export function CompanySLATierBulkBar({
   const count = companyIds.length
   const noun = count === 1 ? 'company' : 'companies'
 
-  const apply = (value: string) => {
+  const apply = async (value: string) => {
     const tier = tiers.find((candidate) => candidate.id === value)
-    setTier.mutate({ companyIds, tierId: tier?.id ?? null }, {
-      onSuccess: ({ updated }) => {
-        const what = tier ? `set to ${tier.name}` : 'cleared'
-        toast.success(updated === 0 ? `SLA tier already ${tier ? tier.name : 'empty'}` : `SLA tier ${what} for ${updated} ${updated === 1 ? 'company' : 'companies'}`)
-        onClearSelection()
-      },
-    })
+    let updated = 0
+    try {
+      // The server takes a bounded number of companies per change.
+      for (let start = 0; start < companyIds.length; start += SET_TIER_BATCH) {
+        const result = await setTier.mutateAsync({ companyIds: companyIds.slice(start, start + SET_TIER_BATCH), tierId: tier?.id ?? null })
+        updated += result.updated
+      }
+    } catch {
+      // The mutation reports the failure; keep the selection to retry.
+      return
+    }
+    const what = tier ? `set to ${tier.name}` : 'cleared'
+    toast.success(updated === 0 ? `SLA tier already ${tier ? tier.name : 'empty'}` : `SLA tier ${what} for ${updated} ${updated === 1 ? 'company' : 'companies'}`)
+    onClearSelection()
   }
 
   return (
@@ -44,7 +53,7 @@ export function CompanySLATierBulkBar({
         {setTier.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
         {count} selected
       </span>
-      <Select value="" disabled={setTier.isPending} onValueChange={apply}>
+      <Select value="" disabled={setTier.isPending} onValueChange={(value) => void apply(value)}>
         <SelectTrigger size="sm" className="h-7 min-w-[120px] gap-1 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-accent" aria-label="Set SLA tier">
           <SelectValue placeholder="Set SLA tier" />
         </SelectTrigger>

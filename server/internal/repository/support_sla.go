@@ -121,6 +121,8 @@ func (r *SupportSLARepository) SavePolicy(ctx context.Context, policy *model.Sup
 			"first_response_minutes": policy.FirstResponseMinutes, "next_response_minutes": policy.NextResponseMinutes,
 			"resolution_minutes": policy.ResolutionMinutes, "business_hours": policy.BusinessHours,
 			"pause_while_waiting": policy.PauseWhileWaiting, "active_since": policy.ActiveSince,
+			"warn_before_minutes": policy.WarnBeforeMinutes, "notify_user_ids": policy.NotifyUserIDs,
+			"notify_cs_owner": policy.NotifyCSOwner, "assign_unassigned_user_id": policy.AssignUnassignedUserID,
 			"conditions_changed_at": policy.ConditionsChangedAt,
 			"updated_at":            time.Now().UTC(),
 		})
@@ -336,6 +338,14 @@ func (r *SupportSLARepository) LoadInputs(ctx context.Context, workspaceID, conv
 	if conversation.CRMCompanyID != nil && *conversation.CRMCompanyID != "" {
 		if inputs.Company, err = r.GetCompany(ctx, workspaceID, *conversation.CRMCompanyID); err != nil {
 			return nil, err
+		}
+		if inputs.Company != nil {
+			var linked struct{ CRMCompanyChangedAt *time.Time }
+			if err := db.Table("support_conversations").Select("crm_company_changed_at").
+				Where("id = ?", conversationID).Scan(&linked).Error; err != nil {
+				return nil, fmt.Errorf("load conversation company change: %w", err)
+			}
+			inputs.Company.LinkedAt = linked.CRMCompanyChangedAt
 		}
 	}
 	if err := db.Model(&model.SupportMessage{}).Select("sender_type, created_at").

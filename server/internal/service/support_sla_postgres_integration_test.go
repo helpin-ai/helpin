@@ -371,6 +371,10 @@ func TestSupportSLATiersPostgres(t *testing.T) {
 	if queued != 1 {
 		t.Fatalf("company change did not queue the conversation: %d", queued)
 	}
+	var changedAt sql.NullTime
+	if err := db.Raw(`SELECT crm_company_changed_at FROM support_conversations WHERE id = ?`, conversation.ID).Scan(&changedAt).Error; err != nil || !changedAt.Valid {
+		t.Fatalf("company change time not recorded: %+v %v", changedAt, err)
+	}
 	mustExec(t, db, `DELETE FROM support_sla_work`)
 
 	if updated, err := sla.SetCompanyTier(ctx, workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{company.ID}, TierID: &gold.ID}); err != nil || updated != 1 {

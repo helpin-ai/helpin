@@ -114,6 +114,8 @@ promised.
   current policy. **Remove custom SLA** deletes them, and open conversations
   move to the next matching policy.
 - Deleting a tier clears it from its companies and from policy conditions.
+  A policy that matched only that tier is turned off, since with no tier left
+  it would match every company.
 
 ### What each target measures
 
@@ -152,8 +154,9 @@ When a teammate hands a conversation back to the AI after the handoff:
 - When the conversation's company, or that company's tier, changes and
   another policy applies as a result, the new targets count from the change.
   The promise did not exist before, so an upgrade never marks a target overdue
-  at once. A company without a matching policy before its tier was set counts
-  from when the tier was set.
+  at once. This also holds when no policy applied before: a conversation
+  linked to a Gold company hours after it started counts Gold's targets from
+  the link, and a company's first tier counts from when it was set.
 - When a priority, inbox or channel change selects a different policy:
   - Recorded results carry over.
   - Targets still running are judged by the new policy from their original
@@ -207,6 +210,27 @@ A new breach:
 
 Breaches on resolved or spam conversations are recorded but send no
 notification.
+
+### Warnings before a breach
+
+A policy can **warn** a set number of minutes before a target is due; the
+warning must come before the policy's shortest target. The worker wakes at
+the warning time, so warnings arrive on time.
+- A warning notifies the same people as a breach and emits the `sla.warning`
+  webhook. It adds nothing to the conversation timeline.
+- Each due time warns once. A new next-response cycle, or a change that moves
+  the due time, warns again.
+- A paused, met or overdue target never warns. When an evaluation runs more
+  than half the lead time late, for example because a policy started applying
+  inside the warning window, the warning is recorded without being sent.
+- **If nobody is assigned at the warning, assign to** gives the conversation
+  to a chosen teammate. The assignment is skipped, and logged, if that
+  teammate can no longer work on the conversation.
+
+**Also notify** adds up to 10 teammates, and optionally the company's customer
+success owner, to warnings and breaches. Warning settings are read from the
+policy when the warning fires, so changing them applies to open
+conversations.
 
 ## Snooze
 

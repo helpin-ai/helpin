@@ -171,6 +171,14 @@ export interface SupportSLAPolicy {
   resolution_minutes?: number | null;
   business_hours: boolean;
   pause_while_waiting: boolean;
+  /** Minutes before a target is due to warn; null when warnings are off. */
+  warn_before_minutes?: number | null;
+  /** Teammates notified on warnings and breaches, besides the usual ones. */
+  notify_user_ids: string[];
+  /** Also notify the company's customer success owner. */
+  notify_cs_owner: boolean;
+  /** Who takes an unassigned conversation when a warning fires. */
+  assign_unassigned_user_id?: string | null;
   active_since: string;
   created_at: string;
   updated_at: string;
@@ -189,6 +197,10 @@ export interface SupportSLAPolicyInput {
   resolution_minutes?: number | null;
   business_hours: boolean;
   pause_while_waiting: boolean;
+  warn_before_minutes: number | null;
+  notify_user_ids: string[];
+  notify_cs_owner: boolean;
+  assign_unassigned_user_id: string | null;
 }
 
 /** In a policy's company_tier_ids: companies without a tier, and conversations without a company. */
@@ -1620,6 +1632,7 @@ export type WebhookEventType =
   | 'conversation.priority_changed'
   | 'conversation.snoozed'
   | 'message.created'
+  | 'sla.warning'
   | 'sla.breached'
   | 'csat.submitted';
 

@@ -111,7 +111,7 @@ export function SupportSLATiers({ workspaceId, editable }: { workspaceId: string
   const remove = async (tier: SupportSLATier) => {
     const usage = [
       tier.company_count ? `${plural(tier.company_count, 'company', 'companies')} will have no tier` : null,
-      tier.policy_count ? `${plural(tier.policy_count, 'policy', 'policies')} will stop matching it` : null,
+      tier.policy_count ? `${plural(tier.policy_count, 'policy', 'policies')} will stop matching it, and a policy for this tier alone is turned off` : null,
     ].filter(Boolean)
     const confirmed = await confirm({
       title: `Delete the ${tier.name} tier?`,
