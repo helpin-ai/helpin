@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -139,7 +139,7 @@ vi.mock('@/components/ui/date-picker', () => ({
 }))
 
 vi.mock('@edition', () => ({
-  UpgradeRequiredDialog: () => null,
+  UpgradeRequiredDialog: ({ open }: { open: boolean }) => open ? <div data-upgrade-dialog>Upgrade required</div> : null,
 }))
 
 vi.mock('@/components/pm/LabelPicker', () => ({
@@ -1531,6 +1531,85 @@ describe('CreateTaskModal', () => {
       root.unmount()
     })
   })
+  it('shows preparation instead of empty fields and opens the populated form after retry', async () => {
+    const pending = deferred<import('../preparedTaskDraft').PreparedTaskDraft>()
+    const draft = { name: 'Generated title', description: '<p>Prepared brief</p>', task_type: 'bug' as const, priority: 'high' as const, source_hash: 'hash' }
+    const prepareDraft = vi.fn().mockRejectedValueOnce(new Error('offline')).mockReturnValue(pending.promise)
+    vi.mocked(pmWorkflowService.resolveTeamWorkflow).mockResolvedValue({ data: workflow, error: null } as any)
+    function PreparedTask() {
+      const [prepared, setPrepared] = useState(false)
+      return <CreateTaskModal open workspaceId="ws-1" initialTeamId="team-1" onOpenChange={vi.fn()} supportSource
+        prepareDraft={prepareDraft} onDraftPrepared={() => setPrepared(true)}
+        renderPreparation={prepared ? undefined : ({ error, retry }) => <div role="status">{error || 'Preparing task'}<button onClick={retry}>Try again</button></div>} />
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(<PreparedTask />))
+      expect(container.querySelector('#task-title')).toBeNull()
+      expect(container.querySelector('textarea')).toBeNull()
+      expect(container.textContent).toContain('Couldn’t prepare the draft')
+      await act(async () => { Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Try again')!.click() })
+      expect(container.textContent).toContain('Preparing task')
+      expect(container.querySelector('#task-title')).toBeNull()
+      await act(async () => pending.resolve(draft))
+      expect((container.querySelector('#task-title') as HTMLInputElement).value).toBe(draft.name)
+      expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(draft.description)
+      expect(container.querySelector('[role="status"]')).toBeNull()
+      expect(prepareDraft).toHaveBeenCalledTimes(2)
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+    }
+  })
+
+  it.runIf(process.env.VITE_EDITION === 'ee')('keeps the usage upgrade dialog available during preparation', async () => {
+    const prepareDraft = vi.fn().mockRejectedValue(new Error('AI usage exhausted'))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(<CreateTaskModal open workspaceId="ws-1" initialTeamId="team-1" supportSource
+        prepareDraft={prepareDraft} onOpenChange={vi.fn()} renderPreparation={() => <div>Preparing task</div>} />))
+      expect(container.querySelector('#task-title')).toBeNull()
+      expect(container.querySelector('[data-upgrade-dialog]')).not.toBeNull()
+      expect(container.textContent).not.toContain('AI usage exhausted')
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+    }
+  })
+
+  it('ignores a draft that finishes after the preparation screen is closed', async () => {
+    const pending = deferred<import('../preparedTaskDraft').PreparedTaskDraft>()
+    const prepareDraft = vi.fn(() => pending.promise)
+    const onPrepared = vi.fn()
+    const onClose = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    function PreparedTask() {
+      const [open, setOpen] = useState(true)
+      return open ? <CreateTaskModal open workspaceId="ws-1" initialTeamId="team-1" supportSource
+        prepareDraft={prepareDraft} onDraftPrepared={onPrepared} onOpenChange={value => { onClose(value); setOpen(value) }}
+        renderPreparation={({ cancel }) => <button onClick={cancel}>Cancel preparation</button>} /> : null
+    }
+    try {
+      await act(async () => root.render(<PreparedTask />))
+      const cancel = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Cancel preparation')
+      expect(cancel).toBeTruthy()
+      await act(async () => cancel!.click())
+      expect(onClose).toHaveBeenCalledWith(false)
+      await act(async () => pending.resolve({ name: 'Late draft', description: '<p>Late</p>', task_type: 'bug', priority: 'high' }))
+      expect(onPrepared).not.toHaveBeenCalled()
+      expect(container.querySelector('#task-title')).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+    }
+  })
+
   it('opens while preparing a support draft and preserves edits made before it arrives', async () => {
     const pending = deferred<import('../preparedTaskDraft').PreparedTaskDraft>()
     const prepareDraft = vi.fn(() => pending.promise)

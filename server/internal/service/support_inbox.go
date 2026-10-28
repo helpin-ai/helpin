@@ -75,6 +75,7 @@ type SupportInboxService struct {
 	linkPreviewService           SupportMessageLinkPreviewer
 	presence                     websocket.PresenceProvider
 	statusOverrideRepo           *repository.SupportTeammateStatusOverrideRepository
+	responderDirectory           *SupportResponderDirectory
 	emailLogRepo                 *repository.SupportEmailLogRepository
 	triageEventRepo              *repository.SupportConversationTriageEventRepository
 	postmarkDomainClient         *email.DomainClient
@@ -907,6 +908,15 @@ func (s *SupportInboxService) SetStatusOverrideRepo(repo *repository.SupportTeam
 		return nil
 	}
 	s.statusOverrideRepo = repo
+	return s
+}
+
+// SetResponderDirectory injects who answers customers, which decides what the widget shows as available.
+func (s *SupportInboxService) SetResponderDirectory(directory *SupportResponderDirectory) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.responderDirectory = directory
 	return s
 }
 

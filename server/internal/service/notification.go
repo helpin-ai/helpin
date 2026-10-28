@@ -92,6 +92,7 @@ type NotificationService struct {
 	installationRepo    *repository.SupportInboxInstallationRepository
 	mailboxRepo         *repository.SupportMailboxRepository
 	statusOverrideRepo  *repository.SupportTeammateStatusOverrideRepository
+	supportResponders   *SupportResponderDirectory
 	supportMessageRepo  *repository.SupportMessageRepository
 	supportEmailLogRepo *repository.SupportEmailLogRepository
 	wsPublisher         *ws.Publisher
@@ -152,6 +153,12 @@ func (s *NotificationService) SetSupportRoutingDependencies(
 	s.presence = presence
 	s.statusOverrideRepo = statusOverrideRepo
 	return s
+}
+
+// SetSupportResponderDirectory lets customer reply alerts find the teammates
+// who answer customers in each inbox.
+func (s *NotificationService) SetSupportResponderDirectory(directory *SupportResponderDirectory) {
+	s.supportResponders = directory
 }
 
 func (s *NotificationService) SetSupportEmailHistoryRepositories(messages *repository.SupportMessageRepository, emailLogs *repository.SupportEmailLogRepository) {

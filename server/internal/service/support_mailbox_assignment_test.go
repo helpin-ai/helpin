@@ -282,12 +282,12 @@ func TestMailboxAssignmentHandoffRotationDoesNotRestrictNotifications(t *testing
 	workspaceRepo := repository.NewWorkspaceRepository(f.db)
 	instRepo := repository.NewSupportInboxInstallationRepository(f.db)
 	input := supportRecipientSelectorInput{WorkspaceID: f.workspaceID, MailboxID: &box.ID, OwnerUserID: strPtr("user-observer"), UseMailboxAssignment: true}
-	selected, err := selectSupportConversationRecipient(f.ctx, workspaceRepo, f.mailboxRepo, instRepo, nil, nil, nil, input)
+	selected, err := selectSupportConversationRecipient(f.ctx, workspaceRepo, f.mailboxRepo, instRepo, nil, nil, nil, nil, input)
 	if err != nil || selected == nil || selected.UserID != "user-b" {
 		t.Fatalf("round-robin handoff selection=%v err=%v", selected, err)
 	}
 	input.UseMailboxAssignment = false
-	selected, err = selectSupportConversationRecipient(f.ctx, workspaceRepo, f.mailboxRepo, instRepo, nil, nil, nil, input)
+	selected, err = selectSupportConversationRecipient(f.ctx, workspaceRepo, f.mailboxRepo, instRepo, nil, nil, nil, nil, input)
 	if err != nil || selected == nil || selected.UserID != "user-observer" {
 		t.Fatalf("notification selection changed: %v err=%v", selected, err)
 	}
@@ -298,7 +298,7 @@ func TestMailboxAssignmentHandoffRotationDoesNotRestrictNotifications(t *testing
 	}
 	mustExec(t, f.db, `DELETE FROM workspace_module_grants WHERE subject_id = ?`, "wm-b")
 	input.UseMailboxAssignment = true
-	selected, err = selectSupportConversationRecipient(f.ctx, workspaceRepo, f.mailboxRepo, instRepo, nil, nil, nil, input)
+	selected, err = selectSupportConversationRecipient(f.ctx, workspaceRepo, f.mailboxRepo, instRepo, nil, nil, nil, nil, input)
 	if err != nil || selected != nil {
 		t.Fatalf("revoked pool fell back: %v err=%v", selected, err)
 	}

@@ -123,7 +123,18 @@ export function SidebarAccountMenu({
                     in the last 5 minutes.
                   </TooltipContent>
                 </Tooltip>
-                <DropdownMenuRadioItem value="online">Online</DropdownMenuRadioItem>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuRadioItem value="online">
+                      Online
+                      <HelpCircleIcon className="ml-auto h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                    </DropdownMenuRadioItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-64">
+                    Online while you use Helpin. Away after 15 minutes of inactivity,
+                    or when you close Helpin. Your choice is kept for when you come back.
+                  </TooltipContent>
+                </Tooltip>
                 <DropdownMenuRadioItem value="away">Away</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="offline">Offline</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
