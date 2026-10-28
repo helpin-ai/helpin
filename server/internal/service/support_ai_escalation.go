@@ -151,25 +151,3 @@ func parseAIConfidence(metadata string) (float64, bool) {
 	}
 	return meta.AIConfidence, true
 }
-
-// ---------------------------------------------------------------------------
-// Hard escalation rules (moved from support_ai.go)
-// ---------------------------------------------------------------------------
-
-// checkHardEscalation checks if a message matches hard escalation rules.
-func checkHardEscalation(content string) string {
-	lower := strings.ToLower(strings.TrimSpace(content))
-
-	// Customer explicitly asks for a human.
-	humanPatterns := []string{
-		"talk to someone", "real person", "human agent", "talk to a human",
-		"speak to someone", "real agent", "live agent", "connect me",
-	}
-	for _, pattern := range humanPatterns {
-		if strings.Contains(lower, pattern) {
-			return "customer_requested_human"
-		}
-	}
-
-	return ""
-}

@@ -84,11 +84,6 @@ func (s *SupportPreviewService) Start(ctx context.Context, workspaceID, agentID 
 		turns = append(turns, turn)
 	}
 	snapshot := &model.SupportPreviewSnapshot{History: turns, Message: message, ConversationSource: source, ConfidenceThreshold: settings.AIConfidenceThreshold, MaxResults: normalizePreviewMaxResults(req.MaxResults)}
-	if req.IncludeAnswer == nil || *req.IncludeAnswer {
-		if reason := checkHardEscalation(message); reason != "" {
-			return &model.SupportAIPreviewResponse{Status: "completed", ConversationSource: source, ConfidenceThreshold: settings.AIConfidenceThreshold, FinalDecision: "handoff", FinalReason: reason}, nil
-		}
-	}
 	if req.IncludeAnswer != nil && !*req.IncludeAnswer {
 		results, err := s.ai.searchSupportKnowledge(ctx, workspaceID, agent.ID, "", previewMessages(snapshot), nil)
 		if err != nil {

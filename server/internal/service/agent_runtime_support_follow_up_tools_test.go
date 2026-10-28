@@ -28,7 +28,7 @@ func TestScheduledSupportFollowUpToolsHaveCatalogAndExecutableProvider(t *testin
 	settings := model.DefaultSupportInboxSettings()
 	settings.AIAgentID = strPtr("agent-1")
 	episode := model.SupportAIFollowUp{ID: "episode", WorkspaceID: "ws-1", ConversationID: "conv-1", SourceMessageID: "source", RunID: "reserved-run", CloseHours: 1}
-	if err := followUps.launch(context.Background(), episode, &model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1"}, settings, now); err != nil {
+	if err := followUps.launch(context.Background(), episode, &model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1"}, settings, "chat", now); err != nil {
 		t.Fatal(err)
 	}
 	start := runtimeClient.startRunCalls[0]
@@ -148,7 +148,7 @@ func TestJevWaitingCustomerLaunchesRestrictedRuntimeWriter(t *testing.T) {
 	settings := model.DefaultSupportInboxSettings()
 	settings.AIAgentID = strPtr("agent-1")
 	episode := model.SupportAIFollowUp{ID: "episode", WorkspaceID: "ws-1", ConversationID: "conv-1", SourceMessageID: "source", RunID: "reserved-run", CloseHours: 1}
-	if err := svc.launch(context.Background(), episode, &model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1"}, settings, now, "waiting_customer"); err != nil {
+	if err := svc.launch(context.Background(), episode, &model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1"}, settings, "chat", now, "waiting_customer"); err != nil {
 		t.Fatal(err)
 	}
 	if len(runtimeClient.startRunCalls) != 1 {

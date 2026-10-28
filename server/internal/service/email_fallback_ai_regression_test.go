@@ -235,3 +235,59 @@ func TestEmailCustomerReplyDoesNotPublishAIOnWebhookRetry(t *testing.T) {
 		t.Fatalf("customer messages = %d, want 1", customerCount)
 	}
 }
+
+type fixedTeamReplyLinks struct{}
+
+func (fixedTeamReplyLinks) TeamReplyURL(_, conversationID string) string {
+	return "https://app.example.com/team-reply/token-" + conversationID
+}
+
+// Only emails the AI wrote, while the AI still handles the conversation, offer
+// the "Ask our team to reply" link.
+func TestAIEmailsOfferTeamReplyLink(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		senderType string
+		change     func(*model.SupportConversation, *model.SupportInboxSettings)
+		want       bool
+	}{
+		{name: "AI reply", senderType: "ai", want: true},
+		{name: "teammate reply", senderType: "user"},
+		{name: "already handed off", senderType: "ai", change: func(c *model.SupportConversation, _ *model.SupportInboxSettings) { c.AIState = strPtr("escalated") }},
+		{name: "talk to human hidden", senderType: "ai", change: func(_ *model.SupportConversation, s *model.SupportInboxSettings) { s.ShowTalkToHuman = false }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := model.DefaultSupportInboxSettings()
+			settings.EmailFallbackEnabled = true
+			conv := &model.SupportConversation{ID: "33333333-3333-3333-3333-333333333333", WorkspaceID: "11111111-1111-1111-1111-111111111111", Status: "open", CustomerEmail: strPtr("customer@example.com"), AIState: strPtr("pending"), Channel: "email", Source: "email"}
+			if tt.change != nil {
+				tt.change(conv, &settings)
+			}
+			env := setupEmailFallbackInboundTestEnv(t, settings)
+			env.service.SetTeamReplyLinks(fixedTeamReplyLinks{})
+			if err := env.convRepo.Create(context.Background(), conv); err != nil {
+				t.Fatal(err)
+			}
+			msg := &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: tt.senderType, SenderDisplayName: strPtr("Helpin AI"), MessageType: "reply", Content: "Hi Sarah,\n\nTurn on Notes under Columns.\n\nBest regards,"}
+			if err := env.messageRepo.Create(context.Background(), msg); err != nil {
+				t.Fatal(err)
+			}
+			var captured capturedPostmarkRequest
+			env.service.emailClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if err := json.NewDecoder(req.Body).Decode(&captured); err != nil {
+					t.Fatal(err)
+				}
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"ErrorCode":0,"MessageID":"sent"}`))}, nil
+			})})
+			if err := env.service.fireEmailWithOptions(context.Background(), conv.ID, []string{msg.ID}, emailFallbackFireOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			link := "https://app.example.com/team-reply/token-" + conv.ID
+			html := strings.Contains(captured.HtmlBody, `Prefer a person? <a href="`+link+`">Ask our team to reply</a>`)
+			text := strings.Contains(captured.TextBody, "Prefer a person? Ask our team to reply:\n"+link)
+			if html != tt.want || text != tt.want {
+				t.Fatalf("link in html=%v text=%v, want %v\n%s", html, text, tt.want, captured.TextBody)
+			}
+		})
+	}
+}

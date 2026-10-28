@@ -33,6 +33,7 @@ var supportTaskKeyPattern = regexp.MustCompile(`\b([A-Z]{2,5})-(\d+)\b`)
 // sections are omitted; the inbox shows a row only for what is present.
 type supportCodeCheck struct {
 	Status          string                `json:"status"`
+	Phase           string                `json:"phase,omitempty"`
 	Focus           string                `json:"focus,omitempty"`
 	Message         string                `json:"message,omitempty"`
 	Found           string                `json:"found,omitempty"`

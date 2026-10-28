@@ -128,6 +128,41 @@ func TestSupportFollowUpRejectsDeadlinesInEitherReminder(t *testing.T) {
 	}
 }
 
+func TestSupportFollowUpInstructionsWriteEmailsOnEmail(t *testing.T) {
+	chat := supportFollowUpInstructions("chat", true)
+	if chat != supportFollowUpBaseInstructions {
+		t.Fatal("chat follow-ups changed")
+	}
+	email := supportFollowUpInstructions("email", true)
+	for _, want := range []string{"by email", "greets the customer by first name", "a second short email", "Best regards", "Have a great day"} {
+		if !strings.Contains(email, want) {
+			t.Fatalf("email instructions miss %q", want)
+		}
+	}
+	if legacy := supportFollowUpInstructions("email", false); !strings.Contains(legacy, "no greeting or sign-off") {
+		t.Fatal("one-message episodes would repeat the greeting")
+	}
+}
+
+// The email format the instructions ask for must pass the deadline guards,
+// or every email follow-up would fail and hand off instead.
+func TestSupportFollowUpEmailFormatPassesGuards(t *testing.T) {
+	d := supportFollowUpDecision{
+		Action:           "follow_up",
+		Reason:           "Waiting for the customer to confirm the export works",
+		Question:         "Hi Sarah,\n\nYou asked why the Notes column was missing from your CSV export. Did turning it on under Columns bring it back?\n\nIf anything is still missing, just reply to this email.\n\nBest regards,",
+		ClosureNotice:    "Hi Sarah,\n\nWe haven't heard back from you, so we'll close this conversation shortly. You can reply anytime to reopen it.\n\nBest regards,",
+		ObligationsClear: true,
+		SourceMessageIDs: []string{"source"},
+	}
+	if err := validateSupportFollowUpDecision(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDeadlineFreeFollowUp(d); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSupportFollowUpUnconfirmedEmailDoesNotAdvance(t *testing.T) {
 	svc, db, run, e, d := setupFollowUpTest(t)
 	mustExec(t, db, `UPDATE support_ai_follow_ups SET sequence_version=2,second_delay_hours=24,close_hours=1`)

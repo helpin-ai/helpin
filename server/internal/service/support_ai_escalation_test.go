@@ -73,29 +73,3 @@ func TestCountMaxFollowupAITurnsFallsBackToHeuristicsForLegacyMessages(t *testin
 		t.Fatalf("countMaxFollowupAITurns() = %d, want 1", got)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// checkHardEscalation (moved function, verify still works)
-// ---------------------------------------------------------------------------
-
-func TestCheckHardEscalation(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    string
-	}{
-		{name: "no match", content: "How do I reset?", want: ""},
-		{name: "human request", content: "I want to talk to a human", want: "customer_requested_human"},
-		{name: "live agent", content: "Connect me to a live agent please", want: "customer_requested_human"},
-		{name: "billing goes through planner", content: "I need a refund", want: ""},
-		{name: "account cancellation goes through planner", content: "Cancel my account now", want: ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := checkHardEscalation(tt.content)
-			if got != tt.want {
-				t.Errorf("checkHardEscalation(%q) = %q, want %q", tt.content, got, tt.want)
-			}
-		})
-	}
-}
