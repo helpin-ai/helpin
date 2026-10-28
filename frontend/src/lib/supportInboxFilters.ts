@@ -9,6 +9,21 @@ import {
 
 export type ConversationAssignmentFilter = 'me' | 'mentioned_me' | 'opened_by_me' | 'unassigned' | 'others';
 export type ConversationSortOrder = 'newest' | 'oldest' | 'sla';
+/** "due_soon" matches a target due within SLA_DUE_SOON_MS that is not overdue yet. */
+export type ConversationSLAFilter = 'breached' | 'due_soon';
+
+/** Matches the server's due-soon window (model.SupportSLADueSoonWindow). */
+export const SLA_DUE_SOON_MS = 60 * 60_000;
+
+export function parseConversationSLAFilter(value: unknown): ConversationSLAFilter | undefined {
+  return value === 'breached' || value === 'due_soon' ? value : undefined;
+}
+
+function matchesConversationSLAFilter(conversation: SupportConversation, filter: ConversationSLAFilter, now: number): boolean {
+  if (filter === 'breached') return Boolean(conversation.sla?.breached);
+  const due = conversation.sla?.next_due_at;
+  return Boolean(due && !conversation.sla?.breached && new Date(due).getTime() - now < SLA_DUE_SOON_MS);
+}
 export type ConversationStateFilter = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 export type ConversationAIStateFilter = 'handling' | 'handoff' | 'resolved';
 
@@ -20,8 +35,8 @@ export interface ConversationListFilters {
   priorities?: ConversationPriority[];
   aiStates: ConversationAIStateFilter[];
   sort: ConversationSortOrder;
-  /** Only conversations with an overdue SLA target. */
-  slaBreached?: boolean;
+  /** Only conversations with an overdue SLA target, or one due soon. */
+  sla?: ConversationSLAFilter;
 }
 
 export const DEFAULT_CONVERSATION_LIST_FILTERS: ConversationListFilters = {
@@ -132,7 +147,7 @@ export function conversationListFiltersEqual(a: ConversationListFilters, b: Conv
     stringArraysEqual(a.priorities ?? [], b.priorities ?? []) &&
     stringArraysEqual(a.aiStates, b.aiStates) &&
     a.sort === b.sort &&
-    Boolean(a.slaBreached) === Boolean(b.slaBreached)
+    a.sla === b.sla
   );
 }
 
@@ -195,7 +210,7 @@ export function normalizeConversationListFilters(
     ...(filters?.priorities?.length ? { priorities: filters.priorities } : {}),
     aiStates: filters && 'aiStates' in filters ? normalizeAIStateFilters(filters.aiStates) : defaults.aiStates,
     sort: filters?.sort ?? defaults.sort,
-    ...(filters?.slaBreached ? { slaBreached: true } : {}),
+    ...(filters?.sla ? { sla: filters.sla } : {}),
   };
 }
 
@@ -218,7 +233,7 @@ export function hasConversationListChanges({
     (normalized.priorities?.length ?? 0) > 0 ||
     !stringArraysEqual(normalized.aiStates, defaultAIStatesForNav(navFilter)) ||
     normalized.sort !== 'newest' ||
-    Boolean(normalized.slaBreached)
+    Boolean(normalized.sla)
   );
 }
 
@@ -242,7 +257,7 @@ export function filterChangeCountFromBaseline({
   if (!stringArraysEqual(listFilters.aiStates, baselineFilters.aiStates)) count += 1;
   if (!stringArraysEqual(listFilters.priorities ?? [], baselineFilters.priorities ?? [])) count += 1;
   if (listFilters.sort !== baselineFilters.sort) count += 1;
-  if (Boolean(listFilters.slaBreached) !== Boolean(baselineFilters.slaBreached)) count += 1;
+  if (listFilters.sla !== baselineFilters.sla) count += 1;
   return count;
 }
 
@@ -309,7 +324,7 @@ export function parseSupportInboxViewFilters(
       ...(rawFilters.priority ? { priorities: parseConversationPriorities(rawFilters.priority) } : {}),
       aiStates,
       sort: parseConversationSortOrder(rawFilters.sort),
-      ...(rawFilters.sla === 'breached' ? { slaBreached: true } : {}),
+      ...(parseConversationSLAFilter(rawFilters.sla) ? { sla: parseConversationSLAFilter(rawFilters.sla) } : {}),
     },
   };
 }
@@ -344,7 +359,7 @@ export function buildSupportInboxViewFilters({
   }
   if (normalizedFilters.priorities?.length) filters.priority = normalizedFilters.priorities.join(',');
   if (normalizedFilters.sort !== 'newest') filters.sort = normalizedFilters.sort;
-  if (normalizedFilters.slaBreached) filters.sla = 'breached';
+  if (normalizedFilters.sla) filters.sla = normalizedFilters.sla;
   return filters;
 }
 
@@ -436,7 +451,7 @@ export function buildConversationListRequestFilters({
   }
   if (normalizedFilters.priorities?.length) f.priority = normalizedFilters.priorities.join(',');
   if (normalizedFilters.sort !== 'newest') f.sort = normalizedFilters.sort;
-  if (normalizedFilters.slaBreached) f.sla = 'breached';
+  if (normalizedFilters.sla) f.sla = normalizedFilters.sla;
   return Object.keys(f).length > 0 ? f : undefined;
 }
 
@@ -495,18 +510,19 @@ export function filterSupportConversations(
     sortOrder?: ConversationSortOrder;
     skipViewFilter?: boolean;
     aiStates?: ConversationAIStateFilter[];
-    slaBreached?: boolean;
+    sla?: ConversationSLAFilter;
     priorities?: ConversationPriority[];
   }
 ): SupportConversation[] {
-  const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false, aiStates, slaBreached = false } = options;
+  const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false, aiStates, sla } = options;
   let result = conversations.filter((conversation) =>
     mailboxScopes.length > 0 ? matchesMailboxScopes(conversation, mailboxScopes) : matchesMailboxScope(conversation, mailboxScope)
   );
   // Snoozed conversations live only in the Snoozed view until they wake.
   result = result.filter((conversation) => (navFilter === 'snoozed') === isSnoozedConversation(conversation));
-  if (slaBreached) {
-    result = result.filter((conversation) => Boolean(conversation.sla?.breached));
+  if (sla) {
+    const now = Date.now();
+    result = result.filter((conversation) => matchesConversationSLAFilter(conversation, sla, now));
   }
 
   if (statusFilter !== 'all') {

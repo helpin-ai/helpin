@@ -21,6 +21,10 @@ const (
 // SupportSLAPolicyMaxTargetMinutes bounds a target at 90 days.
 const SupportSLAPolicyMaxTargetMinutes = 90 * 24 * 60
 
+// SupportSLADueSoonWindow is how close a due time must be for a target to
+// count as due soon in the inbox. The frontend badge uses the same window.
+const SupportSLADueSoonWindow = time.Hour
+
 // SupportSLAPolicyLimit bounds how many policies one workspace keeps.
 const SupportSLAPolicyLimit = 50
 

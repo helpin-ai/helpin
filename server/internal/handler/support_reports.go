@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,7 +52,7 @@ func splitSupportReportList(raw string) []string {
 }
 
 func writeSupportReportError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, service.ErrSupportReportInvalidRange) || strings.HasPrefix(err.Error(), "unknown timezone") {
+	if errors.Is(err, service.ErrSupportReportInvalidRange) || errors.Is(err, service.ErrSupportReportInvalidSLAOutcome) || strings.HasPrefix(err.Error(), "unknown timezone") {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -73,6 +74,31 @@ func (h *SupportReportsHandler) Overview(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, overview)
+}
+
+// SLAConversations handles GET /api/support/reports/sla/conversations: the
+// conversations behind one SLA count (metric, outcome, page).
+func (h *SupportReportsHandler) SLAConversations(w http.ResponseWriter, r *http.Request) {
+	req, err := supportReportRequestFromQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	query := r.URL.Query()
+	page := 1
+	if raw := strings.TrimSpace(query.Get("page")); raw != "" {
+		if page, err = strconv.Atoi(raw); err != nil || page < 1 || page > 1000 {
+			writeError(w, http.StatusBadRequest, "page must be a number from 1 to 1000")
+			return
+		}
+	}
+	result, err := h.reports.SLAConversations(r.Context(), req, strings.TrimSpace(query.Get("metric")), strings.TrimSpace(query.Get("outcome")), page)
+	if err != nil {
+		writeSupportReportError(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
 }
 
 // ExportConversations handles GET /api/support/reports/conversations.csv.

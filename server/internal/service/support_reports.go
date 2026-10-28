@@ -21,7 +21,13 @@ import (
 // or longer than model.SupportReportMaxRange.
 var ErrSupportReportInvalidRange = errors.New("choose a report period of up to one year")
 
+// ErrSupportReportInvalidSLAOutcome means the drill-down names no SLA count.
+var ErrSupportReportInvalidSLAOutcome = errors.New("choose an SLA target and whether it was met or missed")
+
 const supportReportRecentComments = 20
+
+// supportReportSLAPageSize is how many conversations one drill-down page holds.
+const supportReportSLAPageSize = 50
 
 // SupportReportService builds support metrics from conversations, messages
 // and CSAT ratings. Every query respects the caller's inbox access.
@@ -137,6 +143,28 @@ func (s *SupportReportService) Overview(ctx context.Context, req model.SupportRe
 		overview.HelpAssistant = assistant
 	}
 	return overview, nil
+}
+
+// SLAConversations lists the conversations behind one SLA count of the
+// report for [req.From, req.To): metric is a target and outcome is achieved
+// or breached. Pages start at 1.
+func (s *SupportReportService) SLAConversations(ctx context.Context, req model.SupportReportRequest, metric, outcome string, page int) (*model.SupportReportSLAConversations, error) {
+	if _, err := validateSupportReportRange(req); err != nil {
+		return nil, err
+	}
+	if !repository.ValidSupportReportSLAOutcome(metric, outcome) {
+		return nil, ErrSupportReportInvalidSLAOutcome
+	}
+	if page < 1 {
+		page = 1
+	}
+	from, to := req.From.UTC(), req.To.UTC()
+	rows, total, err := s.conversations.ListReportSLAConversations(ctx, s.scope(ctx, req, from, to), from, to,
+		metric, outcome, supportReportSLAPageSize, (page-1)*supportReportSLAPageSize)
+	if err != nil {
+		return nil, err
+	}
+	return &model.SupportReportSLAConversations{Data: rows, Total: total, Page: page, PerPage: supportReportSLAPageSize}, nil
 }
 
 // summarizeSupportReportSLA counts finished targets. A next-response

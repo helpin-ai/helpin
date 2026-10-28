@@ -238,10 +238,10 @@ export function ConversationList({
       sortOrder: conversationListFilters.sort,
       skipViewFilter: shouldSkipSidebarViewFilter,
       aiStates: conversationListFilters.aiStates,
-      slaBreached: conversationListFilters.slaBreached,
+      sla: conversationListFilters.sla,
       priorities: conversationListFilters.priorities,
     });
-  }, [conversationListFilters.priorities, conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.priorities, conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sla, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
 
   // J and K move through the list in its current order. The previous order

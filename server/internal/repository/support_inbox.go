@@ -1008,8 +1008,9 @@ type ConversationListParams struct {
 	TagIDs      []string
 	SystemTags  []string
 	AIFilters   []string
-	// SLA narrows to conversations with an overdue target ("breached") or
-	// any SLA target ("active").
+	// SLA narrows to conversations with an overdue target ("breached"), a
+	// target due within model.SupportSLADueSoonWindow ("due_soon"), or any
+	// running SLA target ("active").
 	SLA string
 }
 
@@ -1376,6 +1377,9 @@ func (r *SupportConversationRepository) applyConversationListParams(query *gorm.
 	switch strings.ToLower(strings.TrimSpace(params.SLA)) {
 	case "breached":
 		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND sla.breached)", alias))
+	case "due_soon":
+		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND NOT sla.breached AND sla.next_due_at < ?)", alias),
+			time.Now().UTC().Add(model.SupportSLADueSoonWindow))
 	case "active":
 		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND sla.next_due_at IS NOT NULL)", alias))
 	}

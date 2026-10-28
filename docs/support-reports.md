@@ -31,7 +31,35 @@ share one implementation.
 | Handoff rate | AI-involved conversations escalated to a teammate. |
 | Backlog | Open and waiting conversations right now, and how many have no assignee. Not tied to the range. |
 | CSAT | Average rating, number of ratings, and share of 4 and 5 ratings, split by AI and human resolution. |
-| SLA hit rate | Per target: met over met plus missed. Cancelled targets are left out. |
+| SLA hit rate | Per target: met over met plus missed, for conversations created in the range. Targets still running and cancelled targets are left out. |
+
+### First response vs. the SLA first response
+
+The two numbers measure different things, so they can disagree:
+
+- **First response (team)** is the median calendar time from the customer's
+  first message to the first teammate reply, for every conversation the
+  customer started, with or without an SLA policy.
+- The **SLA first response** target starts at the handoff when the AI answered
+  first, follows the policy's business hours, and excludes time the AI held
+  the conversation. It counts only conversations with a policy.
+
+Each SLA target shows its definition in Reports.
+
+### Conversations behind an SLA count
+
+Selecting a met or missed count in **SLA targets** lists those conversations,
+newest result first, with:
+- the customer and company;
+- the policy, assignee and priority;
+- when the target was met or missed.
+
+For next response, a missed conversation shows how many replies were late.
+The list follows the report's period, inbox filter and inbox access. It comes
+from `GET /api/workspaces/{ws}/support/reports/sla/conversations`, with the
+overview's parameters plus `metric` (`first_response`, `next_response` or
+`resolution`), `outcome` (`achieved` or `breached`) and `page` (50
+conversations per page).
 
 Values in the CSV that a spreadsheet could read as a formula are escaped.
 
@@ -109,6 +137,13 @@ When a teammate hands a conversation back to the AI after the handoff:
   Re-enabling it moves that point forward.
 - Reopening a resolved conversation keeps its resolution result. Response
   targets continue with the customer's new message.
+
+### Inbox filters
+
+The inbox's **SLA** filter shows conversations with a **Breached** target, or a
+target **Due within an hour** that is not overdue yet. Views save the filter
+as `sla=breached` or `sla=due_soon`. **Next SLA due** sorts overdue targets
+first, then by due time.
 
 ### Evaluation and breaches
 

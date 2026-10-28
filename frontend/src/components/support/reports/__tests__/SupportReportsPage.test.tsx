@@ -6,6 +6,7 @@ import type { SupportReportOverview, SupportReportSummary, SupportReportTopic } 
 
 const mockOverview = vi.fn()
 const mockExport = vi.fn()
+const mockSLAConversations = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({
   useInboxScopes: () => ({
@@ -14,6 +15,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
 }))
 vi.mock('@/hooks/queries/useSupportReports', () => ({
   useSupportReportOverview: (...args: unknown[]) => mockOverview(...args),
+  useSupportReportSLAConversations: (...args: unknown[]) => mockSLAConversations(...args),
 }))
 vi.mock('@/lib/services/supportReportsService', () => ({
   supportReportsService: { exportConversations: (...args: unknown[]) => mockExport(...args) },
@@ -22,12 +24,15 @@ vi.mock('@/stores/workspaceStore', () => ({
   useWorkspaceStore: (selector: (state: unknown) => unknown) => selector({ currentWorkspace: { id: 'ws-1', slug: 'acme' } }),
 }))
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, params, search, className, children }: { to: string; params: { slug: string }; search: Record<string, string | undefined>; className?: string; children: ReactNode }) => {
+  Link: ({ to, params, search, className, children }: { to: string; params: Record<string, string>; search?: Record<string, string | undefined>; className?: string; children: ReactNode }) => {
+    const path = to.replace(/\$(\w+)/g, (_, key: string) => params[key])
+    if (!search) return <a className={className} href={path}>{children}</a>
     const query = new URLSearchParams(Object.entries(search).filter((entry): entry is [string, string] => entry[1] !== undefined))
-    return <a className={className} href={`${to.replace('$slug', params.slug)}?${query}`}>{children}</a>
+    return <a className={className} href={`${path}?${query}`}>{children}</a>
   },
 }))
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { SupportReportsPage } from '../SupportReportsPage'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -100,6 +105,7 @@ describe('SupportReportsPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSLAConversations.mockReturnValue({ data: undefined, isLoading: false, error: null, hasNextPage: false })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -115,7 +121,7 @@ describe('SupportReportsPage', () => {
     try {
       vi.setSystemTime(new Date(2026, 9, 26, 7, 10, 30))
       mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-      act(() => root.render(<SupportReportsPage />))
+      act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
       const endOf = () => new Date((mockOverview.mock.calls.at(-1) as [string, { to: string }])[1].to)
       expect(endOf()).toEqual(new Date(2026, 9, 26, 7, 11))
 
@@ -130,7 +136,7 @@ describe('SupportReportsPage', () => {
 
   it('shows headline metrics, trends, CSAT and teammates', () => {
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
 
     const text = container.textContent ?? ''
     expect(text).toContain('New conversations12')
@@ -155,14 +161,48 @@ describe('SupportReportsPage', () => {
     expect(new Date(params.to).getTime()).toBeLessThanOrEqual(Date.now() + 60_000)
   })
 
+  it('explains SLA targets and lists the conversations behind a count', () => {
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
+    expect(container.querySelector('button[aria-label="About First response"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="About First response (team)"]')).not.toBeNull()
+    // Empty counts are plain text.
+    const buttons = Array.from(container.querySelectorAll('button')).map((button) => button.textContent)
+    expect(buttons).toContain('3 missed')
+    expect(buttons).not.toContain('0 missed')
+    expect(mockSLAConversations).toHaveBeenLastCalledWith('ws-1', expect.anything(), null)
+
+    const rows = [{
+      id: 'conv-9', display_id: 42, subject: 'Export broken', status: 'open', priority: 'urgent', customer_name: 'Ada', customer_email: 'ada@acme.test',
+      company_name: 'Acme', policy_name: 'Gold', assignee_name: null, created_at: '2026-10-02T09:00:00Z',
+      outcome_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), next_response_breaches: 0,
+    }]
+    mockSLAConversations.mockReturnValue({
+      data: { pages: [{ data: rows, total: 3, page: 1, per_page: 50 }] }, isLoading: false, error: null, hasNextPage: true, isFetchingNextPage: false, fetchNextPage: vi.fn(),
+    })
+    const missed = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '3 missed')
+    act(() => missed?.click())
+    expect(mockSLAConversations).toHaveBeenLastCalledWith('ws-1', expect.objectContaining({ mailboxIds: [] }), { metric: 'resolution', outcome: 'breached' })
+    const sheet = document.body.querySelector('[role="dialog"]')
+    expect(sheet?.textContent).toContain('Resolution missed')
+    expect(sheet?.textContent).toContain('3 conversations created in this period.')
+    expect(sheet?.textContent).toContain('Ada · Acme')
+    expect(sheet?.textContent).toContain('#42 Export broken')
+    expect(sheet?.textContent).toContain('Gold')
+    expect(sheet?.textContent).toContain('Unassigned')
+    expect(sheet?.textContent).toMatch(/Missed 2 ?h/)
+    expect(sheet?.textContent).toContain('Show more (2 left)')
+    expect(sheet?.querySelector('a[href="/w/acme/support/conv-9"]')).not.toBeNull()
+  })
+
   it('shows portal self-service only when customers wrote portal requests', () => {
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     expect(container.textContent).not.toContain('Portal self-service')
 
     const portal_intake = { with_suggestions: 9, opened: 5, submitted_after_opening: 2, likely_deflected: 3, submitted_without_suggestions: 4 }
     mockOverview.mockReturnValue({ data: { ...report, portal_intake }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     const text = container.textContent ?? ''
     expect(text).toContain('Portal self-service')
     expect(text).toContain('Likely answered by an article3')
@@ -175,14 +215,14 @@ describe('SupportReportsPage', () => {
 
   it('puts the AI agent above the daily chart, followed by topics', () => {
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     const titles = Array.from(container.querySelectorAll('section')).map((section) => section.firstElementChild?.textContent ?? '')
     expect(titles.slice(0, 4)).toEqual(['Volume and speed', 'AI agent', 'Conversations per day', 'Topicsby conversation tag'])
   })
 
   it('shows topics by tag with links to their conversations', () => {
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
 
     const section = Array.from(container.querySelectorAll('section')).find((candidate) => candidate.firstElementChild?.textContent?.startsWith('Topics'))
     const rows = Array.from(section?.querySelectorAll('tbody tr') ?? []).map((row) => Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent))
@@ -204,7 +244,7 @@ describe('SupportReportsPage', () => {
   it('collapses long topic lists', () => {
     const many = Array.from({ length: 10 }, (_, index) => topic({ tag_id: `tag-${index}`, name: `Topic ${index}`, conversations_created: 1 }))
     mockOverview.mockReturnValue({ data: { ...report, topics: many }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     const topicLinks = () => Array.from(container.querySelectorAll('a')).filter((link) => link.textContent?.startsWith('Topic '))
     expect(topicLinks()).toHaveLength(8)
     const showAll = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Show all 10 topics')
@@ -215,7 +255,7 @@ describe('SupportReportsPage', () => {
   it('shows a day’s numbers in a tooltip on hover', () => {
     Object.assign(globalThis, { ResizeObserver: class { observe() {} unobserve() {} disconnect() {} } })
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     const [firstDay] = container.querySelectorAll('[data-testid="report-day"]')
     act(() => { firstDay.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
     const stats = document.body.querySelector('[data-testid="report-day-stats"]')
@@ -226,12 +266,12 @@ describe('SupportReportsPage', () => {
 
   it('shows the help assistant only when visitors asked it questions', () => {
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     expect(container.textContent).not.toContain('Help assistant')
 
     const help_assistant = { conversations: 3, questions: 4, answered: 3, handed_off: 1, failed: 0, helpful: 2, not_helpful: 1, unanswered: [{ question: 'Can I get a refund?', asked_at: new Date().toISOString() }] }
     mockOverview.mockReturnValue({ data: { ...report, help_assistant }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     const text = container.textContent ?? ''
     expect(text).toContain('Help assistant3 conversations')
     expect(text).toContain('Answered from the articles75%')
@@ -243,7 +283,7 @@ describe('SupportReportsPage', () => {
   it('explains an empty CSAT period', () => {
     const emptySLA = { met: 0, missed: 0, hit_rate: null }
     mockOverview.mockReturnValue({ data: { ...report, summary: summary(), teammates: [], channels: [], topics: [topic({ conversations_created: 2 })], sla: { conversations: 0, first_response: emptySLA, next_response: emptySLA, resolution: emptySLA } }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     expect(container.textContent).toContain('None of the conversations in this period have tags.')
     expect(container.textContent).toContain('No ratings in this period')
     expect(container.querySelector('a[href="/w/acme/settings/support-sla"]')).not.toBeNull()
@@ -253,7 +293,7 @@ describe('SupportReportsPage', () => {
   it('offers a retry when the report fails', () => {
     const refetch = vi.fn()
     mockOverview.mockReturnValue({ data: undefined, isLoading: false, isFetching: false, error: new Error('choose a report period of up to one year'), refetch })
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     expect(container.textContent).toContain('The report could not load')
     const retry = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Try again')
     act(() => retry?.click())
@@ -267,7 +307,7 @@ describe('SupportReportsPage', () => {
     const revokeObjectURL = vi.fn()
     Object.assign(URL, { createObjectURL, revokeObjectURL })
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    act(() => root.render(<SupportReportsPage />))
+    act(() => root.render(<TooltipProvider><SupportReportsPage /></TooltipProvider>))
     const exportButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Export CSV'))
     await act(async () => { exportButton?.click() })
     expect(mockExport).toHaveBeenCalledWith('ws-1', expect.objectContaining({ mailboxIds: [] }))

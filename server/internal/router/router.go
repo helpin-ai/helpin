@@ -1321,6 +1321,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.SupportReports != nil {
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/overview", h.SupportReports.Overview)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/conversations.csv", h.SupportReports.ExportConversations)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/sla/conversations", h.SupportReports.SLAConversations)
 				}
 
 				// Docs coverage

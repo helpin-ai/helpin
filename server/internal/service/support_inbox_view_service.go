@@ -308,7 +308,7 @@ func supportInboxViewConversationListParams(workspaceID, userID string, filters 
 		AIFilters:   splitSupportViewCSV(filters["ai"]),
 		Sort:        strings.TrimSpace(filters["sort"]),
 	}
-	if sla := strings.TrimSpace(filters["sla"]); sla == "breached" || sla == "active" {
+	if sla := strings.TrimSpace(filters["sla"]); sla == "breached" || sla == "due_soon" || sla == "active" {
 		params.SLA = sla
 	}
 
