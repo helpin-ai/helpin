@@ -41,6 +41,15 @@ describe('requestedBy', () => {
 })
 
 describe('PortalRequestTable', () => {
+  it('says when a reply is expected, only when the server sends it', async () => {
+    const due = new Date(Date.now() + 2 * 3_600_000).toISOString()
+    const requests = [request({ reference: 'due', subject: 'Due', reply_expected_by: due }), request({ reference: 'none', subject: 'None' })]
+    await act(async () => root.render(<PortalRequestTable requests={requests} slug="acme" supportName="Acme Support" onRefresh={() => {}} />))
+    const rows = Array.from(container.querySelectorAll('li'))
+    expect(rows.find((row) => row.textContent?.includes('Due'))?.textContent).toMatch(/Reply by (today|tomorrow) at /)
+    expect(rows.find((row) => row.textContent?.includes('None'))?.textContent).not.toContain('Reply by')
+  })
+
   it('says who asked for each company request and searches by requester', async () => {
     const requests = [
       request({ reference: 'mine', subject: 'Mine', own: true, requested_by: 'Alice', last_message_from: 'customer' }),

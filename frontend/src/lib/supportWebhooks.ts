@@ -7,6 +7,7 @@ export const WEBHOOK_EVENTS: { value: WebhookEventType; label: string; descripti
   { value: 'conversation.assigned', label: 'Assigned', description: 'The assignee changes or is removed.' },
   { value: 'conversation.priority_changed', label: 'Priority changed', description: 'The priority is raised or lowered.' },
   { value: 'conversation.snoozed', label: 'Snoozed', description: 'A teammate snoozes the conversation.' },
+  { value: 'sla.warning', label: 'SLA due soon', description: 'A target is about to be missed, as the policy’s warning sets.' },
   { value: 'sla.breached', label: 'SLA missed', description: 'A response or resolution target is missed.' },
   { value: 'csat.submitted', label: 'Rating', description: 'A customer rates a resolved conversation.' },
 ]

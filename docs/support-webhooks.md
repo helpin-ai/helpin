@@ -17,6 +17,7 @@ triggers are in `202610250007_support_webhooks.sql`.
 | `conversation.assigned` | The assignee changes or is removed. |
 | `conversation.priority_changed` | The priority changes. |
 | `conversation.snoozed` | A teammate snoozes the conversation. |
+| `sla.warning` | A target is due within the warning time of its SLA policy. Sent once per due time. |
 | `sla.breached` | A first response, next response or resolution target is missed. |
 | `csat.submitted` | A customer rates a resolved conversation or changes their rating. |
 | `ping` | Only for **Send test event**. |
@@ -67,6 +68,7 @@ moments after it happened. The rest of `data` depends on the event:
 | Status, assignee and priority changes | `changes` holds the values from and to. |
 | `message.created` | `message`: `id`, `sender_type` (`customer`, `user`, `ai` or `agent`), `sender_user_id`, `sender_name`, `content` (Markdown) and `created_at`. |
 | `conversation.snoozed` | `snoozed_until`. |
+| `sla.warning` | `sla.metrics`, `sla.due_at`, `sla.policy_id` and `sla.policy_name`. |
 | `sla.breached` | `sla.metrics`, `sla.policy_id` and `sla.policy_name`. |
 | `csat.submitted` | `csat.rating` (1 to 5), `comment`, `channel`, `resolved_by` (`ai` or `human`) and `updated`. |
 

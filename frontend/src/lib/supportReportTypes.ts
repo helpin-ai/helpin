@@ -88,6 +88,34 @@ export interface SupportReportSLATarget {
   hit_rate: number | null
 }
 
+export type SupportReportSLAMetric = 'first_response' | 'next_response' | 'resolution'
+export type SupportReportSLAOutcome = 'achieved' | 'breached'
+
+/** One conversation behind an SLA report count. */
+export interface SupportReportSLAConversation {
+  id: string
+  display_id: number
+  subject: string
+  status: string
+  priority: string
+  customer_name: string | null
+  customer_email: string | null
+  company_name: string | null
+  policy_name: string
+  assignee_name: string | null
+  created_at: string
+  /** When the target was met or missed; empty for met next-response targets. */
+  outcome_at: string | null
+  next_response_breaches: number
+}
+
+export interface SupportReportSLAConversationsPage {
+  data: SupportReportSLAConversation[]
+  total: number
+  page: number
+  per_page: number
+}
+
 export interface SupportReportOverview {
   range: { from: string; to: string; previous_from: string; previous_to: string; timezone: string }
   summary: SupportReportSummary

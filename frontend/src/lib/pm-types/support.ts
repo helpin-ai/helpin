@@ -161,11 +161,24 @@ export interface SupportSLAPolicy {
   priorities: ConversationPriority[];
   mailbox_ids: string[];
   channels: string[];
+  /** SLA tier ids, or "none" for conversations whose company has no tier. */
+  company_tier_ids: string[];
+  company_ids: string[];
+  /** Names of the companies in company_ids. */
+  companies: { id: string; name: string }[];
   first_response_minutes?: number | null;
   next_response_minutes?: number | null;
   resolution_minutes?: number | null;
   business_hours: boolean;
   pause_while_waiting: boolean;
+  /** Minutes before a target is due to warn; null when warnings are off. */
+  warn_before_minutes?: number | null;
+  /** Teammates notified on warnings and breaches, besides the usual ones. */
+  notify_user_ids: string[];
+  /** Also notify the company's customer success owner. */
+  notify_cs_owner: boolean;
+  /** Who takes an unassigned conversation when a warning fires. */
+  assign_unassigned_user_id?: string | null;
   active_since: string;
   created_at: string;
   updated_at: string;
@@ -177,11 +190,51 @@ export interface SupportSLAPolicyInput {
   priorities: string[];
   mailbox_ids: string[];
   channels: string[];
+  company_tier_ids: string[];
+  company_ids: string[];
   first_response_minutes?: number | null;
   next_response_minutes?: number | null;
   resolution_minutes?: number | null;
   business_hours: boolean;
   pause_while_waiting: boolean;
+  warn_before_minutes: number | null;
+  notify_user_ids: string[];
+  notify_cs_owner: boolean;
+  assign_unassigned_user_id: string | null;
+}
+
+/** In a policy's company_tier_ids: companies without a tier, and conversations without a company. */
+export const SUPPORT_SLA_NO_TIER = 'none';
+
+/** A level of support promised to companies, such as Gold. */
+export interface SupportSLATier {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string;
+  position: number;
+  company_count: number;
+  policy_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A company's tier and the enabled policies that can apply to it, in order. */
+export interface SupportCompanySLA {
+  company_id: string;
+  tier_id: string | null;
+  tier_name: string | null;
+  has_custom: boolean;
+  policies: {
+    id: string;
+    name: string;
+    custom: boolean;
+    priorities: ConversationPriority[];
+    first_response_minutes?: number | null;
+    next_response_minutes?: number | null;
+    resolution_minutes?: number | null;
+    business_hours: boolean;
+  }[];
 }
 
 export interface SupportConversationCSAT {
@@ -1404,6 +1457,8 @@ export interface SupportInboxSettings {
   portal_requests_only: boolean;
   portal_anonymous_intake_enabled: boolean;
   portal_intake_enabled: boolean;
+  /** Show customers when the team's reply is due on portal requests. */
+  portal_show_reply_by?: boolean;
   /** Ask AI help assistant on the help center and in the customer portal. */
   help_assistant_enabled?: boolean;
   portal_access_mode?: CustomerPortalAccessMode;
@@ -1591,6 +1646,7 @@ export type WebhookEventType =
   | 'conversation.priority_changed'
   | 'conversation.snoozed'
   | 'message.created'
+  | 'sla.warning'
   | 'sla.breached'
   | 'csat.submitted';
 

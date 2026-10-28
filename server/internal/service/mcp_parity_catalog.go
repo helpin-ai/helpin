@@ -16,6 +16,7 @@ func parityMCPCommandRequirements() map[string]MCPToolDefinition {
 	crmWrite := MCPToolDefinition{Toolset: MCPToolsetCRM, Scope: MCPScopeCRMWrite, Permission: authorization.PermCRMEdit, Module: model.ModuleCRM, Mutating: true}
 	supportRead := MCPToolDefinition{Toolset: MCPToolsetSupport, Scope: MCPScopeSupportRead, Permission: authorization.PermSupportRead, Module: model.ModuleSupport}
 	supportWrite := MCPToolDefinition{Toolset: MCPToolsetSupport, Scope: MCPScopeSupportWrite, Permission: authorization.PermSupportEdit, Module: model.ModuleSupport, Mutating: true}
+	supportAdmin := MCPToolDefinition{Toolset: MCPToolsetSupport, Scope: MCPScopeSupportWrite, Permission: authorization.PermSupportAdmin, Module: model.ModuleSupport, Mutating: true}
 	supportReply := MCPToolDefinition{Toolset: MCPToolsetSupport, Scope: MCPScopeSupportReply, Permission: authorization.PermSupportEdit, Module: model.ModuleSupport, Mutating: true}
 	contextRead := MCPToolDefinition{Toolset: MCPToolsetContext, Scope: MCPScopeContextRead, Permission: authorization.PermWorkspaceMembersRead}
 
@@ -58,6 +59,8 @@ func parityMCPCommandRequirements() map[string]MCPToolDefinition {
 		// separate helpin.support.reply scope.
 		"list_support_inboxes":                supportRead,
 		"list_support_tags":                   supportRead,
+		"list_support_sla_tiers":              supportRead,
+		"set_company_sla_tier":                supportAdmin,
 		"list_support_assignees":              supportRead,
 		"assign_support_conversation":         supportWrite,
 		"move_support_conversation":           supportWrite,

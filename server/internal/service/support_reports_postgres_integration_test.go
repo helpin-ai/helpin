@@ -46,4 +46,5 @@ func TestSupportReportsPostgres(t *testing.T) {
 	t.Run("inbox access", func(t *testing.T) { checkSupportReportRespectsInboxAccess(t, f) })
 	t.Run("timezone", func(t *testing.T) { checkSupportReportDailyUsesTimezone(t, f) })
 	t.Run("csv", func(t *testing.T) { checkSupportReportCSVExport(t, f) })
+	t.Run("sla drill-down", func(t *testing.T) { checkSupportReportSLAConversations(t, f) })
 }

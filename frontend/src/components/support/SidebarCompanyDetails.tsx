@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { useUpdateConversationCRMCompany, useVisitorContext } from '@/hooks/queries/useSupport';
+import { useCompanySLA } from '@/hooks/queries/useSupportSLATiers';
 import { crmSearchService } from '@/lib/services/crmService';
 import { isSystemCRMCustomProperty } from '@/lib/crmCustomProperties';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -241,6 +242,10 @@ export function SidebarCompanyDetails({ workspaceId, conversationId }: SidebarCo
 
   const company = data?.company ?? null;
   const options = data?.company_options ?? [];
+  const { data: companySLA } = useCompanySLA(workspaceId, company?.id, has('support.read'));
+  const slaTier = companySLA?.has_custom
+    ? `${companySLA.tier_name ? `${companySLA.tier_name}, ` : ''}custom SLA`
+    : companySLA?.tier_name ?? null;
   const properties = company?.custom_properties ?? {};
   const currency = typeof properties.currency === 'string' ? properties.currency : 'USD';
   const contactFirstName = data?.contact?.name?.trim().split(/\s+/)[0] || null;
@@ -345,6 +350,7 @@ export function SidebarCompanyDetails({ workspaceId, conversationId }: SidebarCo
           <>
             <CompanyRow label="Domain" value={company.domain ?? null} />
             <CompanyRow label="Plan" value={formatCompanyValue('plan', properties.plan, currency)} />
+            <CompanyRow label="SLA tier" value={slaTier} />
             {hasValue(properties.subscription_status) && (
               <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
                 <span className="text-muted-foreground">Status</span>

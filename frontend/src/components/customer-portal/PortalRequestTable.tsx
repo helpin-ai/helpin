@@ -6,7 +6,7 @@ import { ArrowReloadHorizontalIcon, ArrowRight01Icon } from '@/lib/icons'
 import type { CustomerPortalRequest } from '@/lib/services/customerPortalService'
 import { cn } from '@/lib/utils'
 import { requestedBy, requestNumber } from './portalRequestFormat'
-import { formatPortalAbsoluteTime, formatPortalRelativeTime } from './portalTime'
+import { formatPortalReplyBy, formatPortalAbsoluteTime, formatPortalRelativeTime } from './portalTime'
 
 type RequestStatus = CustomerPortalRequest['status']
 type RequestFilter = 'all' | RequestStatus
@@ -187,6 +187,7 @@ function RequestRow({ request, slug, supportName, now, company }: { request: Cus
   const who = repliedBy(request, supportName, company)
   const when = formatPortalRelativeTime(request.last_activity_at, now)
   const absolute = request.last_activity_at ? formatPortalAbsoluteTime(request.last_activity_at) : undefined
+  const replyBy = formatPortalReplyBy(request.reply_expected_by)
   const params = { slug, reference: request.reference }
   return (
     <li className="group relative grid grid-cols-[minmax(0,1fr)] items-center gap-x-4 px-2 py-3 hover:bg-quiet-row-hover @min-[720px]:grid-cols-[minmax(220px,1fr)_120px_120px_64px]">
@@ -207,6 +208,7 @@ function RequestRow({ request, slug, supportName, now, company }: { request: Cus
           {request.unread ? <span className="shrink-0 font-semibold uppercase tracking-[0.03em] text-quiet-accent">New reply</span> : null}
           {company ? <span className="shrink-0 font-medium text-quiet-text-secondary">Asked by {requestedBy(request)}</span> : null}
           {who ? <span className="shrink-0">{who}</span> : null}
+          {replyBy ? <span className="shrink-0 font-medium text-quiet-text-secondary">Reply by {replyBy}</span> : null}
           {request.last_message_preview ? <span className="min-w-0 flex-1 basis-40 truncate">{request.last_message_preview}</span> : null}
           <span className="flex w-full items-center gap-2 @min-[720px]:hidden">
             <RequestStatusText status={status} />

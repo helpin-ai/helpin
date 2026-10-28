@@ -365,20 +365,29 @@ func (h *CustomerPortalHandler) Requests(w http.ResponseWriter, r *http.Request)
 	}
 	response := make([]map[string]any, 0, len(requests))
 	for _, request := range requests {
-		row := map[string]any{
-			"reference": request.Reference, "number": request.Number, "subject": request.Subject, "status": request.Status,
-			"last_activity_at": request.LastActivityAt, "last_message_preview": request.LastMessagePreview,
-			"last_message_from": request.LastMessageFrom, "unread": request.Unread,
-		}
-		if request.CompanyID != nil {
-			row["own"] = request.OwnerIdentityID == access.Identity.ID
-			row["requested_by"] = portalRequestedBy(request)
-			row["company"] = map[string]any{"id": *request.CompanyID, "name": request.CompanyName}
-		}
-		response = append(response, row)
+		response = append(response, portalRequestListRow(request, access.Identity.ID))
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, response)
+}
+
+// portalRequestListRow is the customer-safe list projection of a request:
+// only the fields named here reach the portal.
+func portalRequestListRow(request model.SupportPortalRequest, viewerIdentityID string) map[string]any {
+	row := map[string]any{
+		"reference": request.Reference, "number": request.Number, "subject": request.Subject, "status": request.Status,
+		"last_activity_at": request.LastActivityAt, "last_message_preview": request.LastMessagePreview,
+		"last_message_from": request.LastMessageFrom, "unread": request.Unread,
+	}
+	if request.ReplyExpectedBy != nil {
+		row["reply_expected_by"] = request.ReplyExpectedBy
+	}
+	if request.CompanyID != nil {
+		row["own"] = request.OwnerIdentityID == viewerIdentityID
+		row["requested_by"] = portalRequestedBy(request)
+		row["company"] = map[string]any{"id": *request.CompanyID, "name": request.CompanyName}
+	}
+	return row
 }
 
 // RequestDetail returns one of the signed-in customer's requests.

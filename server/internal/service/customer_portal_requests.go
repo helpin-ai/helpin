@@ -49,6 +49,9 @@ type PortalRequestDetail struct {
 	// visibility; RequesterName then says who asked.
 	Own           bool    `json:"own"`
 	RequesterName *string `json:"requester_name,omitempty"`
+	// ReplyExpectedBy is when the team's next reply is due; see
+	// portalReplyExpectedBy.
+	ReplyExpectedBy *time.Time `json:"reply_expected_by,omitempty"`
 }
 
 type portalReplySourceKey struct{}
@@ -233,7 +236,12 @@ func (s *CustomerPortalService) Requests(ctx context.Context, access *PortalAcce
 			slog.ErrorContext(ctx, "portal request reconcile failed", "workspace_id", access.Workspace.ID, "portal_identity_id", access.Identity.ID, "error", err)
 		}
 	}
-	return s.repo.ListRequests(ctx, access.Workspace.ID, access.Identity.ID, status)
+	requests, err := s.repo.ListRequests(ctx, access.Workspace.ID, access.Identity.ID, status)
+	if err != nil {
+		return nil, err
+	}
+	s.attachReplyExpectedBy(ctx, &access.Workspace, requests)
+	return requests, nil
 }
 
 // RequestDetail returns a request the session may read: its own, or a
@@ -253,7 +261,8 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 		return nil, err
 	}
 	assistant := s.assistantName(ctx, &access.Workspace)
-	detail := &PortalRequestDetail{Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status, derefString(conv.LastPublicSenderType), conv.CustomerAwaitingResponse), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}, Own: request.Own}
+	status := model.PortalRequestStatus(conv.Status, derefString(conv.LastPublicSenderType), conv.CustomerAwaitingResponse)
+	detail := &PortalRequestDetail{ReplyExpectedBy: s.replyExpectedBy(ctx, &access.Workspace, conv.ID, status), Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: status, LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}, Own: request.Own}
 	if !request.Own {
 		detail.RequesterName = s.portalRequesterName(ctx, conv)
 		s.auditCompanyView(ctx, access, conv)

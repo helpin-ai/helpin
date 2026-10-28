@@ -11,10 +11,11 @@ import {
 } from '@/components/design-system/quiet'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useInboxScopes } from '@/hooks/queries/useSupport'
 import { useSupportReportOverview } from '@/hooks/queries/useSupportReports'
-import { Download04Icon, Loading01Icon } from '@/lib/icons'
+import { Download04Icon, HelpCircleIcon, Loading01Icon } from '@/lib/icons'
 import { supportReportsService } from '@/lib/services/supportReportsService'
 import {
   SUPPORT_REPORT_RANGE_OPTIONS,
@@ -27,7 +28,7 @@ import {
   type ReportTrend,
   type SupportReportRangePreset,
 } from '@/lib/supportReportFormat'
-import type { SupportReportOverview } from '@/lib/supportReportTypes'
+import type { SupportReportOverview, SupportReportParams, SupportReportSLAMetric } from '@/lib/supportReportTypes'
 import { getInitials } from '@/lib/initials'
 import { cn, timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -35,6 +36,8 @@ import { ReportPortalIntake } from './ReportPortalIntake'
 import { ReportHelpAssistant } from './ReportHelpAssistant'
 import { ReportDailyChart } from './ReportDailyChart'
 import { ReportTopicsTable } from './ReportTopicsTable'
+import { ReportSLAConversationsSheet, type ReportSLATarget } from './ReportSLAConversationsSheet'
+import { SUPPORT_SLA_METRIC_LABELS } from '@/lib/supportSLA'
 
 const ALL_INBOXES = 'all'
 const COLLAPSED_COMMENTS = 6
@@ -46,6 +49,59 @@ function TrendText({ trend }: { trend: ReportTrend }) {
     <span className={cn(trend.tone === 'positive' && 'text-emerald-600 dark:text-emerald-400', trend.tone === 'negative' && 'text-red-600 dark:text-red-400')}>
       {trend.label} vs previous period
     </span>
+  )
+}
+
+const FIRST_HUMAN_RESPONSE_DEFINITION =
+  'Median calendar time from the customer’s first message to the first teammate reply, for every conversation. It ignores SLA policies, business hours and time the AI spent answering.'
+
+const SLA_TARGETS: { metric: SupportReportSLAMetric; definition: string }[] = [
+  {
+    metric: 'first_response',
+    definition:
+      'From the customer’s first message to the first teammate reply. When the AI answered first, the clock starts at the handoff to the team. Unlike “First response (team)”, it follows the policy’s business hours and excludes time the AI held the conversation.',
+  },
+  {
+    metric: 'next_response',
+    definition:
+      'After a teammate reply, each new customer message must get a teammate reply within the target. A conversation counts as missed if any of those replies was late.',
+  },
+  {
+    metric: 'resolution',
+    definition:
+      'From the customer’s first message, or the handoff, to resolution. Time waiting on the customer or snoozed does not count when the policy pauses while waiting.',
+  },
+]
+
+/** A metric label with its definition in an accessible tooltip. */
+function MetricLabel({ label, definition }: { label: string; definition: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" aria-label={`About ${label}`} className="rounded-sm normal-case text-quiet-muted hover:text-quiet-text-primary focus-visible:outline-2 focus-visible:outline-quiet-text-primary">
+            <HelpCircleIcon className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-72 normal-case tracking-normal">{definition}</TooltipContent>
+      </Tooltip>
+    </span>
+  )
+}
+
+/** A count that opens the conversations behind it, plain text when empty. */
+function SLACountButton({ count, word, label, onClick }: { count: number; word: string; label: string; onClick: () => void }) {
+  if (count === 0) return <span>0 {word}</span>
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Show ${count} ${count === 1 ? 'conversation' : 'conversations'}: ${label}`}
+      className="rounded-sm underline decoration-quiet-field underline-offset-2 hover:text-quiet-text-primary hover:decoration-current focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
+    >
+      {count.toLocaleString()} {word}
+    </button>
   )
 }
 
@@ -89,6 +145,9 @@ export function SupportReportsPage() {
   const [inbox, setInbox] = useState<string>(ALL_INBOXES)
   const [exporting, setExporting] = useState(false)
   const [showAllComments, setShowAllComments] = useState(false)
+  // The drill-down keeps the period it opened with, so the list does not
+  // reload while the report's period end advances.
+  const [slaTarget, setSlaTarget] = useState<(ReportSLATarget & { params: SupportReportParams }) | null>(null)
   const { data: scopes } = useInboxScopes(workspaceId)
 
   // The period ends "now"; advance it every minute and when the tab regains
@@ -202,7 +261,7 @@ export function SupportReportsPage() {
               />
               <QuietMetricBlock
                 className="items-start"
-                label="First response (team)"
+                label={<MetricLabel label="First response (team)" definition={FIRST_HUMAN_RESPONSE_DEFINITION} />}
                 value={formatReportDuration(summary.first_human_response.median_seconds)}
                 description={
                   <>
@@ -340,23 +399,36 @@ export function SupportReportsPage() {
               </p>
             ) : (
               <QuietMetricGrid className="xl:grid-cols-3">
-                {([
-                  ['First response', report.sla.first_response],
-                  ['Next response', report.sla.next_response],
-                  ['Resolution', report.sla.resolution],
-                ] as const).map(([label, target]) => (
-                  <QuietMetricBlock
-                    key={label}
-                    className="items-start"
-                    label={label}
-                    value={formatReportPercent(target.hit_rate)}
-                    tone={target.hit_rate !== null && target.hit_rate < 0.8 ? 'warning' : 'neutral'}
-                    description={`${target.met} met · ${target.missed} missed`}
-                  />
-                ))}
+                {SLA_TARGETS.map(({ metric, definition }) => {
+                  const target = report.sla[metric]
+                  const label = SUPPORT_SLA_METRIC_LABELS[metric]
+                  return (
+                    <QuietMetricBlock
+                      key={metric}
+                      className="items-start"
+                      label={<MetricLabel label={label} definition={definition} />}
+                      value={formatReportPercent(target.hit_rate)}
+                      tone={target.hit_rate !== null && target.hit_rate < 0.8 ? 'warning' : 'neutral'}
+                      description={
+                        <>
+                          <SLACountButton count={target.met} word="met" label={`${label} met`} onClick={() => setSlaTarget({ metric, outcome: 'achieved', params })} />
+                          {' · '}
+                          <SLACountButton count={target.missed} word="missed" label={`${label} missed`} onClick={() => setSlaTarget({ metric, outcome: 'breached', params })} />
+                        </>
+                      }
+                    />
+                  )
+                })}
               </QuietMetricGrid>
             )}
           </QuietSection>
+          <ReportSLAConversationsSheet
+            workspaceId={workspaceId}
+            workspaceSlug={workspaceSlug}
+            params={slaTarget?.params ?? params}
+            target={slaTarget && { metric: slaTarget.metric, outcome: slaTarget.outcome }}
+            onClose={() => setSlaTarget(null)}
+          />
 
           <QuietSection title="Channels">
             {report.channels.length === 0 ? (

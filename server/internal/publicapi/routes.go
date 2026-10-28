@@ -133,6 +133,8 @@ var Routes = []Route{
 	{"GET", "/support/setup", "get_support_setup", "Support", "Inspect support setup and browser handoffs", 0},
 	{"GET", "/support/inboxes", "list_support_inboxes", "Support", "List inboxes", 0},
 	{"GET", "/support/tags", "list_support_tags", "Support", "List tags", 0},
+	{"GET", "/support/sla-tiers", "list_support_sla_tiers", "Support", "List SLA tiers", 0},
+	{"PUT", "/support/companies/{company_id}/sla-tier", "set_company_sla_tier", "Support", "Set a company's SLA tier", 0},
 
 	// Agents
 	{"GET", "/agents", "list_agents", "Agents", "List agents", 0},

@@ -327,3 +327,79 @@ func TestSupportSLAAIHandoffPostgres(t *testing.T) {
 		t.Fatalf("resolved conversation kept its snooze: %v %v", snoozed, err)
 	}
 }
+
+func TestSupportSLATiersPostgres(t *testing.T) {
+	db := openSupportOpsPostgres(t)
+	ctx := context.Background()
+	workspaceID, userID := seedSupportOpsWorkspace(t, db)
+	mustExec(t, db, `DELETE FROM support_sla_work`)
+	inbox := NewSupportInboxService(repository.NewSupportConversationRepository(db), repository.NewSupportMailboxRepository(db),
+		repository.NewSupportMessageRepository(db), nil, nil, repository.NewSupportInboxInstallationRepository(db), nil, nil, nil, nil, nil,
+		repository.NewUserRepository(db), nil, nil, nil)
+	sla := NewSupportSLAService(repository.NewSupportSLARepository(db), inbox)
+	inbox.SetSLAService(sla)
+	start := time.Now().UTC()
+	sla.now = func() time.Time { return start }
+
+	gold, err := sla.CreateTier(ctx, workspaceID, model.SupportSLATierRequest{Name: "Gold"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sla.CreateTier(ctx, workspaceID, model.SupportSLATierRequest{Name: "GOLD"}); err == nil {
+		t.Fatal("duplicate tier name accepted")
+	}
+	company := model.CRMCompany{ID: uuid.NewString(), WorkspaceID: workspaceID, DisplayID: "C-1", Name: "Acme"}
+	if err := db.Create(&company).Error; err != nil {
+		t.Fatal(err)
+	}
+	policy, err := sla.CreatePolicy(ctx, workspaceID, userID, model.SupportSLAPolicyRequest{Name: "Gold", FirstResponseMinutes: intPtr(30),
+		CompanyTierIDs: []string{gold.ID, model.SupportSLANoTier}, CompanyIDs: []string{company.ID}})
+	if err != nil || len(policy.Companies) != 1 {
+		t.Fatalf("policy %+v %v", policy, err)
+	}
+
+	conversation := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspaceID, DisplayID: 1, Subject: "Down",
+		Status: model.SupportConversationStatusOpen, Priority: "medium", Channel: "email", CreatedAt: start.Add(time.Second)}
+	if err := db.Create(conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, db, `DELETE FROM support_sla_work`)
+	// Linking the conversation to a company queues it.
+	mustExec(t, db, `UPDATE support_conversations SET crm_company_id = ? WHERE id = ?`, company.ID, conversation.ID)
+	var queued int64
+	db.Model(&model.SupportSLAWork{}).Where("conversation_id = ?", conversation.ID).Count(&queued)
+	if queued != 1 {
+		t.Fatalf("company change did not queue the conversation: %d", queued)
+	}
+	var changedAt sql.NullTime
+	if err := db.Raw(`SELECT crm_company_changed_at FROM support_conversations WHERE id = ?`, conversation.ID).Scan(&changedAt).Error; err != nil || !changedAt.Valid {
+		t.Fatalf("company change time not recorded: %+v %v", changedAt, err)
+	}
+	mustExec(t, db, `DELETE FROM support_sla_work`)
+
+	if updated, err := sla.SetCompanyTier(ctx, workspaceID, model.SetSupportSLATierRequest{CompanyIDs: []string{company.ID}, TierID: &gold.ID}); err != nil || updated != 1 {
+		t.Fatalf("set tier: %d %v", updated, err)
+	}
+	db.Model(&model.SupportSLAWork{}).Where("conversation_id = ?", conversation.ID).Count(&queued)
+	if queued != 1 {
+		t.Fatalf("tier change did not queue the conversation: %d", queued)
+	}
+	view, err := sla.CompanySLA(ctx, workspaceID, company.ID)
+	if err != nil || view.TierName == nil || *view.TierName != "Gold" || len(view.Policies) != 1 {
+		t.Fatalf("company SLA %+v %v", view, err)
+	}
+
+	if err := sla.DeleteTier(ctx, workspaceID, gold.ID); err != nil {
+		t.Fatal(err)
+	}
+	policies, err := sla.ListPolicies(ctx, workspaceID)
+	if err != nil || strings.Join(policies[0].CompanyTierIDs, ",") != model.SupportSLANoTier {
+		t.Fatalf("tier left in policy: %+v %v", policies, err)
+	}
+	if _, err := sla.CustomizeCompanySLA(ctx, workspaceID, userID, company.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := sla.RemoveCompanySLA(ctx, workspaceID, company.ID); err != nil {
+		t.Fatal(err)
+	}
+}

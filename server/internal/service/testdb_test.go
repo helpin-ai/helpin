@@ -742,7 +742,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, crm_company_changed_at DATETIME,
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -959,8 +959,10 @@ func newTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE support_sla_policies (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1,
 			position INTEGER NOT NULL DEFAULT 0, priorities TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}',
-			channels TEXT NOT NULL DEFAULT '{}', first_response_minutes INTEGER, next_response_minutes INTEGER,
+			channels TEXT NOT NULL DEFAULT '{}', company_tier_ids TEXT NOT NULL DEFAULT '{}', company_ids TEXT NOT NULL DEFAULT '{}',
+			first_response_minutes INTEGER, next_response_minutes INTEGER,
 			resolution_minutes INTEGER, business_hours BOOLEAN NOT NULL DEFAULT 0, pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
+			warn_before_minutes INTEGER, notify_user_ids TEXT NOT NULL DEFAULT '{}', notify_cs_owner BOOLEAN NOT NULL DEFAULT 0, assign_unassigned_user_id TEXT,
 			active_since DATETIME NOT NULL, conditions_changed_at DATETIME, created_by_id TEXT, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_conversation_slas (
@@ -969,6 +971,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			target_next_response_minutes INTEGER, target_resolution_minutes INTEGER,
 			target_business_hours BOOLEAN NOT NULL DEFAULT 0, target_pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
 			ai_involved BOOLEAN NOT NULL DEFAULT 0, human_since DATETIME, ai_holding_since DATETIME, targets_from DATETIME, next_response_carried_breaches INTEGER NOT NULL DEFAULT 0,
+			company_key TEXT NOT NULL DEFAULT '',
+			first_response_warned_for DATETIME, next_response_warned_for DATETIME, resolution_warned_for DATETIME,
 			first_response_paused_seconds INTEGER NOT NULL DEFAULT 0,
 			first_response_state TEXT NOT NULL DEFAULT '', first_response_due_at DATETIME, first_response_achieved_at DATETIME,
 			first_response_breached_at DATETIME, next_response_state TEXT NOT NULL DEFAULT '', next_response_due_at DATETIME,
@@ -978,6 +982,11 @@ func newTestDB(t *testing.T) *gorm.DB {
 			next_due_at DATETIME, wake_at DATETIME, breached BOOLEAN NOT NULL DEFAULT 0, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_sla_work (conversation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enqueued_at DATETIME NOT NULL)`,
+		`CREATE TABLE support_sla_tiers (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE UNIQUE INDEX idx_support_sla_tiers_workspace_name ON support_sla_tiers (workspace_id, lower(name))`,
 		`CREATE TABLE webhook_endpoints (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, url TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
 			events TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}', encrypted_secret TEXT NOT NULL,
@@ -1269,6 +1278,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			customer_success_owner_member_id TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
 			portal_default_role TEXT,
+			support_sla_tier_id TEXT,
+			support_sla_tier_changed_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

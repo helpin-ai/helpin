@@ -96,11 +96,19 @@ describe('CustomerPortalSettings', () => {
       portal_enabled: true,
       portal_intake_enabled: true,
       portal_anonymous_intake_enabled: false,
+      portal_show_reply_by: false,
       portal_access_mode: 'approved_contacts',
       portal_ai_mode: 'off',
       portal_ai_agent_id: '',
       widget_help_space_ids: [],
     });
+  });
+
+  it('turns on showing when to expect a reply', async () => {
+    await act(async () => root.render(<CustomerPortalSettings workspaceId="workspace-1" workspaceSlug="acme" editable />));
+    await act(async () => container.querySelector<HTMLButtonElement>('#portal-show-reply-by')?.click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ portal_show_reply_by: true }));
   });
 
   it('shares the help space selection with the chat widget and says when suggestions are off', async () => {
