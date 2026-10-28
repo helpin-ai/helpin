@@ -30,7 +30,7 @@ export interface SLAPolicyDraft {
 const UNIT_MINUTES: Record<SLATargetUnit, number> = { minutes: 1, hours: 60, days: 24 * 60 }
 export const MAX_SLA_TARGET_MINUTES = 90 * 24 * 60
 export const MAX_SLA_POLICY_COMPANIES = 50
-export const MAX_SLA_NOTIFY_USERS = 10
+const MAX_SLA_NOTIFY_USERS = 10
 
 /** Splits minutes into the largest whole unit for editing. */
 export function targetDraft(minutes: number | null | undefined, fallback: SLATargetDraft): SLATargetDraft {

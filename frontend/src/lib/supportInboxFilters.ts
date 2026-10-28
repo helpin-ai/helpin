@@ -13,7 +13,7 @@ export type ConversationSortOrder = 'newest' | 'oldest' | 'sla';
 export type ConversationSLAFilter = 'breached' | 'due_soon';
 
 /** Matches the server's due-soon window (model.SupportSLADueSoonWindow). */
-export const SLA_DUE_SOON_MS = 60 * 60_000;
+const SLA_DUE_SOON_MS = 60 * 60_000;
 
 export function parseConversationSLAFilter(value: unknown): ConversationSLAFilter | undefined {
   return value === 'breached' || value === 'due_soon' ? value : undefined;
