@@ -19,6 +19,7 @@ const mockUseHasAnySupportConversation = vi.fn()
 vi.mock('@/hooks/queries/useSupportOperations', () => {
   const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
   return {
+    useSLAPolicies: () => ({ data: [{ enabled: true }] }),
     useUpdateConversationPriority: mutation,
     useSnoozeConversation: mutation,
     useUnsnoozeConversation: mutation,
