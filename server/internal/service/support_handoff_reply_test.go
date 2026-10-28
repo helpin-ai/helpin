@@ -214,6 +214,39 @@ func TestSupportTeamHoursLine(t *testing.T) {
 	}
 }
 
+func TestSupportTeamAvailabilityForRun(t *testing.T) {
+	availabilityFor := func(t *testing.T, mutate func(*model.SupportInboxSettings)) string {
+		t.Helper()
+		db := newTestDB(t)
+		workspaceID := "ws-team-availability"
+		seedUser(t, db, "user-owner", "owner@example.com", "Owner", "hash")
+		seedWorkspace(t, db, workspaceID, "Team Availability", "team-availability", "user-owner")
+		seedSupportInstallationSettings(t, db, workspaceID, mutate)
+		svc := &SupportAIService{installationRepo: repository.NewSupportInboxInstallationRepository(db)}
+		return svc.SupportTeamAvailabilityForRun(context.Background(), &model.SupportConversation{ID: "conv-1", WorkspaceID: workspaceID})
+	}
+
+	t.Run("says nothing with business hours off", func(t *testing.T) {
+		if got := availabilityFor(t, nil); got != "" {
+			t.Fatalf("availability = %q, want nothing", got)
+		}
+	})
+
+	t.Run("describes business hours when they are on", func(t *testing.T) {
+		got := availabilityFor(t, func(settings *model.SupportInboxSettings) {
+			settings.BusinessHoursEnabled = true
+			settings.BusinessHoursTimezone = "UTC"
+			for day, hours := range settings.BusinessHoursSchedule {
+				hours.Enabled = false
+				settings.BusinessHoursSchedule[day] = hours
+			}
+		})
+		if !strings.HasPrefix(got, "Team availability: closed now") || !strings.HasSuffix(got, "never promise a sooner reply.") {
+			t.Fatalf("availability = %q, want the closed line with the rule", got)
+		}
+	})
+}
+
 func TestRuntimeSupportConversationSummary_IncludesTeamAvailability(t *testing.T) {
 	conv := &model.SupportConversation{ID: "conv-1", Subject: "Posts failed", Channel: "widget"}
 	summary := runtimeSupportConversationSummary(conv, nil, "Team availability: closed now; back tomorrow at 9:00 AM EDT.")
