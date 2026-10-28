@@ -17,6 +17,7 @@ export type SupportInboxRouteSearch = {
   states?: string;
   mailbox_ids?: string;
   tag_ids?: string;
+  priority?: string;
   system_tags?: string;
 };
 
@@ -70,6 +71,7 @@ export function normalizeSupportInboxRouteSearch(search: Record<string, unknown>
     states: typeof search.states === 'string' ? search.states : undefined,
     mailbox_ids: typeof search.mailbox_ids === 'string' ? search.mailbox_ids : undefined,
     tag_ids: typeof search.tag_ids === 'string' ? search.tag_ids : undefined,
+    priority: typeof search.priority === 'string' ? search.priority : undefined,
     system_tags: typeof search.system_tags === 'string' ? search.system_tags : undefined,
   };
 }
@@ -136,6 +138,9 @@ export function buildSupportInboxSearch({
   }
   if (listFilters?.tagIds && listFilters.tagIds.length > 0) {
     search.tag_ids = listFilters.tagIds.join(',');
+  }
+  if (listFilters?.priorities?.length) {
+    search.priority = listFilters.priorities.join(',');
   }
   if (listFilters?.aiStates && !stringArraysEqual(listFilters.aiStates, defaultAIStatesForNav(navFilter))) {
     search.ai = listFilters.aiStates.length > 0 ? listFilters.aiStates.join(',') : 'none';

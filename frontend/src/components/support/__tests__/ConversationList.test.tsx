@@ -674,6 +674,12 @@ describe('ConversationList presence resync', () => {
       filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    for (const label of ['High', 'Urgent']) {
+      const priorityButton = Array.from(document.body.querySelectorAll('button')).find(button => button.textContent === label) as HTMLButtonElement
+      act(() => priorityButton.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    }
+    expect(mockUseInfiniteConversations).toHaveBeenLastCalledWith('ws-1', expect.objectContaining({ priority: 'high,urgent' }))
+
     const saveAsViewButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Save as new view') as HTMLButtonElement
     act(() => {
       saveAsViewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -705,6 +711,7 @@ describe('ConversationList presence resync', () => {
         search: 'refund',
         assignment: 'unassigned',
         tag_ids: 'tag-billing',
+        priority: 'high,urgent',
         ai: 'handoff',
         sort: 'oldest',
       },

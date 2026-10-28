@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSupportInboxSearch,
+  normalizeSupportInboxRouteSearch,
   navFilterFromView,
   viewFromNavFilter,
 } from '../supportInboxRouting';
@@ -200,4 +201,14 @@ describe('supportInboxRouting', () => {
       ai: 'none',
     });
   });
+});
+
+
+it('keeps priority selections in inbox URLs', () => {
+  const search = buildSupportInboxSearch({
+    navFilter: 'inbox', selectedMailboxId: 'all', statusFilter: 'all', searchQuery: '',
+    listFilters: { states: ['open'], assignment: [], mailboxIds: [], tagIds: [], aiStates: [], sort: 'newest', priorities: ['high', 'urgent'] },
+  });
+  expect(search.priority).toBe('high,urgent');
+  expect(normalizeSupportInboxRouteSearch(search).priority).toBe('high,urgent');
 });

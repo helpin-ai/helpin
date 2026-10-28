@@ -24,6 +24,7 @@ import { useInboxClearedDetection } from './inboxCleared/useInboxClearedDetectio
 import { ConversationRow } from './ConversationRow';
 import { EmptyState } from './EmptyState';
 import {
+  CONVERSATION_PRIORITY_OPTIONS,
   buildConversationListRequestFilters,
   buildSupportInboxViewFilters,
   defaultAIStatesForNav,
@@ -344,8 +345,9 @@ export function ConversationList({
       skipViewFilter: shouldSkipSidebarViewFilter,
       aiStates: conversationListFilters.aiStates,
       slaBreached: conversationListFilters.slaBreached,
+      priorities: conversationListFilters.priorities,
     });
-  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.priorities, conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
 
   // J and K move through the list in its current order. The previous order
@@ -782,6 +784,22 @@ export function ConversationList({
                         key={value}
                         selected={conversationListFilters.states.includes(value as ConversationStateFilter)}
                         onClick={() => toggleStateFilter(value as ConversationStateFilter)}
+                      >
+                        {label}
+                      </FilterPill>
+                    ))}
+                  </FilterSection>
+                  <FilterSection title="Priority">
+                    {CONVERSATION_PRIORITY_OPTIONS.map(({ value, label }) => (
+                      <FilterPill
+                        key={value}
+                        selected={(conversationListFilters.priorities ?? []).includes(value)}
+                        onClick={() => {
+                          const selected = conversationListFilters.priorities ?? [];
+                          setConversationListFilter('priorities', selected.includes(value)
+                            ? selected.filter(priority => priority !== value)
+                            : [...selected, value]);
+                        }}
                       >
                         {label}
                       </FilterPill>
