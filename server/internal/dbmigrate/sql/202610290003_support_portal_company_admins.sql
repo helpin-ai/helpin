@@ -1,11 +1,14 @@
--- Company admins in the customer portal: a contact role that manages the
--- company's people, per-company invite switches, and an audit log of
--- portal-side changes to a company's people.
+-- Company admins in the customer portal: a role per company membership
+-- (admin manages the company's people), per-company invite switches, and an
+-- audit log of portal-side changes to a company's people.
 
-ALTER TABLE crm_contacts DROP CONSTRAINT IF EXISTS chk_crm_contacts_portal_role;
-ALTER TABLE crm_contacts ADD CONSTRAINT chk_crm_contacts_portal_role
-    CHECK (portal_role IS NULL OR portal_role IN ('requester', 'member', 'admin')) NOT VALID;
-ALTER TABLE crm_contacts VALIDATE CONSTRAINT chk_crm_contacts_portal_role;
+-- A membership role applies in that company only and wins over the
+-- contact's role and the company default. Admin exists only here.
+ALTER TABLE support_portal_company_members ADD COLUMN IF NOT EXISTS role text;
+ALTER TABLE support_portal_company_members DROP CONSTRAINT IF EXISTS chk_support_portal_company_members_role;
+ALTER TABLE support_portal_company_members ADD CONSTRAINT chk_support_portal_company_members_role
+    CHECK (role IS NULL OR role IN ('requester', 'member', 'admin')) NOT VALID;
+ALTER TABLE support_portal_company_members VALIDATE CONSTRAINT chk_support_portal_company_members_role;
 
 -- Company admins may invite colleagues only when support turns it on, and
 -- only addresses on the company's domain unless widened.

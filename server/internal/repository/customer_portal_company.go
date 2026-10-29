@@ -21,6 +21,16 @@ func portalMemberSQL(contactColumn, companyColumn string) string {
 		WHERE portal_member.crm_company_id = ` + companyColumn + ` AND portal_member.crm_contact_id = ` + contactColumn + `)`
 }
 
+// portalCompanyRoleSQL is a contact's effective role in a company: the role
+// of its membership there, else the contact's role, else the company
+// default. Admin exists only on memberships, so it never spreads across
+// companies.
+func portalCompanyRoleSQL(contactColumn, companyColumn, companyAlias string) string {
+	return `COALESCE((SELECT role_member.role FROM support_portal_company_members AS role_member
+		WHERE role_member.crm_company_id = ` + companyColumn + ` AND role_member.crm_contact_id = ` + contactColumn + `), ` +
+		strings.TrimSuffix(contactColumn, ".id") + `.portal_role, ` + companyAlias + `.portal_default_role)`
+}
+
 // PortalCompanyMembership is a company whose requests a contact may see in the
 // portal, with the contact's effective role there.
 type PortalCompanyMembership struct {
@@ -38,7 +48,7 @@ func (r *CustomerPortalRepository) PortalCompanyMemberships(ctx context.Context,
 		Joins("JOIN crm_contacts AS viewer ON viewer.workspace_id = company.workspace_id AND viewer.id = ?", contactID).
 		Where("company.workspace_id = ? AND company.portal_default_role IS NOT NULL AND viewer.portal_access = ?", workspaceID, model.PortalAccessAllowed).
 		Where(portalMemberSQL("viewer.id", "company.id")).
-		Select("company.id, company.name, COALESCE(viewer.portal_role, company.portal_default_role) AS role").
+		Select("company.id, company.name, " + portalCompanyRoleSQL("viewer.id", "company.id", "company") + " AS role").
 		Order("company.name, company.id").Scan(&memberships).Error
 	return memberships, err
 }
@@ -159,6 +169,9 @@ type PortalCompanyContact struct {
 	Email        *string `json:"email,omitempty"`
 	PortalAccess *string `json:"portal_access"`
 	PortalRole   *string `json:"portal_role"`
+	// CompanyRole is the role of the contact's membership in this company,
+	// which wins over PortalRole here; admin exists only on memberships.
+	CompanyRole *string `json:"company_role"`
 	// Member is true when a support admin gave the contact company access.
 	Member              bool       `json:"member"`
 	SharedEmailContacts int64      `json:"shared_email_contacts"`
@@ -197,6 +210,7 @@ func (r *CustomerPortalRepository) CompanyPortalAccess(ctx context.Context, work
 	access := &PortalCompanyAccess{DefaultRole: company.PortalDefaultRole, Domain: company.Domain, Contacts: []PortalCompanyContact{}}
 	args := map[string]any{"workspace": workspaceID, "company": companyID}
 	err := db.Raw(`SELECT contact.id, contact.first_name, contact.last_name, contact.email, contact.portal_access, contact.portal_role,
+			(SELECT role_member.role FROM support_portal_company_members AS role_member WHERE role_member.crm_company_id = @company AND role_member.crm_contact_id = contact.id) AS company_role,
 			`+portalMemberSQL("contact.id", "@company")+` AS member,
 			(SELECT count(*) FROM crm_contacts AS other WHERE other.workspace_id = contact.workspace_id AND other.id <> contact.id
 				AND contact.email IS NOT NULL AND trim(contact.email) <> '' AND lower(trim(other.email)) = lower(trim(contact.email))) AS shared_email_contacts
@@ -428,7 +442,7 @@ func (r *CustomerPortalRepository) ConversationCompanyAudience(ctx context.Conte
 	var members int64
 	err = r.db.WithContext(ctx).Raw(`SELECT count(*) FROM crm_contacts AS member JOIN crm_companies AS company ON company.workspace_id = member.workspace_id AND company.id = @company
 		WHERE `+portalMemberSQL("member.id", "@company")+` AND member.workspace_id = @workspace AND member.id <> @requester AND member.portal_access = @allowed
-		AND COALESCE(member.portal_role, company.portal_default_role) IN @roles`,
+		AND `+portalCompanyRoleSQL("member.id", "company.id", "company")+` IN @roles`,
 		map[string]any{"workspace": workspaceID, "company": shared.ID, "requester": shared.RequesterID, "allowed": model.PortalAccessAllowed, "roles": []string{model.PortalRoleMember, model.PortalRoleAdmin}}).
 		Scan(&members).Error
 	if err != nil {

@@ -95,7 +95,10 @@ func (s *CustomerPortalService) team(ctx context.Context, access *PortalAccess, 
 		if !contact.Member {
 			continue
 		}
-		role := derefString(contact.PortalRole)
+		role := derefString(contact.CompanyRole)
+		if role == "" {
+			role = derefString(contact.PortalRole)
+		}
 		if role == "" {
 			role = derefString(companyAccess.DefaultRole)
 		}
@@ -109,8 +112,16 @@ func (s *CustomerPortalService) team(ctx context.Context, access *PortalAccess, 
 	return team, nil
 }
 
+// companyDomain is the host of a company's domain, which may be stored as a
+// URL, as the domain rule reads it.
 func companyDomain(domain *string) string {
-	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(derefString(domain)), "www."))
+	host := strings.ToLower(strings.TrimSpace(derefString(domain)))
+	host = strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	host = strings.TrimPrefix(host, "www.")
+	if end := strings.IndexAny(host, "/:"); end >= 0 {
+		host = host[:end]
+	}
+	return host
 }
 
 // PortalInvite is a company admin's invitation of a colleague.
@@ -143,8 +154,8 @@ func (s *CustomerPortalService) Invite(ctx context.Context, access *PortalAccess
 		if domain == "" {
 			return nil, fmt.Errorf("%w: ask support to set your company's domain first", ErrPortalInviteInvalid)
 		}
-		if !strings.HasSuffix(address, "@"+domain) {
-			return nil, fmt.Errorf("%w: invite addresses ending in @%s", ErrPortalInviteInvalid, domain)
+		if !repository.PortalEmailOnDomain(address, domain) {
+			return nil, fmt.Errorf("%w: invite addresses at %s", ErrPortalInviteInvalid, domain)
 		}
 	}
 	role := invite.Role
@@ -192,11 +203,18 @@ func (s *CustomerPortalService) Invite(ctx context.Context, access *PortalAccess
 		return nil, err
 	}
 	if existing == nil {
+		// People with another company are support's to move.
+		others, err := s.repo.OtherCompanyMemberships(ctx, access.Workspace.ID, companyID, contactID)
+		if err != nil {
+			return nil, err
+		}
+		if others > 0 {
+			return nil, fmt.Errorf("%w: this person belongs to another company; ask support to add them", ErrPortalInviteInvalid)
+		}
 		if err := s.repo.AddCompanyMembers(ctx, access.Workspace.ID, companyID, []string{contactID}); err != nil {
 			return nil, err
 		}
-		// A role set elsewhere stays; the admin's choice applies to new people.
-		if err := s.setRoleIfUnset(ctx, access.Workspace.ID, companyID, contactID, role); err != nil {
+		if _, err := s.repo.SetCompanyMemberRole(ctx, access.Workspace.ID, companyID, contactID, &role); err != nil {
 			return nil, err
 		}
 	}
@@ -205,14 +223,6 @@ func (s *CustomerPortalService) Invite(ctx context.Context, access *PortalAccess
 		s.sendLink(ctx, &access.Workspace, address, nil)
 	}
 	return s.team(ctx, access, companyID)
-}
-
-func (s *CustomerPortalService) setRoleIfUnset(ctx context.Context, workspaceID, companyID, contactID, role string) error {
-	member, err := s.repo.CompanyMemberContact(ctx, workspaceID, companyID, contactID)
-	if err != nil || member == nil || derefString(member.PortalRole) != "" {
-		return err
-	}
-	return s.repo.SetContactPortalRole(ctx, workspaceID, contactID, &role)
 }
 
 // createInvitedContact creates the CRM contact for an invited address.
@@ -249,85 +259,55 @@ func (s *CustomerPortalService) createInvitedContact(ctx context.Context, worksp
 	return contact.ID, nil
 }
 
-// SetMemberRole changes a member's role. The last admin cannot step down.
+// SetMemberRole changes a member's role in this company only. The last
+// admin who can sign in cannot step down.
 func (s *CustomerPortalService) SetMemberRole(ctx context.Context, access *PortalAccess, companyID, contactID, role string) (*PortalTeam, error) {
 	if err := s.requireCompanyAdmin(ctx, access, companyID); err != nil {
 		return nil, err
 	}
-	if !model.ValidPortalRole(role) {
+	if !model.ValidPortalCompanyRole(role) {
 		return nil, ErrPortalRoleInvalid
 	}
-	member, err := s.memberForChange(ctx, access, companyID, contactID)
+	if !validPortalID(contactID) {
+		return nil, ErrPortalTeamMemberMissing
+	}
+	before, err := s.repo.SetCompanyMemberRole(ctx, access.Workspace.ID, companyID, contactID, &role)
+	if errors.Is(err, repository.ErrPortalLastCompanyAdmin) {
+		return nil, ErrPortalLastAdmin
+	}
 	if err != nil {
 		return nil, err
 	}
-	previous := derefString(member.PortalRole)
-	if previous == role {
-		return s.team(ctx, access, companyID)
+	if before == nil {
+		return nil, ErrPortalTeamMemberMissing
 	}
-	if previous == model.PortalRoleAdmin {
-		if err := s.keepAnAdmin(ctx, access.Workspace.ID, companyID); err != nil {
-			return nil, err
-		}
+	if derefString(before.Role) != role {
+		s.recordCompanyEvent(ctx, access, companyID, contactID, derefString(before.Email), model.PortalCompanyEventRoleChanged, before.Role, &role)
 	}
-	if err := s.repo.SetContactPortalRole(ctx, access.Workspace.ID, contactID, &role); err != nil {
-		return nil, err
-	}
-	var before *string
-	if previous != "" {
-		before = &previous
-	}
-	s.recordCompanyEvent(ctx, access, companyID, contactID, derefString(member.Email), model.PortalCompanyEventRoleChanged, before, &role)
 	return s.team(ctx, access, companyID)
 }
 
 // RemoveMember drops a member from the company. Their own requests stay
-// theirs; the last admin cannot be removed.
+// theirs; the last admin who can sign in cannot be removed.
 func (s *CustomerPortalService) RemoveMember(ctx context.Context, access *PortalAccess, companyID, contactID string) (*PortalTeam, error) {
 	if err := s.requireCompanyAdmin(ctx, access, companyID); err != nil {
 		return nil, err
 	}
-	member, err := s.memberForChange(ctx, access, companyID, contactID)
-	if err != nil {
-		return nil, err
-	}
-	if derefString(member.PortalRole) == model.PortalRoleAdmin {
-		if err := s.keepAnAdmin(ctx, access.Workspace.ID, companyID); err != nil {
-			return nil, err
-		}
-	}
-	if err := s.repo.SetCompanyMember(ctx, access.Workspace.ID, companyID, contactID, "", false); err != nil {
-		return nil, err
-	}
-	s.recordCompanyEvent(ctx, access, companyID, contactID, derefString(member.Email), model.PortalCompanyEventRemoved, member.PortalRole, nil)
-	return s.team(ctx, access, companyID)
-}
-
-func (s *CustomerPortalService) memberForChange(ctx context.Context, access *PortalAccess, companyID, contactID string) (*repository.PortalCompanyMemberContact, error) {
 	if !validPortalID(contactID) {
 		return nil, ErrPortalTeamMemberMissing
 	}
-	member, err := s.repo.CompanyMemberContact(ctx, access.Workspace.ID, companyID, contactID)
+	before, err := s.repo.RemoveCompanyMemberKeepingAdmin(ctx, access.Workspace.ID, companyID, contactID)
+	if errors.Is(err, repository.ErrPortalLastCompanyAdmin) {
+		return nil, ErrPortalLastAdmin
+	}
 	if err != nil {
 		return nil, err
 	}
-	if member == nil {
+	if before == nil {
 		return nil, ErrPortalTeamMemberMissing
 	}
-	return member, nil
-}
-
-// keepAnAdmin refuses a change that would leave the company without an admin
-// who can sign in.
-func (s *CustomerPortalService) keepAnAdmin(ctx context.Context, workspaceID, companyID string) error {
-	admins, err := s.repo.CompanyAdminCount(ctx, workspaceID, companyID)
-	if err != nil {
-		return err
-	}
-	if admins <= 1 {
-		return ErrPortalLastAdmin
-	}
-	return nil
+	s.recordCompanyEvent(ctx, access, companyID, contactID, derefString(before.Email), model.PortalCompanyEventRemoved, before.Role, nil)
+	return s.team(ctx, access, companyID)
 }
 
 func (s *CustomerPortalService) recordCompanyEvent(ctx context.Context, access *PortalAccess, companyID, contactID, email, eventType string, before, after *string) {
@@ -359,6 +339,45 @@ func (s *CustomerPortalService) CompanyTeamActivity(ctx context.Context, workspa
 	}
 	events, err := s.repo.ListCompanyEvents(ctx, workspaceID, companyID, portalCompanyEventsShown)
 	return settings, events, err
+}
+
+// SetCompanyMemberRoleBySupport sets a contact's role in one company for a
+// support admin: admin, a role that overrides the contact's role there, or
+// nil to follow it. The last admin who can sign in is kept here too.
+func (s *CustomerPortalService) SetCompanyMemberRoleBySupport(ctx context.Context, workspaceID, companyID, contactID, actorUserID string, role *string) (*PortalCompanyAccess, error) {
+	if !validPortalID(companyID) {
+		return nil, ErrPortalCompanyNotFound
+	}
+	if !validPortalID(contactID) {
+		return nil, ErrPortalContactNotFound
+	}
+	if role != nil && *role == "" {
+		role = nil
+	}
+	if role != nil && !model.ValidPortalCompanyRole(*role) {
+		return nil, ErrPortalRoleInvalid
+	}
+	before, err := s.repo.SetCompanyMemberRole(ctx, workspaceID, companyID, contactID, role)
+	if errors.Is(err, repository.ErrPortalLastCompanyAdmin) {
+		return nil, ErrPortalLastAdmin
+	}
+	if err != nil {
+		return nil, err
+	}
+	if before == nil {
+		return nil, ErrPortalTeamMemberMissing
+	}
+	event := &model.SupportPortalCompanyEvent{
+		WorkspaceID: workspaceID, CRMCompanyID: companyID, SubjectContactID: &contactID,
+		SubjectEmail: strings.ToLower(derefString(before.Email)), EventType: model.PortalCompanyEventRoleChanged, BeforeValue: before.MemberRole, AfterValue: role,
+	}
+	if actorUserID != "" {
+		event.ActorUserID = &actorUserID
+	}
+	if err := s.repo.CreateCompanyEvent(ctx, event); err != nil {
+		slog.ErrorContext(ctx, "portal company event failed", "workspace_id", workspaceID, "company_id", companyID, "error", err)
+	}
+	return s.CompanyAccess(ctx, workspaceID, companyID)
 }
 
 // SetCompanyTeamSettings saves whether the company's admins may invite

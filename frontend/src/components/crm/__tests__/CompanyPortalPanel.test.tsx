@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   setAccess: vi.fn(),
   setRole: vi.fn(),
   setTeamSettings: vi.fn(),
+  setCompanyRole2: vi.fn(),
 }));
 
 vi.mock('@/hooks/queries/useSupport', () => ({
@@ -21,6 +22,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useAddCompanyPortalDomainMembers: () => ({ mutate: mocks.addDomain, isPending: false }),
   useSetCompanyPortalMember: () => ({ mutate: mocks.setMember, isPending: false }),
   useSetCompanyTeamSettings: () => ({ mutate: mocks.setTeamSettings, isPending: false }),
+  useSetCompanyMemberRole: () => ({ mutate: mocks.setCompanyRole2, isPending: false }),
   useSetContactPortalAccess: (_workspaceId: string, contactId: string) => ({ mutate: (value: unknown) => mocks.setAccess(contactId, value), isPending: false }),
   useSetContactPortalRole: (_workspaceId: string, contactId: string) => ({ mutate: (value: unknown) => mocks.setRole(contactId, value), isPending: false }),
 }));

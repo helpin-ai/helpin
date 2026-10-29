@@ -19,7 +19,7 @@ import (
 // Company portal errors returned to customers and support admins.
 var (
 	ErrPortalCompanyNotFound = errors.New("company not found")
-	ErrPortalRoleInvalid     = errors.New("portal role must be requester, member or admin (admin only for people), or empty")
+	ErrPortalRoleInvalid     = errors.New("portal role must be requester or member (admin only per company), or empty")
 	ErrPortalScopeInvalid    = errors.New("unknown request scope")
 )
 
@@ -222,10 +222,6 @@ func (s *CustomerPortalService) SetCompanyDefaultRole(ctx context.Context, works
 	role, err := normalizePortalRole(role)
 	if err != nil {
 		return nil, err
-	}
-	// Admin is given to people, never to a whole company.
-	if role != nil && *role == model.PortalRoleAdmin {
-		return nil, ErrPortalRoleInvalid
 	}
 	if err := s.repo.SetCompanyPortalDefaultRole(ctx, workspaceID, companyID, role); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -57,7 +57,7 @@ const (
 
 // ValidPortalRole reports whether role is a portal role.
 func ValidPortalRole(role string) bool {
-	return role == PortalRoleRequester || role == PortalRoleMember || role == PortalRoleAdmin
+	return role == PortalRoleRequester || role == PortalRoleMember
 }
 
 // SupportPortalIdentity is the stable customer identity used to authorize
@@ -240,6 +240,12 @@ type PortalIntake struct {
 	// AssistantSessionID is the help assistant conversation that handed the
 	// customer off to this request, if any.
 	AssistantSessionID string `json:"assistant_session_id,omitempty"`
+}
+
+// ValidPortalCompanyRole reports whether role is a role a company membership
+// can hold: the contact roles, or admin, which exists only per company.
+func ValidPortalCompanyRole(role string) bool {
+	return ValidPortalRole(role) || role == PortalRoleAdmin
 }
 
 // PortalRoleSeesCompany reports whether a company role shows the company's

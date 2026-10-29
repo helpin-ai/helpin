@@ -1,6 +1,6 @@
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import type { CreateTaskFromConversationRequest, UpdateSupportNoteRequest } from '@/lib/pmTypes';
-import type { CustomerPortalContactAccessValue, CustomerPortalRole, WidgetOriginSettings } from '@/lib/pmTypes';
+import type { CustomerPortalCompanyRole, CustomerPortalContactAccessValue, CustomerPortalRole, WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
@@ -345,6 +345,20 @@ export function useSetCompanyPortalRole(workspaceId: string, companyId: string) 
     },
     onError: (error: Error) => {
       toast.error('Failed to update company portal access', { description: error.message });
+    },
+  });
+}
+
+export function useSetCompanyMemberRole(workspaceId: string, companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ contactId, role }: { contactId: string; role: CustomerPortalCompanyRole | null }) =>
+      unwrap(await supportService.setCompanyMemberRole(workspaceId, companyId, contactId, role)),
+    onSuccess: (access) => {
+      queryClient.setQueryData(queryKeys.support.portalCompanyAccess(workspaceId, companyId), access);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to change the company admin', { description: error.message });
     },
   });
 }

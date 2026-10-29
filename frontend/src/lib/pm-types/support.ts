@@ -1569,8 +1569,9 @@ export interface CustomerPortalContactAccess {
 }
 
 /** Requesters see their own requests; members see every request from their company. */
-/** A contact's company role; admin is given to people, never as a company default. */
-export type CustomerPortalRole = 'requester' | 'member' | 'admin';
+export type CustomerPortalRole = 'requester' | 'member';
+/** A role in one company; admin exists only there. */
+export type CustomerPortalCompanyRole = CustomerPortalRole | 'admin';
 
 export interface CustomerPortalCompanyContact {
   id: string;
@@ -1579,6 +1580,8 @@ export interface CustomerPortalCompanyContact {
   email?: string | null;
   portal_access: CustomerPortalContactAccessValue | null;
   portal_role: CustomerPortalRole | null;
+  /** The contact's role in this company, which wins over portal_role here. */
+  company_role?: CustomerPortalCompanyRole | null;
   /** A support admin gave this contact access to the company's portal requests. */
   member: boolean;
   shared_email_contacts: number;

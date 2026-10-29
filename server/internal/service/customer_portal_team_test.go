@@ -22,7 +22,7 @@ func TestPortalCompanyAdminManagesTeam(t *testing.T) {
 	ctx := context.Background()
 	sender := p.svc.sender.(*recordingPortalSender)
 	p.exec(t, `UPDATE crm_companies SET domain = 'acme.test' WHERE id = ?`, p.acme)
-	p.exec(t, `UPDATE crm_contacts SET portal_role = 'admin' WHERE id = ?`, p.alice)
+	p.exec(t, `UPDATE support_portal_company_members SET role = 'admin' WHERE crm_company_id = ? AND crm_contact_id = ?`, p.acme, p.alice)
 
 	if _, err := p.svc.Team(ctx, p.bobIn, p.acme); !errors.Is(err, ErrPortalTeamDenied) {
 		t.Fatalf("member reading the team = %v", err)
@@ -117,7 +117,7 @@ func TestPortalCompanyAdminManagesTeam(t *testing.T) {
 func TestPortalCompanyInviteRespectsBlocks(t *testing.T) {
 	p := setupCompanyPortal(t)
 	ctx := context.Background()
-	p.exec(t, `UPDATE crm_contacts SET portal_role = 'admin' WHERE id = ?`, p.alice)
+	p.exec(t, `UPDATE support_portal_company_members SET role = 'admin' WHERE crm_company_id = ? AND crm_contact_id = ?`, p.acme, p.alice)
 	if err := p.svc.SetCompanyTeamSettings(ctx, p.ws.ID, p.acme, true, true); err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +131,54 @@ func TestPortalCompanyInviteRespectsBlocks(t *testing.T) {
 	}
 	if _, err := p.svc.SetCompanyDefaultRole(ctx, p.ws.ID, p.acme, "", portalAccess(model.PortalRoleAdmin)); !errors.Is(err, ErrPortalRoleInvalid) {
 		t.Fatalf("admin as company default = %v", err)
+	}
+}
+
+func TestPortalCompanyRolesStayInTheirCompany(t *testing.T) {
+	p := setupCompanyPortal(t)
+	ctx := context.Background()
+	p.exec(t, `UPDATE support_portal_company_members SET role = 'admin' WHERE crm_company_id = ? AND crm_contact_id = ?`, p.acme, p.alice)
+	// Bob is also the admin of Beta.
+	beta := createPortalCompany(t, p.db, p.ws.ID, "Beta", portalAccess(model.PortalRoleMember))
+	addPortalMember(t, p.db, p.ws.ID, beta, p.bob)
+	p.exec(t, `UPDATE support_portal_company_members SET role = 'admin' WHERE crm_company_id = ? AND crm_contact_id = ?`, beta, p.bob)
+
+	if _, err := p.svc.SetMemberRole(ctx, p.aliceIn, p.acme, p.bob, model.PortalRoleRequester); err != nil {
+		t.Fatal(err)
+	}
+	memberships, err := p.svc.Companies(ctx, p.bobIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := map[string]string{}
+	for _, membership := range memberships {
+		roles[membership.Name] = membership.Role
+	}
+	if roles["Acme"] != model.PortalRoleRequester || roles["Beta"] != model.PortalRoleAdmin {
+		t.Fatalf("roles = %v, want Acme requester and Beta still admin", roles)
+	}
+	// Alice cannot act in Beta, and cannot pull Beta's people into Acme.
+	if _, err := p.svc.Team(ctx, p.aliceIn, beta); !errors.Is(err, ErrPortalTeamDenied) {
+		t.Fatalf("Acme admin reading Beta = %v", err)
+	}
+	carol := createNamedPortalContact(t, p.db, p.ws.ID, "Carol", "carol@acme.test", portalAccess(model.PortalAccessAllowed))
+	addPortalMember(t, p.db, p.ws.ID, beta, carol)
+	if err := p.svc.SetCompanyTeamSettings(ctx, p.ws.ID, p.acme, true, false); err != nil {
+		t.Fatal(err)
+	}
+	p.exec(t, `UPDATE crm_companies SET domain = 'https://www.Acme.test/about' WHERE id = ?`, p.acme)
+	if _, err := p.svc.Invite(ctx, p.aliceIn, p.acme, PortalInvite{Email: "carol@acme.test"}); !errors.Is(err, ErrPortalInviteInvalid) {
+		t.Fatalf("invite someone from another company = %v", err)
+	}
+	// A URL-shaped company domain still matches its addresses and subdomains.
+	if _, err := p.svc.Invite(ctx, p.aliceIn, p.acme, PortalInvite{Email: "erin@eu.acme.test"}); err != nil {
+		t.Fatalf("invite on a subdomain: %v", err)
+	}
+	// Support makes a company admin for one company only.
+	if _, err := p.svc.SetCompanyMemberRoleBySupport(ctx, p.ws.ID, p.acme, p.bob, "", portalAccess(model.PortalRoleAdmin)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.svc.SetContactRole(ctx, p.ws.ID, p.bob, "", portalAccess(model.PortalRoleAdmin)); !errors.Is(err, ErrPortalRoleInvalid) {
+		t.Fatalf("admin as a contact-wide role = %v", err)
 	}
 }

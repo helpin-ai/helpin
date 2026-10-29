@@ -82,6 +82,10 @@ func writePortalAdminError(w http.ResponseWriter, r *http.Request, workspaceID s
 	switch {
 	case errors.Is(err, service.ErrPortalContactNotFound), errors.Is(err, service.ErrPortalRequestNotFound), errors.Is(err, service.ErrPortalCompanyNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrPortalLastAdmin):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrPortalTeamMemberMissing):
+		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrPortalAccessInvalid), errors.Is(err, service.ErrPortalRoleInvalid):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalUnavailable):
@@ -177,6 +181,27 @@ func (h *CustomerPortalAdminHandler) UpdateCompanyMember(w http.ResponseWriter, 
 		return
 	}
 	access, err := h.portal.SetCompanyMember(r.Context(), workspaceID, chi.URLParam(r, "companyId"), chi.URLParam(r, "contactId"), middleware.GetUserID(r.Context()), *body.Member)
+	if err != nil {
+		writePortalAdminError(w, r, workspaceID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
+}
+
+// UpdateCompanyMemberRole handles
+// PUT /api/support/inbox/portal/companies/{companyId}/members/{contactId}/role:
+// the contact's role in this company only, admin included; null follows the
+// contact's role.
+func (h *CustomerPortalAdminHandler) UpdateCompanyMemberRole(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	var body struct {
+		Role *string `json:"role"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	access, err := h.portal.SetCompanyMemberRoleBySupport(r.Context(), workspaceID, chi.URLParam(r, "companyId"), chi.URLParam(r, "contactId"), middleware.GetUserID(r.Context()), body.Role)
 	if err != nil {
 		writePortalAdminError(w, r, workspaceID, err)
 		return

@@ -1,4 +1,4 @@
-import type { CustomerPortalCompanyAccess, CustomerPortalCompanyContact, CustomerPortalRole } from '@/lib/pmTypes';
+import type { CustomerPortalCompanyAccess, CustomerPortalCompanyContact, CustomerPortalCompanyRole, CustomerPortalRole } from '@/lib/pmTypes';
 
 /** A contact's portal role choice; `default` follows its companies. */
 export type PortalRoleChoice = CustomerPortalRole | 'default';
@@ -7,10 +7,9 @@ export const portalRoleChoices: { value: PortalRoleChoice; label: string }[] = [
   { value: 'default', label: 'Company default' },
   { value: 'requester', label: 'Requester' },
   { value: 'member', label: 'Member' },
-  { value: 'admin', label: 'Admin' },
 ];
 
-export const portalRoleLabels: Record<CustomerPortalRole, string> = {
+export const portalRoleLabels: Record<CustomerPortalCompanyRole, string> = {
   requester: 'Requester',
   member: 'Member',
   admin: 'Admin',

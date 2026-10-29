@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -43,19 +44,6 @@ func (r *CustomerPortalRepository) SetCompanyTeamSettings(ctx context.Context, w
 		return gorm.ErrRecordNotFound
 	}
 	return nil
-}
-
-// CompanyAdminCount counts the company's members whose effective role is
-// admin and who may still sign in.
-func (r *CustomerPortalRepository) CompanyAdminCount(ctx context.Context, workspaceID, companyID string) (int64, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Table("crm_contacts AS contact").
-		Joins("JOIN crm_companies AS company ON company.workspace_id = contact.workspace_id AND company.id = ?", companyID).
-		Where("contact.workspace_id = ? AND contact.portal_access = ?", workspaceID, model.PortalAccessAllowed).
-		Where(portalMemberSQL("contact.id", "company.id")).
-		Where("COALESCE(contact.portal_role, company.portal_default_role) = ?", model.PortalRoleAdmin).
-		Count(&count).Error
-	return count, err
 }
 
 // CreateCompanyEvent records a change to a company's people.
@@ -101,27 +89,42 @@ func (r *CustomerPortalRepository) CompanyInviteCounts(ctx context.Context, work
 	if err = invites().Where("occurred_at >= ?", since).Count(&forCompany).Error; err != nil {
 		return 0, 0, err
 	}
-	err = invites().Where("subject_email = ? AND occurred_at >= ?", address, addressSince).Count(&forAddress).Error
+	// The cooldown holds across companies, so one address gets one email.
+	err = r.db.WithContext(ctx).Model(&model.SupportPortalCompanyEvent{}).
+		Where("workspace_id = ? AND event_type = ? AND subject_email = ? AND occurred_at >= ?", workspaceID, model.PortalCompanyEventInvited, address, addressSince).
+		Count(&forAddress).Error
 	return forCompany, forAddress, err
 }
+
+// ErrPortalLastCompanyAdmin means a change would leave the company without
+// an admin who can sign in.
+var ErrPortalLastCompanyAdmin = errors.New("a company needs at least one admin")
 
 // PortalCompanyMemberContact is a company member's contact as company admins
 // manage it.
 type PortalCompanyMemberContact struct {
 	ID           string
-	PortalRole   *string
 	PortalAccess *string
 	Email        *string
+	// Role is the effective role in the company; MemberRole the membership's own.
+	Role       *string
+	MemberRole *string
 }
 
 // CompanyMemberContact returns a member of the company, or nil when the
 // contact is not one.
 func (r *CustomerPortalRepository) CompanyMemberContact(ctx context.Context, workspaceID, companyID, contactID string) (*PortalCompanyMemberContact, error) {
+	return companyMemberContact(r.db.WithContext(ctx), workspaceID, companyID, contactID)
+}
+
+func companyMemberContact(db *gorm.DB, workspaceID, companyID, contactID string) (*PortalCompanyMemberContact, error) {
 	var contact PortalCompanyMemberContact
-	err := r.db.WithContext(ctx).Table("crm_contacts AS contact").
+	err := db.Table("crm_contacts AS contact").
+		Joins("JOIN crm_companies AS company ON company.workspace_id = contact.workspace_id AND company.id = ?", companyID).
+		Joins("JOIN support_portal_company_members AS membership ON membership.crm_company_id = company.id AND membership.crm_contact_id = contact.id").
 		Where("contact.workspace_id = ? AND contact.id = ?", workspaceID, contactID).
-		Where(portalMemberSQL("contact.id", "?"), companyID).
-		Select("contact.id, contact.portal_role, contact.portal_access, contact.email").Take(&contact).Error
+		Select("contact.id, contact.portal_access, contact.email, membership.role AS member_role, " +
+			"COALESCE(membership.role, contact.portal_role, company.portal_default_role) AS role").Take(&contact).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -129,6 +132,87 @@ func (r *CustomerPortalRepository) CompanyMemberContact(ctx context.Context, wor
 		return nil, err
 	}
 	return &contact, nil
+}
+
+// OtherCompanyMemberships counts the contact's memberships in companies
+// other than companyID.
+func (r *CustomerPortalRepository) OtherCompanyMemberships(ctx context.Context, workspaceID, companyID, contactID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Table("support_portal_company_members").
+		Where("workspace_id = ? AND crm_contact_id = ? AND crm_company_id <> ?", workspaceID, contactID, companyID).Count(&count).Error
+	return count, err
+}
+
+// lockCompanyAdmins locks the company row, so admin counts and changes for
+// one company happen one at a time, and returns how many members other than
+// exceptContactID are admins who can sign in.
+func lockCompanyAdmins(tx *gorm.DB, dialect, workspaceID, companyID, exceptContactID string) (int64, error) {
+	lock := tx.Table("crm_companies").Select("id").Where("workspace_id = ? AND id = ?", workspaceID, companyID)
+	if dialect == "postgres" {
+		lock = lock.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var company struct{ ID string }
+	if err := lock.Take(&company).Error; err != nil {
+		return 0, err
+	}
+	var admins int64
+	err := tx.Table("crm_contacts AS contact").
+		Joins("JOIN crm_companies AS company ON company.workspace_id = contact.workspace_id AND company.id = ?", companyID).
+		Where("contact.workspace_id = ? AND contact.id <> ? AND contact.portal_access = ?", workspaceID, exceptContactID, model.PortalAccessAllowed).
+		Where(portalMemberSQL("contact.id", "company.id")).
+		Where(portalCompanyRoleSQL("contact.id", "company.id", "company")+" = ?", model.PortalRoleAdmin).
+		Count(&admins).Error
+	return admins, err
+}
+
+// changeKeepsAnAdmin reports whether changing the member keeps an admin
+// who can sign in: true when they are not one, or when another is.
+func changeKeepsAnAdmin(member *PortalCompanyMemberContact, otherAdmins int64) bool {
+	isSigningInAdmin := crmContactStringValue(member.Role) == model.PortalRoleAdmin && crmContactStringValue(member.PortalAccess) == model.PortalAccessAllowed
+	return !isSigningInAdmin || otherAdmins > 0
+}
+
+// SetCompanyMemberRole sets the role of a contact's membership in the
+// company (nil follows the contact's role and the company default). A change
+// that would leave no admin who can sign in fails with
+// ErrPortalLastCompanyAdmin; a contact who is not a member yields nil, nil.
+func (r *CustomerPortalRepository) SetCompanyMemberRole(ctx context.Context, workspaceID, companyID, contactID string, role *string) (*PortalCompanyMemberContact, error) {
+	var before *PortalCompanyMemberContact
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		others, err := lockCompanyAdmins(tx, r.db.Dialector.Name(), workspaceID, companyID, contactID)
+		if err != nil {
+			return err
+		}
+		if before, err = companyMemberContact(tx, workspaceID, companyID, contactID); err != nil || before == nil {
+			return err
+		}
+		if (role == nil || *role != model.PortalRoleAdmin) && !changeKeepsAnAdmin(before, others) {
+			return ErrPortalLastCompanyAdmin
+		}
+		return tx.Table("support_portal_company_members").Where("crm_company_id = ? AND crm_contact_id = ?", companyID, contactID).
+			Update("role", role).Error
+	})
+	return before, err
+}
+
+// RemoveCompanyMemberKeepingAdmin drops a membership unless it would leave no
+// admin who can sign in. A contact who is not a member yields nil, nil.
+func (r *CustomerPortalRepository) RemoveCompanyMemberKeepingAdmin(ctx context.Context, workspaceID, companyID, contactID string) (*PortalCompanyMemberContact, error) {
+	var before *PortalCompanyMemberContact
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		others, err := lockCompanyAdmins(tx, r.db.Dialector.Name(), workspaceID, companyID, contactID)
+		if err != nil {
+			return err
+		}
+		if before, err = companyMemberContact(tx, workspaceID, companyID, contactID); err != nil || before == nil {
+			return err
+		}
+		if !changeKeepsAnAdmin(before, others) {
+			return ErrPortalLastCompanyAdmin
+		}
+		return tx.Exec(`DELETE FROM support_portal_company_members WHERE crm_company_id = ? AND crm_contact_id = ?`, companyID, contactID).Error
+	})
+	return before, err
 }
 
 // AddCompanyMembers makes contacts company members and allows sign-in for

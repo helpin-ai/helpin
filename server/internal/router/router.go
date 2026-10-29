@@ -1287,6 +1287,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/portal/companies/{companyId}/members/from-domain", h.CustomerPortalAdmin.AddCompanyDomainMembers)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}/team-settings", h.CustomerPortalAdmin.UpdateCompanyTeamSettings)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}/members/{contactId}", h.CustomerPortalAdmin.UpdateCompanyMember)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}/members/{contactId}/role", h.CustomerPortalAdmin.UpdateCompanyMemberRole)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/conversations/{id}/portal-confirmation", h.CustomerPortalAdmin.ResendIntakeConfirmation)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/portal-context", h.CustomerPortalAdmin.ConversationPortalContext)
 				}
