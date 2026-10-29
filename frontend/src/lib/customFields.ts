@@ -177,3 +177,33 @@ export function suggestDefinition(summary: CRMCustomPropertySummary): Partial<Cu
   }
   return { ...base, field_type: 'text', options: [] }
 }
+
+/** A conversation field on a request type. */
+export interface RequestTypeField {
+  key: string;
+  required: boolean;
+  customer_visible: boolean;
+  help_text: string;
+}
+
+/** A kind of request customers pick on the portal, with the fields it asks for. */
+export interface SupportRequestType {
+  id: string;
+  name: string;
+  description: string;
+  fields: RequestTypeField[];
+  default_priority?: string | null;
+  mailbox_id?: string | null;
+  enabled: boolean;
+  position: number;
+  conversation_count: number;
+}
+
+export interface SupportRequestTypeInput {
+  name: string;
+  description: string;
+  fields: RequestTypeField[];
+  default_priority: string | null;
+  mailbox_id: string | null;
+  enabled: boolean;
+}

@@ -404,9 +404,9 @@ const allSettingsSections: SettingsSectionMeta[] = [
   },
   {
     id: 'support-conversation-fields',
-    label: 'Conversation fields',
-    description: 'Define the fields conversations carry, such as plan or severity.',
-    keywords: ['custom fields', 'fields', 'attributes', 'ticket fields', 'form fields'],
+    label: 'Request types & fields',
+    description: 'Choose what customers ask for on the portal and the fields conversations carry.',
+    keywords: ['custom fields', 'fields', 'attributes', 'ticket fields', 'form fields', 'request types', 'ticket forms', 'forms'],
     icon: Fields,
     group: 'Support',
   },

@@ -107,6 +107,7 @@ export const supportService = {
       tag_ids?: string;
       system_tags?: string;
       sla?: string;
+      request_type_ids?: string;
       page?: number;
       per_page?: number;
     },
@@ -127,6 +128,7 @@ export const supportService = {
     if (filters?.tag_ids) path += `&tag_ids=${encodeURIComponent(filters.tag_ids)}`;
     if (filters?.system_tags) path += `&system_tags=${encodeURIComponent(filters.system_tags)}`;
     if (filters?.sla) path += `&sla=${encodeURIComponent(filters.sla)}`;
+    if (filters?.request_type_ids) path += `&request_type_ids=${encodeURIComponent(filters.request_type_ids)}`;
     if (filters?.page) path += `&page=${encodeURIComponent(String(filters.page))}`;
     if (filters?.per_page) path += `&per_page=${encodeURIComponent(String(filters.per_page))}`;
     return api.get<ConversationListResponse>(path);

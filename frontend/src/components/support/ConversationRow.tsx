@@ -189,6 +189,8 @@ interface ConversationRowProps {
   isBulkSelected?: boolean;
   selectionActive?: boolean;
   selectionDisabled?: boolean;
+  /** Name of the conversation's request type, shown muted. */
+  requestTypeName?: string;
 }
 
 const AIHandoffIndicator = memo(function AIHandoffIndicator() {
@@ -318,6 +320,7 @@ export const ConversationRow = memo(function ConversationRow({
   isBulkSelected = false,
   selectionActive = false,
   selectionDisabled = false,
+  requestTypeName,
 }: ConversationRowProps) {
   const isSelected = useSupportInboxStore((s) => s.selectedConversationId === conversation.id);
   const visitorLabel = conversation.anonymous_id ? `Visitor #${conversation.anonymous_id.slice(0, 6)}` : 'Anonymous';
@@ -599,7 +602,7 @@ export const ConversationRow = memo(function ConversationRow({
               <HumanQueueBadge waitSince={humanQueueWaitSince} />
             </div>
           ) : null}
-          <ConversationRowOperations conversation={conversation} />
+          <ConversationRowOperations conversation={conversation} requestTypeName={requestTypeName} />
           <UserTagStrip tags={userTags} />
         </div>
       </div>

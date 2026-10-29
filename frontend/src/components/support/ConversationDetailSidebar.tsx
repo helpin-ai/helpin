@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
+import { ConversationRequestSection } from './ConversationRequestSection';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -711,6 +712,8 @@ export function ConversationDetailSidebar({
               </div>
             </div>
           ) : null}
+
+          <ConversationRequestSection workspaceId={workspaceId} conversation={conversation} />
 
           <CollapsibleSection
             title="Tags"

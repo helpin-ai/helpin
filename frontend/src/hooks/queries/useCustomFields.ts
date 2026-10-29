@@ -3,7 +3,8 @@ import { toast } from 'sonner'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import { customFieldsService } from '@/lib/services/customFieldsService'
-import type { CustomFieldDefinition, CustomFieldDefinitionInput, CustomFieldObjectType } from '@/lib/customFields'
+import type { CustomFieldDefinition, CustomFieldDefinitionInput, CustomFieldObjectType, SupportRequestType, SupportRequestTypeInput } from '@/lib/customFields'
+import type { SupportConversation } from '@/lib/pmTypes'
 
 const NO_FIELDS: CustomFieldDefinition[] = []
 
@@ -81,4 +82,77 @@ export function useSetCRMFieldValues(workspaceId: string, objectType: 'crm_conta
       toast.error('Failed to save the field', { description: error.message })
     },
   })
+}
+
+const NO_REQUEST_TYPES: SupportRequestType[] = []
+
+/** The workspace's request types in order, disabled ones included. */
+export function useRequestTypes(workspaceId: string, enabled = true) {
+  const query = useQuery({
+    queryKey: queryKeys.customFields.requestTypes(workspaceId),
+    queryFn: () => customFieldsService.listRequestTypes(workspaceId).then(unwrap),
+    enabled: Boolean(workspaceId) && enabled,
+    staleTime: 60_000,
+  })
+  return { ...query, requestTypes: query.data ?? NO_REQUEST_TYPES }
+}
+
+function useRequestTypeMutation<TVariables, TResult>(workspaceId: string, mutationFn: (variables: TVariables) => Promise<TResult>, failure: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.customFields.requestTypes(workspaceId) })
+    },
+    onError: (error: Error) => {
+      toast.error(failure, { description: error.message })
+    },
+  })
+}
+
+export function useCreateRequestType(workspaceId: string) {
+  return useRequestTypeMutation(workspaceId, (input: SupportRequestTypeInput) =>
+    customFieldsService.createRequestType(workspaceId, input).then(unwrap), 'Failed to create the request type')
+}
+
+export function useUpdateRequestType(workspaceId: string) {
+  return useRequestTypeMutation(workspaceId, ({ id, input }: { id: string; input: SupportRequestTypeInput }) =>
+    customFieldsService.updateRequestType(workspaceId, id, input).then(unwrap), 'Failed to save the request type')
+}
+
+export function useDeleteRequestType(workspaceId: string) {
+  return useRequestTypeMutation(workspaceId, (id: string) =>
+    customFieldsService.deleteRequestType(workspaceId, id).then(expectNoError), 'Failed to delete the request type')
+}
+
+export function useReorderRequestTypes(workspaceId: string) {
+  return useRequestTypeMutation(workspaceId, (ids: string[]) =>
+    customFieldsService.reorderRequestTypes(workspaceId, ids).then(unwrap), 'Failed to reorder request types')
+}
+
+/** Sets a conversation's request type or field values; the reply is the updated conversation. */
+export function useUpdateConversationFields(workspaceId: string, conversationId: string) {
+  const queryClient = useQueryClient()
+  const onSuccess = (conversation: SupportConversation) => {
+    queryClient.setQueryData(queryKeys.support.conversation(workspaceId, conversationId), (current: SupportConversation | undefined) =>
+      current ? { ...current, request_type_id: conversation.request_type_id, custom_fields: conversation.custom_fields } : current)
+    void queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.customFields.requestTypes(workspaceId) })
+  }
+  const onError = (error: Error) => {
+    toast.error('Failed to save', { description: error.message })
+  }
+  const setType = useMutation({
+    mutationFn: (requestTypeId: string | null) =>
+      customFieldsService.setConversationRequestType(workspaceId, conversationId, requestTypeId).then(unwrap),
+    onSuccess,
+    onError,
+  })
+  const setFields = useMutation({
+    mutationFn: (values: Record<string, unknown>) =>
+      customFieldsService.setConversationFields(workspaceId, conversationId, values).then(unwrap),
+    onSuccess,
+    onError,
+  })
+  return { setType, setFields }
 }

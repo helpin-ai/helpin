@@ -123,9 +123,11 @@ interface SupportViewFiltersProps {
   supportTags: SupportTag[];
   teamInboxFilterOptions: Pick<SupportInboxScope, 'id' | 'name'>[];
   slaEnabled: boolean;
+  /** Request types to filter by; the section hides when there are none. */
+  requestTypes?: { id: string; name: string }[];
 }
 
-export function SupportViewFilters({ conversationListFilters, navFilter, selectedMailboxId, setConversationListFilter, setConversationMailboxFilters, supportTags, teamInboxFilterOptions, slaEnabled }: SupportViewFiltersProps) {
+export function SupportViewFilters({ conversationListFilters, navFilter, selectedMailboxId, setConversationListFilter, setConversationMailboxFilters, supportTags, teamInboxFilterOptions, slaEnabled, requestTypes = [] }: SupportViewFiltersProps) {
   const toggleStateFilter = useCallback((state: ConversationStateFilter) => {
     const currentStates = conversationListFilters.states;
     const nextStates = currentStates.includes(state)
@@ -217,6 +219,22 @@ export function SupportViewFilters({ conversationListFilters, navFilter, selecte
         </FilterPill>
       ))}
     </FilterSection>
+    {requestTypes.length > 0 ? (
+      <FilterSection title="Request type">
+        {[...requestTypes, { id: 'none', name: 'No type' }].map(({ id, name }) => (
+          <FilterPill
+            key={id}
+            selected={(conversationListFilters.requestTypeIds ?? []).includes(id)}
+            onClick={() => {
+              const selected = conversationListFilters.requestTypeIds ?? [];
+              setConversationListFilter('requestTypeIds', selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id]);
+            }}
+          >
+            {name}
+          </FilterPill>
+        ))}
+      </FilterSection>
+    ) : null}
     <FilterSection title="AI state">
       {([
         ['AI handling', 'handling'],

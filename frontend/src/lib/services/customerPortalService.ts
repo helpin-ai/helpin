@@ -31,6 +31,27 @@ export interface CustomerPortalConfiguration {
   public_url?: string
   /** Whether the portal offers the Ask AI help assistant. */
   assistant_enabled?: boolean
+  /** Kinds of request to choose from; empty keeps the plain form. */
+  request_types?: CustomerPortalRequestType[]
+}
+
+export type CustomerPortalFieldType = 'text' | 'long_text' | 'number' | 'date' | 'boolean' | 'select' | 'multi_select'
+
+/** A field a request type asks customers to fill in. */
+export interface CustomerPortalRequestField {
+  key: string
+  label: string
+  field_type: CustomerPortalFieldType
+  options: Array<{ value: string; label: string }>
+  required: boolean
+  help_text: string
+}
+
+export interface CustomerPortalRequestType {
+  id: string
+  name: string
+  description: string
+  fields: CustomerPortalRequestField[]
 }
 
 /** Server upload rules plus the portal's per-message file limit. */
@@ -99,6 +120,9 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   own?: boolean
   /** Who asked, for a colleague's request. */
   requester_name?: string | null
+  /** The request type and the values customers can see. */
+  request_type?: string | null
+  fields?: Array<{ label: string; value: string }>
   messages: Array<{
     id: string
     content: string
@@ -165,6 +189,8 @@ export interface CreateCustomerPortalRequestInput {
   message: string
   attachment_ids?: string[]
   intake?: CustomerPortalIntake
+  request_type_id?: string
+  fields?: Record<string, unknown>
 }
 
 export class CustomerPortalApiError extends Error {

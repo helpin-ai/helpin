@@ -1,4 +1,5 @@
 import { helpinClient } from '@/lib/helpin';
+import { useRequestTypes } from '@/hooks/queries/useCustomFields';
 import { filterWorkspaceNav } from '@/lib/workspaceSurface';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -106,6 +107,7 @@ export function Sidebar() {
   const [editingSupportView, setEditingSupportView] = useState<SupportInboxView | null>(null);
   const { data: supportViewTags = [] } = useSupportTags(editingSupportView || createCustomViewOpen ? workspaceId ?? '' : '');
   const { data: slaPolicies } = useSLAPolicies(workspaceId ?? '', !!editingSupportView || createCustomViewOpen);
+  const { requestTypes } = useRequestTypes(workspaceId ?? '', !!editingSupportView || createCustomViewOpen);
   const totalSupportUnread = supportModuleUnreadCount(unreadStats);
   const sortedCustomViews = useMemo(
     () => [...customViews].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
@@ -521,6 +523,7 @@ export function Sidebar() {
       tags={supportViewTags}
       mailboxes={inboxScopes?.mailboxes ?? []}
       slaEnabled={slaPolicies?.some(policy => policy.enabled) ?? true}
+      requestTypes={requestTypes}
       isPending={editingSupportView ? updateSupportInboxView.isPending : createSupportInboxView.isPending}
       onClose={() => { setEditingSupportView(null); setCreateCustomViewOpen(false); }}
       onSave={(values) => {

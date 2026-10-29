@@ -1,4 +1,6 @@
 import { PortalRatingCard } from './PortalRatingCard'
+import { PortalRequestTypeFields, PortalRequestTypePicker } from './PortalRequestTypeFields'
+import { portalFieldsForSubmit, type PortalFieldValues } from '@/lib/portalRequestFields'
 import {
   createContext,
   useCallback,
@@ -47,6 +49,7 @@ import {
   CustomerPortalApiError,
   customerPortalService,
   type CustomerPortalAttachmentPolicy,
+  type CustomerPortalRequestType,
   type CustomerPortalConfiguration,
   type CustomerPortalRequest,
   type CustomerPortalRequestDetail,
@@ -279,11 +282,14 @@ export function CustomerPortalProvider({ slug }: { slug: string }) {
 
 // ── Sign in and requests without sign-in ────────────────────────────────
 
-function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: string; fileUploadsEnabled: boolean; policy?: CustomerPortalAttachmentPolicy }) {
+function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy, requestTypes }: { slug: string; fileUploadsEnabled: boolean; policy?: CustomerPortalAttachmentPolicy; requestTypes: CustomerPortalRequestType[] }) {
   const [email, setEmail] = useState('')
   const [token, setToken] = useState('')
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
+  const [requestTypeId, setRequestTypeId] = useState('')
+  const [fieldValues, setFieldValues] = useState<PortalFieldValues>({})
+  const requestType = requestTypes.find((type) => type.id === requestTypeId) ?? (requestTypes.length === 1 ? requestTypes[0] : undefined)
   const suggestions = usePortalArticleSuggestions(slug, token ? subject : '', token ? message : '')
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAnonymousAttachment(slug, token, file, options),
@@ -309,17 +315,27 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
   async function send(event: FormEvent) {
     event.preventDefault()
     if (uploads.blocked || !token) return
+    if (requestTypes.length > 0 && !requestType) {
+      setError('Choose what your request is about.')
+      return
+    }
+    const typed = portalFieldsForSubmit(requestType, fieldValues)
+    if (typed.error) {
+      setError(typed.error)
+      return
+    }
     setWorking(true)
     setError(null)
     try {
       await customerPortalService.createAnonymousRequest(slug, token, {
         subject: subject.trim(), message: message.trim(), attachment_ids: uploads.attachmentIds, intake: suggestions.intake(),
+        ...(requestType ? { request_type_id: requestType.id, fields: typed.fields } : {}),
       })
       setSubmitted(true)
       setToken('')
       uploads.clear()
-    } catch {
-      setError('Your request could not be sent. Please try again.')
+    } catch (requestError) {
+      setError(portalRequestErrorMessage(requestError))
     } finally { setWorking(false) }
   }
 
@@ -345,12 +361,16 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
             <span aria-hidden="true"> · </span>
             <QuietTextAction type="button" onClick={() => { setToken(''); uploads.clear() }}>Change email</QuietTextAction>
           </p>
+          {requestTypes.length > 1 ? (
+            <PortalRequestTypePicker types={requestTypes} value={requestType?.id ?? ''} onChange={setRequestTypeId} />
+          ) : null}
           <PortalField id="intake-subject" label="Subject">
             <QuietUnderlineInput id="intake-subject" required maxLength={200} value={subject} onChange={(event) => setSubject(event.target.value)} />
           </PortalField>
           <PortalField id="intake-message" label="How can we help?">
             <QuietUnderlineTextarea id="intake-message" required rows={4} className="max-h-none min-h-24" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} />
           </PortalField>
+          {requestType ? <PortalRequestTypeFields idPrefix="intake" type={requestType} values={fieldValues} onChange={setFieldValues} /> : null}
           <PortalArticleSuggestions slug={slug} articles={suggestions.articles} onOpen={suggestions.recordOpened} />
           <PortalDropCue visible={dragging} />
           {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
@@ -421,7 +441,7 @@ export function CustomerPortalSignIn() {
           </form>
         </>
       )}
-      {configuration?.anonymous_intake_enabled ? <AnonymousIntakeForm slug={slug} fileUploadsEnabled={configuration.file_uploads_enabled} policy={configuration.attachments} /> : null}
+      {configuration?.anonymous_intake_enabled ? <AnonymousIntakeForm slug={slug} fileUploadsEnabled={configuration.file_uploads_enabled} policy={configuration.attachments} requestTypes={configuration.request_types ?? []} /> : null}
     </PortalShell>
   )
 }
@@ -509,16 +529,19 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   onCreated: (reference: string) => void
   handleSessionError: (error: unknown) => boolean
 }) {
-  const { session } = usePortal()
+  const { session, configuration } = usePortal()
   // A help assistant handoff opens this form with the conversation filled in.
   const [prefill] = useState(readRequestPrefill)
-  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill && { subject: prefill.subject, message: prefill.message })
+  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill && { subject: prefill.subject, message: prefill.message, requestTypeId: prefill.requestType })
   useEffect(() => {
     if (prefill) clearRequestPrefill()
   }, [prefill])
   const { subject, message } = draft
-  const setSubject = (value: string) => setDraft({ subject: value, message })
-  const setMessage = (value: string) => setDraft({ subject, message: value })
+  const fieldValues = draft.fields ?? {}
+  const setSubject = (value: string) => setDraft({ ...draft, subject: value })
+  const setMessage = (value: string) => setDraft({ ...draft, message: value })
+  const requestTypes = configuration?.request_types ?? []
+  const requestType = requestTypes.find((type) => type.id === draft.requestTypeId) ?? (requestTypes.length === 1 ? requestTypes[0] : undefined)
   const suggestions = usePortalArticleSuggestions(slug, subject, message)
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAttachment(slug, file, undefined, options),
@@ -531,6 +554,15 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   async function createRequest(event: FormEvent) {
     event.preventDefault()
     if (uploads.blocked) return
+    if (requestTypes.length > 0 && !requestType) {
+      setError('Choose what your request is about.')
+      return
+    }
+    const typed = portalFieldsForSubmit(requestType, fieldValues)
+    if (typed.error) {
+      setError(typed.error)
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -539,13 +571,14 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         message: message.trim(),
         attachment_ids: uploads.attachmentIds,
         intake: { ...suggestions.intake(), assistant_session_id: prefill?.assistantSession },
+        ...(requestType ? { request_type_id: requestType.id, fields: typed.fields } : {}),
       })
       uploads.clear()
       clearDraft()
       onCreated(created.reference)
     } catch (requestError) {
       if (handleSessionError(requestError)) return
-      setError('Your request could not be sent. Please try again.')
+      setError(portalRequestErrorMessage(requestError))
     } finally {
       setSubmitting(false)
     }
@@ -554,12 +587,18 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   return (
     <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-12">
       <form className={cn('-mx-3 max-w-[784px] space-y-6 rounded-lg px-3 py-3 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-label="New request" {...dropProps}>
+        {requestTypes.length > 1 ? (
+          <PortalRequestTypePicker types={requestTypes} value={requestType?.id ?? ''} onChange={(id) => setDraft({ ...draft, requestTypeId: id })} />
+        ) : null}
         <PortalField id="request-subject" label="Subject">
           <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} placeholder="A short summary, e.g. “Invoices export is missing VAT”" />
         </PortalField>
         <PortalField id="request-message" label="How can we help?">
           <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
         </PortalField>
+        {requestType ? (
+          <PortalRequestTypeFields idPrefix="request" type={requestType} values={fieldValues} onChange={(fields) => setDraft({ ...draft, fields })} />
+        ) : null}
         <PortalArticleSuggestions slug={slug} className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
         <PortalDropCue visible={dragging} />
         {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
@@ -575,7 +614,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
 }
 
 /** readRequestPrefill reads a request filled in from the help assistant. */
-function readRequestPrefill(): { subject: string; message: string; assistantSession?: string } | undefined {
+function readRequestPrefill(): { subject: string; message: string; assistantSession?: string; requestType?: string } | undefined {
   const params = new URLSearchParams(window.location.search)
   // The router JSON-quotes values that would otherwise parse as JSON.
   const read = (key: string) => {
@@ -589,7 +628,17 @@ function readRequestPrefill(): { subject: string; message: string; assistantSess
   const subject = read('subject').trim().slice(0, 200)
   const message = read('message').trim().slice(0, 8000)
   const assistantSession = read('assistant_session').trim()
-  return subject || message ? { subject, message, assistantSession: /^[0-9a-f-]{36}$/i.test(assistantSession) ? assistantSession : undefined } : undefined
+  const requestType = read('request_type').trim()
+  const uuid = /^[0-9a-f-]{36}$/i
+  return subject || message || uuid.test(requestType)
+    ? { subject, message, assistantSession: uuid.test(assistantSession) ? assistantSession : undefined, requestType: uuid.test(requestType) ? requestType : undefined }
+    : undefined
+}
+
+/** A request the server refused for a reason the customer can fix shows that reason. */
+function portalRequestErrorMessage(error: unknown): string {
+  if (error instanceof CustomerPortalApiError && error.status === 400 && error.message) return error.message
+  return 'Your request could not be sent. Please try again.'
 }
 
 /** clearRequestPrefill drops the prefill from the address, so a reload starts from the saved draft. */
@@ -598,6 +647,7 @@ function clearRequestPrefill() {
   url.searchParams.delete('subject')
   url.searchParams.delete('message')
   url.searchParams.delete('assistant_session')
+  url.searchParams.delete('request_type')
   window.history.replaceState(window.history.state, '', url.toString())
 }
 
@@ -921,6 +971,7 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
             className="text-[12px]"
             items={[
               requestNumber(request),
+              request.request_type ?? null,
               request.own === false ? `Asked by ${request.requester_name || 'a colleague'}` : null,
               request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null,
               replyBy ? <span key="reply-by" className="font-medium text-quiet-text-secondary">Expect a reply by {replyBy}</span> : null,
@@ -939,6 +990,16 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         <QuietEmptyState className="mt-8" title={error} description="Go back to your requests to see what you can open." action={<QuietTextAction onClick={backToRequests}>All requests</QuietTextAction>} />
       ) : request ? (
         <>
+          {request.fields?.length ? (
+            <dl className="mt-5 grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2" aria-label="Request details">
+              {request.fields.map((field) => (
+                <div key={field.label} className="min-w-0">
+                  <dt className="text-[12px] text-quiet-text-tertiary">{field.label}</dt>
+                  <dd className="whitespace-pre-wrap break-words text-quiet-text-primary">{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
           <ol className="mt-6 border-t border-quiet-divider-strong pt-3" aria-label="Messages">
             {request.messages.map((message) => <PortalMessage key={message.id} message={message} supportName={configuration?.branding.name || 'Support'} />)}
             {typing ? <PortalActivityRow label={`${configuration?.branding.name || 'Support'} is replying…`} /> : null}

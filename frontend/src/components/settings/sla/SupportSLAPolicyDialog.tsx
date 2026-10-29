@@ -17,6 +17,7 @@ import {
   type SLATargetUnit,
 } from '@/lib/supportSLAPolicyForm'
 import { toggleListValue } from '@/lib/toggleListValue'
+import { useRequestTypes } from '@/hooks/queries/useCustomFields'
 import { SettingsPill } from '../SettingsPill'
 import { SLACompanyPicker } from './SLACompanyPicker'
 
@@ -149,6 +150,7 @@ function SupportSLAPolicyForm({
   onCancel: () => void
   onSave: (input: SupportSLAPolicyInput) => Promise<void>
 }) {
+  const { requestTypes } = useRequestTypes(workspaceId)
   const [draft, setDraft] = useState<SLAPolicyDraft>(() => (policy ? policyToDraft(policy) : emptySLAPolicyDraft()))
   const [errors, setErrors] = useState<string[]>([])
 
@@ -200,6 +202,16 @@ function SupportSLAPolicyForm({
             ))}
           </div>
         </div>
+        {requestTypes.length > 0 ? (
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">Request type</div>
+            <div className="flex flex-wrap gap-1.5">
+              {requestTypes.map((requestType) => (
+                <SettingsPill key={requestType.id} selected={draft.requestTypeIds.includes(requestType.id)} onClick={() => update({ requestTypeIds: toggleListValue(draft.requestTypeIds, requestType.id) })}>{requestType.name}</SettingsPill>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {tiers.length > 0 || draft.companyTierIds.length > 0 ? (
           <div className="space-y-1.5">
             <div className="text-xs font-medium text-muted-foreground">Company tier</div>

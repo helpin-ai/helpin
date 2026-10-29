@@ -15,6 +15,7 @@ import {
 import { ArrowDown01Icon, ArrowUp01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons'
 import { SUPPORT_SLA_NO_TIER, type SupportSLAPolicy, type SupportSLAPolicyInput } from '@/lib/pmTypes'
 import { useSLATeammates, useSLATiers } from '@/hooks/queries/useSupportSLATiers'
+import { useRequestTypes } from '@/hooks/queries/useCustomFields'
 import { formatSLATarget, policyToDraft, draftToPolicyInput } from '@/lib/supportSLAPolicyForm'
 import { SupportSLAPolicyDialog } from './SupportSLAPolicyDialog'
 
@@ -43,6 +44,8 @@ export function SupportSLAPolicies({ workspaceId, editable }: { workspaceId: str
     .filter((member) => member.user_id)
     .map((member) => ({ id: member.user_id!, name: member.display_name || member.email || 'Teammate' })), [members])
   const tierNames = useMemo(() => new Map((tiers ?? []).map((tier) => [tier.id, tier.name])), [tiers])
+  const { requestTypes } = useRequestTypes(workspaceId)
+  const requestTypeNames = useMemo(() => new Map(requestTypes.map((requestType) => [requestType.id, requestType.name])), [requestTypes])
   const createPolicy = useCreateSLAPolicy(workspaceId)
   const updatePolicy = useUpdateSLAPolicy(workspaceId)
   const deletePolicy = useDeleteSLAPolicy(workspaceId)
@@ -137,6 +140,7 @@ export function SupportSLAPolicies({ workspaceId, editable }: { workspaceId: str
               policy.mailbox_ids.length ? policy.mailbox_ids.map((id) => inboxNames.get(id) ?? 'Archived inbox').join(', ') : null,
               policy.channels.length ? policy.channels.map((channel) => CHANNEL_LABELS[channel] ?? channel).join(', ') : null,
               policy.company_tier_ids.length > 0 && policy.companies.length > 0 ? policy.companies.map((company) => company.name).join(', ') : null,
+              policy.request_type_ids?.length ? policy.request_type_ids.map((id) => requestTypeNames.get(id) ?? 'Deleted request type').join(', ') : null,
             ].filter(Boolean)
             return (
               <li key={policy.id} data-testid="sla-policy">

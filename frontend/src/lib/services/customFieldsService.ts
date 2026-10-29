@@ -1,5 +1,6 @@
 import { api } from '../api';
-import type { CustomFieldDefinition, CustomFieldDefinitionInput, CustomFieldObjectType } from '../customFields';
+import type { CustomFieldDefinition, CustomFieldDefinitionInput, CustomFieldObjectType, SupportRequestType, SupportRequestTypeInput } from '../customFields';
+import type { SupportConversation } from '../pmTypes';
 
 const base = (workspaceId: string, objectType: CustomFieldObjectType, path = '', params = '') => {
   const workspace = `workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -21,4 +22,18 @@ export const customFieldsService = {
     api.post<CustomFieldDefinition[]>(base(workspaceId, objectType, '/reorder'), { ids }),
   setCRMValues: (workspaceId: string, objectType: 'crm_contact' | 'crm_company', recordId: string, values: Record<string, unknown>) =>
     api.patch<void>(`/crm/${objectType === 'crm_contact' ? 'contacts' : 'companies'}/${recordId}/custom-properties?workspace_id=${encodeURIComponent(workspaceId)}`, { values }),
+  listRequestTypes: (workspaceId: string) =>
+    api.get<SupportRequestType[]>(`/support/request-types?workspace_id=${encodeURIComponent(workspaceId)}`),
+  createRequestType: (workspaceId: string, input: SupportRequestTypeInput) =>
+    api.post<SupportRequestType>(`/support/request-types?workspace_id=${encodeURIComponent(workspaceId)}`, input),
+  updateRequestType: (workspaceId: string, id: string, input: SupportRequestTypeInput) =>
+    api.put<SupportRequestType>(`/support/request-types/${id}?workspace_id=${encodeURIComponent(workspaceId)}`, input),
+  deleteRequestType: (workspaceId: string, id: string) =>
+    api.del<void>(`/support/request-types/${id}?workspace_id=${encodeURIComponent(workspaceId)}`),
+  reorderRequestTypes: (workspaceId: string, ids: string[]) =>
+    api.post<SupportRequestType[]>(`/support/request-types/reorder?workspace_id=${encodeURIComponent(workspaceId)}`, { ids }),
+  setConversationRequestType: (workspaceId: string, conversationId: string, requestTypeId: string | null) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/request-type?workspace_id=${encodeURIComponent(workspaceId)}`, { request_type_id: requestTypeId }),
+  setConversationFields: (workspaceId: string, conversationId: string, values: Record<string, unknown>) =>
+    api.patch<SupportConversation>(`/support/inbox/conversations/${conversationId}/fields?workspace_id=${encodeURIComponent(workspaceId)}`, { values }),
 };
