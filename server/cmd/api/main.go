@@ -1272,7 +1272,11 @@ func main() {
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
 	crmContactService.SetBehaviorProfiles(crmBehaviorProfileRepo)
 	crmCompanyService.SetBehaviorProfiles(crmBehaviorProfileRepo)
+	customFieldService := service.NewCustomFieldService(repository.NewCustomFieldRepository(db))
+	crmContactService.SetCustomFieldService(customFieldService)
+	crmCompanyService.SetCustomFieldService(customFieldService)
 	crmFieldCatalogService := service.NewCRMFieldCatalogService(crmCompanyRepo, crmContactService, crmBehaviorProfileRepo)
+	crmFieldCatalogService.SetCustomFieldService(customFieldService)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
 		SetActivityService(pmActivityService).
 		SetTimelineRepository(crmCompanyTimelineRepo)
@@ -2059,11 +2063,13 @@ func main() {
 			pmCommentService,
 			jwtManager,
 		),
-		SupportReports:  handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
-		SupportSLA:      handler.NewSupportSLAHandler(supportSLAService),
-		SupportWebhooks: handler.NewSupportWebhookHandler(webhookService),
-		SupportImports:  handler.NewSupportImportHandler(supportImportService),
-		SupportActions:  handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
+		SupportReports:      handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
+		SupportSLA:          handler.NewSupportSLAHandler(supportSLAService),
+		ConversationFields:  handler.NewConversationFieldHandler(customFieldService),
+		CRMFieldDefinitions: handler.NewCRMFieldDefinitionHandler(customFieldService),
+		SupportWebhooks:     handler.NewSupportWebhookHandler(webhookService),
+		SupportImports:      handler.NewSupportImportHandler(supportImportService),
+		SupportActions:      handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
 		SupportCoverage: handler.NewSupportCoverageHandler(
 			supportCoverageService,
 			supportEventService,

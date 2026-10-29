@@ -25,12 +25,14 @@ func ValidCRMCustomPropertyKey(key string) bool {
 // withCRMCustomPropertyFields returns base plus text field definitions for
 // every custom_properties.<key> field referenced by group. Unknown or unsafe
 // keys are rejected as client validation errors. dialect selects the JSON
-// list functions that let is_any_of match elements of list values.
+// list functions that let is_any_of match elements of list values. Keys in
+// dateKeys are defined as date fields and get date operators instead.
 func withCRMCustomPropertyFields(
 	base querybuilder.Definitions,
 	column string,
 	dialect string,
 	group *model.QueryFilterGroup,
+	dateKeys map[string]bool,
 ) (querybuilder.Definitions, error) {
 	if group == nil {
 		return base, nil
@@ -51,6 +53,10 @@ func withCRMCustomPropertyFields(
 			for name, definition := range base {
 				definitions[name] = definition
 			}
+		}
+		if dateKeys[key] {
+			definitions[rule.Field] = querybuilder.FieldDefinition{Expression: customFieldDateExpression(column, dialect, key), Type: querybuilder.FieldTypeDate}
+			continue
 		}
 		definitions[rule.Field] = querybuilder.FieldDefinition{
 			Expression:        crmCustomPropertyTextExpression(column, dialect, key),
@@ -107,4 +113,15 @@ func crmCustomPropertyNumericExpression(column, dialect, key string) string {
 	return "(CASE WHEN json_type(" + column + ", " + path + ") IN ('integer', 'real') THEN json_extract(" + column + ", " + path + ")" +
 		" WHEN json_type(" + column + ", " + path + ") = 'text' AND " + unsigned + " <> '' AND " + unsigned + " NOT GLOB '*[^0-9.]*'" +
 		" THEN CAST(" + text + " AS REAL) END)"
+}
+
+// customFieldDateExpression reads a YYYY-MM-DD value as a moment comparable
+// with the date filters' bounds; any other value yields NULL. SQLite compares
+// text, so the value is spelled the way it binds times.
+func customFieldDateExpression(column, dialect, key string) string {
+	if dialect == "postgres" {
+		text := "(" + column + " ->> '" + key + "')"
+		return "(CASE WHEN " + text + " ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN " + text + "::date END)"
+	}
+	return "(date(json_extract(" + column + ", '$." + key + "')) || ' 00:00:00+00:00')"
 }

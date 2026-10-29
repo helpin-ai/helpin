@@ -743,6 +743,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, crm_company_changed_at DATETIME,
+            custom_fields TEXT NOT NULL DEFAULT '{}',
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -987,6 +988,13 @@ func newTestDB(t *testing.T) *gorm.DB {
 			description TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE UNIQUE INDEX idx_support_sla_tiers_workspace_name ON support_sla_tiers (workspace_id, lower(name))`,
+		`CREATE TABLE custom_field_definitions (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, object_type TEXT NOT NULL,
+			key TEXT NOT NULL, label TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', field_type TEXT NOT NULL,
+			options TEXT NOT NULL DEFAULT '[]', position INTEGER NOT NULL DEFAULT 0, archived_at DATETIME, created_by_id TEXT,
+			created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE UNIQUE INDEX idx_custom_field_definitions_key ON custom_field_definitions (workspace_id, object_type, key)`,
 		`CREATE TABLE webhook_endpoints (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, url TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
 			events TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}', encrypted_secret TEXT NOT NULL,

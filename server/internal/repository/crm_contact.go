@@ -70,7 +70,7 @@ func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, fil
 		)
 	}
 	if filters.Query != nil {
-		definitions, err := withCRMCustomPropertyFields(crmContactFilterDefinitions, "crm_contacts.custom_properties", r.db.Dialector.Name(), filters.Query)
+		definitions, err := withCRMCustomPropertyFields(crmContactFilterDefinitions, "crm_contacts.custom_properties", r.db.Dialector.Name(), filters.Query, filters.DateKeys)
 		if err != nil {
 			return nil, 0, err
 		}

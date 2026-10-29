@@ -112,6 +112,7 @@ func AutoMigrationModels() []any {
 		&model.SupportCSATResponse{},
 		&model.SupportSLAPolicy{},
 		&model.SupportSLATier{},
+		&model.CustomFieldDefinition{},
 		&model.SupportConversationSLARecord{},
 		&model.SupportSLAWork{},
 		&model.WebhookEndpoint{},

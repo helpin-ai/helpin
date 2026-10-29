@@ -23,6 +23,12 @@ type CRMCompanyService struct {
 		RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error
 	}
 	productAnalyticsEmitter
+	customFields *CustomFieldService
+}
+
+// SetCustomFieldService lets filters and edits use field definitions.
+func (s *CRMCompanyService) SetCustomFieldService(fields *CustomFieldService) {
+	s.customFields = fields
 }
 
 // SetMotionSignalRefresher keeps company motion state current outside detection runs.
@@ -156,6 +162,11 @@ func (s *CRMCompanyService) List(ctx context.Context, workspaceID string, filter
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
+	dateKeys, err := s.customFields.DateKeys(ctx, workspaceID, model.CustomFieldObjectCRMCompany, filters.Query)
+	if err != nil {
+		return nil, 0, err
+	}
+	filters.DateKeys = dateKeys
 	companies, total, err := s.companyRepo.List(ctx, workspaceID, filters, pagination)
 	if err != nil {
 		return nil, 0, err

@@ -31,3 +31,8 @@ export type PMFilterOptionModes<K extends string> = Partial<Record<K, PMFilterOp
 export function optionModeUsesValues(mode: PMFilterOptionMode): boolean {
   return mode === 'is_any_of' || mode === 'is_none_of';
 }
+
+/** Number and date filters take a typed condition instead of a value list. */
+export function isConditionFilter(definition: { kind?: 'options' | 'number' | 'date' }): boolean {
+  return definition.kind === 'number' || definition.kind === 'date';
+}

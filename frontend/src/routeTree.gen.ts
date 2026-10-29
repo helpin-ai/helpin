@@ -67,6 +67,7 @@ import { Route as AuthenticatedWSlugSettingsSystemStatusRouteImport } from './ro
 import { Route as AuthenticatedWSlugSettingsSupportWebhooksRouteImport } from './routes/_authenticated/w/$slug/settings/support-webhooks'
 import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
 import { Route as AuthenticatedWSlugSettingsSupportSlaRouteImport } from './routes/_authenticated/w/$slug/settings/support-sla'
+import { Route as AuthenticatedWSlugSettingsSupportConversationFieldsRouteImport } from './routes/_authenticated/w/$slug/settings/support-conversation-fields'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
 import { Route as AuthenticatedWSlugSettingsServerRouteImport } from './routes/_authenticated/w/$slug/settings/server'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
@@ -86,6 +87,7 @@ import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes
 import { Route as AuthenticatedWSlugSettingsCustomerPortalRouteImport } from './routes/_authenticated/w/$slug/settings/customer-portal'
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
 import { Route as AuthenticatedWSlugSettingsCrmMeetingsRouteImport } from './routes/_authenticated/w/$slug/settings/crm-meetings'
+import { Route as AuthenticatedWSlugSettingsCrmFieldsRouteImport } from './routes/_authenticated/w/$slug/settings/crm-fields'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
@@ -464,6 +466,12 @@ const AuthenticatedWSlugSettingsSupportSlaRoute =
     path: '/settings/support-sla',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsSupportConversationFieldsRoute =
+  AuthenticatedWSlugSettingsSupportConversationFieldsRouteImport.update({
+    id: '/settings/support-conversation-fields',
+    path: '/settings/support-conversation-fields',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsSupportAiAssistantRoute =
   AuthenticatedWSlugSettingsSupportAiAssistantRouteImport.update({
     id: '/settings/support-ai-assistant',
@@ -576,6 +584,12 @@ const AuthenticatedWSlugSettingsCrmMeetingsRoute =
   AuthenticatedWSlugSettingsCrmMeetingsRouteImport.update({
     id: '/settings/crm-meetings',
     path: '/settings/crm-meetings',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsCrmFieldsRoute =
+  AuthenticatedWSlugSettingsCrmFieldsRouteImport.update({
+    id: '/settings/crm-fields',
+    path: '/settings/crm-fields',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsCrmEmailRoute =
@@ -1020,6 +1034,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/w/$slug/settings/crm-fields': typeof AuthenticatedWSlugSettingsCrmFieldsRoute
   '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/customer-portal': typeof AuthenticatedWSlugSettingsCustomerPortalRoute
@@ -1039,6 +1054,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-conversation-fields': typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
@@ -1152,6 +1168,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/w/$slug/settings/crm-fields': typeof AuthenticatedWSlugSettingsCrmFieldsRoute
   '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/customer-portal': typeof AuthenticatedWSlugSettingsCustomerPortalRoute
@@ -1171,6 +1188,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-conversation-fields': typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
@@ -1291,6 +1309,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/_authenticated/w/$slug/settings/crm-fields': typeof AuthenticatedWSlugSettingsCrmFieldsRoute
   '/_authenticated/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/_authenticated/w/$slug/settings/customer-portal': typeof AuthenticatedWSlugSettingsCustomerPortalRoute
@@ -1310,6 +1329,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/_authenticated/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/_authenticated/w/$slug/settings/support-conversation-fields': typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   '/_authenticated/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/_authenticated/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
@@ -1432,6 +1452,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
+    | '/w/$slug/settings/crm-fields'
     | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/customer-portal'
@@ -1451,6 +1472,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-conversation-fields'
     | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
     | '/w/$slug/settings/support-webhooks'
@@ -1564,6 +1586,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
+    | '/w/$slug/settings/crm-fields'
     | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/customer-portal'
@@ -1583,6 +1606,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-conversation-fields'
     | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
     | '/w/$slug/settings/support-webhooks'
@@ -1702,6 +1726,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/chat-general'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
     | '/_authenticated/w/$slug/settings/crm-email'
+    | '/_authenticated/w/$slug/settings/crm-fields'
     | '/_authenticated/w/$slug/settings/crm-meetings'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
     | '/_authenticated/w/$slug/settings/customer-portal'
@@ -1721,6 +1746,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/repositories'
     | '/_authenticated/w/$slug/settings/server'
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
+    | '/_authenticated/w/$slug/settings/support-conversation-fields'
     | '/_authenticated/w/$slug/settings/support-sla'
     | '/_authenticated/w/$slug/settings/support-translation'
     | '/_authenticated/w/$slug/settings/support-webhooks'
@@ -2193,6 +2219,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportSlaRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/support-conversation-fields': {
+      id: '/_authenticated/w/$slug/settings/support-conversation-fields'
+      path: '/settings/support-conversation-fields'
+      fullPath: '/w/$slug/settings/support-conversation-fields'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportConversationFieldsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/support-ai-assistant': {
       id: '/_authenticated/w/$slug/settings/support-ai-assistant'
       path: '/settings/support-ai-assistant'
@@ -2324,6 +2357,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/crm-meetings'
       fullPath: '/w/$slug/settings/crm-meetings'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/crm-fields': {
+      id: '/_authenticated/w/$slug/settings/crm-fields'
+      path: '/settings/crm-fields'
+      fullPath: '/w/$slug/settings/crm-fields'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmFieldsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/crm-email': {
@@ -2961,6 +3001,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  AuthenticatedWSlugSettingsCrmFieldsRoute: typeof AuthenticatedWSlugSettingsCrmFieldsRoute
   AuthenticatedWSlugSettingsCrmMeetingsRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   AuthenticatedWSlugSettingsCustomerPortalRoute: typeof AuthenticatedWSlugSettingsCustomerPortalRoute
@@ -2980,6 +3021,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
   AuthenticatedWSlugSettingsServerRoute: typeof AuthenticatedWSlugSettingsServerRoute
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  AuthenticatedWSlugSettingsSupportConversationFieldsRoute: typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   AuthenticatedWSlugSettingsSupportSlaRoute: typeof AuthenticatedWSlugSettingsSupportSlaRoute
   AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   AuthenticatedWSlugSettingsSupportWebhooksRoute: typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
@@ -3043,6 +3085,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsCrmAutonomyRoute,
   AuthenticatedWSlugSettingsCrmEmailRoute:
     AuthenticatedWSlugSettingsCrmEmailRoute,
+  AuthenticatedWSlugSettingsCrmFieldsRoute:
+    AuthenticatedWSlugSettingsCrmFieldsRoute,
   AuthenticatedWSlugSettingsCrmMeetingsRoute:
     AuthenticatedWSlugSettingsCrmMeetingsRoute,
   AuthenticatedWSlugSettingsCrmPipelinesRoute:
@@ -3077,6 +3121,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsServerRoute: AuthenticatedWSlugSettingsServerRoute,
   AuthenticatedWSlugSettingsSupportAiAssistantRoute:
     AuthenticatedWSlugSettingsSupportAiAssistantRoute,
+  AuthenticatedWSlugSettingsSupportConversationFieldsRoute:
+    AuthenticatedWSlugSettingsSupportConversationFieldsRoute,
   AuthenticatedWSlugSettingsSupportSlaRoute:
     AuthenticatedWSlugSettingsSupportSlaRoute,
   AuthenticatedWSlugSettingsSupportTranslationRoute:
