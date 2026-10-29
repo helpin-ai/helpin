@@ -2376,7 +2376,7 @@ func main() {
 	go emailFallbackService.StartInboundWorker(inboundCtx, "email")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
-	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics)
+	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics, appEmailClient, cfg.OpsAlertEmails)
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {

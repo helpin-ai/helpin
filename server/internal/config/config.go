@@ -208,6 +208,9 @@ type Config struct {
 	// ServerAdminEmails (HELPIN_ADMIN_EMAILS) designates self-hosted server
 	// admins by email (Community only).
 	ServerAdminEmails []string
+	// OpsAlertEmails (OPS_ALERT_EMAILS) receive operational alerts by email,
+	// such as incoming support email stuck in processing. Empty sends none.
+	OpsAlertEmails []string
 
 	// Google account sign-in (optional — Google button disabled if unset)
 	GoogleAuthClientID     string
@@ -571,6 +574,7 @@ func Load() (*Config, error) {
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 		ServerAdminEmails:                      parseCSV(os.Getenv("HELPIN_ADMIN_EMAILS")),
+		OpsAlertEmails:                         parseCSV(os.Getenv("OPS_ALERT_EMAILS")),
 		GoogleAuthClientID:                     strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_ID")),
 		GoogleAuthClientSecret:                 strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_SECRET")),
 		GoogleAuthRedirectURL:                  strings.TrimSpace(os.Getenv("GOOGLE_AUTH_REDIRECT_URL")),
