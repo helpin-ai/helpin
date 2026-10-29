@@ -387,6 +387,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Post("/requests/{reference}/attachments", h.CustomerPortal.UploadAttachment)
 				r.Patch("/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
 				r.Patch("/requests/{reference}/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
+				r.Get("/requests/search", h.CustomerPortal.SearchRequests)
 				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
 				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
 				r.Post("/requests/{reference}/csat", h.CustomerPortal.Rate)

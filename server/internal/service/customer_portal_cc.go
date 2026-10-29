@@ -31,10 +31,13 @@ const PortalScopeCopied = "copied"
 // PortalCCLimit bounds the addresses a requester copies on one request.
 const PortalCCLimit = 10
 
-// Copy notices: one per address and request a day, and a workspace cap an
-// hour, so the copy list cannot be used to send mail at volume.
+// Copy notices carry text the requester wrote, so they are capped: one per
+// address and request a day, three per address and twenty per requester a
+// day, and a workspace cap an hour.
 const (
 	portalCCNoticeInterval      = 24 * time.Hour
+	portalCCNoticesPerAddress   = 3
+	portalCCNoticesPerRequester = 20
 	portalCCNoticesPerWorkspace = 100
 )
 
@@ -134,7 +137,9 @@ func (s *CustomerPortalService) normalizeCC(ctx context.Context, access *PortalA
 
 // SetRequestCC replaces who a request copies. Only the requester changes it;
 // newly copied people get one email about the request.
-func (s *CustomerPortalService) SetRequestCC(ctx context.Context, access *PortalAccess, reference string, emails []string) (*PortalRequestDetail, error) {
+// base is the list the customer started from, when known; only their own
+// additions and removals relative to it are applied.
+func (s *CustomerPortalService) SetRequestCC(ctx context.Context, access *PortalAccess, reference string, emails []string, base []string) (*PortalRequestDetail, error) {
 	if access.Workspace.Settings.PortalCCMode == "" {
 		return nil, ErrPortalCCDisabled
 	}
@@ -153,7 +158,10 @@ func (s *CustomerPortalService) SetRequestCC(ctx context.Context, access *Portal
 		return nil, ErrPortalReplyUnavailable
 	}
 	previous := []string(conv.EmailCC)
-	next, err := s.normalizeCC(ctx, access, derefString(conv.CustomerEmail), emails, previous)
+	if base != nil {
+		previous = normalizeSupportEmailList(base)
+	}
+	next, err := s.normalizeCC(ctx, access, derefString(conv.CustomerEmail), emails, append(previous, conv.EmailCC...))
 	if err != nil {
 		return nil, err
 	}
@@ -162,10 +170,13 @@ func (s *CustomerPortalService) SetRequestCC(ctx context.Context, access *Portal
 	if len(added) == 0 && len(removed) == 0 {
 		return s.RequestDetail(ctx, access, reference)
 	}
-	if err := s.inbox.conversationRepo.UpdateFields(ctx, access.Workspace.ID, conv.ID, map[string]any{"email_cc": model.DocsStringArray(next)}); err != nil {
+	// Apply only this change to the stored list, so a Cc an inbound email or
+	// a teammate added meanwhile is kept.
+	stored, err := s.repo.UpdateConversationCC(ctx, access.Workspace.ID, conv.ID, added, removed)
+	if err != nil {
 		return nil, err
 	}
-	conv.EmailCC = model.DocsStringArray(next)
+	conv.EmailCC = model.DocsStringArray(stored)
 	s.recordPortalCCChange(ctx, access, conv, added, removed)
 	for _, address := range added {
 		s.sendCopyNotice(ctx, access, conv, reference, address)
@@ -185,7 +196,7 @@ func (s *CustomerPortalService) recordPortalCCChange(ctx context.Context, access
 		changes = append(changes, fmt.Sprintf("%s removed %s from Cc.", actor, address))
 	}
 	message := &model.SupportMessage{
-		WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "customer", SenderDisplayName: &actor,
+		WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "system", SenderDisplayName: &actor,
 		Content: strings.Join(changes, " "), IsInternal: true, MessageType: "system",
 		SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventEmailRecipientsUpdated),
 	}
@@ -212,13 +223,25 @@ func (s *CustomerPortalService) sendCopyNotice(ctx context.Context, access *Port
 		return
 	}
 	now := time.Now().UTC()
-	forAddress, forWorkspace, err := s.repo.CopyNoticeCounts(ctx, access.Workspace.ID, conv.ID, address, now.Add(-portalCCNoticeInterval), now.Add(-time.Hour))
+	counts, err := s.repo.CopyNoticeCounts(ctx, access.Workspace.ID, conv.ID, access.Identity.ID, address, now.Add(-portalCCNoticeInterval), now.Add(-time.Hour))
 	if err != nil {
 		slog.ErrorContext(ctx, "portal copy notice throttle lookup failed", "workspace_id", access.Workspace.ID, "error", err)
 		return
 	}
-	if forAddress > 0 || forWorkspace >= portalCCNoticesPerWorkspace {
+	if counts.ForRequest > 0 || counts.ForAddress >= portalCCNoticesPerAddress || counts.ForRequester >= portalCCNoticesPerRequester || counts.ForWorkspace >= portalCCNoticesPerWorkspace {
+		slog.InfoContext(ctx, "portal copy notice throttled", "workspace_id", access.Workspace.ID, "conversation_id", conv.ID)
 		return
+	}
+	// Blocked people get no mail from the portal.
+	contacts, err := s.repo.ContactsForEmail(ctx, access.Workspace.ID, address)
+	if err != nil {
+		slog.ErrorContext(ctx, "portal copy notice contact lookup failed", "workspace_id", access.Workspace.ID, "error", err)
+		return
+	}
+	for _, contact := range contacts {
+		if derefString(contact.PortalAccess) == model.PortalAccessBlocked {
+			return
+		}
 	}
 	eligibility, err := s.eligibility(ctx, s.repo, &access.Workspace, address)
 	if err != nil {
@@ -237,8 +260,9 @@ func (s *CustomerPortalService) sendCopyNotice(ctx context.Context, access *Port
 		return
 	}
 	metadata, _ := json.Marshal(map[string]string{"notified": address})
+	requester := access.Identity.ID
 	if err := s.repo.CreateAuditEvent(ctx, &model.SupportPortalAuditEvent{
-		ID: uuid.NewString(), WorkspaceID: access.Workspace.ID, ConversationID: conv.ID,
+		ID: uuid.NewString(), WorkspaceID: access.Workspace.ID, ConversationID: conv.ID, PortalIdentityID: &requester,
 		ActorType: model.SupportPortalActorSystem, EventType: model.SupportPortalAuditCCNotified, Metadata: string(metadata), OccurredAt: now,
 	}); err != nil {
 		slog.WarnContext(ctx, "portal copy notice audit failed", "workspace_id", access.Workspace.ID, "error", err)

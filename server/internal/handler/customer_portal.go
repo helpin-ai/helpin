@@ -399,6 +399,8 @@ func portalRequestListRow(request model.SupportPortalRequest, viewerIdentityID s
 
 type portalCCBody struct {
 	CCEmails []string `json:"cc_emails"`
+	// BaseCC is the list the customer started editing from.
+	BaseCC []string `json:"base_cc"`
 }
 
 // SetRequestCC replaces who a request copies; only its requester may.
@@ -412,13 +414,29 @@ func (h *CustomerPortalHandler) SetRequestCC(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	detail, err := h.portal.SetRequestCC(r.Context(), access, chi.URLParam(r, "reference"), body.CCEmails)
+	detail, err := h.portal.SetRequestCC(r.Context(), access, chi.URLParam(r, "reference"), body.CCEmails, body.BaseCC)
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to update who is copied")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// SearchRequests searches the subjects and messages of one request list.
+func (h *CustomerPortalHandler) SearchRequests(w http.ResponseWriter, r *http.Request) {
+	access := h.authorized(w, r)
+	if access == nil {
+		return
+	}
+	query := r.URL.Query()
+	results, err := h.portal.SearchRequests(r.Context(), access, query.Get("q"), query.Get("scope"), strings.TrimSpace(query.Get("company_id")))
+	if err != nil {
+		writePortalError(w, r, access.Workspace.ID, err, "unable to search requests")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, results)
 }
 
 // CCOptions tells the portal whether and whom the customer may copy.
@@ -554,6 +572,8 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalIntakeDisabled), errors.Is(err, service.ErrPortalAnonymousIntakeDisabled), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
 		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrPortalSearchInvalid), errors.Is(err, service.ErrPortalScopeInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalCCDisabled), errors.Is(err, service.ErrPortalCCDenied):
 		writeError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, service.ErrPortalCCInvalid):

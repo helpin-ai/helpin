@@ -26,7 +26,8 @@ function readDraft(storageKey: string, initial?: PortalDraft): PortalDraft {
     if (typeof stored.requestTypeId === 'string') draft.requestTypeId = stored.requestTypeId
     if (stored.fields !== undefined) draft.fields = readFields(stored.fields)
     if (Array.isArray(stored.cc)) draft.cc = stored.cc.filter((item): item is string => typeof item === 'string')
-    return !draft.subject && !draft.message && !draft.requestTypeId && initial ? initial : draft
+    // A prefill replaces an empty draft but keeps who it copies.
+    return !draft.subject && !draft.message && !draft.requestTypeId && initial ? { ...initial, ...(draft.cc ? { cc: draft.cc } : {}) } : draft
   } catch {
     return initial ?? { subject: '', message: '' }
   }

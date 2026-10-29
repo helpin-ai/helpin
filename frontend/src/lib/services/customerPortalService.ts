@@ -346,8 +346,9 @@ export const customerPortalService = {
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/replies`, {
       method: 'POST', body: JSON.stringify({ content, attachment_ids }),
     }),
-  setCC: (slug: string, reference: string, ccEmails: string[]) =>
-    portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/cc`, { method: 'PUT', body: JSON.stringify({ cc_emails: ccEmails }) }),
+  // base is the list the customer started from, so others' changes are kept.
+  setCC: (slug: string, reference: string, ccEmails: string[], base: string[]) =>
+    portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/cc`, { method: 'PUT', body: JSON.stringify({ cc_emails: ccEmails, base_cc: base }) }),
   ccOptions: (slug: string) =>
     portalRequest<CustomerPortalCCOptions>(slug, '/cc-options'),
   rate: (slug: string, reference: string, rating: number, comment: string) =>

@@ -16,15 +16,22 @@ export function PortalCCEditor({
   onChange,
   options,
   disabled = false,
+  onPendingChange,
 }: {
   label: string
   value: string[]
   onChange: (value: string[]) => void
   options: CustomerPortalCCOptions | null
   disabled?: boolean
+  /** Reports typed text not yet added, so a form can ask about it before sending. */
+  onPendingChange?: (pending: string) => void
 }) {
   const id = useId()
-  const [draft, setDraft] = useState('')
+  const [draft, setDraftText] = useState('')
+  const setDraft = (text: string) => {
+    setDraftText(text)
+    onPendingChange?.(text.trim())
+  }
   const [error, setError] = useState<string | null>(null)
   const suggestions = (options?.colleagues ?? []).filter((colleague) => !value.includes(colleague.email))
 
@@ -112,16 +119,15 @@ export function PortalCCEditor({
 export function PortalRequestCC({
   slug,
   request,
-  ccMode,
   onUpdated,
 }: {
   slug: string
   request: CustomerPortalRequestDetail
-  ccMode: CustomerPortalCCOptions['mode']
   onUpdated: (request: CustomerPortalRequestDetail) => void
 }) {
   const cc = request.cc ?? []
   const [editing, setEditing] = useState<string[] | null>(null)
+  const [pending, setPending] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const options = usePortalCCOptions(slug, editing !== null)
@@ -129,10 +135,14 @@ export function PortalRequestCC({
 
   const save = async () => {
     if (!editing) return
+    if (pending) {
+      setError(`Press Enter to add ${pending}, or clear it.`)
+      return
+    }
     setSaving(true)
     setError(null)
     try {
-      onUpdated(await customerPortalService.setCC(slug, request.reference, editing))
+      onUpdated(await customerPortalService.setCC(slug, request.reference, editing, cc))
       setEditing(null)
     } catch (saveError) {
       setError(saveError instanceof CustomerPortalApiError && saveError.status < 500 ? saveError.message : 'Could not update who is copied. Please try again.')
@@ -144,7 +154,7 @@ export function PortalRequestCC({
   if (editing) {
     return (
       <div className="mt-5 max-w-xl space-y-3">
-        <PortalCCEditor label="Copied" value={editing} options={options ?? { mode: ccMode, colleagues: [], domains: [] }} onChange={setEditing} />
+        <PortalCCEditor label="Copied" value={editing} options={options} onChange={setEditing} onPendingChange={setPending} />
         {error ? <p role="alert" className="text-[12.5px] text-destructive">{error}</p> : null}
         <div className="flex items-center gap-4">
           <QuietPrimaryAction type="button" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save'}</QuietPrimaryAction>

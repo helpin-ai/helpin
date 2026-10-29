@@ -20,7 +20,7 @@ func setCCMode(mode string, accesses ...*PortalAccess) {
 func TestPortalCCIsOffByDefault(t *testing.T) {
 	p := setupCompanyPortal(t)
 	ctx := context.Background()
-	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"alice@acme.test"}); !errors.Is(err, ErrPortalCCDisabled) {
+	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"alice@acme.test"}, nil); !errors.Is(err, ErrPortalCCDisabled) {
 		t.Fatalf("set cc with copying off = %v", err)
 	}
 	if _, err := p.svc.CreateRequest(ctx, p.bobIn, "Hi", "Hello", nil, nil, PortalRequestFields{CCEmails: []string{"alice@acme.test"}}); !errors.Is(err, ErrPortalCCDisabled) {
@@ -52,13 +52,19 @@ func TestPortalCCColleaguesMode(t *testing.T) {
 		{"too many", []string{"a1@acme.test", "a2@acme.test", "a3@acme.test", "a4@acme.test", "a5@acme.test", "a6@acme.test", "a7@acme.test", "a8@acme.test", "a9@acme.test", "a10@acme.test", "a11@acme.test"}, ErrPortalCCInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, tc.emails); !errors.Is(err, tc.want) {
+			if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, tc.emails, nil); !errors.Is(err, tc.want) {
 				t.Fatalf("error = %v, want %v", err, tc.want)
 			}
 		})
 	}
+	// A requester-role contact never sees the member list.
+	p.exec(t, `UPDATE crm_contacts SET portal_role = 'requester' WHERE id = ?`, p.alice)
+	if options, err := p.svc.CCOptions(ctx, p.aliceIn); err != nil || len(options.Colleagues) != 0 || len(options.Domains) != 1 {
+		t.Fatalf("requester-role options = %#v, %v", options, err)
+	}
+	p.exec(t, `UPDATE crm_contacts SET portal_role = NULL WHERE id = ?`, p.alice)
 	// Members, company domain addresses, and the requester (dropped) pass.
-	detail, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"Alice@Acme.test", "dave@acme.test", "bob@acme.test"})
+	detail, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"Alice@Acme.test", "dave@acme.test", "bob@acme.test"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +72,7 @@ func TestPortalCCColleaguesMode(t *testing.T) {
 		t.Fatalf("cc = %v can edit %v", detail.CC, detail.CanEditCC)
 	}
 	// Only the requester changes who is copied.
-	if _, err := p.svc.SetRequestCC(ctx, p.aliceIn, p.bobRequest.Reference, nil); !errors.Is(err, ErrPortalCCDenied) {
+	if _, err := p.svc.SetRequestCC(ctx, p.aliceIn, p.bobRequest.Reference, nil, nil); !errors.Is(err, ErrPortalCCDenied) {
 		t.Fatalf("colleague changing cc = %v", err)
 	}
 	var events []string
@@ -87,8 +93,15 @@ func TestPortalCCCopiedPersonSeesAndReplies(t *testing.T) {
 	setCCMode(model.SupportPortalCCAny, p.bobIn, carolIn)
 	sentBefore := len(sender.sent)
 
-	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"carol@other.test"}); err != nil {
+	// A Cc a teammate added after the requester loaded the list survives.
+	p.exec(t, `UPDATE support_conversations SET email_cc = '{"ops@acme.test"}' WHERE id = ?`, p.bobConversationID(t))
+	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"carol@other.test"}, []string{}); err != nil {
 		t.Fatal(err)
+	}
+	var stored string
+	p.db.Table("support_conversations").Where("id = ?", p.bobConversationID(t)).Pluck("email_cc", &stored)
+	if !strings.Contains(stored, "ops@acme.test") || !strings.Contains(stored, "carol@other.test") {
+		t.Fatalf("stored cc = %s", stored)
 	}
 	notices := sender.sent[sentBefore:]
 	if len(notices) != 1 || notices[0].to != "carol@other.test" || !strings.Contains(notices[0].subject, "copied you on request") || !strings.Contains(notices[0].text, "/requests/"+p.bobRequest.Reference) {
@@ -103,13 +116,13 @@ func TestPortalCCCopiedPersonSeesAndReplies(t *testing.T) {
 		t.Fatalf("copied request listed as Carol's own: %v", requestReferences(mine))
 	}
 	detail, err := p.svc.RequestDetail(ctx, carolIn, p.bobRequest.Reference)
-	if err != nil || !detail.Copied || detail.CanEditCC || detail.CanRate {
+	if err != nil || !detail.Copied || detail.CanEditCC || detail.CanRate || len(detail.CC) != 0 {
 		t.Fatalf("copied detail = %+v, %v", detail, err)
 	}
 	if _, err := p.svc.Reply(ctx, carolIn, p.bobRequest.Reference, "Adding the March numbers.", nil); err != nil {
 		t.Fatalf("copied reply: %v", err)
 	}
-	if _, err := p.svc.SetRequestCC(ctx, carolIn, p.bobRequest.Reference, nil); !errors.Is(err, ErrPortalCCDenied) {
+	if _, err := p.svc.SetRequestCC(ctx, carolIn, p.bobRequest.Reference, nil, nil); !errors.Is(err, ErrPortalCCDenied) {
 		t.Fatalf("copied person changing cc = %v", err)
 	}
 	var views int64
@@ -119,10 +132,10 @@ func TestPortalCCCopiedPersonSeesAndReplies(t *testing.T) {
 	}
 
 	// Re-adding within a day sends no second notice.
-	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, nil); err != nil {
+	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"carol@other.test"}); err != nil {
+	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"carol@other.test"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(sender.sent) != sentBefore+1 {
@@ -130,13 +143,13 @@ func TestPortalCCCopiedPersonSeesAndReplies(t *testing.T) {
 	}
 
 	// Removed, or with copying turned off, the request is gone again.
-	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, nil); err != nil {
+	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.svc.RequestDetail(ctx, carolIn, p.bobRequest.Reference); !errors.Is(err, ErrPortalRequestNotFound) {
 		t.Fatalf("removed person detail = %v", err)
 	}
-	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"carol@other.test"}); err != nil {
+	if _, err := p.svc.SetRequestCC(ctx, p.bobIn, p.bobRequest.Reference, []string{"carol@other.test"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	setCCMode("", carolIn)

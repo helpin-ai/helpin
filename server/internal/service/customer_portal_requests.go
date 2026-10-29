@@ -301,7 +301,12 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 		detail.RequesterName = s.portalRequesterName(ctx, conv)
 		s.auditCompanyView(ctx, access, conv, request.Copied)
 	}
-	detail.CC = append([]string{}, conv.EmailCC...)
+	// Teammates and inbound email also add people; only the requester sees
+	// the list.
+	detail.CC = []string{}
+	if request.Own {
+		detail.CC = append(detail.CC, conv.EmailCC...)
+	}
 	detail.CanEditCC = request.Own && access.Workspace.Settings.PortalCCMode != "" && conv.AnonymizedAt == nil
 	detail.Copied = request.Copied
 	if detail.RequestType, detail.Fields, err = s.inbox.requestTypes.CustomerView(ctx, access.Workspace.ID, conv); err != nil {

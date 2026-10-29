@@ -546,6 +546,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   const requestType = requestTypes.find((type) => type.id === draft.requestTypeId) ?? (requestTypes.length === 1 ? requestTypes[0] : undefined)
   const ccEnabled = Boolean(configuration?.cc_mode)
   const ccOptions = usePortalCCOptions(slug, ccEnabled)
+  const [ccPending, setCCPending] = useState('')
   const suggestions = usePortalArticleSuggestions(slug, subject, message)
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAttachment(slug, file, undefined, options),
@@ -565,6 +566,10 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
     const typed = portalFieldsForSubmit(requestType, fieldValues)
     if (typed.error) {
       setError(typed.error)
+      return
+    }
+    if (ccEnabled && ccPending) {
+      setError(`Press Enter to copy ${ccPending}, or clear it.`)
       return
     }
     setSubmitting(true)
@@ -605,7 +610,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
           <PortalRequestTypeFields idPrefix="request" type={requestType} values={fieldValues} onChange={(fields) => setDraft({ ...draft, fields })} />
         ) : null}
         {ccEnabled ? (
-          <PortalCCEditor label="Copy colleagues (optional)" value={draft.cc ?? []} options={ccOptions} onChange={(cc) => setDraft({ ...draft, cc })} />
+          <PortalCCEditor label="Copy colleagues (optional)" value={draft.cc ?? []} options={ccOptions} onChange={(cc) => setDraft({ ...draft, cc })} onPendingChange={setCCPending} />
         ) : null}
         <PortalArticleSuggestions slug={slug} className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
         <PortalDropCue visible={dragging} />
@@ -1010,7 +1015,7 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
             </dl>
           ) : null}
           {configuration?.cc_mode || request.cc?.length ? (
-            <PortalRequestCC slug={slug} request={request} ccMode={configuration?.cc_mode ?? ''} onUpdated={setRequest} />
+            <PortalRequestCC slug={slug} request={request} onUpdated={setRequest} />
           ) : null}
           <ol className="mt-6 border-t border-quiet-divider-strong pt-3" aria-label="Messages">
             {request.messages.map((message) => <PortalMessage key={message.id} message={message} supportName={configuration?.branding.name || 'Support'} />)}

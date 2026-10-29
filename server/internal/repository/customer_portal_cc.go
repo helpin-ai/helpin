@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -18,8 +19,9 @@ func conversationCCContainsSQL(dialect string) string {
 	if dialect == "postgres" {
 		return "EXISTS (SELECT 1 FROM unnest(conv.email_cc) AS cc(address) WHERE lower(cc.address) = ?)"
 	}
-	// SQLite stores the quoted array literal as text.
-	return "(',' || replace(lower(trim(COALESCE(conv.email_cc, ''), '{}')), '\"', '') || ',') LIKE '%,' || ? || ',%'"
+	// SQLite stores the quoted array literal as text; instr matches exactly,
+	// where LIKE would treat _ and % in addresses as wildcards.
+	return "instr(',' || replace(lower(trim(COALESCE(conv.email_cc, ''), '{}')), '\"', '') || ',', ',' || ? || ',') > 0"
 }
 
 // copiedRequests selects the published requests that copy email, other than
@@ -72,61 +74,113 @@ type PortalColleague struct {
 	Name  string `json:"name"`
 }
 
-// PortalColleagues returns the other members of the contact's portal
-// companies, and those companies' email domains. Only explicit portal
-// memberships count, as for company visibility.
+// PortalColleagues returns the people a contact may copy in colleagues
+// mode: other allowed members of the companies where the contact has the
+// member role, and the email domains of all its portal companies. A contact
+// without explicit portal access has none, as for company visibility.
 func (r *CustomerPortalRepository) PortalColleagues(ctx context.Context, workspaceID, contactID string) ([]PortalColleague, []string, error) {
-	var companies []struct {
-		ID     string
-		Domain *string
+	memberships, err := r.PortalCompanyMemberships(ctx, workspaceID, contactID)
+	if err != nil || len(memberships) == 0 {
+		return []PortalColleague{}, nil, err
 	}
-	if err := r.db.WithContext(ctx).Table("crm_companies AS company").
-		Where("company.workspace_id = ? AND company.portal_default_role IS NOT NULL", workspaceID).
-		Where(portalMemberSQL("?", "company.id"), contactID).
-		Select("company.id, company.domain").Scan(&companies).Error; err != nil {
-		return nil, nil, err
-	}
-	if len(companies) == 0 {
-		return []PortalColleague{}, nil, nil
-	}
-	ids := make([]string, 0, len(companies))
-	var domains []string
-	for _, company := range companies {
-		ids = append(ids, company.ID)
-		if company.Domain != nil {
-			if domain := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(*company.Domain), "www.")); domain != "" {
-				domains = append(domains, domain)
-			}
+	all := make([]string, 0, len(memberships))
+	var memberOf []string
+	for _, membership := range memberships {
+		all = append(all, membership.ID)
+		if membership.Role == model.PortalRoleMember {
+			memberOf = append(memberOf, membership.ID)
 		}
 	}
-	var colleagues []PortalColleague
-	err := r.db.WithContext(ctx).Table("support_portal_company_members AS member").
+	var rawDomains []string
+	if err := r.db.WithContext(ctx).Table("crm_companies").Where("workspace_id = ? AND id IN ? AND domain IS NOT NULL", workspaceID, all).
+		Pluck("domain", &rawDomains).Error; err != nil {
+		return nil, nil, err
+	}
+	var domains []string
+	for _, raw := range rawDomains {
+		if domain := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(raw), "www.")); domain != "" {
+			domains = append(domains, domain)
+		}
+	}
+	colleagues := []PortalColleague{}
+	if len(memberOf) == 0 {
+		return colleagues, domains, nil
+	}
+	err = r.db.WithContext(ctx).Table("support_portal_company_members AS member").
 		Joins("JOIN crm_contacts AS contact ON contact.id = member.crm_contact_id AND contact.workspace_id = member.workspace_id").
-		Where("member.workspace_id = ? AND member.crm_company_id IN ? AND member.crm_contact_id <> ?", workspaceID, ids, contactID).
-		Where("contact.email IS NOT NULL AND contact.email <> '' AND (contact.portal_access IS NULL OR contact.portal_access <> ?)", model.PortalAccessBlocked).
+		Where("member.workspace_id = ? AND member.crm_company_id IN ? AND member.crm_contact_id <> ?", workspaceID, memberOf, contactID).
+		Where("contact.email IS NOT NULL AND contact.email <> '' AND contact.portal_access = ?", model.PortalAccessAllowed).
 		Select("DISTINCT lower(contact.email) AS email, trim(COALESCE(contact.first_name, '') || ' ' || COALESCE(contact.last_name, '')) AS name").
 		Order("email").Scan(&colleagues).Error
-	if colleagues == nil {
-		colleagues = []PortalColleague{}
-	}
 	return colleagues, domains, err
 }
 
-// CopyNoticeCounts counts copy notices sent to address about the
-// conversation since addressSince, and by the workspace since
-// workspaceSince.
-func (r *CustomerPortalRepository) CopyNoticeCounts(ctx context.Context, workspaceID, conversationID, address string, addressSince, workspaceSince time.Time) (forAddress, forWorkspace int64, err error) {
+// CopyNoticeCounts are recent copy notices, by scope.
+type CopyNoticeCounts struct {
+	ForRequest, ForAddress, ForRequester, ForWorkspace int64
+}
+
+// CopyNoticeCounts counts copy notices: to address about the conversation,
+// to address at all, and sent for the requester, since daySince; and by the
+// workspace since hourSince.
+func (r *CustomerPortalRepository) CopyNoticeCounts(ctx context.Context, workspaceID, conversationID, requesterIdentityID, address string, daySince, hourSince time.Time) (CopyNoticeCounts, error) {
+	var counts CopyNoticeCounts
 	notices := func() *gorm.DB {
 		return r.db.WithContext(ctx).Model(&model.SupportPortalAuditEvent{}).
 			Where("workspace_id = ? AND event_type = ?", workspaceID, model.SupportPortalAuditCCNotified)
 	}
 	metadata, err := json.Marshal(map[string]string{"notified": address})
 	if err != nil {
-		return 0, 0, err
+		return counts, err
 	}
-	if err = notices().Where("conversation_id = ? AND metadata = ? AND occurred_at >= ?", conversationID, string(metadata), addressSince).Count(&forAddress).Error; err != nil {
-		return 0, 0, err
+	for _, query := range []struct {
+		target *int64
+		scope  *gorm.DB
+	}{
+		{&counts.ForRequest, notices().Where("conversation_id = ? AND metadata = ? AND occurred_at >= ?", conversationID, string(metadata), daySince)},
+		{&counts.ForAddress, notices().Where("metadata = ? AND occurred_at >= ?", string(metadata), daySince)},
+		{&counts.ForRequester, notices().Where("portal_identity_id = ? AND occurred_at >= ?", requesterIdentityID, daySince)},
+		{&counts.ForWorkspace, notices().Where("occurred_at >= ?", hourSince)},
+	} {
+		if err := query.scope.Count(query.target).Error; err != nil {
+			return counts, err
+		}
 	}
-	err = notices().Where("occurred_at >= ?", workspaceSince).Count(&forWorkspace).Error
-	return forAddress, forWorkspace, err
+	return counts, nil
+}
+
+// UpdateConversationCC applies one change to a conversation's Cc list under
+// a row lock, keeping addresses others added meanwhile, and returns the
+// stored list. Merged sources are read-only.
+func (r *CustomerPortalRepository) UpdateConversationCC(ctx context.Context, workspaceID, conversationID string, added, removed []string) ([]string, error) {
+	var stored []string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation model.SupportConversation
+		query := tx.Select("id", "email_cc").Where("workspace_id = ? AND id = ? AND merged_into_id IS NULL", workspaceID, conversationID)
+		if r.db.Dialector.Name() == "postgres" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.Take(&conversation).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSupportMerged
+			}
+			return err
+		}
+		drop := map[string]bool{}
+		for _, address := range removed {
+			drop[strings.ToLower(address)] = true
+		}
+		seen := map[string]bool{}
+		for _, address := range append([]string(conversation.EmailCC), added...) {
+			key := strings.ToLower(strings.TrimSpace(address))
+			if key == "" || drop[key] || seen[key] {
+				continue
+			}
+			seen[key] = true
+			stored = append(stored, key)
+		}
+		return tx.Model(&model.SupportConversation{}).Where("workspace_id = ? AND id = ?", workspaceID, conversationID).
+			Update("email_cc", model.DocsStringArray(stored)).Error
+	})
+	return stored, err
 }
