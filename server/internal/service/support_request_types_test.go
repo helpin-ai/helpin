@@ -107,8 +107,8 @@ func TestSupportRequestTypePortalViewShowsCustomerFields(t *testing.T) {
 		t.Fatalf("portal types = %#v, want only the enabled one", portal)
 	}
 	fields := portal[0].Fields
-	if len(fields) != 2 || fields[0].Key != "severity" || fields[0].HelpText != "How bad is it?" || fields[1].HelpText != "What did you do?" {
-		t.Fatalf("fields = %#v, want severity (help from description) and steps, no internal field", fields)
+	if len(fields) != 2 || fields[0].Key != "severity" || fields[0].HelpText != "" || fields[1].HelpText != "What did you do?" {
+		t.Fatalf("fields = %#v, want severity (no teammate description) and steps, no internal field", fields)
 	}
 }
 

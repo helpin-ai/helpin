@@ -33,7 +33,7 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
     if (!name.trim() || isPending) return;
     // Replace editable keys, retaining other saved criteria and future fields.
     const filters = { ...view?.filters };
-    for (const key of ['nav_filter', 'states', 'mailbox_id', 'search', 'assignment', 'mailbox_ids', 'tag_ids', 'ai', 'system_tags', 'sort', 'sla', 'priority']) delete filters[key];
+    for (const key of ['nav_filter', 'states', 'mailbox_id', 'search', 'assignment', 'mailbox_ids', 'tag_ids', 'ai', 'system_tags', 'sort', 'sla', 'priority', 'request_type_ids']) delete filters[key];
     Object.assign(filters, buildSupportInboxViewFilters(draft));
     onSave({ name: name.trim(), ...(canManageSettings ? { is_shared: shared } : {}), filters });
   };

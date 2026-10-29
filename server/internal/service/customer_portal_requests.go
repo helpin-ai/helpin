@@ -56,6 +56,12 @@ type PortalRequestDetail struct {
 	// customer-visible fields; internal fields never reach the portal.
 	RequestType *string            `json:"request_type,omitempty"`
 	Fields      []PortalFieldValue `json:"fields"`
+	// CC is who the request copies; CanEditCC is true for the requester
+	// when the workspace lets requesters copy people. Copied is true when
+	// the viewer sees the request because it copies them.
+	CC        []string `json:"cc"`
+	CanEditCC bool     `json:"can_edit_cc"`
+	Copied    bool     `json:"copied,omitempty"`
 }
 
 type portalReplySourceKey struct{}
@@ -279,8 +285,11 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 	detail := &PortalRequestDetail{ReplyExpectedBy: s.replyExpectedBy(ctx, &access.Workspace, conv.ID, status), Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: status, LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}, Own: request.Own}
 	if !request.Own {
 		detail.RequesterName = s.portalRequesterName(ctx, conv)
-		s.auditCompanyView(ctx, access, conv)
+		s.auditCompanyView(ctx, access, conv, request.Copied)
 	}
+	detail.CC = append([]string{}, conv.EmailCC...)
+	detail.CanEditCC = request.Own && access.Workspace.Settings.PortalCCMode != "" && conv.AnonymizedAt == nil
+	detail.Copied = request.Copied
 	if detail.RequestType, detail.Fields, err = s.inbox.requestTypes.CustomerView(ctx, access.Workspace.ID, conv); err != nil {
 		return nil, err
 	}
@@ -688,9 +697,16 @@ func validPortalRequest(subject, description string) (string, string, error) {
 func (s *CustomerPortalService) routeNewRequest(ctx context.Context, workspaceID, email string, name *string, requestType *model.SupportRequestType) (repository.PortalRequestDraft, error) {
 	draft := repository.PortalRequestDraft{WorkspaceID: workspaceID, Email: email, DisplayName: name}
 	// A request type's inbox takes the request there, before the default.
+	// An inbox turned off since falls back to usual routing.
 	var explicitMailboxID *string
-	if requestType != nil {
-		explicitMailboxID = requestType.MailboxID
+	if requestType != nil && requestType.MailboxID != nil && s.inbox.mailboxRepo != nil {
+		mailbox, err := s.inbox.mailboxRepo.GetByID(ctx, workspaceID, *requestType.MailboxID)
+		if err != nil {
+			return draft, err
+		}
+		if mailbox != nil && mailbox.Active {
+			explicitMailboxID = requestType.MailboxID
+		}
 	}
 	mailboxID, mailbox, err := s.inbox.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, explicitMailboxID, true, "portal")
 	if err != nil {

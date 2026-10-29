@@ -85,6 +85,12 @@ func (s *InternalCommandService) executeSupportSetConversationFields(ctx context
 	if err != nil {
 		return nil, err
 	}
+	// Check the values first so a bad value never leaves the type changed.
+	if len(req.Fields) > 0 && s.supportInboxService.customFields != nil {
+		if _, err := s.supportInboxService.customFields.ValidateValues(ctx, meta.WorkspaceID, model.CustomFieldObjectConversation, req.Fields); err != nil {
+			return nil, supportFieldCommandError(err)
+		}
+	}
 	var conversation *model.SupportConversation
 	if setsType {
 		if req.RequestTypeID != nil {

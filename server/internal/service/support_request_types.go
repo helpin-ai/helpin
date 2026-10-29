@@ -220,13 +220,11 @@ func (s *SupportRequestTypeService) ForPortal(ctx context.Context, workspaceID s
 			if !ok || !field.CustomerVisible {
 				continue
 			}
-			help := field.HelpText
-			if help == "" {
-				help = definition.Description
-			}
+			// The field's description is written for teammates, so only the
+			// type's own help text reaches customers.
 			portal.Fields = append(portal.Fields, PortalRequestTypeField{
 				Key: field.Key, Label: definition.DisplayLabel, FieldType: definition.FieldType,
-				Options: definition.Options, Required: field.Required, HelpText: help,
+				Options: definition.Options, Required: field.Required, HelpText: field.HelpText,
 			})
 		}
 		result = append(result, portal)

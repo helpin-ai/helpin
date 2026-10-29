@@ -992,8 +992,8 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         <>
           {request.fields?.length ? (
             <dl className="mt-5 grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2" aria-label="Request details">
-              {request.fields.map((field) => (
-                <div key={field.label} className="min-w-0">
+              {request.fields.map((field, index) => (
+                <div key={`${index}:${field.label}`} className="min-w-0">
                   <dt className="text-[12px] text-quiet-text-tertiary">{field.label}</dt>
                   <dd className="whitespace-pre-wrap break-words text-quiet-text-primary">{field.value}</dd>
                 </div>
