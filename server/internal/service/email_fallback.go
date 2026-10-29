@@ -974,12 +974,7 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 				return s.processInboundRoute(ctx, route, payload, rawPayload)
 			}
 		}
-		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
-			"message_id", strings.TrimSpace(payload.MessageID),
-			"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
-			"to", strings.TrimSpace(payload.To),
-		)
-		return fmt.Errorf("missing mailbox hash")
+		return s.processUnaddressedInbound(ctx, payload, rawPayload)
 	}
 
 	if !strings.HasPrefix(mailboxHash, "conv-") {
@@ -1018,6 +1013,22 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 			"status", conv.Status,
 		)
 		return nil
+	}
+	// One email written to two Helpin addresses (say, both the Reply-To and the
+	// From of our email) arrives twice with the same Message-ID. An admin
+	// recovery is an explicit request, so it is never skipped.
+	if recovery == nil {
+		copied, err := s.emailLogRepo.HasInboundCopy(ctx, repository.InboundCopyQuery{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, RFCMessageID: inboundHeaderMessageID(payload)})
+		if err != nil {
+			return err
+		}
+		if copied {
+			s.logger.InfoContext(ctx, "postmark inbound copy already in conversation",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"conversation_id", conv.ID,
+			)
+			return nil
+		}
 	}
 
 	fromEmail := inboundEmailAddress(payload)
@@ -3771,6 +3782,9 @@ func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Conte
 	return s.findConversationByID(ctx, threadLog.ConversationID)
 }
 
+// createInboundConversationFromRoute opens a conversation for a new email. The
+// route may be unsaved (no ID) when the email reached the shared sender; it
+// then only says which workspace and inbox receive it.
 func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
 	if route == nil {
 		return nil
@@ -4019,10 +4033,14 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		message.EmailProjectionConfidence = projection.ProjectionConfidence
 		message.EmailProjectionVersion = projection.Version
 
+		var emailRouteID *string
+		if route.ID != "" {
+			emailRouteID = &route.ID
+		}
 		logRow := &model.SupportEmailLog{
 			WorkspaceID:               route.WorkspaceID,
 			ConversationID:            conversation.ID,
-			EmailRouteID:              &route.ID,
+			EmailRouteID:              emailRouteID,
 			Direction:                 "inbound",
 			MessageIDs:                model.DocsStringArray{message.ID},
 			FromEmail:                 fromEmail,
@@ -4081,7 +4099,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		}
 		return txErr
 	}
-	if s.supportInboxService.emailRouteRepo != nil {
+	if route.ID != "" && s.supportInboxService.emailRouteRepo != nil {
 		route.LastInboundAt = &now
 		if err := s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, now); err != nil {
 			return err

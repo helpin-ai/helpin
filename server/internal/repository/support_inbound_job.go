@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,9 +44,24 @@ func (r *SupportInboundJobRepository) Claim(ctx context.Context, kind string, no
 	job.Attempts++
 	return &job, nil
 }
+
+// InboundRetryLastError is the last error of a job that failed and may be
+// retried, as opposed to an undeliverable email's reason.
+const InboundRetryLastError = "Processing failed; inspect server logs using the job ID."
+
+// InboundUndeliverableError marks an email that no retry can deliver. The job
+// fails at once with Reason as its last error, which admins see in the queue.
+type InboundUndeliverableError struct{ Reason string }
+
+// Error returns the reason shown to admins.
+func (e *InboundUndeliverableError) Error() string { return e.Reason }
+
 func (r *SupportInboundJobRepository) Finish(ctx context.Context, job *model.SupportInboundJob, processingErr error, now time.Time) error {
 	values := map[string]any{"status": "completed", "payload": "", "last_error": "", "lease_token": ""}
-	if processingErr != nil {
+	var undeliverable *InboundUndeliverableError
+	if errors.As(processingErr, &undeliverable) {
+		values = map[string]any{"status": "failed", "last_error": undeliverable.Reason, "lease_token": "", "available_at": now}
+	} else if processingErr != nil {
 		status := "pending"
 		if job.Attempts >= 10 || job.RecoveryRequestedAt != nil {
 			// A manual retry exposes its outcome immediately; accepted bytes stay
@@ -53,7 +69,7 @@ func (r *SupportInboundJobRepository) Finish(ctx context.Context, job *model.Sup
 			status = "failed"
 		}
 		delay := time.Minute * time.Duration(1<<min(job.Attempts-1, 8))
-		values = map[string]any{"status": status, "last_error": "Processing failed; inspect server logs using the job ID.", "lease_token": "", "available_at": now.Add(delay)}
+		values = map[string]any{"status": status, "last_error": InboundRetryLastError, "lease_token": "", "available_at": now.Add(delay)}
 	}
 	return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).Where("id = ? AND lease_token = ? AND status = ?", job.ID, job.LeaseToken, "processing").Updates(values).Error
 }

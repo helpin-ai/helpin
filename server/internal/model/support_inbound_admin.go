@@ -42,12 +42,15 @@ type AdminInboundAttachment struct {
 // AdminInboundEmailDetail exposes only the email content needed for review.
 type AdminInboundEmailDetail struct {
 	AdminInboundEmail
-	Body        string                    `json:"body"`
-	ProviderID  string                    `json:"provider_id"`
-	InReplyTo   string                    `json:"in_reply_to,omitempty"`
-	LastError   string                    `json:"last_error,omitempty"`
-	Attachments []AdminInboundAttachment  `json:"attachments"`
-	Destination *AdminInboundConversation `json:"destination,omitempty"`
+	Body       string `json:"body"`
+	ProviderID string `json:"provider_id"`
+	InReplyTo  string `json:"in_reply_to,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
+	// NotDeliveredReason explains an email no retry can deliver, such as one
+	// sent to the shared sender that matches no single workspace.
+	NotDeliveredReason string                    `json:"not_delivered_reason,omitempty"`
+	Attachments        []AdminInboundAttachment  `json:"attachments"`
+	Destination        *AdminInboundConversation `json:"destination,omitempty"`
 }
 
 // AdminInboundConversation is a possible destination, never an automatic match.
