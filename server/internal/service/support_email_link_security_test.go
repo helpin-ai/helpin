@@ -155,9 +155,9 @@ func TestInboundEmailLinksAreChecked(t *testing.T) {
 				t.Fatalf("load email message: %v", err)
 			}
 			var metadata struct {
-				LinkSecurity            []model.SupportLinkSecurity `json:"link_security"`
-				EmailAIRequest          *bool                       `json:"email_ai_request"`
-				EmailAISuppressionReason string                     `json:"email_ai_suppression_reason"`
+				LinkSecurity             []model.SupportLinkSecurity `json:"link_security"`
+				EmailAIRequest           *bool                       `json:"email_ai_request"`
+				EmailAISuppressionReason string                      `json:"email_ai_suppression_reason"`
 			}
 			if err := json.Unmarshal([]byte(msg.Metadata), &metadata); err != nil {
 				t.Fatalf("decode metadata %q: %v", msg.Metadata, err)

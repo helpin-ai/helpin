@@ -177,7 +177,9 @@ describe('buildCompanyFilterDefinitions', () => {
     const state = { values: {}, modes: {}, conditions: { [field]: { operator: 'lt' as const, value: '2026-11-01' } } };
     const group = companyFiltersToGroup(state, dateFields);
     expect(group?.rules).toEqual([{ field, operator: 'before', value: '2026-11-01' }]);
-    expect(companyFilterGroupToState(group, dateFields).conditions[field]).toEqual({ operator: 'lt', value: '2026-11-01' });
+    expect(companyFilterGroupToState(group, dateFields).conditions[field]).toEqual({ operator: 'lt', value: '2026-11-01', date: true });
+    // Before field types load (or after the field is archived) the rule round-trips unchanged.
+    expect(companyFiltersToGroup(companyFilterGroupToState(group))?.rules).toEqual(group?.rules);
     const range = companyFiltersToGroup({ values: {}, modes: {}, conditions: { [field]: { operator: 'between', values: ['2026-10-01', '2026-10-31'] } } }, dateFields);
     expect(range?.rules[0]).toEqual({ field, operator: 'between', values: ['2026-10-01', '2026-10-31'] });
   });

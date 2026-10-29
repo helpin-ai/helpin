@@ -135,6 +135,16 @@ type PortalConfiguration struct {
 	// AssistantEnabled reports whether the portal offers the Ask AI help
 	// assistant.
 	AssistantEnabled bool `json:"assistant_enabled"`
+	// RequestTypes are the kinds of request customers choose from on the
+	// new request form; empty keeps the plain form.
+	RequestTypes []PortalRequestType `json:"request_types"`
+}
+
+// PortalRequestFields is the request type and field values a customer
+// submits with a new request.
+type PortalRequestFields struct {
+	RequestTypeID string         `json:"request_type_id"`
+	Fields        map[string]any `json:"fields"`
 }
 
 // PortalAttachmentPolicy is the upload rules the portal UI applies before
@@ -167,7 +177,19 @@ func (s *CustomerPortalService) ResolveWorkspace(ctx context.Context, slug strin
 
 // Configuration returns the public configuration for an enabled portal.
 func (s *CustomerPortalService) Configuration(ctx context.Context, ws *PortalWorkspace) PortalConfiguration {
+	requestTypes := []PortalRequestType{}
+	if s.inbox != nil && s.inbox.requestTypes != nil && (ws.Settings.PortalIntakeEnabled || s.anonymousIntakeEnabled(ws)) {
+		types, err := s.inbox.requestTypes.ForPortal(ctx, ws.ID)
+		if err != nil {
+			// The form then asks for a type the server requires; submitting
+			// reports it, and the next load retries.
+			slog.ErrorContext(ctx, "portal request types lookup failed", "workspace_id", ws.ID, "error", err)
+		} else {
+			requestTypes = types
+		}
+	}
 	return PortalConfiguration{
+		RequestTypes:           requestTypes,
 		Enabled:                true,
 		IntakeEnabled:          ws.Settings.PortalIntakeEnabled,
 		AnonymousIntakeEnabled: s.anonymousIntakeEnabled(ws),

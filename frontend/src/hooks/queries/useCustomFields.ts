@@ -68,12 +68,13 @@ export function useReorderCustomFields(workspaceId: string, objectType: CustomFi
 /** Writes defined field values on a CRM record, one key at a time. */
 export function useSetCRMFieldValues(workspaceId: string, objectType: 'crm_contact' | 'crm_company', recordId: string) {
   const queryClient = useQueryClient()
-  const recordKey = objectType === 'crm_contact' ? queryKeys.crm.contact(workspaceId, recordId) : queryKeys.crm.company(workspaceId, recordId)
+  // The collection prefix covers the record, the list and filter options.
+  const recordsKey = objectType === 'crm_contact' ? queryKeys.crm.contacts(workspaceId) : queryKeys.crm.companies(workspaceId)
   return useMutation({
     mutationFn: (values: Record<string, unknown>) =>
       customFieldsService.setCRMValues(workspaceId, objectType, recordId, values).then(expectNoError),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: recordKey })
+      void queryClient.invalidateQueries({ queryKey: recordsKey })
       void queryClient.invalidateQueries({ queryKey: queryKeys.customFields.all(workspaceId, objectType) })
     },
     onError: (error: Error) => {

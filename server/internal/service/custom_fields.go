@@ -168,7 +168,9 @@ func (s *CustomFieldService) Create(ctx context.Context, workspaceID, actorID, o
 	if err := s.normalize(req, definition); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateDefinition(ctx, definition); err != nil {
+	if err := s.repo.CreateDefinition(ctx, definition); errors.Is(err, repository.ErrCustomFieldKeyTaken) {
+		return nil, ErrCustomFieldExists
+	} else if err != nil {
 		return nil, err
 	}
 	definition.DisplayLabel = customfields.DisplayLabel(definition.Definition())

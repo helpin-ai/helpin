@@ -217,7 +217,19 @@ func (s *WebhookService) conversationSnapshot(ctx context.Context, batch *webhoo
 		AssigneeID: conversation.AssignedUserID, SnoozedUntil: conversation.SnoozedUntil, MergedIntoID: conversation.MergedIntoID,
 		Customer:  model.WebhookCustomer{Name: conversation.CustomerName, Email: conversation.CustomerEmail, CRMContactID: conversation.CRMContactID},
 		CreatedAt: conversation.CreatedAt.UTC(), UpdatedAt: conversation.UpdatedAt.UTC(), ResolvedAt: conversation.ResolvedAt,
-		Tags: []string{},
+		Tags: []string{}, Fields: map[string]any(conversation.CustomFields),
+	}
+	if snapshot.Fields == nil {
+		snapshot.Fields = map[string]any{}
+	}
+	if conversation.RequestTypeID != nil && s.inbox.requestTypes != nil {
+		requestType, err := s.inbox.requestTypes.Get(ctx, conversation.WorkspaceID, *conversation.RequestTypeID)
+		if err != nil && !errors.Is(err, repository.ErrSupportRequestTypeNotFound) {
+			return snapshot, err
+		}
+		if requestType != nil {
+			snapshot.RequestType = &model.WebhookRequestType{ID: requestType.ID, Name: requestType.Name}
+		}
 	}
 	if s.inbox.tagRepo != nil {
 		tags, err := s.inbox.tagRepo.ListByConversationIDs(ctx, conversation.WorkspaceID, []string{conversation.ID})

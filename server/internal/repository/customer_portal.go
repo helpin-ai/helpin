@@ -73,6 +73,11 @@ type PortalRequestDraft struct {
 	DispatchAIMode  string
 	// Intake records what the customer saw while writing, when known.
 	Intake *model.PortalIntake
+	// Priority defaults to medium. RequestTypeID and CustomFields come from
+	// the request type the customer chose.
+	Priority      string
+	RequestTypeID *string
+	CustomFields  map[string]any
 }
 
 // PortalLinkCounts summarizes recently issued sign-in links.
@@ -137,9 +142,12 @@ func (r *CustomerPortalRepository) ConsumeIntakeSession(ctx context.Context, wor
 // its opaque portal reference; an anonymous one returns a nil projection.
 func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft PortalRequestDraft) (*model.SupportConversation, *model.SupportPortalRequest, error) {
 	email := strings.ToLower(strings.TrimSpace(draft.Email))
+	if draft.Priority == "" {
+		draft.Priority = model.SupportConversationPriorityMedium
+	}
 	conversation := &model.SupportConversation{
 		ID: uuid.NewString(), WorkspaceID: draft.WorkspaceID, Subject: draft.Subject,
-		Status: "open", Priority: "medium", Channel: "portal", Source: "portal",
+		Status: "open", Priority: draft.Priority, Channel: "portal", Source: "portal",
 		CustomerName: draft.DisplayName, CustomerEmail: &email, PortalVisible: draft.Identity != nil,
 		MailboxID: draft.MailboxID, AssignedUserID: draft.OwnerID, CRMContactID: draft.CRMContactID, FlowState: draft.FlowState,
 	}
@@ -161,6 +169,18 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 		}
 		if err := NewSupportConversationRepository(tx).Create(ctx, conversation); err != nil {
 			return err
+		}
+		// The model reads these columns only, so they are written here.
+		if draft.RequestTypeID != nil {
+			fields := model.JSONB(draft.CustomFields)
+			if fields == nil {
+				fields = model.JSONB{}
+			}
+			if err := tx.Table("support_conversations").Where("id = ?", conversation.ID).
+				Updates(map[string]any{"request_type_id": *draft.RequestTypeID, "custom_fields": fields}).Error; err != nil {
+				return fmt.Errorf("set request type: %w", err)
+			}
+			conversation.RequestTypeID, conversation.CustomFields = draft.RequestTypeID, fields
 		}
 		message := &model.SupportMessage{
 			ID: uuid.NewString(), WorkspaceID: draft.WorkspaceID, ConversationID: conversation.ID,

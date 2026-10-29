@@ -150,20 +150,3 @@ func (h *CustomFieldHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, definitions)
 }
-
-// SetValues handles PATCH on a record's custom fields; the record is the
-// {id} URL parameter.
-func (h *CustomFieldHandler) SetValues(objectType string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req model.SetCustomFieldValuesRequest
-		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
-			return
-		}
-		if err := h.fields.SetValues(r.Context(), getWorkspaceID(r), objectType, chi.URLParam(r, "id"), req.Values); err != nil {
-			writeCustomFieldError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}
-}

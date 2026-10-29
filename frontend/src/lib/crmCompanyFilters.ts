@@ -88,7 +88,7 @@ function ruleToCondition(rule: QueryFilterRule): PMFilterCondition | undefined {
       return { operator: rule.operator };
     default: {
       const dateOperator = Object.entries(DATE_RULE_OPERATORS).find(([, operator]) => operator === rule.operator)?.[0];
-      return dateOperator ? { operator: dateOperator as PMFilterCondition['operator'], value: rule.value ?? '' } : undefined;
+      return dateOperator ? { operator: dateOperator as PMFilterCondition['operator'], value: rule.value ?? '', date: true } : undefined;
     }
   }
 }
@@ -112,7 +112,7 @@ export function companyFiltersToGroup(state: CompanyFilterState, dateFields: Rea
     if (selected.length > 0) rules.push({ field, operator: mode, values: selected });
   }
   for (const [field, condition] of Object.entries(state.conditions)) {
-    if (condition && isPMFilterConditionComplete(condition)) rules.push(conditionToRule(field, condition, dateFields.has(field)));
+    if (condition && isPMFilterConditionComplete(condition)) rules.push(conditionToRule(field, condition, dateFields.has(field) || Boolean(condition.date)));
   }
   return rules.length > 0 ? { logic: 'and', rules } : undefined;
 }

@@ -46,6 +46,7 @@ type portalRequestBody struct {
 	AttachmentIDs []string `json:"attachment_ids"`
 	// Intake is what the customer saw while writing; optional.
 	Intake *model.PortalIntake `json:"intake"`
+	service.PortalRequestFields
 }
 
 // workspace resolves the enabled portal for the slug or writes a 404.
@@ -261,7 +262,7 @@ func (h *CustomerPortalHandler) CreateAnonymousRequest(w http.ResponseWriter, r 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs, body.Intake); err != nil {
+	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs, body.Intake, body.PortalRequestFields); err != nil {
 		writePortalError(w, r, ws.ID, err, "unable to create request")
 		return
 	}
@@ -326,7 +327,7 @@ func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs, body.Intake)
+	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs, body.Intake, body.PortalRequestFields)
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to create request")
 		return
@@ -508,6 +509,8 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalIntakeDisabled), errors.Is(err, service.ErrPortalAnonymousIntakeDisabled), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
 		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrSupportRequestTypeInvalid):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrSupportRequestTypeInvalid.Error()+": "))
 	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalReplyInvalid), errors.Is(err, service.ErrPortalIntakeInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalTooManyAttachments):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:

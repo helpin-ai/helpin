@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -350,6 +351,18 @@ func (s *CRMCompanyService) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("company not found")
 	}
 	return s.companyRepo.Delete(ctx, id)
+}
+
+// SetCustomFieldValues writes defined field values on a company key by key.
+func (s *CRMCompanyService) SetCustomFieldValues(ctx context.Context, workspaceID, companyID string, values map[string]any) error {
+	if s.customFields == nil {
+		return errors.New("custom fields are not configured")
+	}
+	if err := s.customFields.SetValues(ctx, workspaceID, model.CustomFieldObjectCRMCompany, companyID, values); err != nil {
+		return err
+	}
+	s.requestCompanySummaryRefresh(ctx, workspaceID, companyID)
+	return nil
 }
 
 func (s *CRMCompanyService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, companyID string) {

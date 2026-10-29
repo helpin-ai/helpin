@@ -145,10 +145,10 @@ func TestCustomerPortalAnonymousIntakeIsSingleUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil, nil); err != nil {
+	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil, nil, PortalRequestFields{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Again", "Duplicate", nil, nil); err == nil {
+	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Again", "Duplicate", nil, nil, PortalRequestFields{}); err == nil {
 		t.Fatal("one-use intake token created a second request")
 	}
 	var conversation model.SupportConversation
@@ -174,7 +174,7 @@ func TestCustomerPortalAnonymousIntakeHiddenUntilAddressConfirmsIt(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Spoofed", "Written by someone else", nil, nil); err != nil {
+	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Spoofed", "Written by someone else", nil, nil, PortalRequestFields{}); err != nil {
 		t.Fatal(err)
 	}
 	var conversation model.SupportConversation
@@ -284,7 +284,7 @@ func TestPortalReferenceIsOpaque(t *testing.T) {
 	ctx := context.Background()
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil)
+	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +323,7 @@ func TestCustomerPortalReplyAcceptsFilesWithoutText(t *testing.T) {
 	ctx := context.Background()
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil)
+	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestCustomerPortalListShowsLatestActivityAndUnread(t *testing.T) {
 	ctx := context.Background()
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Export broken", "The **export** fails\nevery time.", nil, nil)
+	request, err := svc.CreateRequest(ctx, access, "Export broken", "The **export** fails\nevery time.", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestCustomerPortalNamesEveryAIReplyConsistently(t *testing.T) {
 	ctx := context.Background()
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil)
+	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestCustomerPortalShowsTeammatesCurrentAvatars(t *testing.T) {
 	ctx := context.Background()
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil)
+	request, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}

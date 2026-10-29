@@ -54,7 +54,7 @@ func withCRMCustomPropertyFields(
 				definitions[name] = definition
 			}
 		}
-		if dateKeys[key] {
+		if customPropertyRuleIsDate(rule.Operator, dateKeys[key]) {
 			definitions[rule.Field] = querybuilder.FieldDefinition{Expression: customFieldDateExpression(column, dialect, key), Type: querybuilder.FieldTypeDate}
 			continue
 		}
@@ -115,13 +115,36 @@ func crmCustomPropertyNumericExpression(column, dialect, key string) string {
 		" THEN CAST(" + text + " AS REAL) END)"
 }
 
-// customFieldDateExpression reads a YYYY-MM-DD value as a moment comparable
-// with the date filters' bounds; any other value yields NULL. SQLite compares
-// text, so the value is spelled the way it binds times.
+// customPropertyRuleIsDate reports whether a rule compares a custom property
+// as a date: date-only operators always do, so saved filters keep working
+// after a field is archived or retyped; between and empty checks do for
+// keys defined as dates. Other operators compare text, as before.
+func customPropertyRuleIsDate(operator model.QueryFilterOperator, definedAsDate bool) bool {
+	switch operator {
+	case model.QueryFilterOpOn, model.QueryFilterOpBefore, model.QueryFilterOpAfter,
+		model.QueryFilterOpOnOrBefore, model.QueryFilterOpOnOrAfter:
+		return true
+	case model.QueryFilterOpBetween, model.QueryFilterOpIsEmpty, model.QueryFilterOpIsNotEmpty:
+		return definedAsDate
+	}
+	return false
+}
+
+// customFieldDateExpression reads a valid YYYY-MM-DD value as midnight UTC,
+// comparable with the date filters' bounds; any other value, including
+// impossible dates such as 2026-02-30, yields NULL instead of failing the
+// query. SQLite compares text, so the value is spelled the way it binds times.
 func customFieldDateExpression(column, dialect, key string) string {
 	if dialect == "postgres" {
 		text := "(" + column + " ->> '" + key + "')"
-		return "(CASE WHEN " + text + " ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN " + text + "::date END)"
+		// Built from parts so out-of-range days never reach a failing cast.
+		date := "(make_date(substr(" + text + ", 1, 4)::int, substr(" + text + ", 6, 2)::int, 1) + (substr(" + text + ", 9, 2)::int - 1))"
+		return "(CASE WHEN " + text + " ~ '^[1-9][0-9]{3}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'" +
+			" THEN CASE WHEN to_char(" + date + ", 'YYYY-MM-DD') = " + text +
+			" THEN " + date + "::timestamp AT TIME ZONE 'UTC' END END)"
 	}
-	return "(date(json_extract(" + column + ", '$." + key + "')) || ' 00:00:00+00:00')"
+	value := "json_extract(" + column + ", '$." + key + "')"
+	// date() normalizes impossible days, so the round trip must match.
+	return "(CASE WHEN json_type(" + column + ", '$." + key + "') = 'text' AND date(" + value + ") = " + value +
+		" THEN " + value + " || ' 00:00:00+00:00' END)"
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -459,6 +460,23 @@ func (s *CRMContactService) UpdateWithActor(
 	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	s.refreshContactSignalMotions(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
+}
+
+// SetCustomFieldValues writes defined field values on a contact key by key
+// and tells open views about the change.
+func (s *CRMContactService) SetCustomFieldValues(ctx context.Context, workspaceID, contactID, actorUserID string, values map[string]any) error {
+	if s.customFields == nil {
+		return errors.New("custom fields are not configured")
+	}
+	if err := s.customFields.SetValues(ctx, workspaceID, model.CustomFieldObjectCRMContact, contactID, values); err != nil {
+		return err
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "crm_contact", EntityID: contactID, WorkspaceID: workspaceID, ActorID: actorUserID})
+	}
+	s.requestCompanySummaryRefresh(ctx, workspaceID, contactID)
+	s.refreshContactSignalMotions(ctx, workspaceID, contactID)
+	return nil
 }
 
 func (s *CRMContactService) refreshContactSignalMotions(ctx context.Context, workspaceID, contactID string) {

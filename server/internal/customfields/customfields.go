@@ -228,7 +228,8 @@ func Fits(def Definition, stored any) bool {
 		if !ok {
 			return false
 		}
-		_, err := time.Parse(DateLayout, strings.TrimSpace(text))
+		// Exact form only, as the date filters read it.
+		_, err := time.Parse(DateLayout, text)
 		return err == nil
 	case TypeBoolean:
 		_, ok := stored.(bool)

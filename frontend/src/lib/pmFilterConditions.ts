@@ -9,6 +9,8 @@ export interface PMFilterCondition {
   operator: PMFilterNumberOperator;
   value?: string;
   values?: [string, string];
+  /** Read from a date rule, so it is written back as one before field types load. */
+  date?: boolean;
 }
 
 export type PMFilterConditions<K extends string> = Partial<Record<K, PMFilterCondition>>;

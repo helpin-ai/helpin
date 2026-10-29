@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -1025,6 +1026,9 @@ type ConversationListParams struct {
 	// target due within model.SupportSLADueSoonWindow ("due_soon"), or any
 	// running SLA target ("active").
 	SLA string
+	// RequestTypeIDs narrows to these request types; "none" matches
+	// conversations without one.
+	RequestTypeIDs []string
 }
 
 // ConversationRepositoryListParams adds resolved actor access data for repository queries.
@@ -1060,8 +1064,8 @@ func (r *SupportConversationRepository) mentionExistsCondition(alias string, use
 			  AND mention_message.metadata LIKE ?
 			  AND mention_message.metadata LIKE ?
 		)))`, alias, alias, model.SupportRelevanceMention, alias, alias, alias), []any{
-				userID, "%mentioned_user_ids%", "%" + userID + "%",
-			}
+			userID, "%mentioned_user_ids%", "%" + userID + "%",
+		}
 	}
 	filterJSON, _ := json.Marshal(map[string][]string{"mentioned_user_ids": {userID}})
 	return fmt.Sprintf(`(EXISTS (
@@ -1079,9 +1083,9 @@ func (r *SupportConversationRepository) mentionExistsCondition(alias string, use
 		  AND mention_message.deleted_at IS NULL
 		  AND mention_message.metadata::jsonb @> ?::jsonb
 	)))`, alias, alias, model.SupportRelevanceMention, alias, alias, alias), []any{
-			userID,
-			string(filterJSON),
-		}
+		userID,
+		string(filterJSON),
+	}
 }
 
 func (r *SupportConversationRepository) conversationListProjectionSelect() string {
@@ -1396,6 +1400,7 @@ func (r *SupportConversationRepository) applyConversationListParams(query *gorm.
 	case "active":
 		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND sla.next_due_at IS NOT NULL)", alias))
 	}
+	query = applyConversationRequestTypeFilter(query, alias, params.RequestTypeIDs)
 	if len(params.AIState) > 0 && params.AIState[0] != "" {
 		if params.AIState[0] == "any" {
 			query = query.Where(fmt.Sprintf("%s.ai_state IS NOT NULL", alias))
@@ -3113,4 +3118,42 @@ func (r *SupportConversationRepository) ClearSnooze(ctx context.Context, workspa
 		return false, fmt.Errorf("clear support snooze: %w", result.Error)
 	}
 	return result.RowsAffected > 0, nil
+}
+
+// applyConversationRequestTypeFilter keeps conversations of the given request
+// types; "none" keeps those without one. Values that are not ids are ignored.
+func applyConversationRequestTypeFilter(query *gorm.DB, alias string, requestTypeIDs []string) *gorm.DB {
+	var ids []string
+	none := false
+	for _, value := range requestTypeIDs {
+		if value == "none" {
+			none = true
+		} else if _, err := uuid.Parse(value); err == nil {
+			ids = append(ids, value)
+		}
+	}
+	switch {
+	case len(ids) > 0 && none:
+		return query.Where(fmt.Sprintf("(%s.request_type_id IN ? OR %s.request_type_id IS NULL)", alias, alias), ids)
+	case len(ids) > 0:
+		return query.Where(fmt.Sprintf("%s.request_type_id IN ?", alias), ids)
+	case none:
+		return query.Where(fmt.Sprintf("%s.request_type_id IS NULL", alias))
+	}
+	return query
+}
+
+// SetRequestType sets or clears a conversation's request type. Merged
+// sources are read-only.
+func (r *SupportConversationRepository) SetRequestType(ctx context.Context, workspaceID, conversationID string, requestTypeID *string) error {
+	result := r.db.WithContext(ctx).Table("support_conversations").
+		Where("id = ? AND workspace_id = ? AND merged_into_id IS NULL", conversationID, workspaceID).
+		Updates(map[string]any{"request_type_id": requestTypeID, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return fmt.Errorf("set conversation request type: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSupportMerged
+	}
+	return nil
 }

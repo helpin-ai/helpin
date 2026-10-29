@@ -743,7 +743,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, crm_company_changed_at DATETIME,
-            custom_fields TEXT NOT NULL DEFAULT '{}',
+            custom_fields TEXT NOT NULL DEFAULT '{}', request_type_id TEXT,
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -961,7 +961,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1,
 			position INTEGER NOT NULL DEFAULT 0, priorities TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}',
 			channels TEXT NOT NULL DEFAULT '{}', company_tier_ids TEXT NOT NULL DEFAULT '{}', company_ids TEXT NOT NULL DEFAULT '{}',
-			first_response_minutes INTEGER, next_response_minutes INTEGER,
+			request_type_ids TEXT NOT NULL DEFAULT '{}', first_response_minutes INTEGER, next_response_minutes INTEGER,
 			resolution_minutes INTEGER, business_hours BOOLEAN NOT NULL DEFAULT 0, pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
 			warn_before_minutes INTEGER, notify_user_ids TEXT NOT NULL DEFAULT '{}', notify_cs_owner BOOLEAN NOT NULL DEFAULT 0, assign_unassigned_user_id TEXT,
 			active_since DATETIME NOT NULL, conditions_changed_at DATETIME, created_by_id TEXT, created_at DATETIME, updated_at DATETIME
@@ -994,6 +994,12 @@ func newTestDB(t *testing.T) *gorm.DB {
 			options TEXT NOT NULL DEFAULT '[]', position INTEGER NOT NULL DEFAULT 0, archived_at DATETIME, created_by_id TEXT,
 			created_at DATETIME, updated_at DATETIME
 		)`,
+		`CREATE TABLE support_request_types (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '', fields TEXT NOT NULL DEFAULT '[]', default_priority TEXT, mailbox_id TEXT,
+			enabled BOOLEAN NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE UNIQUE INDEX idx_support_request_types_workspace_name ON support_request_types (workspace_id, lower(name))`,
 		`CREATE UNIQUE INDEX idx_custom_field_definitions_key ON custom_field_definitions (workspace_id, object_type, key)`,
 		`CREATE TABLE webhook_endpoints (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, url TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',

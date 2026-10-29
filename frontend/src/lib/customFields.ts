@@ -79,6 +79,15 @@ function optionLabel(definition: CustomFieldDefinition, value: string): string {
 }
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// Decimal numbers only, as the server reads numeric text.
+const NUMBER_TEXT_PATTERN = /^-?(\d+\.?\d*|\.\d+)$/;
+
+/** Whether text is an exact, real YYYY-MM-DD date. */
+function isCalendarDate(text: string): boolean {
+  if (!DATE_PATTERN.test(text)) return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
 
 /**
  * Whether a stored value fits the definition. Values that do not fit stay
@@ -88,13 +97,13 @@ export function customFieldValueFits(definition: CustomFieldDefinition, value: u
   switch (definition.field_type) {
     case 'text':
     case 'long_text':
-      return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+      return typeof value === 'string';
     case 'number':
-      return typeof value === 'number' ? Number.isFinite(value) : typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value));
+      return typeof value === 'number' ? Number.isFinite(value) : typeof value === 'string' && NUMBER_TEXT_PATTERN.test(value.trim());
     case 'date':
-      return typeof value === 'string' && DATE_PATTERN.test(value.slice(0, 10));
+      return typeof value === 'string' && isCalendarDate(value);
     case 'boolean':
-      return typeof value === 'boolean' || value === 'true' || value === 'false';
+      return typeof value === 'boolean';
     case 'select':
       return typeof value === 'string' && definition.options.some((option) => option.value === value);
     case 'multi_select':
@@ -109,9 +118,9 @@ export function formatCustomFieldValue(definition: CustomFieldDefinition, value:
     case 'number':
       return Number(value).toLocaleString();
     case 'date':
-      return formatDateValue(String(value).slice(0, 10), String(value));
+      return formatDateValue(value as string, value as string);
     case 'boolean':
-      return value === true || value === 'true' ? 'Yes' : 'No';
+      return value ? 'Yes' : 'No';
     case 'select':
       return optionLabel(definition, value as string);
     case 'multi_select': {

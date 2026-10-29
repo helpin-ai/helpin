@@ -18,6 +18,9 @@ import (
 // ErrCustomFieldNotFound means the field does not exist in the workspace.
 var ErrCustomFieldNotFound = errors.New("custom field not found")
 
+// ErrCustomFieldKeyTaken means another field of the object has the key.
+var ErrCustomFieldKeyTaken = errors.New("custom field key taken")
+
 // CustomFieldRepository stores custom field definitions and reads the JSON
 // values records hold.
 type CustomFieldRepository struct {
@@ -79,6 +82,9 @@ func (r *CustomFieldRepository) CreateDefinition(ctx context.Context, definition
 			definition.ID = uuid.NewString()
 		}
 		if err := tx.Create(definition).Error; err != nil {
+			if isDuplicateKeyError(err) {
+				return ErrCustomFieldKeyTaken
+			}
 			return fmt.Errorf("create custom field: %w", err)
 		}
 		return nil

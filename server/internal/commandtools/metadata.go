@@ -78,6 +78,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"link_support_conversation_task":    RiskLevelRoutine,
 	"set_support_conversation_status":   RiskLevelRoutine,
 	"set_support_conversation_priority": RiskLevelRoutine,
+	"set_support_conversation_fields":   RiskLevelRoutine,
 	// A tier changes what a company is promised.
 	"set_company_sla_tier":          RiskLevelSensitive,
 	"snooze_support_conversation":   RiskLevelRoutine,
@@ -793,6 +794,13 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		InputSchema: requiredEntityIDSchema("conversation_id"),
 	},
 	{
+		CommandName: "support.list_request_types",
+		Alias:       "list_support_request_types",
+		Category:    "Support / Discovery",
+		Description: "List the workspace's request types, such as Bug report, with the conversation fields each asks for, and every active conversation field with its type and options.",
+		InputSchema: closedObjectSchema(map[string]any{}, nil),
+	},
+	{
 		CommandName: "support.list_sla_tiers",
 		Alias:       "list_support_sla_tiers",
 		Category:    "Support / Discovery",
@@ -916,6 +924,17 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 			"conversation_id": optionalIDSchema("Support conversation ID."),
 			"priority":        map[string]any{"type": "string", "enum": []string{"low", "medium", "high", "urgent"}},
 		}, []string{"conversation_id", "priority"}),
+	},
+	{
+		CommandName: "support.set_conversation_fields",
+		Alias:       "set_support_conversation_fields",
+		Category:    "Support / Triage",
+		Description: "Set a support conversation's request type and conversation field values. Fields are set key by key; null clears one. Values must fit the field: text, a number, a YYYY-MM-DD date, true/false, or option values for choice fields. List request types and fields first.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"request_type_id": map[string]any{"type": []string{"string", "null"}, "description": "Request type ID; empty or null clears it. Leave out to keep the type."},
+			"fields":          map[string]any{"type": "object", "description": "Field values by key; null clears a field.", "additionalProperties": true},
+		}, []string{"conversation_id"}),
 	},
 	{
 		CommandName: "support.snooze_conversation",

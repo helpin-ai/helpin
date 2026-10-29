@@ -12,14 +12,18 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
-	MailboxAIRepliesDisabled       bool            `json:"-" gorm:"-"`
-	MergeEmailRecipients           []string        `json:"merge_email_recipients,omitempty" gorm:"-"`
-	MergeHasWidget                 bool            `json:"merge_has_widget,omitempty" gorm:"-"`
-	MergeContinuationID            *string         `json:"merge_continuation_id,omitempty" gorm:"-"`
-	MergeParticipants              []string        `json:"merge_participants,omitempty" gorm:"-"`
-	MergedIntoID                   *string         `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
-	MergeRevision                  int64           `json:"merge_revision" gorm:"not null;default:0"`
-	AnonymizedAt                   *time.Time      `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
+	MailboxAIRepliesDisabled bool       `json:"-" gorm:"-"`
+	MergeEmailRecipients     []string   `json:"merge_email_recipients,omitempty" gorm:"-"`
+	MergeHasWidget           bool       `json:"merge_has_widget,omitempty" gorm:"-"`
+	MergeContinuationID      *string    `json:"merge_continuation_id,omitempty" gorm:"-"`
+	MergeParticipants        []string   `json:"merge_participants,omitempty" gorm:"-"`
+	MergedIntoID             *string    `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
+	MergeRevision            int64      `json:"merge_revision" gorm:"not null;default:0"`
+	AnonymizedAt             *time.Time `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
+	// RequestTypeID and CustomFields are read-only here: their own endpoints
+	// validate and write them, and inserts leave the column defaults.
+	RequestTypeID                  *string         `json:"request_type_id,omitempty" gorm:"type:uuid;->"`
+	CustomFields                   JSONB           `json:"custom_fields,omitempty" gorm:"type:jsonb;not null;default:'{}';->"`
 	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	MailboxID                      *string         `json:"mailbox_id" gorm:"type:uuid;index"`

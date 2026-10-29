@@ -82,6 +82,51 @@ function CommitInput({
 }
 
 /**
+ * Multiple choice editor. Clicks build on the local selection, so quick
+ * toggles are not lost while an earlier save is still refreshing the value.
+ */
+function MultiSelectEditor({
+  definition,
+  saved,
+  display,
+  mismatch,
+  onSave,
+}: {
+  definition: CustomFieldDefinition
+  saved: string[]
+  display: string | null
+  mismatch?: string
+  onSave: (value: unknown) => void
+}) {
+  const savedKey = saved.join('\u0000')
+  const [selection, setSelection] = useState(saved)
+  const [synced, setSynced] = useState(savedKey)
+  if (savedKey !== synced) {
+    setSynced(savedKey)
+    setSelection(saved)
+  }
+  const shown = selection.length > 0 ? definition.options.filter((option) => selection.includes(option.value)).map((option) => option.label).join(', ') : null
+  return (
+    <QuietDropdown
+      label={definition.display_label}
+      multiple
+      selected={selection}
+      options={definition.options}
+      onSelect={(option) => {
+        const next = selection.includes(option) ? selection.filter((item) => item !== option) : [...selection, option]
+        setSelection(next)
+        onSave(next.length > 0 ? next : null)
+      }}
+      trigger={
+        <button type="button" aria-label={definition.display_label} className={triggerClassName} title={mismatch ?? display ?? undefined}>
+          <span className={cn('truncate', !shown && 'text-muted-foreground')}>{shown ?? 'None'}</span>
+        </button>
+      }
+    />
+  )
+}
+
+/**
  * Edits one defined field's value. A value that does not fit the field shows
  * as empty with its raw text in a hint; saving replaces it.
  */
@@ -159,25 +204,15 @@ export function CustomFieldEditor({
         />
       )
     }
-    case 'multi_select': {
-      const selected = fits ? (value as string[]) : []
+    case 'multi_select':
       return (
-        <QuietDropdown
-          label={definition.display_label}
-          multiple
-          selected={selected}
-          options={definition.options}
-          onSelect={(option) => {
-            const next = selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option]
-            onSave(next.length > 0 ? next : null)
-          }}
-          trigger={
-            <button type="button" aria-label={definition.display_label} className={triggerClassName} title={mismatch ?? display ?? undefined}>
-              <span className={cn('truncate', !display && 'text-muted-foreground')}>{display ?? 'None'}</span>
-            </button>
-          }
+        <MultiSelectEditor
+          definition={definition}
+          saved={fits ? (value as string[]) : []}
+          display={display}
+          mismatch={mismatch}
+          onSave={onSave}
         />
       )
-    }
   }
 }
