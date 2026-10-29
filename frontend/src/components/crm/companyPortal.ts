@@ -7,11 +7,13 @@ export const portalRoleChoices: { value: PortalRoleChoice; label: string }[] = [
   { value: 'default', label: 'Company default' },
   { value: 'requester', label: 'Requester' },
   { value: 'member', label: 'Member' },
+  { value: 'admin', label: 'Admin' },
 ];
 
 export const portalRoleLabels: Record<CustomerPortalRole, string> = {
   requester: 'Requester',
   member: 'Member',
+  admin: 'Admin',
 };
 
 /** emailOnDomain mirrors the server: the address is on the domain or a subdomain; the domain may be a URL. */

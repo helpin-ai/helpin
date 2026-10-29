@@ -22,7 +22,7 @@ function readStoredScope(slug: string) {
  */
 export function usePortalRequestScope(slug: string, companies: CustomerPortalCompany[], copiedEnabled = false) {
   const [stored, setStored] = useState(() => readStoredScope(slug))
-  const memberCompanies = companies.filter((company) => company.role === 'member')
+  const memberCompanies = companies.filter((company) => company.role === 'member' || company.role === 'admin')
   const company = memberCompanies.find((item) => item.id === stored)
   const key = company ? company.id : copiedEnabled && stored === COPIED_SCOPE ? COPIED_SCOPE : MINE_SCOPE
   const select = useCallback((next: string) => {

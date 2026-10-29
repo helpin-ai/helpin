@@ -1,4 +1,5 @@
 import { PortalRatingCard } from './PortalRatingCard'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select'
 import { PortalCCEditor, PortalRequestCC } from './PortalCCEditor'
 import { usePortalCCOptions } from './usePortalCCOptions'
 import { PortalRequestTypeFields, PortalRequestTypePicker } from './PortalRequestTypeFields'
@@ -52,6 +53,7 @@ import {
   customerPortalService,
   type CustomerPortalAttachmentPolicy,
   type CustomerPortalRequestType,
+  type CustomerPortalTeam,
   type CustomerPortalConfiguration,
   type CustomerPortalRequest,
   type CustomerPortalRequestDetail,
@@ -714,12 +716,17 @@ export function CustomerPortalHome() {
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
         title={companyName ? `${companyName} requests` : scopeKey === COPIED_SCOPE ? 'Copied to you' : 'Your requests'}
-        actions={hasHelp || configuration?.intake_enabled || configuration?.assistant_enabled ? (
+        actions={hasHelp || configuration?.intake_enabled || configuration?.assistant_enabled || requestScope.company?.role === 'admin' ? (
           <>
             {configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
             {hasHelp ? (
               <QuietTextAction asChild>
                 <Link to="/portal/$slug/help" params={{ slug }}>Help articles</Link>
+              </QuietTextAction>
+            ) : null}
+            {requestScope.company?.role === 'admin' ? (
+              <QuietTextAction asChild>
+                <Link to="/portal/$slug/team/$companyId" params={{ slug, companyId: requestScope.company.id }}>Team</Link>
               </QuietTextAction>
             ) : null}
             {configuration?.intake_enabled ? (
@@ -1033,6 +1040,160 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
           )}
         </>
       ) : null}
+    </PortalShell>
+  )
+}
+
+// ── Company team (company admins) ───────────────────────────────────────
+
+const TEAM_ROLES: Array<{ value: 'admin' | 'member' | 'requester'; label: string; description: string }> = [
+  { value: 'admin', label: 'Admin', description: 'Sees company requests and manages people' },
+  { value: 'member', label: 'Member', description: 'Sees every company request' },
+  { value: 'requester', label: 'Requester', description: 'Sees only their own requests' },
+]
+
+function teamRoleLabel(role: string) {
+  return TEAM_ROLES.find((item) => item.value === role)?.label ?? 'No role'
+}
+
+function portalTeamErrorMessage(error: unknown, fallback: string) {
+  return error instanceof CustomerPortalApiError && error.status < 500 && error.message ? error.message : fallback
+}
+
+/** A company's people, for its portal admins: invite, change roles, remove. */
+export function CustomerPortalTeamPage({ companyId }: { companyId: string }) {
+  const { configuration, handleSessionError, slug, status } = usePortal()
+  const navigate = useNavigate()
+  const [team, setTeam] = useState<CustomerPortalTeam | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [role, setRole] = useState<'member' | 'requester'>('member')
+  const [invited, setInvited] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    let active = true
+    customerPortalService.team(slug, companyId)
+      .then((result) => { if (active) setTeam(result) })
+      .catch((reason) => {
+        if (!active || handleSessionError(reason)) return
+        setError(portalTeamErrorMessage(reason, 'The team could not be loaded.'))
+      })
+    return () => { active = false }
+  }, [companyId, handleSessionError, slug, status])
+
+  if (status !== 'authenticated') return null
+  const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
+
+  const run = async (action: () => Promise<CustomerPortalTeam>, done?: () => void) => {
+    setBusy(true)
+    setActionError(null)
+    try {
+      const next = await action()
+      setTeam(next)
+      done?.()
+      // Stepping down as admin ends access to this page.
+      if (!next.members.some((member) => member.you && member.role === 'admin')) backToRequests()
+    } catch (reason) {
+      if (!handleSessionError(reason)) setActionError(portalTeamErrorMessage(reason, 'That change could not be saved. Please try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const invite = (event: FormEvent) => {
+    event.preventDefault()
+    const address = email.trim()
+    if (!address) return
+    void run(() => customerPortalService.inviteColleague(slug, companyId, { email: address, name: name.trim(), role }), () => {
+      setInvited(address)
+      setEmail('')
+      setName('')
+    })
+  }
+
+  return (
+    <PortalShell account={<PortalAccount />} width="wide">
+      <QuietPageHeader
+        navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
+        title={team ? `${team.company_name} team` : 'Team'}
+        description="People at your company who use this support portal."
+      />
+      {error ? (
+        <QuietEmptyState className="mt-8" title={error} description="Only company admins manage the team." action={<QuietTextAction onClick={backToRequests}>All requests</QuietTextAction>} />
+      ) : !team ? (
+        <div className="mt-8 space-y-3" role="status" aria-label="Loading team">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+        </div>
+      ) : (
+        <>
+          <ul className="mt-6 divide-y divide-quiet-divider-light border-y border-quiet-divider-strong" aria-label="Team members">
+            {team.members.map((member) => (
+              <li key={member.contact_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13.5px] font-medium text-quiet-text-primary">
+                    {member.name || member.email}
+                    {member.you ? <span className="ml-1.5 text-[12px] font-normal text-quiet-text-tertiary">(you)</span> : null}
+                  </div>
+                  <div className="truncate text-[12px] text-quiet-text-tertiary">
+                    {[member.email, member.can_sign_in ? null : 'Cannot sign in', member.last_signed_in_at ? `Signed in ${formatPortalRelativeTime(member.last_signed_in_at)}` : 'Never signed in'].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <Select value={member.role || 'requester'} disabled={busy} onValueChange={(value) => void run(() => customerPortalService.setColleagueRole(slug, companyId, member.contact_id, value as 'admin' | 'member' | 'requester'))}>
+                  <SelectTrigger aria-label={`Role of ${member.name || member.email}`} variant="underline" className="w-36 px-0.5"><SelectValue>{teamRoleLabel(member.role)}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    {TEAM_ROLES.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <QuietTextAction
+                  type="button"
+                  disabled={busy}
+                  aria-label={`Remove ${member.name || member.email} from ${team.company_name}`}
+                  onClick={() => void run(() => customerPortalService.removeColleague(slug, companyId, member.contact_id))}
+                >
+                  Remove
+                </QuietTextAction>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[12px] text-quiet-text-tertiary">Removing someone keeps their own requests; they stop seeing the company’s. {TEAM_ROLES.map((item) => `${item.label}: ${item.description.toLowerCase()}`).join('. ')}.</p>
+          {actionError ? <PortalError className="mt-3">{actionError}</PortalError> : null}
+
+          <section className="mt-10 border-t border-quiet-divider-strong pt-6" aria-labelledby="team-invite-heading">
+            <h2 id="team-invite-heading" className="text-[14px] font-semibold text-quiet-text-primary">Invite a colleague</h2>
+            {team.can_invite ? (
+              <form className="mt-4 grid max-w-2xl gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_9rem]" onSubmit={invite}>
+                <PortalField id="team-invite-email" label="Email address">
+                  <QuietUnderlineInput id="team-invite-email" type="email" required value={email} placeholder={team.any_domain || !team.domains[0] ? 'name@company.com' : `name@${team.domains[0]}`} onChange={(event) => { setEmail(event.target.value); setInvited(null) }} />
+                </PortalField>
+                <PortalField id="team-invite-name" label="Name (optional)">
+                  <QuietUnderlineInput id="team-invite-name" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} />
+                </PortalField>
+                <PortalField id="team-invite-role" label="Role">
+                  <Select value={role} onValueChange={(value) => setRole(value as 'member' | 'requester')}>
+                    <SelectTrigger id="team-invite-role" aria-label="Role" variant="underline" className="w-full px-0.5"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="requester">Requester</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </PortalField>
+                <div className="flex items-center gap-4 sm:col-span-3">
+                  <QuietPrimaryAction type="submit" disabled={busy}>{busy ? 'Inviting…' : 'Send invitation'}</QuietPrimaryAction>
+                  {invited ? <p role="status" className="text-[12.5px] text-quiet-text-tertiary">Invited {invited}. They’ll get a sign-in link by email.</p> : null}
+                </div>
+                {!team.any_domain && team.domains[0] ? <p className="text-[12px] text-quiet-text-tertiary sm:col-span-3">You can invite addresses ending in @{team.domains[0]}.</p> : null}
+              </form>
+            ) : (
+              <p className="mt-2 text-sm text-quiet-text-tertiary">{configuration?.branding.name || 'Support'} adds people for your company. Ask them to turn on invitations if you’d like to add colleagues yourself.</p>
+            )}
+          </section>
+        </>
+      )}
     </PortalShell>
   )
 }

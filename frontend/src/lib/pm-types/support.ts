@@ -1569,7 +1569,8 @@ export interface CustomerPortalContactAccess {
 }
 
 /** Requesters see their own requests; members see every request from their company. */
-export type CustomerPortalRole = 'requester' | 'member';
+/** A contact's company role; admin is given to people, never as a company default. */
+export type CustomerPortalRole = 'requester' | 'member' | 'admin';
 
 export interface CustomerPortalCompanyContact {
   id: string;
@@ -1594,6 +1595,21 @@ export interface CustomerPortalCompanyAccess {
   portal_enabled: boolean;
   /** How many of the company's requests members could see. */
   request_count: number;
+  /** Company admins may invite colleagues; any_domain lifts the company domain rule. */
+  admin_invites?: boolean;
+  invite_any_domain?: boolean;
+  /** Recent changes company admins made to the company's people. */
+  activity?: CustomerPortalCompanyEvent[];
+}
+
+export interface CustomerPortalCompanyEvent {
+  id: string;
+  event_type: 'invited' | 'role_changed' | 'removed';
+  subject_email: string;
+  before?: string | null;
+  after?: string | null;
+  actor_name?: string;
+  occurred_at: string;
 }
 
 export interface CustomerPortalCompanyAudience {

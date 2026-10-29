@@ -82,7 +82,7 @@ export interface CustomerPortalCompany {
   id: string
   name: string
   /** Requesters see their own requests; members see every company request. */
-  role: 'requester' | 'member'
+  role: 'requester' | 'member' | 'admin'
 }
 
 export interface CustomerPortalSession {
@@ -92,6 +92,24 @@ export interface CustomerPortalSession {
 
 /** Which requests a list shows: the customer's own, or one company's. */
 export type CustomerPortalRequestScope = { kind: 'mine' } | { kind: 'company'; companyId: string } | { kind: 'copied' }
+
+/** A company's people as its portal admins manage them. */
+export interface CustomerPortalTeam {
+  company_id: string
+  company_name: string
+  can_invite: boolean
+  domains: string[]
+  any_domain: boolean
+  members: Array<{
+    contact_id: string
+    name: string
+    email: string
+    role: 'requester' | 'member' | 'admin' | ''
+    can_sign_in: boolean
+    last_signed_in_at?: string | null
+    you: boolean
+  }>
+}
 
 /** Whom a customer may copy: nobody (""), colleagues, or anyone. */
 export interface CustomerPortalCCOptions {
@@ -360,6 +378,14 @@ export const customerPortalService = {
   },
   setCC: (slug: string, reference: string, ccEmails: string[], base: string[]) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/cc`, { method: 'PUT', body: JSON.stringify({ cc_emails: ccEmails, base_cc: base }) }),
+  team: (slug: string, companyId: string) =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team`),
+  inviteColleague: (slug: string, companyId: string, invite: { email: string; name: string; role: 'member' | 'requester' }) =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team/invites`, { method: 'POST', body: JSON.stringify(invite) }),
+  setColleagueRole: (slug: string, companyId: string, contactId: string, role: 'requester' | 'member' | 'admin') =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team/${encodeURIComponent(contactId)}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  removeColleague: (slug: string, companyId: string, contactId: string) =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team/${encodeURIComponent(contactId)}`, { method: 'DELETE' }),
   ccOptions: (slug: string) =>
     portalRequest<CustomerPortalCCOptions>(slug, '/cc-options'),
   rate: (slug: string, reference: string, rating: number, comment: string) =>

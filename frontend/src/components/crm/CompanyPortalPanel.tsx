@@ -7,6 +7,7 @@ import {
   useCompanyPortalAccess,
   useSetCompanyPortalMember,
   useSetCompanyPortalRole,
+  useSetCompanyTeamSettings,
   useSetContactPortalAccess,
   useSetContactPortalRole,
 } from '@/hooks/queries/useSupport';
@@ -51,6 +52,7 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
   const access = useCompanyPortalAccess(workspaceId, companyId);
   const setRole = useSetCompanyPortalRole(workspaceId, companyId);
   const addDomain = useAddCompanyPortalDomainMembers(workspaceId, companyId);
+  const teamSettings = useSetCompanyTeamSettings(workspaceId, companyId);
 
   if (access.isLoading) {
     return (
@@ -120,6 +122,50 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
               </Link>
             </p>
           )}
+        </section>
+        <section aria-labelledby="company-portal-admins" className="border-b border-border/60 px-4 py-4 sm:px-6 lg:px-8">
+          <h3 id="company-portal-admins" className="text-sm font-medium text-quiet-text-primary">Company admins</h3>
+          <p className="mt-1 max-w-[680px] text-xs leading-5 text-muted-foreground">
+            Give a contact the Admin role to let them manage the company's people in the portal: change roles and remove people. Every change shows below and can be undone here.
+          </p>
+          <div className="mt-3 space-y-2">
+            <label className="flex max-w-[680px] items-center justify-between gap-4 text-sm">
+              <span>Admins can invite colleagues</span>
+              <Switch
+                checked={Boolean(data.admin_invites)}
+                disabled={teamSettings.isPending}
+                onCheckedChange={(adminInvites) => teamSettings.mutate({ admin_invites: adminInvites, invite_any_domain: Boolean(data.invite_any_domain) })}
+                aria-label="Company admins can invite colleagues"
+              />
+            </label>
+            <label className="flex max-w-[680px] items-center justify-between gap-4 text-sm">
+              <span>
+                Invite any address
+                <span className="block text-xs text-muted-foreground">{domain ? `Off: only addresses on ${domain}.` : 'Off: only addresses on the company domain, which this company does not have yet.'}</span>
+              </span>
+              <Switch
+                checked={Boolean(data.invite_any_domain)}
+                disabled={teamSettings.isPending || !data.admin_invites}
+                onCheckedChange={(anyDomain) => teamSettings.mutate({ admin_invites: Boolean(data.admin_invites), invite_any_domain: anyDomain })}
+                aria-label="Company admins can invite any address"
+              />
+            </label>
+          </div>
+          {data.activity?.length ? (
+            <ol className="mt-4 max-w-[680px] space-y-1.5" aria-label="Changes by company admins">
+              {data.activity.map((event) => (
+                <li key={event.id} className="text-xs text-muted-foreground">
+                  <span className="text-foreground">{event.actor_name || 'A company admin'}</span>{' '}
+                  {event.event_type === 'invited'
+                    ? `invited ${event.subject_email}${event.after ? ` as ${portalRoleLabels[event.after as CustomerPortalRole] ?? event.after}` : ''}`
+                    : event.event_type === 'removed'
+                      ? `removed ${event.subject_email}`
+                      : `made ${event.subject_email} ${portalRoleLabels[event.after as CustomerPortalRole] ?? event.after}`}
+                  {' · '}{formatDistanceToNowStrict(new Date(event.occurred_at), { addSuffix: true })}
+                </li>
+              ))}
+            </ol>
+          ) : null}
         </section>
         {data.contacts.length === 0 ? (
           <QuietEmptyState

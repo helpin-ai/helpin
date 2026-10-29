@@ -406,6 +406,8 @@ export const supportService = {
     api.get<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`),
   setCompanyPortalRole: (workspaceId: string, companyId: string, defaultRole: CustomerPortalRole | null) =>
     api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`, { default_role: defaultRole }),
+  setCompanyTeamSettings: (workspaceId: string, companyId: string, settings: { admin_invites: boolean; invite_any_domain: boolean }) =>
+    api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/team-settings${qs(workspaceId)}`, settings),
   addCompanyPortalDomainMembers: (workspaceId: string, companyId: string) =>
     api.post<{ added: number; company: CustomerPortalCompanyAccess }>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/members/from-domain${qs(workspaceId)}`, {}),
   setCompanyPortalMember: (workspaceId: string, companyId: string, contactId: string, member: boolean) =>

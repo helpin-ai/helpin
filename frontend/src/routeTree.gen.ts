@@ -36,6 +36,7 @@ import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authe
 import { Route as AuthenticatedGithubInstalledRouteImport } from './routes/_authenticated/github/installed'
 import { Route as PortalSlugHelpIndexRouteImport } from './routes/portal/$slug/help.index'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
+import { Route as PortalSlugTeamCompanyIdRouteImport } from './routes/portal/$slug/team.$companyId'
 import { Route as PortalSlugRequestsReferenceRouteImport } from './routes/portal/$slug/requests/$reference'
 import { Route as PortalSlugHelpArticleIdRouteImport } from './routes/portal/$slug/help.$articleId'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
@@ -285,6 +286,11 @@ const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedWSlugRoute,
+} as any)
+const PortalSlugTeamCompanyIdRoute = PortalSlugTeamCompanyIdRouteImport.update({
+  id: '/team/$companyId',
+  path: '/team/$companyId',
+  getParentRoute: () => PortalSlugRoute,
 } as any)
 const PortalSlugRequestsReferenceRoute =
   PortalSlugRequestsReferenceRouteImport.update({
@@ -997,6 +1003,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/portal/$slug/help/$articleId': typeof PortalSlugHelpArticleIdRoute
   '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
+  '/portal/$slug/team/$companyId': typeof PortalSlugTeamCompanyIdRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/portal/$slug/help/': typeof PortalSlugHelpIndexRoute
   '/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
@@ -1132,6 +1139,7 @@ export interface FileRoutesByTo {
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/portal/$slug/help/$articleId': typeof PortalSlugHelpArticleIdRoute
   '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
+  '/portal/$slug/team/$companyId': typeof PortalSlugTeamCompanyIdRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
   '/portal/$slug/help': typeof PortalSlugHelpIndexRoute
   '/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
@@ -1272,6 +1280,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/portal/$slug/help/$articleId': typeof PortalSlugHelpArticleIdRoute
   '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
+  '/portal/$slug/team/$companyId': typeof PortalSlugTeamCompanyIdRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/portal/$slug/help/': typeof PortalSlugHelpIndexRoute
   '/_authenticated/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
@@ -1415,6 +1424,7 @@ export interface FileRouteTypes {
     | '/w/$slug/team-goals'
     | '/portal/$slug/help/$articleId'
     | '/portal/$slug/requests/$reference'
+    | '/portal/$slug/team/$companyId'
     | '/w/$slug/'
     | '/portal/$slug/help/'
     | '/w/$slug/automation/activity'
@@ -1550,6 +1560,7 @@ export interface FileRouteTypes {
     | '/w/$slug/team-goals'
     | '/portal/$slug/help/$articleId'
     | '/portal/$slug/requests/$reference'
+    | '/portal/$slug/team/$companyId'
     | '/w/$slug'
     | '/portal/$slug/help'
     | '/w/$slug/automation/activity'
@@ -1689,6 +1700,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/team-goals'
     | '/portal/$slug/help/$articleId'
     | '/portal/$slug/requests/$reference'
+    | '/portal/$slug/team/$companyId'
     | '/_authenticated/w/$slug/'
     | '/portal/$slug/help/'
     | '/_authenticated/w/$slug/automation/activity'
@@ -2001,6 +2013,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/'
       preLoaderRoute: typeof AuthenticatedWSlugIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/portal/$slug/team/$companyId': {
+      id: '/portal/$slug/team/$companyId'
+      path: '/team/$companyId'
+      fullPath: '/portal/$slug/team/$companyId'
+      preLoaderRoute: typeof PortalSlugTeamCompanyIdRouteImport
+      parentRoute: typeof PortalSlugRoute
     }
     '/portal/$slug/requests/$reference': {
       id: '/portal/$slug/requests/$reference'
@@ -3193,6 +3212,7 @@ interface PortalSlugRouteChildren {
   PortalSlugIndexRoute: typeof PortalSlugIndexRoute
   PortalSlugHelpArticleIdRoute: typeof PortalSlugHelpArticleIdRoute
   PortalSlugRequestsReferenceRoute: typeof PortalSlugRequestsReferenceRoute
+  PortalSlugTeamCompanyIdRoute: typeof PortalSlugTeamCompanyIdRoute
   PortalSlugHelpIndexRoute: typeof PortalSlugHelpIndexRoute
 }
 
@@ -3203,6 +3223,7 @@ const PortalSlugRouteChildren: PortalSlugRouteChildren = {
   PortalSlugIndexRoute: PortalSlugIndexRoute,
   PortalSlugHelpArticleIdRoute: PortalSlugHelpArticleIdRoute,
   PortalSlugRequestsReferenceRoute: PortalSlugRequestsReferenceRoute,
+  PortalSlugTeamCompanyIdRoute: PortalSlugTeamCompanyIdRoute,
   PortalSlugHelpIndexRoute: PortalSlugHelpIndexRoute,
 }
 

@@ -349,6 +349,20 @@ export function useSetCompanyPortalRole(workspaceId: string, companyId: string) 
   });
 }
 
+export function useSetCompanyTeamSettings(workspaceId: string, companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (settings: { admin_invites: boolean; invite_any_domain: boolean }) =>
+      unwrap(await supportService.setCompanyTeamSettings(workspaceId, companyId, settings)),
+    onSuccess: (access) => {
+      queryClient.setQueryData(queryKeys.support.portalCompanyAccess(workspaceId, companyId), access);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update company admin settings', { description: error.message });
+    },
+  });
+}
+
 export function useAddCompanyPortalDomainMembers(workspaceId: string, companyId: string) {
   const queryClient = useQueryClient();
   return useMutation({

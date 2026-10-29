@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   setMember: vi.fn(),
   setAccess: vi.fn(),
   setRole: vi.fn(),
+  setTeamSettings: vi.fn(),
 }));
 
 vi.mock('@/hooks/queries/useSupport', () => ({
@@ -19,6 +20,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useSetCompanyPortalRole: () => ({ mutate: mocks.setCompanyRole, isPending: false }),
   useAddCompanyPortalDomainMembers: () => ({ mutate: mocks.addDomain, isPending: false }),
   useSetCompanyPortalMember: () => ({ mutate: mocks.setMember, isPending: false }),
+  useSetCompanyTeamSettings: () => ({ mutate: mocks.setTeamSettings, isPending: false }),
   useSetContactPortalAccess: (_workspaceId: string, contactId: string) => ({ mutate: (value: unknown) => mocks.setAccess(contactId, value), isPending: false }),
   useSetContactPortalRole: (_workspaceId: string, contactId: string) => ({ mutate: (value: unknown) => mocks.setRole(contactId, value), isPending: false }),
 }));
@@ -200,5 +202,26 @@ describe('CompanyPortalPanel', () => {
     const retry = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Try again');
     await act(async () => retry!.click());
     expect(mocks.refetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe('CompanyPortalPanel company admins', () => {
+  it('turns admin invitations on and lists what admins changed', async () => {
+    mocks.access.mockReturnValue({
+      data: companyAccess({
+        admin_invites: false,
+        invite_any_domain: false,
+        activity: [{ id: 'e1', event_type: 'invited', subject_email: 'dan@acme.test', after: 'member', actor_name: 'Alice', occurred_at: new Date().toISOString() }],
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    await render();
+    const anyDomain = container.querySelector<HTMLButtonElement>('[aria-label="Company admins can invite any address"]')!;
+    expect(anyDomain.disabled).toBe(true);
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Company admins can invite colleagues"]')!.click());
+    expect(mocks.setTeamSettings).toHaveBeenCalledWith({ admin_invites: true, invite_any_domain: false });
+    expect(container.textContent).toContain('Alice invited dan@acme.test as Member');
+    expect(container.textContent).toContain('Off: only addresses on acme.test.');
   });
 });
