@@ -158,7 +158,7 @@ type UpdateCRMContactRequest struct {
 type CRMContactListFilters struct {
 	// DateKeys are custom properties defined as date fields; filters on them
 	// compare dates. Set by the service from the field definitions.
-	DateKeys map[string]bool `json:"-"`
+	DateKeys       map[string]bool `json:"-"`
 	LifecycleStage *string
 	LeadStatus     *string
 	OwnerMemberID  *string
