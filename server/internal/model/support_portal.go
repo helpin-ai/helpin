@@ -15,6 +15,13 @@ const (
 	// SupportPortalAuditCompanyRequestViewed records a colleague opening a
 	// request through company visibility.
 	SupportPortalAuditCompanyRequestViewed = "company_request_viewed"
+	// SupportPortalAuditCopiedRequestViewed is a copied person opening a
+	// request; SupportPortalAuditCCUpdated a change to who is copied.
+	SupportPortalAuditCopiedRequestViewed = "copied_request_viewed"
+	SupportPortalAuditCCUpdated           = "cc_updated"
+	// SupportPortalAuditCCNotified records the email telling a newly copied
+	// person about a request; it also throttles those emails.
+	SupportPortalAuditCCNotified = "cc_notified"
 
 	SupportPortalActorCustomer = "customer"
 	SupportPortalActorUser     = "user"

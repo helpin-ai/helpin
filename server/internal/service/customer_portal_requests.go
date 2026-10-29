@@ -147,6 +147,9 @@ func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *
 	if intake, err = normalizePortalIntake(intake); err != nil {
 		return err
 	}
+	if len(typed.CCEmails) > 0 {
+		return invalidPortalCC("sign in to copy people on a request")
+	}
 	requestType, fields, err := s.inbox.requestTypes.ValidateSubmission(ctx, ws.ID, typed.RequestTypeID, typed.Fields)
 	if err != nil {
 		return err
@@ -224,6 +227,10 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	if err != nil {
 		return nil, err
 	}
+	cc, err := s.normalizeCC(ctx, access, access.Identity.Email, typed.CCEmails, nil)
+	if err != nil {
+		return nil, err
+	}
 	identity := access.Identity
 	draft, err := s.routeNewRequest(ctx, access.Workspace.ID, identity.Email, identity.DisplayName, requestType)
 	if err != nil {
@@ -232,6 +239,7 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	draft.Identity = &identity
 	draft.Subject, draft.Description, draft.AttachmentIDs, draft.UploadSessionID, draft.Intake = subject, description, attachmentIDs, access.Session.ID, intake
 	applyPortalRequestType(&draft, requestType, fields)
+	draft.EmailCC = cc
 	if portalAIQueueAllowed(access.Workspace.Settings, draft.OwnerID) {
 		draft.DispatchAIMode = access.Workspace.Settings.PortalAIMode
 	}
@@ -241,6 +249,12 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	}
 	s.publishNewRequest(ctx, conversation)
 	s.recordIntakeCoverageSignal(&access.Workspace, conversation, intake)
+	if len(cc) > 0 {
+		s.recordPortalCCChange(ctx, access, conversation, cc, nil)
+		for _, address := range cc {
+			s.sendCopyNotice(ctx, access, conversation, request.Reference, address)
+		}
+	}
 	return request, nil
 }
 

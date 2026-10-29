@@ -78,6 +78,8 @@ type PortalRequestDraft struct {
 	Priority      string
 	RequestTypeID *string
 	CustomFields  map[string]any
+	// EmailCC are people the requester copies.
+	EmailCC []string
 }
 
 // PortalLinkCounts summarizes recently issued sign-in links.
@@ -150,6 +152,9 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 		Status: "open", Priority: draft.Priority, Channel: "portal", Source: "portal",
 		CustomerName: draft.DisplayName, CustomerEmail: &email, PortalVisible: draft.Identity != nil,
 		MailboxID: draft.MailboxID, AssignedUserID: draft.OwnerID, CRMContactID: draft.CRMContactID, FlowState: draft.FlowState,
+	}
+	if len(draft.EmailCC) > 0 {
+		conversation.EmailCC = model.DocsStringArray(draft.EmailCC)
 	}
 	var reference string
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

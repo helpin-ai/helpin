@@ -21,7 +21,7 @@ import { SettingsSaveStatus } from './SettingsSaveStatus';
 type PortalSettingsDraft = Pick<
   SupportInboxSettings,
   'portal_enabled' | 'portal_intake_enabled' | 'portal_anonymous_intake_enabled' | 'portal_show_reply_by'
-> & { widget_help_space_ids: string[] } & { portal_access_mode: CustomerPortalAccessMode; portal_ai_mode: 'off' | 'internal_note'; portal_ai_agent_id: string };
+> & { portal_cc_mode: '' | 'colleagues' | 'any' } & { widget_help_space_ids: string[] } & { portal_access_mode: CustomerPortalAccessMode; portal_ai_mode: 'off' | 'internal_note'; portal_ai_agent_id: string };
 
 const accessModes: { value: CustomerPortalAccessMode; label: string; description: string }[] = [
   {
@@ -70,6 +70,7 @@ export function CustomerPortalSettings({ workspaceId, workspaceSlug, editable }:
     portal_intake_enabled: settings.portal_intake_enabled ?? false,
     portal_anonymous_intake_enabled: settings.portal_anonymous_intake_enabled ?? false,
     portal_show_reply_by: settings.portal_show_reply_by ?? false,
+    portal_cc_mode: settings.portal_cc_mode ?? '',
     portal_access_mode: settings.portal_access_mode === 'any_verified_email' || settings.portal_access_mode === 'company_members' ? settings.portal_access_mode : 'approved_contacts',
     // The retired customer-reply mode became private suggestions on the server.
     portal_ai_mode: settings.portal_ai_mode === 'off' || !settings.portal_ai_mode ? 'off' : 'internal_note',
@@ -192,6 +193,20 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
               <p className="mt-1 text-sm text-muted-foreground">While an SLA response target is running, show its due time on the request. Overdue targets and policy details stay internal.</p>
             </div>
             <Switch id="portal-show-reply-by" checked={draft.portal_show_reply_by} disabled={!editable} onCheckedChange={(value) => setDraft((current) => ({ ...current, portal_show_reply_by: value }))} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 py-5">
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="portal-cc-mode" className="text-sm font-medium">Copying people</Label>
+              <p className="mt-1 text-sm text-muted-foreground">Let requesters copy people on a request. Copied people get your replies by email, and those who can sign in see the request under Copied to me.</p>
+            </div>
+            <Select value={draft.portal_cc_mode || 'off'} onValueChange={(value) => setDraft((current) => ({ ...current, portal_cc_mode: value === 'off' ? '' : value as PortalSettingsDraft['portal_cc_mode'] }))}>
+              <SelectTrigger id="portal-cc-mode" aria-label="Who requesters can copy" className="w-56" disabled={!editable}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">Off</SelectItem>
+                <SelectItem value="colleagues">Company colleagues only</SelectItem>
+                <SelectItem value="any">Any email address</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         {deliveryUnavailable && (

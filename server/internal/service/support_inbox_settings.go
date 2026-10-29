@@ -369,6 +369,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.PortalShowReplyBy != nil {
 		current.PortalShowReplyBy = *patch.PortalShowReplyBy
 	}
+	if patch.PortalCCMode != nil {
+		current.PortalCCMode = strings.TrimSpace(*patch.PortalCCMode)
+	}
 	if patch.HelpAssistantEnabled != nil {
 		current.HelpAssistantEnabled = *patch.HelpAssistantEnabled
 	}
@@ -1274,6 +1277,11 @@ func (s *SupportInboxService) validatePortalSettings(ctx context.Context, worksp
 	case model.SupportPortalAccessModeApprovedContacts, model.SupportPortalAccessModeAnyVerifiedEmail, model.SupportPortalAccessModeCompanyMembers:
 	default:
 		return fmt.Errorf("unsupported portal access mode")
+	}
+	switch merged.PortalCCMode {
+	case "", model.SupportPortalCCColleagues, model.SupportPortalCCAny:
+	default:
+		return fmt.Errorf("portal_cc_mode must be empty, colleagues or any")
 	}
 	if merged.PortalAIMode != model.SupportPortalAIModeOff && merged.PortalAIMode != model.SupportPortalAIModeInternalNote {
 		return fmt.Errorf("portal_ai_mode must be off or internal_note: people answer portal requests, and AI can only suggest replies privately")

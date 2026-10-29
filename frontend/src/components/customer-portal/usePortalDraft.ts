@@ -6,6 +6,8 @@ type PortalDraft = {
   /** The chosen request type and its field values, as typed. */
   requestTypeId?: string
   fields?: Record<string, string | string[]>
+  /** People to copy on the request. */
+  cc?: string[]
 }
 
 function readFields(value: unknown): Record<string, string | string[]> {
@@ -16,13 +18,14 @@ function readFields(value: unknown): Record<string, string | string[]> {
 
 function readDraft(storageKey: string, initial?: PortalDraft): PortalDraft {
   try {
-    const stored = JSON.parse(window.sessionStorage.getItem(storageKey) ?? '{}') as { subject?: unknown; message?: unknown; requestTypeId?: unknown; fields?: unknown }
+    const stored = JSON.parse(window.sessionStorage.getItem(storageKey) ?? '{}') as { subject?: unknown; message?: unknown; requestTypeId?: unknown; fields?: unknown; cc?: unknown }
     const draft: PortalDraft = {
       subject: typeof stored.subject === 'string' ? stored.subject : '',
       message: typeof stored.message === 'string' ? stored.message : '',
     }
     if (typeof stored.requestTypeId === 'string') draft.requestTypeId = stored.requestTypeId
     if (stored.fields !== undefined) draft.fields = readFields(stored.fields)
+    if (Array.isArray(stored.cc)) draft.cc = stored.cc.filter((item): item is string => typeof item === 'string')
     return !draft.subject && !draft.message && !draft.requestTypeId && initial ? initial : draft
   } catch {
     return initial ?? { subject: '', message: '' }

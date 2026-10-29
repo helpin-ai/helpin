@@ -1497,6 +1497,9 @@ type SupportInboxSettings struct {
 	// PortalShowReplyBy shows customers when to expect the team's reply on
 	// their portal requests, from the running SLA target.
 	PortalShowReplyBy bool `json:"portal_show_reply_by"`
+	// PortalCCMode lets requesters copy people on their portal requests:
+	// "" (off), SupportPortalCCColleagues or SupportPortalCCAny.
+	PortalCCMode string `json:"portal_cc_mode"`
 	// HelpAssistantEnabled turns on the Ask AI help assistant on the help
 	// center and in the customer portal.
 	HelpAssistantEnabled bool `json:"help_assistant_enabled"`
@@ -1702,6 +1705,7 @@ type UpdateInstallationSettingsRequest struct {
 	PortalAnonymousIntakeEnabled    *bool                       `json:"portal_anonymous_intake_enabled,omitempty"`
 	PortalIntakeEnabled             *bool                       `json:"portal_intake_enabled,omitempty"`
 	PortalShowReplyBy               *bool                       `json:"portal_show_reply_by,omitempty"`
+	PortalCCMode                    *string                     `json:"portal_cc_mode,omitempty"`
 	HelpAssistantEnabled            *bool                       `json:"help_assistant_enabled,omitempty"`
 	PortalAccessMode                *string                     `json:"portal_access_mode,omitempty"`
 	PortalAIMode                    *string                     `json:"portal_ai_mode,omitempty"`
@@ -2118,6 +2122,15 @@ type SupportAIControlRequest struct {
 	ExpectedVersion     int64  `json:"expected_version"`
 	ConfirmHumanRequest bool   `json:"confirm_human_request"`
 }
+
+// Portal copy modes: who requesters may copy on a request.
+const (
+	// SupportPortalCCColleagues allows members of the requester's portal
+	// companies and addresses on those companies' domains.
+	SupportPortalCCColleagues = "colleagues"
+	// SupportPortalCCAny allows any email address.
+	SupportPortalCCAny = "any"
+)
 
 // EffectivePortalAccessMode returns the portal access mode, treating any
 // unknown value as the safer approved-contacts mode.

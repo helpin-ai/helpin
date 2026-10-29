@@ -34,9 +34,12 @@ export function RequestStatusText({ status }: { status: RequestStatus }) {
   return <QuietStatusText tone={meta.tone}>{meta.label}</QuietStatusText>
 }
 
-function repliedBy(request: CustomerPortalRequest, supportName: string, company: boolean) {
-  // In a company list a colleague may have written the latest customer reply.
-  if (request.last_message_from === 'customer') return company ? 'Your team replied' : 'You replied'
+/** Whose requests a list shows: the customer's, a company's, or those copied to them. */
+type RequestListKind = 'own' | 'company' | 'copied'
+
+function repliedBy(request: CustomerPortalRequest, supportName: string, kind: RequestListKind) {
+  // In a shared list someone else may have written the latest customer reply.
+  if (request.last_message_from === 'customer') return kind === 'own' ? 'You replied' : kind === 'company' ? 'Your team replied' : 'Customer replied'
   if (request.last_message_from === 'support') return `${supportName} replied`
   return null
 }
@@ -52,15 +55,17 @@ function matchesSearch(request: CustomerPortalRequest, search: string) {
  * tasks: filter pills with counts and a search in a hairline toolbar, then
  * collapsible status groups of table rows. Filtering happens here so counts,
  * groups and the status column always agree. A company list (companyName set)
- * also says who asked for each request.
+ * and a copied list also say who asked for each request.
  */
-export function PortalRequestTable({ requests, slug, supportName, onRefresh, companyName }: {
+export function PortalRequestTable({ requests, slug, supportName, onRefresh, companyName, copied = false }: {
   requests: CustomerPortalRequest[]
   slug: string
   supportName: string
   onRefresh: () => void
   companyName?: string
+  copied?: boolean
 }) {
+  const kind: RequestListKind = copied ? 'copied' : companyName ? 'company' : 'own'
   const [filter, setFilter] = useState<RequestFilter>('all')
   const [search, setSearch] = useState('')
   const [now, setNow] = useState(() => Date.now())
@@ -112,7 +117,9 @@ export function PortalRequestTable({ requests, slug, supportName, onRefresh, com
       </div>
 
       {requests.length === 0 ? (
-        companyName ? (
+        copied ? (
+          <QuietEmptyState title="Nothing copied to you yet" description="Requests other people copy you on will appear here with their latest status." />
+        ) : companyName ? (
           <QuietEmptyState title="No company requests yet" description={`Requests anyone at ${companyName} sends to support will appear here with their latest status.`} />
         ) : (
           <QuietEmptyState title="No requests yet" description="Requests you send to support will appear here with their latest status." />
@@ -133,14 +140,14 @@ export function PortalRequestTable({ requests, slug, supportName, onRefresh, com
           slug={slug}
           supportName={supportName}
           now={now}
-          company={Boolean(companyName)}
+          kind={kind}
         />
       ))}
     </div>
   )
 }
 
-function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching, slug, supportName, now, company }: {
+function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching, slug, supportName, now, kind }: {
   label: string
   requests: CustomerPortalRequest[]
   initiallyCollapsed: boolean
@@ -148,7 +155,7 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
   slug: string
   supportName: string
   now: number
-  company: boolean
+  kind: RequestListKind
 }) {
   const [collapsed, setCollapsed] = useState(initiallyCollapsed)
   const [showAll, setShowAll] = useState(false)
@@ -169,7 +176,7 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
       {collapsed ? null : (
         <div className="pb-3">
           <ul className="divide-y divide-quiet-divider-light" aria-label={`${label} requests`}>
-            {visible.map((request) => <RequestRow key={request.reference} request={request} slug={slug} supportName={supportName} now={now} company={company} />)}
+            {visible.map((request) => <RequestRow key={request.reference} request={request} slug={slug} supportName={supportName} now={now} kind={kind} />)}
           </ul>
           {!searching && requests.length > PAGE_SIZE ? (
             <QuietTextAction onClick={() => setShowAll((value) => !value)} className="mt-3">
@@ -182,9 +189,9 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
   )
 }
 
-function RequestRow({ request, slug, supportName, now, company }: { request: CustomerPortalRequest; slug: string; supportName: string; now: number; company: boolean }) {
+function RequestRow({ request, slug, supportName, now, kind }: { request: CustomerPortalRequest; slug: string; supportName: string; now: number; kind: RequestListKind }) {
   const status = statusOf(request)
-  const who = repliedBy(request, supportName, company)
+  const who = repliedBy(request, supportName, kind)
   const when = formatPortalRelativeTime(request.last_activity_at, now)
   const absolute = request.last_activity_at ? formatPortalAbsoluteTime(request.last_activity_at) : undefined
   const replyBy = formatPortalReplyBy(request.reply_expected_by)
@@ -206,7 +213,7 @@ function RequestRow({ request, slug, supportName, now, company }: { request: Cus
         </Link>
         <div className="col-start-2 mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-quiet-text-tertiary">
           {request.unread ? <span className="shrink-0 font-semibold uppercase tracking-[0.03em] text-quiet-accent">New reply</span> : null}
-          {company ? <span className="shrink-0 font-medium text-quiet-text-secondary">Asked by {requestedBy(request)}</span> : null}
+          {kind !== 'own' ? <span className="shrink-0 font-medium text-quiet-text-secondary">Asked by {requestedBy(request)}</span> : null}
           {who ? <span className="shrink-0">{who}</span> : null}
           {replyBy ? <span className="shrink-0 font-medium text-quiet-text-secondary">Reply by {replyBy}</span> : null}
           {request.last_message_preview ? <span className="min-w-0 flex-1 basis-40 truncate">{request.last_message_preview}</span> : null}

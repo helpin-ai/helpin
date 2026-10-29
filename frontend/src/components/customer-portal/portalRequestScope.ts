@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react'
 import type { CustomerPortalCompany } from '@/lib/services/customerPortalService'
 
-/** The request list a customer can choose: their own, or a member company's. */
+/** The request list a customer can choose: their own, a member company's, or those copied to them. */
 export const MINE_SCOPE = 'mine'
+export const COPIED_SCOPE = 'copied'
 
 const storageKey = (slug: string) => `helpin.portal.${slug}.requestScope`
 
@@ -19,11 +20,11 @@ function readStoredScope(slug: string) {
  * tab, so returning from a request keeps it. A stored company the customer
  * is no longer a member of falls back to their own requests.
  */
-export function usePortalRequestScope(slug: string, companies: CustomerPortalCompany[]) {
+export function usePortalRequestScope(slug: string, companies: CustomerPortalCompany[], copiedEnabled = false) {
   const [stored, setStored] = useState(() => readStoredScope(slug))
   const memberCompanies = companies.filter((company) => company.role === 'member')
   const company = memberCompanies.find((item) => item.id === stored)
-  const key = company ? company.id : MINE_SCOPE
+  const key = company ? company.id : copiedEnabled && stored === COPIED_SCOPE ? COPIED_SCOPE : MINE_SCOPE
   const select = useCallback((next: string) => {
     setStored(next)
     try {
@@ -32,5 +33,5 @@ export function usePortalRequestScope(slug: string, companies: CustomerPortalCom
       // Storage can be unavailable; the choice still applies to this page.
     }
   }, [slug])
-  return { key, company, memberCompanies, select }
+  return { key, company, memberCompanies, copiedEnabled, select }
 }

@@ -390,6 +390,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
 				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
 				r.Post("/requests/{reference}/csat", h.CustomerPortal.Rate)
+				r.Put("/requests/{reference}/cc", h.CustomerPortal.SetRequestCC)
+				r.Get("/cc-options", h.CustomerPortal.CCOptions)
 				r.Post("/requests", h.CustomerPortal.CreateRequest)
 			})
 		}

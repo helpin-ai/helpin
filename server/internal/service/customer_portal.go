@@ -138,6 +138,8 @@ type PortalConfiguration struct {
 	// RequestTypes are the kinds of request customers choose from on the
 	// new request form; empty keeps the plain form.
 	RequestTypes []PortalRequestType `json:"request_types"`
+	// CCMode is who requesters may copy: "" (nobody), colleagues or any.
+	CCMode string `json:"cc_mode"`
 }
 
 // PortalRequestFields is the request type and field values a customer
@@ -145,6 +147,8 @@ type PortalConfiguration struct {
 type PortalRequestFields struct {
 	RequestTypeID string         `json:"request_type_id"`
 	Fields        map[string]any `json:"fields"`
+	// CCEmails are people the signed-in requester copies; see PortalCCMode.
+	CCEmails []string `json:"cc_emails"`
 }
 
 // PortalAttachmentPolicy is the upload rules the portal UI applies before
@@ -190,6 +194,7 @@ func (s *CustomerPortalService) Configuration(ctx context.Context, ws *PortalWor
 	}
 	return PortalConfiguration{
 		RequestTypes:           requestTypes,
+		CCMode:                 ws.Settings.PortalCCMode,
 		Enabled:                true,
 		IntakeEnabled:          ws.Settings.PortalIntakeEnabled,
 		AnonymousIntakeEnabled: s.anonymousIntakeEnabled(ws),

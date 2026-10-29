@@ -33,6 +33,8 @@ export interface CustomerPortalConfiguration {
   assistant_enabled?: boolean
   /** Kinds of request to choose from; empty keeps the plain form. */
   request_types?: CustomerPortalRequestType[]
+  /** Whom requesters may copy; empty when copying is off. */
+  cc_mode?: '' | 'colleagues' | 'any'
 }
 
 export type CustomerPortalFieldType = 'text' | 'long_text' | 'number' | 'date' | 'boolean' | 'select' | 'multi_select'
@@ -89,7 +91,14 @@ export interface CustomerPortalSession {
 }
 
 /** Which requests a list shows: the customer's own, or one company's. */
-export type CustomerPortalRequestScope = { kind: 'mine' } | { kind: 'company'; companyId: string }
+export type CustomerPortalRequestScope = { kind: 'mine' } | { kind: 'company'; companyId: string } | { kind: 'copied' }
+
+/** Whom a customer may copy: nobody (""), colleagues, or anyone. */
+export interface CustomerPortalCCOptions {
+  mode: '' | 'colleagues' | 'any'
+  colleagues: Array<{ email: string; name: string }>
+  domains: string[]
+}
 
 export interface CustomerPortalRequest {
   reference: string
@@ -123,6 +132,11 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   /** The request type and the values customers can see. */
   request_type?: string | null
   fields?: Array<{ label: string; value: string }>
+  /** Who the request copies, and whether the viewer may change it. */
+  cc?: string[]
+  can_edit_cc?: boolean
+  /** The viewer sees the request because it copies them. */
+  copied?: boolean
   messages: Array<{
     id: string
     content: string
@@ -191,6 +205,7 @@ export interface CreateCustomerPortalRequestInput {
   intake?: CustomerPortalIntake
   request_type_id?: string
   fields?: Record<string, unknown>
+  cc_emails?: string[]
 }
 
 export class CustomerPortalApiError extends Error {
@@ -302,6 +317,8 @@ export const customerPortalService = {
     if (scope.kind === 'company') {
       params.set('scope', 'company')
       params.set('company_id', scope.companyId)
+    } else if (scope.kind === 'copied') {
+      params.set('scope', 'copied')
     }
     const query = params.toString()
     return portalRequest<CustomerPortalRequest[]>(slug, `/requests${query ? `?${query}` : ''}`)
@@ -329,6 +346,10 @@ export const customerPortalService = {
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/replies`, {
       method: 'POST', body: JSON.stringify({ content, attachment_ids }),
     }),
+  setCC: (slug: string, reference: string, ccEmails: string[]) =>
+    portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/cc`, { method: 'PUT', body: JSON.stringify({ cc_emails: ccEmails }) }),
+  ccOptions: (slug: string) =>
+    portalRequest<CustomerPortalCCOptions>(slug, '/cc-options'),
   rate: (slug: string, reference: string, rating: number, comment: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/csat`, {
       method: 'POST', body: JSON.stringify({ rating, comment }),

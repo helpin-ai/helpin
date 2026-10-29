@@ -1,4 +1,6 @@
 import { PortalRatingCard } from './PortalRatingCard'
+import { PortalCCEditor, PortalRequestCC } from './PortalCCEditor'
+import { usePortalCCOptions } from './usePortalCCOptions'
 import { PortalRequestTypeFields, PortalRequestTypePicker } from './PortalRequestTypeFields'
 import { portalFieldsForSubmit, type PortalFieldValues } from '@/lib/portalRequestFields'
 import {
@@ -33,7 +35,7 @@ import { PortalActivityRow, PortalMessage } from './PortalConversation'
 import { PortalFrame, type PortalFrameWidth } from './PortalFrame'
 import { portalPublicRedirect } from './portalPaths'
 import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
-import { MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
+import { COPIED_SCOPE, MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
 import { requestNumber } from './portalRequestFormat'
 import { formatPortalRelativeTime, formatPortalReplyBy } from './portalTime'
 import { usePortalLiveUpdates } from './usePortalLiveUpdates'
@@ -542,6 +544,8 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   const setMessage = (value: string) => setDraft({ ...draft, message: value })
   const requestTypes = configuration?.request_types ?? []
   const requestType = requestTypes.find((type) => type.id === draft.requestTypeId) ?? (requestTypes.length === 1 ? requestTypes[0] : undefined)
+  const ccEnabled = Boolean(configuration?.cc_mode)
+  const ccOptions = usePortalCCOptions(slug, ccEnabled)
   const suggestions = usePortalArticleSuggestions(slug, subject, message)
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAttachment(slug, file, undefined, options),
@@ -572,6 +576,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         attachment_ids: uploads.attachmentIds,
         intake: { ...suggestions.intake(), assistant_session_id: prefill?.assistantSession },
         ...(requestType ? { request_type_id: requestType.id, fields: typed.fields } : {}),
+        ...(ccEnabled && draft.cc?.length ? { cc_emails: draft.cc } : {}),
       })
       uploads.clear()
       clearDraft()
@@ -598,6 +603,9 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         </PortalField>
         {requestType ? (
           <PortalRequestTypeFields idPrefix="request" type={requestType} values={fieldValues} onChange={(fields) => setDraft({ ...draft, fields })} />
+        ) : null}
+        {ccEnabled ? (
+          <PortalCCEditor label="Copy colleagues (optional)" value={draft.cc ?? []} options={ccOptions} onChange={(cc) => setDraft({ ...draft, cc })} />
         ) : null}
         <PortalArticleSuggestions slug={slug} className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
         <PortalDropCue visible={dragging} />
@@ -654,7 +662,7 @@ function clearRequestPrefill() {
 export function CustomerPortalHome() {
   const { configuration, handleSessionError, session, slug, status } = usePortal()
   const [reload, setReload] = useState(0)
-  const requestScope = usePortalRequestScope(slug, session?.companies ?? [])
+  const requestScope = usePortalRequestScope(slug, session?.companies ?? [], Boolean(configuration?.cc_mode))
   // The skeleton shows only on the first load of a list, so live refreshes
   // keep the table, its filters and its open groups in place.
   const [result, setResult] = useState<{ scope: string; requests: CustomerPortalRequest[]; error: string | null } | null>(null)
@@ -680,7 +688,7 @@ export function CustomerPortalHome() {
     let active = true
     // Every request is loaded once; the table filters and counts them locally.
     customerPortalService
-      .requests(slug, 'all', scopeKey === MINE_SCOPE ? { kind: 'mine' } : { kind: 'company', companyId: scopeKey })
+      .requests(slug, 'all', scopeKey === MINE_SCOPE ? { kind: 'mine' } : scopeKey === COPIED_SCOPE ? { kind: 'copied' } : { kind: 'company', companyId: scopeKey })
       .then((nextRequests) => {
         if (active) setResult({ scope: scopeKey, requests: nextRequests, error: null })
       })
@@ -700,7 +708,7 @@ export function CustomerPortalHome() {
   return (
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
-        title={companyName ? `${companyName} requests` : 'Your requests'}
+        title={companyName ? `${companyName} requests` : scopeKey === COPIED_SCOPE ? 'Copied to you' : 'Your requests'}
         actions={hasHelp || configuration?.intake_enabled || configuration?.assistant_enabled ? (
           <>
             {configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
@@ -718,13 +726,14 @@ export function CustomerPortalHome() {
         ) : null}
       />
 
-      {requestScope.memberCompanies.length > 0 ? (
+      {requestScope.memberCompanies.length > 0 || requestScope.copiedEnabled ? (
         <Tabs value={scopeKey} onValueChange={requestScope.select} className="mt-4 gap-0">
           <TabsList variant="quiet" aria-label="Which requests to show">
             <TabsTrigger value={MINE_SCOPE}>My requests</TabsTrigger>
             {requestScope.memberCompanies.map((company) => (
               <TabsTrigger key={company.id} value={company.id}>{company.name}</TabsTrigger>
             ))}
+            {requestScope.copiedEnabled ? <TabsTrigger value={COPIED_SCOPE}>Copied to me</TabsTrigger> : null}
           </TabsList>
         </Tabs>
       ) : null}
@@ -747,7 +756,7 @@ export function CustomerPortalHome() {
             action={<QuietTextAction onClick={refresh}>Try again</QuietTextAction>}
           />
         ) : (
-          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} />
+          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} copied={scopeKey === COPIED_SCOPE} />
         )}
       </section>
     </PortalShell>
@@ -999,6 +1008,9 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
                 </div>
               ))}
             </dl>
+          ) : null}
+          {configuration?.cc_mode || request.cc?.length ? (
+            <PortalRequestCC slug={slug} request={request} ccMode={configuration?.cc_mode ?? ''} onUpdated={setRequest} />
           ) : null}
           <ol className="mt-6 border-t border-quiet-divider-strong pt-3" aria-label="Messages">
             {request.messages.map((message) => <PortalMessage key={message.id} message={message} supportName={configuration?.branding.name || 'Support'} />)}

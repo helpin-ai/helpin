@@ -1466,6 +1466,8 @@ export interface SupportInboxSettings {
   portal_intake_enabled: boolean;
   /** Show customers when the team's reply is due on portal requests. */
   portal_show_reply_by?: boolean;
+  /** Whom requesters may copy on portal requests; empty turns copying off. */
+  portal_cc_mode?: '' | 'colleagues' | 'any';
   /** Ask AI help assistant on the help center and in the customer portal. */
   help_assistant_enabled?: boolean;
   portal_access_mode?: CustomerPortalAccessMode;
