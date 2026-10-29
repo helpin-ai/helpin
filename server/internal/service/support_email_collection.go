@@ -41,6 +41,9 @@ func (s *SupportInboxService) checkWidgetEmailRequirement(ctx context.Context, w
 		}
 		return fmt.Errorf("email is required")
 	}
+	if settings.EmailCaptureTiming == "before_handoff" && supportConversationHasActiveHandoff(conv) {
+		return fmt.Errorf("email is required")
+	}
 	if settings.EmailCaptureTiming != "after_ai_reply" {
 		return nil
 	}
@@ -63,6 +66,22 @@ func (s *SupportInboxService) checkWidgetEmailRequirement(ctx context.Context, w
 		}
 	}
 	return nil
+}
+
+func supportConversationHasActiveHandoff(conv *model.SupportConversation) bool {
+	if conv == nil || conv.Status == "resolved" || conv.Status == "closed" || conv.Status == "spam" {
+		return false
+	}
+	// Current flow wins over a historical AI escalation after returning to AI.
+	switch derefString(conv.FlowState) {
+	case model.SupportConversationFlowStateWaitingForHuman, model.SupportConversationFlowStateQueuedForHuman,
+		model.SupportConversationFlowStateAfterHoursQueue, model.SupportConversationFlowStateAssignedToHuman:
+		return true
+	case "":
+		return derefString(conv.AIState) == "escalated"
+	default:
+		return false
+	}
 }
 
 func publishEmailCollectionStatus(ctx context.Context, messages *repository.SupportMessageRepository, publisher *websocket.Publisher, workspaceID, conversationID, eventType string) {
@@ -96,7 +115,7 @@ func (s *SupportAIService) recordRequiredEmailWait(ctx context.Context, workspac
 		return
 	}
 	settings := parseSettings(inst.Settings)
-	if settings.EmailCaptureTiming != "after_ai_reply" || !settings.ForceVisitorIdentity {
+	if settings.EmailCaptureTiming == "never" || !settings.ForceVisitorIdentity {
 		return
 	}
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
@@ -105,6 +124,9 @@ func (s *SupportAIService) recordRequiredEmailWait(ctx context.Context, workspac
 		return
 	}
 	if conv == nil || (conv.Channel != "widget" && conv.Source != "widget") || strings.TrimSpace(derefString(conv.CustomerEmail)) != "" {
+		return
+	}
+	if settings.EmailCaptureTiming == "before_handoff" && !supportConversationHasActiveHandoff(conv) {
 		return
 	}
 	publishEmailCollectionStatus(ctx, s.messageRepo, s.wsPublisher, workspaceID, conversationID, model.SystemEventVisitorEmailRequested)
