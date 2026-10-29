@@ -124,6 +124,33 @@ func (h *CustomerPortalAdminHandler) UpdateCompanyAccess(w http.ResponseWriter, 
 	writeJSON(w, http.StatusOK, access)
 }
 
+// UpdateCompanyTeamSettings handles
+// PUT /api/support/inbox/portal/companies/{companyId}/team-settings: whether
+// the company's portal admins may invite colleagues, and from which
+// addresses.
+func (h *CustomerPortalAdminHandler) UpdateCompanyTeamSettings(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	var body struct {
+		AdminInvites    bool `json:"admin_invites"`
+		InviteAnyDomain bool `json:"invite_any_domain"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	companyID := chi.URLParam(r, "companyId")
+	if err := h.portal.SetCompanyTeamSettings(r.Context(), workspaceID, companyID, body.AdminInvites, body.InviteAnyDomain); err != nil {
+		writePortalAdminError(w, r, workspaceID, err)
+		return
+	}
+	access, err := h.portal.CompanyAccess(r.Context(), workspaceID, companyID)
+	if err != nil {
+		writePortalAdminError(w, r, workspaceID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
+}
+
 // AddCompanyDomainMembers handles
 // POST /api/support/inbox/portal/companies/{companyId}/members/from-domain:
 // company access for every contact on the company's email domain.

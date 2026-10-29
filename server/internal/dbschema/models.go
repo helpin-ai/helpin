@@ -113,6 +113,7 @@ func AutoMigrationModels() []any {
 		&model.SupportSLAPolicy{},
 		&model.SupportSLATier{},
 		&model.SupportRequestType{},
+		&model.SupportPortalCompanyEvent{},
 		&model.CustomFieldDefinition{},
 		&model.SupportConversationSLARecord{},
 		&model.SupportSLAWork{},

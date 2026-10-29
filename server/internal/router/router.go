@@ -393,6 +393,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Post("/requests/{reference}/csat", h.CustomerPortal.Rate)
 				r.Put("/requests/{reference}/cc", h.CustomerPortal.SetRequestCC)
 				r.Get("/cc-options", h.CustomerPortal.CCOptions)
+				r.Get("/companies/{companyId}/team", h.CustomerPortal.Team)
+				r.Post("/companies/{companyId}/team/invites", h.CustomerPortal.InviteColleague)
+				r.Put("/companies/{companyId}/team/{contactId}/role", h.CustomerPortal.SetColleagueRole)
+				r.Delete("/companies/{companyId}/team/{contactId}", h.CustomerPortal.RemoveColleague)
 				r.Post("/requests", h.CustomerPortal.CreateRequest)
 			})
 		}
@@ -1281,6 +1285,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/companies/{companyId}", h.CustomerPortalAdmin.CompanyAccess)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}", h.CustomerPortalAdmin.UpdateCompanyAccess)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/portal/companies/{companyId}/members/from-domain", h.CustomerPortalAdmin.AddCompanyDomainMembers)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}/team-settings", h.CustomerPortalAdmin.UpdateCompanyTeamSettings)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/companies/{companyId}/members/{contactId}", h.CustomerPortalAdmin.UpdateCompanyMember)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/conversations/{id}/portal-confirmation", h.CustomerPortalAdmin.ResendIntakeConfirmation)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/portal-context", h.CustomerPortalAdmin.ConversationPortalContext)

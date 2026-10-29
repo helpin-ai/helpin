@@ -19,7 +19,7 @@ import (
 // Company portal errors returned to customers and support admins.
 var (
 	ErrPortalCompanyNotFound = errors.New("company not found")
-	ErrPortalRoleInvalid     = errors.New("portal role must be requester, member, or empty")
+	ErrPortalRoleInvalid     = errors.New("portal role must be requester, member or admin (admin only for people), or empty")
 	ErrPortalScopeInvalid    = errors.New("unknown request scope")
 )
 
@@ -67,7 +67,7 @@ func (s *CustomerPortalService) memberCompanyIDs(ctx context.Context, access *Po
 	}
 	var ids []string
 	for _, membership := range memberships {
-		if membership.Role == model.PortalRoleMember {
+		if model.PortalRoleSeesCompany(membership.Role) {
 			ids = append(ids, membership.ID)
 		}
 	}
@@ -172,6 +172,12 @@ type PortalCompanyAccess struct {
 	PortalEnabled bool   `json:"portal_enabled"`
 	// RequestCount is how many of the company's requests members could see.
 	RequestCount int64 `json:"request_count"`
+	// AdminInvites lets the company's portal admins invite colleagues;
+	// InviteAnyDomain lifts the company domain rule. Activity lists recent
+	// changes company admins made to the company's people.
+	AdminInvites    bool                              `json:"admin_invites"`
+	InviteAnyDomain bool                              `json:"invite_any_domain"`
+	Activity        []model.SupportPortalCompanyEvent `json:"activity"`
 }
 
 // CompanyAccess returns a company's portal settings and contacts.
@@ -198,6 +204,11 @@ func (s *CustomerPortalService) CompanyAccess(ctx context.Context, workspaceID, 
 	if settings != nil {
 		result.AccessMode, result.PortalEnabled = settings.EffectivePortalAccessMode(), settings.PortalEnabled
 	}
+	team, activity, err := s.CompanyTeamActivity(ctx, workspaceID, companyID)
+	if err != nil {
+		return nil, err
+	}
+	result.AdminInvites, result.InviteAnyDomain, result.Activity = team.AdminInvites, team.InviteAnyDomain, activity
 	return result, nil
 }
 
@@ -211,6 +222,10 @@ func (s *CustomerPortalService) SetCompanyDefaultRole(ctx context.Context, works
 	role, err := normalizePortalRole(role)
 	if err != nil {
 		return nil, err
+	}
+	// Admin is given to people, never to a whole company.
+	if role != nil && *role == model.PortalRoleAdmin {
+		return nil, ErrPortalRoleInvalid
 	}
 	if err := s.repo.SetCompanyPortalDefaultRole(ctx, workspaceID, companyID, role); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

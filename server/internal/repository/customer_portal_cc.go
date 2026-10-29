@@ -87,7 +87,7 @@ func (r *CustomerPortalRepository) PortalColleagues(ctx context.Context, workspa
 	var memberOf []string
 	for _, membership := range memberships {
 		all = append(all, membership.ID)
-		if membership.Role == model.PortalRoleMember {
+		if model.PortalRoleSeesCompany(membership.Role) {
 			memberOf = append(memberOf, membership.ID)
 		}
 	}

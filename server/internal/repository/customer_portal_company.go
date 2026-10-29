@@ -428,8 +428,8 @@ func (r *CustomerPortalRepository) ConversationCompanyAudience(ctx context.Conte
 	var members int64
 	err = r.db.WithContext(ctx).Raw(`SELECT count(*) FROM crm_contacts AS member JOIN crm_companies AS company ON company.workspace_id = member.workspace_id AND company.id = @company
 		WHERE `+portalMemberSQL("member.id", "@company")+` AND member.workspace_id = @workspace AND member.id <> @requester AND member.portal_access = @allowed
-		AND COALESCE(member.portal_role, company.portal_default_role) = @member`,
-		map[string]any{"workspace": workspaceID, "company": shared.ID, "requester": shared.RequesterID, "allowed": model.PortalAccessAllowed, "member": model.PortalRoleMember}).
+		AND COALESCE(member.portal_role, company.portal_default_role) IN @roles`,
+		map[string]any{"workspace": workspaceID, "company": shared.ID, "requester": shared.RequesterID, "allowed": model.PortalAccessAllowed, "roles": []string{model.PortalRoleMember, model.PortalRoleAdmin}}).
 		Scan(&members).Error
 	if err != nil {
 		return nil, err

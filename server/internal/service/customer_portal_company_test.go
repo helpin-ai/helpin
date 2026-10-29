@@ -646,7 +646,7 @@ func TestCompanyPortalAdminAccess(t *testing.T) {
 	if err != nil || derefString(contact.PortalRole) != model.PortalRoleRequester {
 		t.Fatalf("set contact role = %+v, %v", contact, err)
 	}
-	if _, err := p.svc.SetContactRole(ctx, p.ws.ID, p.alice, "admin", portalAccess("admin")); !errors.Is(err, ErrPortalRoleInvalid) {
+	if _, err := p.svc.SetContactRole(ctx, p.ws.ID, p.alice, "admin", portalAccess("owner")); !errors.Is(err, ErrPortalRoleInvalid) {
 		t.Fatalf("invalid contact role err = %v", err)
 	}
 	if _, err := p.svc.SetContactRole(ctx, p.ws.ID, uuid.NewString(), "admin", nil); !errors.Is(err, ErrPortalContactNotFound) {

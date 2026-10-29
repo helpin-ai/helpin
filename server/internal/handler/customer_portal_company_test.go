@@ -176,7 +176,7 @@ func TestCustomerPortalAdminCompanyErrors(t *testing.T) {
 		{"member without a decision", http.MethodPut, "/portal/companies/" + acme + "/members/" + alice, `{}`, http.StatusBadRequest},
 		{"invalid company role", http.MethodPut, "/portal/companies/" + acme, `{"default_role":"owner"}`, http.StatusBadRequest},
 		{"malformed company body", http.MethodPut, "/portal/companies/" + acme, `{`, http.StatusBadRequest},
-		{"invalid contact role", http.MethodPut, "/portal/contacts/" + alice + "/role", `{"portal_role":"admin"}`, http.StatusBadRequest},
+		{"invalid contact role", http.MethodPut, "/portal/contacts/" + alice + "/role", `{"portal_role":"owner"}`, http.StatusBadRequest},
 		{"unknown contact", http.MethodPut, "/portal/contacts/missing/role", `{"portal_role":"member"}`, http.StatusNotFound},
 		{"malformed contact body", http.MethodPut, "/portal/contacts/" + alice + "/role", `[]`, http.StatusBadRequest},
 	} {

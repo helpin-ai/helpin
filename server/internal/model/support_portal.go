@@ -50,11 +50,14 @@ const (
 	// has its own.
 	PortalRoleRequester = "requester"
 	PortalRoleMember    = "member"
+	// PortalRoleAdmin sees company requests like a member and manages the
+	// company's people in the portal.
+	PortalRoleAdmin = "admin"
 )
 
 // ValidPortalRole reports whether role is a portal role.
 func ValidPortalRole(role string) bool {
-	return role == PortalRoleRequester || role == PortalRoleMember
+	return role == PortalRoleRequester || role == PortalRoleMember || role == PortalRoleAdmin
 }
 
 // SupportPortalIdentity is the stable customer identity used to authorize
@@ -238,3 +241,36 @@ type PortalIntake struct {
 	// customer off to this request, if any.
 	AssistantSessionID string `json:"assistant_session_id,omitempty"`
 }
+
+// PortalRoleSeesCompany reports whether a company role shows the company's
+// requests: members and admins.
+func PortalRoleSeesCompany(role string) bool {
+	return role == PortalRoleMember || role == PortalRoleAdmin
+}
+
+// Portal company event types.
+const (
+	PortalCompanyEventInvited     = "invited"
+	PortalCompanyEventRoleChanged = "role_changed"
+	PortalCompanyEventRemoved     = "removed"
+)
+
+// SupportPortalCompanyEvent records a change to a company's people made in
+// the portal by a company admin, or by a teammate.
+type SupportPortalCompanyEvent struct {
+	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID      string    `json:"-" gorm:"type:uuid;not null"`
+	CRMCompanyID     string    `json:"company_id" gorm:"column:crm_company_id;type:uuid;not null"`
+	ActorIdentityID  *string   `json:"actor_identity_id,omitempty" gorm:"type:uuid"`
+	ActorUserID      *string   `json:"actor_user_id,omitempty" gorm:"type:uuid"`
+	SubjectContactID *string   `json:"subject_contact_id,omitempty" gorm:"type:uuid"`
+	SubjectEmail     string    `json:"subject_email" gorm:"not null;default:''"`
+	EventType        string    `json:"event_type" gorm:"not null"`
+	BeforeValue      *string   `json:"before,omitempty"`
+	AfterValue       *string   `json:"after,omitempty"`
+	OccurredAt       time.Time `json:"occurred_at" gorm:"type:timestamptz;not null;default:now()"`
+	// ActorName names who acted, for the activity list.
+	ActorName string `json:"actor_name,omitempty" gorm:"-"`
+}
+
+func (SupportPortalCompanyEvent) TableName() string { return "support_portal_company_events" }

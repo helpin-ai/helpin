@@ -439,6 +439,68 @@ func (h *CustomerPortalHandler) SearchRequests(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, results)
 }
 
+type portalInviteBody struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+}
+
+type portalRoleBody struct {
+	Role string `json:"role"`
+}
+
+// Team lists a company's people for one of its admins.
+func (h *CustomerPortalHandler) Team(w http.ResponseWriter, r *http.Request) {
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.Team(r.Context(), access, companyID)
+	})
+}
+
+// InviteColleague invites a colleague to the company.
+func (h *CustomerPortalHandler) InviteColleague(w http.ResponseWriter, r *http.Request) {
+	var body portalInviteBody
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.Invite(r.Context(), access, companyID, service.PortalInvite{Email: body.Email, Name: body.Name, Role: body.Role})
+	})
+}
+
+// SetColleagueRole changes a member's company role.
+func (h *CustomerPortalHandler) SetColleagueRole(w http.ResponseWriter, r *http.Request) {
+	var body portalRoleBody
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.SetMemberRole(r.Context(), access, companyID, chi.URLParam(r, "contactId"), strings.TrimSpace(body.Role))
+	})
+}
+
+// RemoveColleague drops a member from the company.
+func (h *CustomerPortalHandler) RemoveColleague(w http.ResponseWriter, r *http.Request) {
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.RemoveMember(r.Context(), access, companyID, chi.URLParam(r, "contactId"))
+	})
+}
+
+func (h *CustomerPortalHandler) teamAction(w http.ResponseWriter, r *http.Request, action func(*service.PortalAccess, string) (*service.PortalTeam, error)) {
+	access := h.authorized(w, r)
+	if access == nil {
+		return
+	}
+	team, err := action(access, chi.URLParam(r, "companyId"))
+	if err != nil {
+		writePortalError(w, r, access.Workspace.ID, err, "unable to update the team")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, team)
+}
+
 // CCOptions tells the portal whether and whom the customer may copy.
 func (h *CustomerPortalHandler) CCOptions(w http.ResponseWriter, r *http.Request) {
 	access := h.authorized(w, r)
@@ -572,6 +634,18 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalIntakeDisabled), errors.Is(err, service.ErrPortalAnonymousIntakeDisabled), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
 		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrPortalTeamDenied), errors.Is(err, service.ErrPortalInvitesOff):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrPortalInviteInvalid):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrPortalInviteInvalid.Error()+": "))
+	case errors.Is(err, service.ErrPortalRoleInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrPortalLastAdmin):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrPortalInviteLimit):
+		writeError(w, http.StatusTooManyRequests, err.Error())
+	case errors.Is(err, service.ErrPortalTeamMemberMissing):
+		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrPortalSearchInvalid), errors.Is(err, service.ErrPortalScopeInvalid):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalCCDisabled), errors.Is(err, service.ErrPortalCCDenied):
