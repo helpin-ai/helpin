@@ -347,6 +347,17 @@ export const customerPortalService = {
       method: 'POST', body: JSON.stringify({ content, attachment_ids }),
     }),
   // base is the list the customer started from, so others' changes are kept.
+  // Searches subjects and every message the portal shows in one request list.
+  searchRequests: (slug: string, query: string, scope: CustomerPortalRequestScope, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ q: query })
+    if (scope.kind === 'company') {
+      params.set('scope', 'company')
+      params.set('company_id', scope.companyId)
+    } else if (scope.kind === 'copied') {
+      params.set('scope', 'copied')
+    }
+    return portalRequest<Array<{ reference: string; snippet?: string }>>(slug, `/requests/search?${params.toString()}`, { signal })
+  },
   setCC: (slug: string, reference: string, ccEmails: string[], base: string[]) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/cc`, { method: 'PUT', body: JSON.stringify({ cc_emails: ccEmails, base_cc: base }) }),
   ccOptions: (slug: string) =>

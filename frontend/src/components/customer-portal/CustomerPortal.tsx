@@ -761,7 +761,8 @@ export function CustomerPortalHome() {
             action={<QuietTextAction onClick={refresh}>Try again</QuietTextAction>}
           />
         ) : (
-          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} copied={scopeKey === COPIED_SCOPE} />
+          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} copied={scopeKey === COPIED_SCOPE}
+            scope={scopeKey === MINE_SCOPE ? { kind: 'mine' } : scopeKey === COPIED_SCOPE ? { kind: 'copied' } : { kind: 'company', companyId: scopeKey }} />
         )}
       </section>
     </PortalShell>

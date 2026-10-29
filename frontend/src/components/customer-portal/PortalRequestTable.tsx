@@ -3,10 +3,11 @@ import { Link } from '@tanstack/react-router'
 import { QuietEmptyState, QuietIconAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet'
 import { Button } from '@/components/ui/button'
 import { ArrowReloadHorizontalIcon, ArrowRight01Icon } from '@/lib/icons'
-import type { CustomerPortalRequest } from '@/lib/services/customerPortalService'
+import type { CustomerPortalRequestScope, CustomerPortalRequest } from '@/lib/services/customerPortalService'
 import { cn } from '@/lib/utils'
 import { requestedBy, requestNumber } from './portalRequestFormat'
 import { formatPortalReplyBy, formatPortalAbsoluteTime, formatPortalRelativeTime } from './portalTime'
+import { usePortalRequestSearch } from './usePortalRequestSearch'
 
 type RequestStatus = CustomerPortalRequest['status']
 type RequestFilter = 'all' | RequestStatus
@@ -57,13 +58,15 @@ function matchesSearch(request: CustomerPortalRequest, search: string) {
  * groups and the status column always agree. A company list (companyName set)
  * and a copied list also say who asked for each request.
  */
-export function PortalRequestTable({ requests, slug, supportName, onRefresh, companyName, copied = false }: {
+export function PortalRequestTable({ requests, slug, supportName, onRefresh, companyName, copied = false, scope = { kind: 'mine' } }: {
   requests: CustomerPortalRequest[]
   slug: string
   supportName: string
   onRefresh: () => void
   companyName?: string
   copied?: boolean
+  /** The list shown, so search covers its messages on the server. */
+  scope?: CustomerPortalRequestScope
 }) {
   const kind: RequestListKind = copied ? 'copied' : companyName ? 'company' : 'own'
   const [filter, setFilter] = useState<RequestFilter>('all')
@@ -75,7 +78,12 @@ export function PortalRequestTable({ requests, slug, supportName, onRefresh, com
   }, [])
 
   const query = search.trim().toLowerCase()
-  const searched = useMemo(() => requests.filter((request) => matchesSearch(request, query)), [requests, query])
+  // Two characters or more also search every message on the server.
+  const matches = usePortalRequestSearch(slug, scope, query)
+  const searched = useMemo(
+    () => requests.filter((request) => matchesSearch(request, query) || Boolean(matches?.has(request.reference))),
+    [requests, query, matches],
+  )
   const count = (value: RequestFilter) => value === 'all' ? searched.length : searched.filter((request) => statusOf(request) === value).length
   const groups = groupOrder
     .filter((status) => filter === 'all' || filter === status)
@@ -127,7 +135,7 @@ export function PortalRequestTable({ requests, slug, supportName, onRefresh, com
       ) : groups.length === 0 ? (
         <QuietEmptyState
           title="No matching requests"
-          description={null}
+          description={query.length >= 2 ? 'Search looks through every message in these requests.' : null}
           action={<QuietTextAction onClick={() => { setFilter('all'); setSearch('') }}>Clear filters</QuietTextAction>}
         />
       ) : groups.map((group) => (
@@ -141,13 +149,14 @@ export function PortalRequestTable({ requests, slug, supportName, onRefresh, com
           supportName={supportName}
           now={now}
           kind={kind}
+          snippets={matches}
         />
       ))}
     </div>
   )
 }
 
-function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching, slug, supportName, now, kind }: {
+function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching, slug, supportName, now, kind, snippets }: {
   label: string
   requests: CustomerPortalRequest[]
   initiallyCollapsed: boolean
@@ -156,6 +165,7 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
   supportName: string
   now: number
   kind: RequestListKind
+  snippets: Map<string, string> | null
 }) {
   const [collapsed, setCollapsed] = useState(initiallyCollapsed)
   const [showAll, setShowAll] = useState(false)
@@ -176,7 +186,7 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
       {collapsed ? null : (
         <div className="pb-3">
           <ul className="divide-y divide-quiet-divider-light" aria-label={`${label} requests`}>
-            {visible.map((request) => <RequestRow key={request.reference} request={request} slug={slug} supportName={supportName} now={now} kind={kind} />)}
+            {visible.map((request) => <RequestRow key={request.reference} request={request} slug={slug} supportName={supportName} now={now} kind={kind} snippet={snippets?.get(request.reference)} />)}
           </ul>
           {!searching && requests.length > PAGE_SIZE ? (
             <QuietTextAction onClick={() => setShowAll((value) => !value)} className="mt-3">
@@ -189,7 +199,7 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
   )
 }
 
-function RequestRow({ request, slug, supportName, now, kind }: { request: CustomerPortalRequest; slug: string; supportName: string; now: number; kind: RequestListKind }) {
+function RequestRow({ request, slug, supportName, now, kind, snippet }: { request: CustomerPortalRequest; slug: string; supportName: string; now: number; kind: RequestListKind; snippet?: string }) {
   const status = statusOf(request)
   const who = repliedBy(request, supportName, kind)
   const when = formatPortalRelativeTime(request.last_activity_at, now)
@@ -216,7 +226,9 @@ function RequestRow({ request, slug, supportName, now, kind }: { request: Custom
           {kind !== 'own' ? <span className="shrink-0 font-medium text-quiet-text-secondary">Asked by {requestedBy(request)}</span> : null}
           {who ? <span className="shrink-0">{who}</span> : null}
           {replyBy ? <span className="shrink-0 font-medium text-quiet-text-secondary">Reply by {replyBy}</span> : null}
-          {request.last_message_preview ? <span className="min-w-0 flex-1 basis-40 truncate">{request.last_message_preview}</span> : null}
+          {snippet ? (
+            <span className="min-w-0 flex-1 basis-40 truncate italic" title={snippet}>{snippet}</span>
+          ) : request.last_message_preview ? <span className="min-w-0 flex-1 basis-40 truncate">{request.last_message_preview}</span> : null}
           <span className="flex w-full items-center gap-2 @min-[720px]:hidden">
             <RequestStatusText status={status} />
             {when ? <time dateTime={request.last_activity_at ?? undefined} title={absolute}>· {when}</time> : null}
