@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_CONVERSATION_LIST_FILTERS,
   buildConversationListRequestFilters,
   buildSupportInboxViewFilters,
   defaultAssignmentForNav,
@@ -486,6 +487,27 @@ describe('snooze and SLA filters', () => {
     expect(sorted.map((c) => c.id)).toEqual(['overdue', 'soon', 'later', 'none']);
     const breached = filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', userId: 'user-1', searchQuery: '', sla: 'breached' });
     expect(breached.map((c) => c.id)).toEqual(['overdue']);
+  });
+
+  it('filters by request type, with none for conversations without one', () => {
+    const conversations = [
+      buildConversation({ id: 'bug', request_type_id: 'type-bug' }),
+      buildConversation({ id: 'billing', request_type_id: 'type-billing' }),
+      buildConversation({ id: 'untyped' }),
+    ];
+    const ids = (requestTypeIds: string[]) =>
+      filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', userId: 'user-1', searchQuery: '', requestTypeIds }).map((c) => c.id).sort();
+    expect(ids(['type-bug'])).toEqual(['bug']);
+    expect(ids(['type-bug', 'none'])).toEqual(['bug', 'untyped']);
+    expect(ids([])).toEqual(['billing', 'bug', 'untyped']);
+  });
+
+  it('keeps the request type filter in saved views and requests', () => {
+    const listFilters = { ...DEFAULT_CONVERSATION_LIST_FILTERS, states: ['open' as const, 'waiting_on_customer' as const], requestTypeIds: ['type-bug', 'none'] };
+    const view = buildSupportInboxViewFilters({ navFilter: 'inbox', selectedMailboxId: 'all', searchQuery: '', listFilters });
+    expect(view.request_type_ids).toBe('type-bug,none');
+    expect(parseSupportInboxViewFilters(view).listFilters.requestTypeIds).toEqual(['type-bug', 'none']);
+    expect(buildConversationListRequestFilters({ navFilter: 'inbox', selectedMailboxId: 'all', searchQuery: '', listFilters })?.request_type_ids).toBe('type-bug,none');
   });
 
   it('filters to SLA targets due within the hour, not overdue ones', () => {

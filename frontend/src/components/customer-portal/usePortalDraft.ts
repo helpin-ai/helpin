@@ -1,15 +1,33 @@
 import { useCallback, useState } from 'react'
 
-type PortalDraft = { subject: string; message: string }
+type PortalDraft = {
+  subject: string
+  message: string
+  /** The chosen request type and its field values, as typed. */
+  requestTypeId?: string
+  fields?: Record<string, string | string[]>
+  /** People to copy on the request. */
+  cc?: string[]
+}
+
+function readFields(value: unknown): Record<string, string | string[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string | string[]] =>
+    typeof entry[1] === 'string' || (Array.isArray(entry[1]) && entry[1].every((item) => typeof item === 'string'))))
+}
 
 function readDraft(storageKey: string, initial?: PortalDraft): PortalDraft {
   try {
-    const stored = JSON.parse(window.sessionStorage.getItem(storageKey) ?? '{}') as { subject?: unknown; message?: unknown }
-    const draft = {
+    const stored = JSON.parse(window.sessionStorage.getItem(storageKey) ?? '{}') as { subject?: unknown; message?: unknown; requestTypeId?: unknown; fields?: unknown; cc?: unknown }
+    const draft: PortalDraft = {
       subject: typeof stored.subject === 'string' ? stored.subject : '',
       message: typeof stored.message === 'string' ? stored.message : '',
     }
-    return !draft.subject && !draft.message && initial ? initial : draft
+    if (typeof stored.requestTypeId === 'string') draft.requestTypeId = stored.requestTypeId
+    if (stored.fields !== undefined) draft.fields = readFields(stored.fields)
+    if (Array.isArray(stored.cc)) draft.cc = stored.cc.filter((item): item is string => typeof item === 'string')
+    // A prefill replaces an empty draft but keeps who it copies.
+    return !draft.subject && !draft.message && !draft.requestTypeId && initial ? { ...initial, ...(draft.cc ? { cc: draft.cc } : {}) } : draft
   } catch {
     return initial ?? { subject: '', message: '' }
   }

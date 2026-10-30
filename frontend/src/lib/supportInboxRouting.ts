@@ -19,6 +19,7 @@ export type SupportInboxRouteSearch = {
   tag_ids?: string;
   priority?: string;
   system_tags?: string;
+  request_type?: string;
 };
 
 const VIEW_BY_FILTER: Record<NavFilter, string> = {
@@ -73,6 +74,7 @@ export function normalizeSupportInboxRouteSearch(search: Record<string, unknown>
     tag_ids: typeof search.tag_ids === 'string' ? search.tag_ids : undefined,
     priority: typeof search.priority === 'string' ? search.priority : undefined,
     system_tags: typeof search.system_tags === 'string' ? search.system_tags : undefined,
+    request_type: typeof search.request_type === 'string' ? search.request_type : undefined,
   };
 }
 
@@ -141,6 +143,9 @@ export function buildSupportInboxSearch({
   }
   if (listFilters?.priorities?.length) {
     search.priority = listFilters.priorities.join(',');
+  }
+  if (listFilters?.requestTypeIds?.length) {
+    search.request_type = listFilters.requestTypeIds.join(',');
   }
   if (listFilters?.aiStates && !stringArraysEqual(listFilters.aiStates, defaultAIStatesForNav(navFilter))) {
     search.ai = listFilters.aiStates.length > 0 ? listFilters.aiStates.join(',') : 'none';

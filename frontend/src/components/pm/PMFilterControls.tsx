@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import {
   PM_FILTER_NUMBER_OPERATORS,
   PM_FILTER_OPTION_MODES,
+  isConditionFilter,
   optionModeUsesValues,
   type PMFilterCondition,
   type PMFilterConditions,
@@ -57,7 +58,9 @@ export interface PMFilterDefinition<K extends string> {
    * options (default) picks values from a list; number compares against a
    * typed number with the operators in PM_FILTER_NUMBER_OPERATORS.
    */
-  kind?: 'options' | 'number';
+  kind?: 'options' | 'number' | 'date';
+  /** Heading the filter menu lists this filter under; ungrouped filters come first. */
+  group?: string;
   /** Short muted note shown on the applied pill, such as skipped records. */
   note?: string;
   /**
@@ -65,6 +68,16 @@ export interface PMFilterDefinition<K extends string> {
    * empty instead of the fixed "is".
    */
   optionModes?: boolean;
+}
+
+/** Filters by group in first-seen order; ungrouped filters come first. */
+function groupDefinitions<K extends string>(definitions: PMFilterDefinition<K>[]): Array<[string, PMFilterDefinition<K>[]]> {
+  const groups = new Map<string, PMFilterDefinition<K>[]>([['', []]]);
+  for (const definition of definitions) {
+    const group = definition.group ?? '';
+    groups.set(group, [...(groups.get(group) ?? []), definition]);
+  }
+  return [...groups].filter(([, entries]) => entries.length > 0);
 }
 
 const OPTION_MODE_LABELS: Record<PMFilterOptionMode, string> = {
@@ -82,6 +95,18 @@ const NUMBER_OPERATOR_LABELS: Record<PMFilterNumberOperator, string> = {
   gte: '≥',
   lt: '<',
   lte: '≤',
+  between: 'between',
+  is_not_empty: 'has a value',
+  is_empty: 'is empty',
+};
+
+// Date filters reuse the number operators with date wording.
+const DATE_OPERATOR_LABELS: Record<PMFilterNumberOperator, string> = {
+  equals: 'on',
+  gt: 'after',
+  gte: 'on or after',
+  lt: 'before',
+  lte: 'on or before',
   between: 'between',
   is_not_empty: 'has a value',
   is_empty: 'is empty',
@@ -235,7 +260,7 @@ export function PMFilterTrigger<K extends string>({
   const [selectedKey, setSelectedKey] = useState<K | null>(null);
   const available = definitions.filter(
     (definition) =>
-      !visibleKeys.has(definition.key) && (definition.kind === 'number' || definition.options.length > 0),
+      !visibleKeys.has(definition.key) && (isConditionFilter(definition) || definition.options.length > 0),
   );
   const selectedDefinition = selectedKey
     ? definitions.find((definition) => definition.key === selectedKey)
@@ -353,26 +378,28 @@ export function PMFilterTrigger<K extends string>({
         ) : (
           <QuietDropdownOptions key="fields" searchPlaceholder="Filter by...">
             <QuietDropdownEmpty>No filters.</QuietDropdownEmpty>
-            <QuietDropdownGroup>
-              {available.map((definition) => (
-                <QuietDropdownItem
-                  key={definition.key}
-                  value={definition.key}
-                  keywords={[definition.label]}
-                  onSelect={() => {
-                    onAdd(definition.key);
-                    // Number filters are completed in their pill, not a value list.
-                    if (definition.kind === 'number') {
-                      setOpen(false);
-                      return;
-                    }
-                    setSelectedKey(definition.key);
-                  }}
-                >
-                  {definition.label}
-                </QuietDropdownItem>
-              ))}
-            </QuietDropdownGroup>
+            {groupDefinitions(available).map(([group, entries]) => (
+              <QuietDropdownGroup key={group || '__filters__'} heading={group || undefined}>
+                {entries.map((definition) => (
+                  <QuietDropdownItem
+                    key={definition.key}
+                    value={definition.key}
+                    keywords={[definition.label]}
+                    onSelect={() => {
+                      onAdd(definition.key);
+                      // Number and date filters are completed in their pill, not a value list.
+                      if (isConditionFilter(definition)) {
+                        setOpen(false);
+                        return;
+                      }
+                      setSelectedKey(definition.key);
+                    }}
+                  >
+                    {definition.label}
+                  </QuietDropdownItem>
+                ))}
+              </QuietDropdownGroup>
+            ))}
           </QuietDropdownOptions>
         )}
       </PopoverContent>
@@ -413,7 +440,7 @@ export function PMFilterBar<K extends string>({
     <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-1.5 px-3 py-1.5">
       {definitions
         .filter((definition) => visibleKeys.has(definition.key))
-        .map((definition) => definition.kind === 'number' ? (
+        .map((definition) => isConditionFilter(definition) ? (
           <PMConditionPill
             key={definition.key}
             definition={definition}
@@ -500,10 +527,12 @@ function PMConditionNumberInput({
   label,
   value,
   onCommit,
+  date = false,
 }: {
   label: string;
   value: string;
   onCommit: (value: string) => void;
+  date?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const [committed, setCommitted] = useState(value);
@@ -516,17 +545,21 @@ function PMConditionNumberInput({
   };
   return (
     <input
-      type="number"
-      inputMode="decimal"
+      type={date ? 'date' : 'number'}
+      inputMode={date ? undefined : 'decimal'}
       aria-label={label}
-      placeholder="Number"
+      placeholder={date ? 'YYYY-MM-DD' : 'Number'}
       value={draft}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        // A picked date is complete; numbers wait for blur or Enter.
+        if (date && event.target.value && event.target.value !== value) onCommit(event.target.value);
+      }}
       onBlur={commit}
       onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') commit();
       }}
-      className="w-20 rounded border border-border bg-background px-1.5 py-0.5 text-xs outline-none transition-colors [appearance:textfield] focus:border-foreground/40 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      className={cn(date ? 'w-32' : 'w-20', "rounded border border-border bg-background px-1.5 py-0.5 text-xs outline-none transition-colors [appearance:textfield] focus:border-foreground/40 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none")}
     />
   );
 }
@@ -544,6 +577,7 @@ export function PMConditionPill<K extends string>({
   onRemove: () => void;
 }) {
   const { operator } = condition;
+  const date = definition.kind === 'date';
   const usesNoValue = operator === 'is_empty' || operator === 'is_not_empty';
   const changeOperator = (next: PMFilterNumberOperator) => {
     if (next === 'between') {
@@ -560,26 +594,29 @@ export function PMConditionPill<K extends string>({
       <span className="font-medium text-muted-foreground">{definition.label}</span>
       <PMOperatorSelect
         label={definition.label}
-        options={PM_FILTER_NUMBER_OPERATORS.map((option) => ({ value: option, label: NUMBER_OPERATOR_LABELS[option], name: NUMBER_OPERATOR_NAMES[option] }))}
+        options={PM_FILTER_NUMBER_OPERATORS.map((option) => ({ value: option, label: (date ? DATE_OPERATOR_LABELS : NUMBER_OPERATOR_LABELS)[option], name: (date ? DATE_OPERATOR_LABELS : NUMBER_OPERATOR_NAMES)[option] }))}
         value={operator}
         onChange={changeOperator}
       />
       {operator === 'between' ? (
         <>
           <PMConditionNumberInput
-            label={`${definition.label} minimum`}
+            date={date}
+            label={`${definition.label} ${date ? 'start' : 'minimum'}`}
             value={condition.values?.[0] ?? ''}
             onCommit={(start) => onChange({ operator, values: [start, condition.values?.[1] ?? ''] })}
           />
           <span className="text-muted-foreground/60">and</span>
           <PMConditionNumberInput
-            label={`${definition.label} maximum`}
+            date={date}
+            label={`${definition.label} ${date ? 'end' : 'maximum'}`}
             value={condition.values?.[1] ?? ''}
             onCommit={(end) => onChange({ operator, values: [condition.values?.[0] ?? '', end] })}
           />
         </>
       ) : usesNoValue ? null : (
         <PMConditionNumberInput
+          date={date}
           label={`${definition.label} value`}
           value={condition.value ?? ''}
           onCommit={(value) => onChange({ operator, value })}

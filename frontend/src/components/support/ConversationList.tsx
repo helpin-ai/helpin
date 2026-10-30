@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useState, memo, useEffect, useRef, type UIEvent } from 'react';
+import { useRequestTypes } from '@/hooks/queries/useCustomFields';
 import {
   CheckmarkCircle02Icon,
   FilterHorizontalIcon,
@@ -184,6 +185,8 @@ export function ConversationList({
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const createInboxView = useCreateSupportInboxView(workspaceId);
+  const { requestTypes } = useRequestTypes(workspaceId);
+  const requestTypeNames = useMemo(() => new Map(requestTypes.map((requestType) => [requestType.id, requestType.name])), [requestTypes]);
   const updateInboxView = useUpdateSupportInboxView(workspaceId);
   const updateBuiltinInboxView = useUpdateSupportBuiltinInboxView(workspaceId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
@@ -240,8 +243,9 @@ export function ConversationList({
       aiStates: conversationListFilters.aiStates,
       sla: conversationListFilters.sla,
       priorities: conversationListFilters.priorities,
+      requestTypeIds: conversationListFilters.requestTypeIds,
     });
-  }, [conversationListFilters.priorities, conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sla, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.requestTypeIds, conversationListFilters.priorities, conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sla, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
 
   // J and K move through the list in its current order. The previous order
@@ -615,6 +619,7 @@ export function ConversationList({
                     supportTags={supportTags}
                     teamInboxFilterOptions={teamInboxFilterOptions}
                     slaEnabled={slaPolicies?.some(policy => policy.enabled) ?? true}
+                    requestTypes={requestTypes}
                   />
                   {(canSaveCurrentView || canUpdateCurrentView) && (
                     <div className="space-y-2 border-t pt-3">
@@ -794,6 +799,7 @@ export function ConversationList({
             isBulkSelected={selection.items.has(conversation.id)}
             selectionActive={selectionActive}
             selectionDisabled={bulkActionPending || selection.loading}
+            requestTypeName={conversation.request_type_id ? requestTypeNames.get(conversation.request_type_id) : undefined}
           />
         ))}
         {hasNextPage && (

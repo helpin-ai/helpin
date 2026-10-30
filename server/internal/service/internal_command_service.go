@@ -2035,6 +2035,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerSupportReplyCommands()
 	s.registerSupportFollowUpCommand()
 	s.registerSupportSLACommands()
+	s.registerSupportFieldCommands()
 	s.registerSupportCommands()
 	s.registerSupportCoverageCommands()
 	s.registerSupportOperationalCommands()

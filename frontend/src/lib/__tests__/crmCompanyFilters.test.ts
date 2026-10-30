@@ -17,6 +17,11 @@ import {
 import { parseQueryFilterGroup, serializeQueryFilterGroup } from '../queryBuilder';
 import type { CRMCompanyFilterOptions } from '../crmTypes';
 import type { AssignableMember } from '../types';
+import type { CustomFieldDefinition } from '../customFields';
+
+function definedField(field: Partial<CustomFieldDefinition>): CustomFieldDefinition {
+  return { id: field.key ?? 'id', object_type: 'crm_company', key: 'key', label: '', display_label: '', description: '', field_type: 'text', options: [], position: 0, ...field };
+}
 
 describe('company filter values', () => {
   it('turns selections into one is_any_of rule per field and back', () => {
@@ -150,6 +155,33 @@ describe('buildCompanyFilterDefinitions', () => {
     const sizeBand = definitions.find((definition) => definition.key === 'custom_properties.size_band');
     expect(employees).toMatchObject({ kind: 'number', note: '2 not numeric', options: [] });
     expect(sizeBand?.kind).toBeUndefined();
+  });
+
+  it('lists defined fields first, typed by definition, and groups the rest as not defined', () => {
+    const fields = [
+      definedField({ key: 'renews_on', display_label: 'Renews on', field_type: 'date' }),
+      definedField({ key: 'size_band', display_label: 'Size', field_type: 'select', options: [{ value: '11-50', label: 'Small' }] }),
+    ];
+    const definitions = buildCompanyFilterDefinitions(options, members, fields);
+    expect(definitions.map((definition) => [definition.label, definition.group])).toEqual([
+      ['Owner', undefined], ['Industry', undefined], ['Renews on', 'Fields'], ['Size', 'Fields'],
+      ['Is b2b', 'Not defined'], ['Support tools', 'Not defined'], ['Employees est', 'Not defined'],
+    ]);
+    expect(definitions[2].kind).toBe('date');
+    expect(definitions[3]).toMatchObject({ options: [{ value: '11-50', label: 'Small' }], optionModes: true });
+  });
+
+  it('turns date conditions into date rules and back', () => {
+    const field = customPropertyFilterField('renews_on');
+    const dateFields = new Set([field]);
+    const state = { values: {}, modes: {}, conditions: { [field]: { operator: 'lt' as const, value: '2026-11-01' } } };
+    const group = companyFiltersToGroup(state, dateFields);
+    expect(group?.rules).toEqual([{ field, operator: 'before', value: '2026-11-01' }]);
+    expect(companyFilterGroupToState(group, dateFields).conditions[field]).toEqual({ operator: 'lt', value: '2026-11-01', date: true });
+    // Before field types load (or after the field is archived) the rule round-trips unchanged.
+    expect(companyFiltersToGroup(companyFilterGroupToState(group))?.rules).toEqual(group?.rules);
+    const range = companyFiltersToGroup({ values: {}, modes: {}, conditions: { [field]: { operator: 'between', values: ['2026-10-01', '2026-10-31'] } } }, dateFields);
+    expect(range?.rules[0]).toEqual({ field, operator: 'between', values: ['2026-10-01', '2026-10-31'] });
   });
 
   it('still offers Owner before filter options load', () => {

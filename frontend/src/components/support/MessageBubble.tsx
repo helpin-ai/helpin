@@ -210,6 +210,10 @@ function renderSupportAuditSystemEventContent(
     return renderBoldedSupportMatches(content, /(\b(?:from|to)\s+)(Low|Medium|High|Urgent)((?=\s+to\s)|\.$)/g);
   }
 
+  if (eventType === 'request_type_changed') {
+    return renderBoldedSupportMatches(content, /(\b(?:from|to)\s+)(.+?)((?=\s+to\s)|\.$)/g);
+  }
+
   if (eventType && SUPPORT_TASK_EVENT_TYPES.has(eventType)) {
     const taskMatch = content.match(/^(.*\b(?:created|linked|unlinked) task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
     if (taskMatch) {
@@ -663,6 +667,8 @@ export const MessageBubble = memo(function MessageBubble({
       'tag_removed',
       ...SUPPORT_TASK_EVENT_TYPES,
       'priority_changed',
+      'request_type_changed',
+      'field_changed',
       'snoozed',
       'unsnoozed',
       'sla_breached',

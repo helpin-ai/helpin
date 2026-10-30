@@ -6687,6 +6687,111 @@
         "x-helpin-toolset": "support"
       }
     },
+    "/support/conversations/{conversation_id}/fields": {
+      "patch": {
+        "description": "Set a support conversation's request type and conversation field values. Fields are set key by key; null clears one. Values must fit the field: text, a number, a YYYY-MM-DD date, true/false, or option values for choice fields. List request types and fields first.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "setSupportConversationFields",
+        "parameters": [
+          {
+            "description": "Support conversation ID.",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "fields": {
+                    "additionalProperties": true,
+                    "description": "Field values by key; null clears a field.",
+                    "type": "object"
+                  },
+                  "request_type_id": {
+                    "description": "Request type ID; empty or null clears it. Leave out to keep the type.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Set the request type and fields",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "set_support_conversation_fields",
+        "x-helpin-scope": "helpin.support.write",
+        "x-helpin-toolset": "support"
+      }
+    },
     "/support/conversations/{conversation_id}/inbox": {
       "put": {
         "description": "Move an existing support conversation to another accessible inbox.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
@@ -7734,6 +7839,62 @@
           "Support"
         ],
         "x-helpin-mcp-tool": "list_support_inboxes",
+        "x-helpin-scope": "helpin.support.read",
+        "x-helpin-toolset": "support"
+      }
+    },
+    "/support/request-types": {
+      "get": {
+        "description": "List the workspace's request types, such as Bug report, with the conversation fields each asks for, and every active conversation field with its type and options.\n\n**Required scope:** `helpin.support.read`.",
+        "operationId": "listSupportRequestTypes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "List request types and fields",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "list_support_request_types",
         "x-helpin-scope": "helpin.support.read",
         "x-helpin-toolset": "support"
       }

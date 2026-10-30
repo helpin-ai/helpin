@@ -6,6 +6,7 @@ import {
   isSystemCRMCustomProperty,
 } from '@/lib/crmCustomProperties';
 import type { CRMContactFilterOptions, LeadStatus } from '@/lib/crmTypes';
+import { DEFINED_FIELDS_GROUP, UNDEFINED_FIELDS_GROUP, customFieldQueryField, type CustomFieldDefinition } from '@/lib/customFields';
 import type { AssignableMember } from '@/lib/types';
 import { LIFECYCLE_STAGE_OPTIONS } from '@/lib/crmLifecycle';
 
@@ -23,32 +24,41 @@ const PORTAL_ACCESS_OPTIONS: Array<{ value: 'allowed' | 'blocked'; label: string
 ];
 
 /**
- * Query fields for the custom property keys in use. Option-style keys offer
+ * Query fields for custom properties: defined fields first, typed by their
+ * definition, then keys in use that nobody defined. Option-style keys offer
  * the values found in the data; is_any_of also matches list elements.
  */
-function buildContactCustomPropertyFields(options: CRMContactFilterOptions | undefined): QueryBuilderFieldDefinition[] {
-  return (options?.custom_properties ?? [])
-    .filter((summary) => !isSystemCRMCustomProperty(summary.key))
+function buildContactCustomPropertyFields(
+  options: CRMContactFilterOptions | undefined,
+  definitions: CustomFieldDefinition[],
+): QueryBuilderFieldDefinition[] {
+  const defined = new Set(definitions.map((definition) => definition.key));
+  const undefinedFields = (options?.custom_properties ?? [])
+    .filter((summary) => !isSystemCRMCustomProperty(summary.key) && !defined.has(summary.key))
     .map((summary): QueryBuilderFieldDefinition => {
       const field = `custom_properties.${summary.key}`;
       const label = customPropertyLabel(summary.key);
+      const group = definitions.length > 0 ? UNDEFINED_FIELDS_GROUP : undefined;
       if (isNumericCustomProperty(summary)) {
-        return { field, label, type: 'number', placeholder: 'Number' };
+        return { field, label, group, type: 'number', placeholder: 'Number' };
       }
       return {
         field,
         label,
+        group,
         type: 'enum',
         placeholder: 'Select value',
         operators: ['is_any_of', 'is_none_of', 'is_empty', 'is_not_empty'],
         options: summary.values.map((entry) => ({ value: entry.value, label: customPropertyOptionLabel(summary, entry.value) })),
       };
     });
+  return [...definitions.map((definition) => customFieldQueryField(definition, DEFINED_FIELDS_GROUP)), ...undefinedFields];
 }
 
 export function buildCRMContactQueryFields(
   assignableMembers: AssignableMember[],
   filterOptions?: CRMContactFilterOptions,
+  definitions: CustomFieldDefinition[] = [],
 ): QueryBuilderFieldDefinition[] {
   return [
     {
@@ -139,6 +149,6 @@ export function buildCRMContactQueryFields(
       type: 'number',
       placeholder: 'Sessions',
     },
-    ...buildContactCustomPropertyFields(filterOptions),
+    ...buildContactCustomPropertyFields(filterOptions, definitions),
   ];
 }
