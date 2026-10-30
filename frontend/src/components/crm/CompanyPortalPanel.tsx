@@ -127,7 +127,7 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
         <section aria-labelledby="company-portal-admins" className="border-b border-border/60 px-4 py-4 sm:px-6 lg:px-8">
           <h3 id="company-portal-admins" className="text-sm font-medium text-quiet-text-primary">Company admins</h3>
           <p className="mt-1 max-w-[680px] text-xs leading-5 text-muted-foreground">
-            Give a contact the Admin role to let them manage the company's people in the portal: change roles and remove people. Every change shows below and can be undone here.
+            Turn on Company admin for a contact to let them manage this company's people in the portal: change roles and remove people. Every change shows below and can be undone here.
           </p>
           <div className="mt-3 space-y-2">
             <label className="flex max-w-[680px] items-center justify-between gap-4 text-sm">
