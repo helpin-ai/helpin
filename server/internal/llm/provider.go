@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 )
 
 // ErrInsufficientCredits indicates the upstream LLM provider rejected the
@@ -64,6 +65,13 @@ func (e *ProviderError) Retryable() bool {
 		return false
 	}
 	if e.Kind == ProviderErrorUnavailable || errors.Is(e.Err, ErrInsufficientCredits) {
+		return true
+	}
+	// OpenRouter uses 404 when a model has no endpoint compatible with the
+	// required parameters (for example strict JSON schema). Another declared
+	// model can serve the same request; retrying this route cannot fix it.
+	if e.Provider == "openrouter" && e.StatusCode == http.StatusNotFound &&
+		strings.Contains(strings.ToLower(e.Message), "no endpoints found") {
 		return true
 	}
 	if e.StatusCode == http.StatusRequestTimeout || e.StatusCode == http.StatusTooManyRequests || e.StatusCode >= 500 {

@@ -2,11 +2,68 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestListFailedAttemptsHidesFailuresOfAnOlderConversationSnapshot(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "recovered_snapshot")
+	repo := NewCoverageV2Repository(db)
+	now := time.Now().UTC()
+	for _, row := range []struct {
+		id, source, segment, hash, status string
+		at                                time.Time
+	}{
+		{"old-failure", "c-1", "old-segment", "old-hash", model.CoverageAttemptDeadLetter, now.Add(-time.Hour)},
+		{"recovered", "c-1", "new-segment", "new-hash", model.CoverageAttemptSucceeded, now},
+		{"unresolved", "c-2", "segment", "hash", model.CoverageAttemptDeadLetter, now},
+	} {
+		attempt := &model.CoverageAnalysisAttempt{ID: row.id, WorkspaceID: "ws-1", BatchID: row.id,
+			LogicalWorkKey: row.id, SourceKind: "conversation", SourceID: row.source, SegmentID: row.segment, ContentHash: row.hash,
+			AnalyzerVersion: "v4", PolicyVersion: "v1", Attempt: 1, Status: row.status, CreatedAt: row.at}
+		if err := repo.EnqueueAttempt(context.Background(), attempt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failures, err := repo.ListFailedAttempts(context.Background(), "ws-1", 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 1 || failures[0].ID != "unresolved" {
+		t.Fatalf("failures = %+v, want only the conversation that has not recovered", failures)
+	}
+}
+
+func TestCoverageClaimDoesNotRetryWorkSupersededByReanalysis(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "superseded_retry")
+	repo := NewCoverageV2Repository(db)
+	now := time.Now().UTC()
+	for i, status := range []string{model.CoverageAttemptRetryable, model.CoverageAttemptSucceeded} {
+		attempt := &model.CoverageAnalysisAttempt{ID: fmt.Sprint(i), WorkspaceID: "ws-1", BatchID: "batch",
+			LogicalWorkKey: fmt.Sprint(i), SourceKind: "conversation", SourceID: "c-1", SegmentID: fmt.Sprint(i), ContentHash: fmt.Sprint(i),
+			AnalyzerVersion: "v4", PolicyVersion: "v1", Attempt: 1, Status: status, CreatedAt: now.Add(time.Duration(i-2) * time.Hour)}
+		if err := repo.EnqueueAttempt(context.Background(), attempt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claimed, err := repo.ClaimAttemptsForWorkspace(context.Background(), "ws-1", "worker", now, time.Minute, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("claimed superseded failure: %+v", claimed)
+	}
+	workspaces, err := repo.ListQueuedWorkspaces(context.Background(), 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 0 {
+		t.Fatalf("superseded work kept workspace scheduled: %v", workspaces)
+	}
+}
 
 func TestListFailedAttemptsForBatchIgnoresOlderBatches(t *testing.T) {
 	db := setupCoverageV2TestDB(t, "failed_attempts_for_batch")
