@@ -431,8 +431,13 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	if s.rolloutPolicy != nil && !s.rolloutPolicy.CaptureEnabled(workspaceID) {
 		return nil
 	}
-	if err := s.reconcileQueuedCoverageAttempts(ctx, workspaceID); err != nil {
-		return err
+	// A manual reassessment selects failed sources itself and gives them a
+	// fresh request identity. Do not first retry the same work under the old
+	// request and budget, then analyze it again in the new batch.
+	if coverageReanalysisRequest(ctx) == "" {
+		if err := s.reconcileQueuedCoverageAttempts(ctx, workspaceID); err != nil {
+			return err
+		}
 	}
 	if err := s.reconcileCoverageAssignments(ctx, workspaceID); err != nil {
 		return err
@@ -495,8 +500,12 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	var itemErrors []error
 	var itemErrorsMu sync.Mutex
 	var candidateCursor *repository.CoverageAnalysisCandidateCursor
+	listCandidates := s.conversationRepo.ListCoverageAnalysisCandidatesPage
+	if coverageReanalysisRequest(ctx) != "" && s.coverageV2Repo != nil {
+		listCandidates = s.conversationRepo.ListCoverageReanalysisCandidatesPage
+	}
 	for {
-		conversations, nextCursor, pageErr := s.conversationRepo.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, cursorStart, cursorEnd, coverageAnalysisOpenQuietPeriod, candidateCursor, coverageAnalysisCandidatePageSize)
+		conversations, nextCursor, pageErr := listCandidates(ctx, workspaceID, cursorStart, cursorEnd, coverageAnalysisOpenQuietPeriod, candidateCursor, coverageAnalysisCandidatePageSize)
 		if pageErr != nil {
 			s.markCoverageAnalysisRunFailed(ctx, run.ID, pageErr)
 			return pageErr
