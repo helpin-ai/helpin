@@ -53,6 +53,8 @@ type SupportInboxService struct {
 	sessionRepo             *repository.SupportInboxSessionRepository
 	cannedResponseRepo      *repository.SupportCannedResponseRepository
 	activitySvc             *PMActivityService
+	requestTypes            *SupportRequestTypeService
+	customFields            *CustomFieldService
 	wsPublisher             *websocket.Publisher
 	contactRepo             *repository.CRMContactRepository
 	companyRepo             *repository.CRMCompanyRepository

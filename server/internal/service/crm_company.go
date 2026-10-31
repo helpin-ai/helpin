@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -23,6 +24,12 @@ type CRMCompanyService struct {
 		RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error
 	}
 	productAnalyticsEmitter
+	customFields *CustomFieldService
+}
+
+// SetCustomFieldService lets filters and edits use field definitions.
+func (s *CRMCompanyService) SetCustomFieldService(fields *CustomFieldService) {
+	s.customFields = fields
 }
 
 // SetMotionSignalRefresher keeps company motion state current outside detection runs.
@@ -156,6 +163,11 @@ func (s *CRMCompanyService) List(ctx context.Context, workspaceID string, filter
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
+	dateKeys, err := s.customFields.DateKeys(ctx, workspaceID, model.CustomFieldObjectCRMCompany, filters.Query)
+	if err != nil {
+		return nil, 0, err
+	}
+	filters.DateKeys = dateKeys
 	companies, total, err := s.companyRepo.List(ctx, workspaceID, filters, pagination)
 	if err != nil {
 		return nil, 0, err
@@ -339,6 +351,18 @@ func (s *CRMCompanyService) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("company not found")
 	}
 	return s.companyRepo.Delete(ctx, id)
+}
+
+// SetCustomFieldValues writes defined field values on a company key by key.
+func (s *CRMCompanyService) SetCustomFieldValues(ctx context.Context, workspaceID, companyID string, values map[string]any) error {
+	if s.customFields == nil {
+		return errors.New("custom fields are not configured")
+	}
+	if err := s.customFields.SetValues(ctx, workspaceID, model.CustomFieldObjectCRMCompany, companyID, values); err != nil {
+		return err
+	}
+	s.requestCompanySummaryRefresh(ctx, workspaceID, companyID)
+	return nil
 }
 
 func (s *CRMCompanyService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, companyID string) {

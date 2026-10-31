@@ -77,7 +77,7 @@ func (r *CRMCompanyRepository) List(ctx context.Context, workspaceID string, fil
 		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(domain, '')) LIKE ?)", search, search)
 	}
 	if filters.Query != nil {
-		definitions, err := withCRMCustomPropertyFields(crmCompanyFilterDefinitions, "crm_companies.custom_properties", r.db.Dialector.Name(), filters.Query)
+		definitions, err := withCRMCustomPropertyFields(crmCompanyFilterDefinitions, "crm_companies.custom_properties", r.db.Dialector.Name(), filters.Query, filters.DateKeys)
 		if err != nil {
 			return nil, 0, err
 		}

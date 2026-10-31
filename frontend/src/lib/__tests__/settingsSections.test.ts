@@ -95,14 +95,15 @@ describe('getSettingsSidebarGroups', () => {
     });
   });
 
-  it('puts inbox, widget, portal, SLA and webhook settings before AI assistant', () => {
+  it('puts inbox, widget, portal, SLA, field and webhook settings before AI assistant', () => {
     const supportGroup = getSettingsSidebarGroups(true, new Set(['support.admin'])).find((group) => group.label === 'Support');
 
-    expect(supportGroup?.sections.map((section) => section.id).slice(0, 6)).toEqual([
+    expect(supportGroup?.sections.map((section) => section.id).slice(0, 7)).toEqual([
       'inboxes-routing',
       'chat-general',
       'customer-portal',
       'support-sla',
+      'support-conversation-fields',
       'support-webhooks',
       'support-ai-assistant',
     ]);

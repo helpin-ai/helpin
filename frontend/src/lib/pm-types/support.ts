@@ -47,6 +47,9 @@ export interface SupportConversation {
   anonymized_at?: string | null;
   /** Whether the request appears in the customer portal. */
   portal_visible?: boolean;
+  /** The request type, and conversation field values by key. */
+  request_type_id?: string | null;
+  custom_fields?: Record<string, unknown>;
   portal_visibility_changed_at?: string | null;
   id: string;
   workspace_id: string;
@@ -166,6 +169,7 @@ export interface SupportSLAPolicy {
   company_ids: string[];
   /** Names of the companies in company_ids. */
   companies: { id: string; name: string }[];
+  request_type_ids?: string[];
   first_response_minutes?: number | null;
   next_response_minutes?: number | null;
   resolution_minutes?: number | null;
@@ -192,6 +196,7 @@ export interface SupportSLAPolicyInput {
   channels: string[];
   company_tier_ids: string[];
   company_ids: string[];
+  request_type_ids: string[];
   first_response_minutes?: number | null;
   next_response_minutes?: number | null;
   resolution_minutes?: number | null;
@@ -792,6 +797,8 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'sla_breached',
   'task_linked',
   'task_unlinked',
+  'request_type_changed',
+  'field_changed',
 ] as const;
 
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
@@ -1459,6 +1466,8 @@ export interface SupportInboxSettings {
   portal_intake_enabled: boolean;
   /** Show customers when the team's reply is due on portal requests. */
   portal_show_reply_by?: boolean;
+  /** Whom requesters may copy on portal requests; empty turns copying off. */
+  portal_cc_mode?: '' | 'colleagues' | 'any';
   /** Ask AI help assistant on the help center and in the customer portal. */
   help_assistant_enabled?: boolean;
   portal_access_mode?: CustomerPortalAccessMode;
@@ -1561,6 +1570,8 @@ export interface CustomerPortalContactAccess {
 
 /** Requesters see their own requests; members see every request from their company. */
 export type CustomerPortalRole = 'requester' | 'member';
+/** A role in one company; admin exists only there. */
+export type CustomerPortalCompanyRole = CustomerPortalRole | 'admin';
 
 export interface CustomerPortalCompanyContact {
   id: string;
@@ -1569,6 +1580,8 @@ export interface CustomerPortalCompanyContact {
   email?: string | null;
   portal_access: CustomerPortalContactAccessValue | null;
   portal_role: CustomerPortalRole | null;
+  /** The contact's role in this company, which wins over portal_role here. */
+  company_role?: CustomerPortalCompanyRole | null;
   /** A support admin gave this contact access to the company's portal requests. */
   member: boolean;
   shared_email_contacts: number;
@@ -1585,6 +1598,21 @@ export interface CustomerPortalCompanyAccess {
   portal_enabled: boolean;
   /** How many of the company's requests members could see. */
   request_count: number;
+  /** Company admins may invite colleagues; any_domain lifts the company domain rule. */
+  admin_invites?: boolean;
+  invite_any_domain?: boolean;
+  /** Recent changes company admins made to the company's people. */
+  activity?: CustomerPortalCompanyEvent[];
+}
+
+export interface CustomerPortalCompanyEvent {
+  id: string;
+  event_type: 'invited' | 'role_changed' | 'removed';
+  subject_email: string;
+  before?: string | null;
+  after?: string | null;
+  actor_name?: string;
+  occurred_at: string;
 }
 
 export interface CustomerPortalCompanyAudience {

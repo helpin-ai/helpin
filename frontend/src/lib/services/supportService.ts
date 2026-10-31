@@ -1,4 +1,4 @@
-import type { ConversationPriority, SupportActionResult, SupportBulkActionResponse, SupportCompanySLA, SupportConversationActions, SupportSLAPolicy, SupportSLAPolicyInput, SupportSLATier, WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
+import type { CustomerPortalCompanyRole, ConversationPriority, SupportActionResult, SupportBulkActionResponse, SupportCompanySLA, SupportConversationActions, SupportSLAPolicy, SupportSLAPolicyInput, SupportSLATier, WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
 import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
@@ -107,6 +107,7 @@ export const supportService = {
       tag_ids?: string;
       system_tags?: string;
       sla?: string;
+      request_type_ids?: string;
       page?: number;
       per_page?: number;
     },
@@ -127,6 +128,7 @@ export const supportService = {
     if (filters?.tag_ids) path += `&tag_ids=${encodeURIComponent(filters.tag_ids)}`;
     if (filters?.system_tags) path += `&system_tags=${encodeURIComponent(filters.system_tags)}`;
     if (filters?.sla) path += `&sla=${encodeURIComponent(filters.sla)}`;
+    if (filters?.request_type_ids) path += `&request_type_ids=${encodeURIComponent(filters.request_type_ids)}`;
     if (filters?.page) path += `&page=${encodeURIComponent(String(filters.page))}`;
     if (filters?.per_page) path += `&per_page=${encodeURIComponent(String(filters.per_page))}`;
     return api.get<ConversationListResponse>(path);
@@ -404,6 +406,10 @@ export const supportService = {
     api.get<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`),
   setCompanyPortalRole: (workspaceId: string, companyId: string, defaultRole: CustomerPortalRole | null) =>
     api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`, { default_role: defaultRole }),
+  setCompanyMemberRole: (workspaceId: string, companyId: string, contactId: string, role: CustomerPortalCompanyRole | null) =>
+    api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/members/${encodeURIComponent(contactId)}/role${qs(workspaceId)}`, { role }),
+  setCompanyTeamSettings: (workspaceId: string, companyId: string, settings: { admin_invites: boolean; invite_any_domain: boolean }) =>
+    api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/team-settings${qs(workspaceId)}`, settings),
   addCompanyPortalDomainMembers: (workspaceId: string, companyId: string) =>
     api.post<{ added: number; company: CustomerPortalCompanyAccess }>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/members/from-domain${qs(workspaceId)}`, {}),
   setCompanyPortalMember: (workspaceId: string, companyId: string, contactId: string, member: boolean) =>

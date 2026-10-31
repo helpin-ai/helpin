@@ -37,7 +37,7 @@ func TestCustomerPortalShowsReplyExpectedByWhenEnabled(t *testing.T) {
 	svc.inbox.SetSLAService(NewSupportSLAService(repository.NewSupportSLARepository(db), svc.inbox))
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Export broken", "It fails.", nil, nil)
+	request, err := svc.CreateRequest(ctx, access, "Export broken", "It fails.", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}

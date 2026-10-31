@@ -128,12 +128,14 @@ var Routes = []Route{
 	{"POST", "/support/conversations/{conversation_id}/notes", "add_support_conversation_note", "Support", "Add an internal note", 0},
 	{"PUT", "/support/conversations/{conversation_id}/status", "set_support_conversation_status", "Support", "Change the status", 0},
 	{"PUT", "/support/conversations/{conversation_id}/priority", "set_support_conversation_priority", "Support", "Change the priority", 0},
+	{"PATCH", "/support/conversations/{conversation_id}/fields", "set_support_conversation_fields", "Support", "Set the request type and fields", 0},
 	{"PUT", "/support/conversations/{conversation_id}/snooze", "snooze_support_conversation", "Support", "Snooze a conversation", 0},
 	{"DELETE", "/support/conversations/{conversation_id}/snooze", "unsnooze_support_conversation", "Support", "Wake a snoozed conversation", 0},
 	{"GET", "/support/setup", "get_support_setup", "Support", "Inspect support setup and browser handoffs", 0},
 	{"GET", "/support/inboxes", "list_support_inboxes", "Support", "List inboxes", 0},
 	{"GET", "/support/tags", "list_support_tags", "Support", "List tags", 0},
 	{"GET", "/support/sla-tiers", "list_support_sla_tiers", "Support", "List SLA tiers", 0},
+	{"GET", "/support/request-types", "list_support_request_types", "Support", "List request types and fields", 0},
 	{"PUT", "/support/companies/{company_id}/sla-tier", "set_company_sla_tier", "Support", "Set a company's SLA tier", 0},
 
 	// Agents

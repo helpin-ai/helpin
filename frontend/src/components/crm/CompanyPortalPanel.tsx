@@ -5,13 +5,15 @@ import { Switch } from '@/components/ui/switch';
 import {
   useAddCompanyPortalDomainMembers,
   useCompanyPortalAccess,
+  useSetCompanyMemberRole,
   useSetCompanyPortalMember,
   useSetCompanyPortalRole,
+  useSetCompanyTeamSettings,
   useSetContactPortalAccess,
   useSetContactPortalRole,
 } from '@/hooks/queries/useSupport';
 import { Loading01Icon } from '@/lib/icons';
-import type { CustomerPortalCompanyContact, CustomerPortalContactAccessValue, CustomerPortalRole } from '@/lib/pmTypes';
+import type { CustomerPortalCompanyContact, CustomerPortalCompanyRole, CustomerPortalContactAccessValue, CustomerPortalRole } from '@/lib/pmTypes';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { companyScopeSummary, domainAddableContacts, portalRoleChoices, portalRoleLabels, type PortalRoleChoice } from './companyPortal';
 
@@ -51,6 +53,7 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
   const access = useCompanyPortalAccess(workspaceId, companyId);
   const setRole = useSetCompanyPortalRole(workspaceId, companyId);
   const addDomain = useAddCompanyPortalDomainMembers(workspaceId, companyId);
+  const teamSettings = useSetCompanyTeamSettings(workspaceId, companyId);
 
   if (access.isLoading) {
     return (
@@ -121,6 +124,52 @@ export function CompanyPortalPanel({ workspaceId, workspaceSlug, companyId }: {
             </p>
           )}
         </section>
+        <section aria-labelledby="company-portal-admins" className="border-b border-border/60 px-4 py-4 sm:px-6 lg:px-8">
+          <h3 id="company-portal-admins" className="text-sm font-medium text-quiet-text-primary">Company admins</h3>
+          <p className="mt-1 max-w-[680px] text-xs leading-5 text-muted-foreground">
+            Turn on Company admin for a contact to let them manage this company's people in the portal: change roles and remove people. Every change shows below and can be undone here.
+          </p>
+          <div className="mt-3 space-y-2">
+            <label className="flex max-w-[680px] items-center justify-between gap-4 text-sm">
+              <span>Admins can invite colleagues</span>
+              <Switch
+                checked={Boolean(data.admin_invites)}
+                disabled={teamSettings.isPending}
+                onCheckedChange={(adminInvites) => teamSettings.mutate({ admin_invites: adminInvites, invite_any_domain: Boolean(data.invite_any_domain) })}
+                aria-label="Company admins can invite colleagues"
+              />
+            </label>
+            <label className="flex max-w-[680px] items-center justify-between gap-4 text-sm">
+              <span>
+                Invite any address
+                <span className="block text-xs text-muted-foreground">{domain ? `Off: only addresses on ${domain}.` : 'Off: only addresses on the company domain, which this company does not have yet.'}</span>
+              </span>
+              <Switch
+                checked={Boolean(data.invite_any_domain)}
+                disabled={teamSettings.isPending || !data.admin_invites}
+                onCheckedChange={(anyDomain) => teamSettings.mutate({ admin_invites: Boolean(data.admin_invites), invite_any_domain: anyDomain })}
+                aria-label="Company admins can invite any address"
+              />
+            </label>
+          </div>
+          {data.activity?.length ? (
+            <ol className="mt-4 max-w-[680px] space-y-1.5" aria-label="Changes by company admins">
+              {data.activity.map((event) => (
+                <li key={event.id} className="text-xs text-muted-foreground">
+                  <span className="text-foreground">{event.actor_name || 'A company admin'}</span>{' '}
+                  {event.event_type === 'invited'
+                    ? `invited ${event.subject_email}${event.after ? ` as ${portalRoleLabels[event.after as CustomerPortalCompanyRole] ?? event.after}` : ''}`
+                    : event.event_type === 'removed'
+                      ? `removed ${event.subject_email}`
+                      : event.after
+                        ? `made ${event.subject_email} ${portalRoleLabels[event.after as CustomerPortalCompanyRole] ?? event.after}`
+                        : `reset ${event.subject_email}'s company role`}
+                  {' · '}{formatDistanceToNowStrict(new Date(event.occurred_at), { addSuffix: true })}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </section>
         {data.contacts.length === 0 ? (
           <QuietEmptyState
             className="border-t-0"
@@ -155,7 +204,9 @@ function CompanyPortalContactRow({ workspaceId, companyId, contact, companyRole 
   const setMember = useSetCompanyPortalMember(workspaceId, companyId);
   const setAccess = useSetContactPortalAccess(workspaceId, contact.id);
   const setRole = useSetContactPortalRole(workspaceId, contact.id);
+  const setCompanyRole = useSetCompanyMemberRole(workspaceId, companyId);
   const name = contactName(contact);
+  const isAdmin = contact.company_role === 'admin';
   const access: AccessChoice = contact.portal_access ?? 'unset';
   const role: PortalRoleChoice = contact.portal_role ?? 'default';
   const roleLabel = (choice: PortalRoleChoice) =>
@@ -202,11 +253,11 @@ function CompanyPortalContactRow({ workspaceId, companyId, contact, companyRole 
         <Select
           size="sm"
           value={role}
-          disabled={setRole.isPending || access !== 'allowed' || !contact.member}
+          disabled={setRole.isPending || access !== 'allowed' || !contact.member || isAdmin}
           onValueChange={(next) => setRole.mutate(next === 'default' ? null : (next as CustomerPortalRole))}
         >
           <SelectTrigger aria-label={`Portal role for ${name}`} className="h-7 w-40 text-xs">
-            <SelectValue>{roleLabel(role)}</SelectValue>
+            <SelectValue>{isAdmin ? 'Company admin' : roleLabel(role)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {portalRoleChoices.map((choice) => (
@@ -214,6 +265,17 @@ function CompanyPortalContactRow({ workspaceId, companyId, contact, companyRole 
             ))}
           </SelectContent>
         </Select>
+        {contact.member && access === 'allowed' ? (
+          <label className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Switch
+              checked={isAdmin}
+              disabled={setCompanyRole.isPending}
+              onCheckedChange={(admin) => setCompanyRole.mutate({ contactId: contact.id, role: admin ? 'admin' : null })}
+              aria-label={`${name} is a company admin`}
+            />
+            Company admin
+          </label>
+        ) : null}
       </span>
       <span role="cell" className="text-xs text-muted-foreground">
         {contact.last_signed_in_at ? formatDistanceToNowStrict(new Date(contact.last_signed_in_at), { addSuffix: true }) : 'Never'}

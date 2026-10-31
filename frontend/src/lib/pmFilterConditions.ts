@@ -9,6 +9,8 @@ export interface PMFilterCondition {
   operator: PMFilterNumberOperator;
   value?: string;
   values?: [string, string];
+  /** Read from a date rule, so it is written back as one before field types load. */
+  date?: boolean;
 }
 
 export type PMFilterConditions<K extends string> = Partial<Record<K, PMFilterCondition>>;
@@ -30,4 +32,9 @@ export type PMFilterOptionModes<K extends string> = Partial<Record<K, PMFilterOp
 /** Whether an option mode compares against chosen values. */
 export function optionModeUsesValues(mode: PMFilterOptionMode): boolean {
   return mode === 'is_any_of' || mode === 'is_none_of';
+}
+
+/** Number and date filters take a typed condition instead of a value list. */
+export function isConditionFilter(definition: { kind?: 'options' | 'number' | 'date' }): boolean {
+  return definition.kind === 'number' || definition.kind === 'date';
 }

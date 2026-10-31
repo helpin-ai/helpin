@@ -31,7 +31,7 @@ import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
-import { CustomPropertyMetadataRows } from '@/components/crm/CustomPropertyMetadataRows';
+import { CustomFieldRailRows } from '@/components/crm/CustomFieldRailRows';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
 import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
@@ -358,7 +358,7 @@ export function CompanyDetailPage({ companyId, activeTab: requestedTab = 'overvi
 				}}
 			/>
 		</MetadataRow>
-        <CustomPropertyMetadataRows properties={company.custom_properties} />
+        <CustomFieldRailRows workspaceId={wsId} objectType="crm_company" recordId={companyId} properties={company.custom_properties} editable={permissions.has('crm.edit')} />
       </div>
       {canReadSupport ? (
         <CompanySLASection workspaceId={wsId} workspaceSlug={wsSlug} companyId={companyId} companyName={form.name || company.name} canManage={canManagePortal} />

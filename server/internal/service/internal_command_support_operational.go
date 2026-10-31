@@ -113,7 +113,11 @@ func (s *InternalCommandService) executeSupportGetConversation(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	return mustJSON(compactSupportConversation(conversation)), nil
+	result := compactSupportConversation(conversation)
+	for key, value := range s.supportConversationFieldContext(ctx, conversation) {
+		result[key] = value
+	}
+	return mustJSON(result), nil
 }
 
 func (s *InternalCommandService) executeSupportListTags(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

@@ -22,6 +22,9 @@ vi.mock('@/hooks/queries/useSupportOperations', () => ({
   useDeleteSLAPolicy: () => ({ mutate: deletePolicy, isPending: false }),
   useReorderSLAPolicies: () => ({ mutate: reorder, isPending: false }),
 }))
+vi.mock('@/hooks/queries/useCustomFields', () => ({
+  useRequestTypes: () => ({ requestTypes: [] }),
+}))
 vi.mock('@/hooks/queries/useSupportSLATiers', () => ({
   useSLATiers: () => ({ data: [{ id: 'tier-gold', name: 'Gold', description: '', position: 0, company_count: 2, policy_count: 1 }] }),
   useSLATeammates: () => ({ data: [{ id: 'm1', user_id: 'u-ada', role: 'admin', email: 'ada@acme.test', display_name: 'Ada Admin' }] }),

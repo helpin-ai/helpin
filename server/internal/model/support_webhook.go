@@ -154,10 +154,20 @@ type WebhookConversation struct {
 	SnoozedUntil *time.Time              `json:"snoozed_until"`
 	MergedIntoID *string                 `json:"merged_into_id,omitempty"`
 	SLA          *SupportConversationSLA `json:"sla,omitempty"`
-	CreatedAt    time.Time               `json:"created_at"`
-	UpdatedAt    time.Time               `json:"updated_at"`
-	ResolvedAt   *time.Time              `json:"resolved_at"`
-	URL          string                  `json:"url,omitempty"`
+	// RequestType is the conversation's request type; Fields holds its
+	// conversation field values by key, internal fields included.
+	RequestType *WebhookRequestType `json:"request_type"`
+	Fields      map[string]any      `json:"fields"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
+	ResolvedAt  *time.Time          `json:"resolved_at"`
+	URL         string              `json:"url,omitempty"`
+}
+
+// WebhookRequestType names a conversation's request type in event payloads.
+type WebhookRequestType struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // WebhookCustomer identifies the customer in event payloads.

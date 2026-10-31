@@ -174,6 +174,21 @@ func (h *CRMCompanyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, company)
 }
 
+// SetCustomFields handles PATCH /api/crm/companies/{id}/custom-properties:
+// defined field values, key by key; null clears a field.
+func (h *CRMCompanyHandler) SetCustomFields(w http.ResponseWriter, r *http.Request) {
+	var req model.SetCustomFieldValuesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.companyService.SetCustomFieldValues(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), req.Values); err != nil {
+		writeCustomFieldError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Delete handles DELETE /api/crm/companies/{id}.
 func (h *CRMCompanyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

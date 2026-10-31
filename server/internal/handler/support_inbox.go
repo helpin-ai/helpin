@@ -128,6 +128,8 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		SystemTags:  systemTags,
 		AIFilters:   aiFilters,
 		SLA:         slaFilter,
+		// Request types: ids, or "none" for conversations without one.
+		RequestTypeIDs: splitQueryCSV(r.URL.Query().Get("request_type_ids")),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

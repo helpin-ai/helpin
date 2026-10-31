@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/customfields"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -45,9 +46,10 @@ var _crmFieldEnumValues = map[string][]string{
 // CRMFieldCatalogService describes the fields CRM list filters accept,
 // including the custom property keys and values in use.
 type CRMFieldCatalogService struct {
-	companyRepo *repository.CRMCompanyRepository
-	contacts    *CRMContactService
-	behavior    *repository.CRMBehaviorProfileRepository
+	companyRepo  *repository.CRMCompanyRepository
+	contacts     *CRMContactService
+	behavior     *repository.CRMBehaviorProfileRepository
+	customFields *CustomFieldService
 }
 
 // NewCRMFieldCatalogService creates the service. behavior may be nil.
@@ -79,13 +81,38 @@ func (s *CRMFieldCatalogService) Catalog(ctx context.Context, workspaceID, objec
 		ObjectType: objectType, Fields: crmNativeFieldDescriptors(definitions),
 		ScannedRecords: len(sources), Truncated: truncated,
 	}
+	defined, err := s.definedFields(ctx, workspaceID, objectType)
+	if err != nil {
+		return nil, err
+	}
+	// Defined fields come first, in their order; keys only in use follow.
+	descriptors := map[string]*model.CRMCustomPropertyDescriptor{}
+	var undefined []model.CRMCustomPropertyDescriptor
 	for _, summary := range buildCRMCustomPropertySummaries(sources) {
-		catalog.CustomProperties = append(catalog.CustomProperties, model.CRMCustomPropertyDescriptor{
+		descriptor := model.CRMCustomPropertyDescriptor{
 			CRMCustomPropertySummary: summary,
 			Field:                    repository.CRMCustomPropertyFilterPrefix + summary.Key,
 			Operators:                crmCustomPropertyOperatorsFor(summary.ValueType, summary.NumericCount),
-		})
+		}
+		if _, ok := definedIndex(defined, summary.Key); ok {
+			descriptors[summary.Key] = &descriptor
+			continue
+		}
+		undefined = append(undefined, descriptor)
 	}
+	for i := range defined {
+		descriptor, ok := descriptors[defined[i].Key]
+		if !ok {
+			descriptor = &model.CRMCustomPropertyDescriptor{
+				CRMCustomPropertySummary: model.CRMCustomPropertySummary{Key: defined[i].Key, ValueType: "text", Values: []model.CRMFilterValueCount{}},
+				Field:                    repository.CRMCustomPropertyFilterPrefix + defined[i].Key,
+			}
+		}
+		descriptor.Definition = &defined[i]
+		descriptor.Operators = customFieldOperators(defined[i].FieldType)
+		catalog.CustomProperties = append(catalog.CustomProperties, *descriptor)
+	}
+	catalog.CustomProperties = append(catalog.CustomProperties, undefined...)
 	if catalog.CustomProperties == nil {
 		catalog.CustomProperties = []model.CRMCustomPropertyDescriptor{}
 	}
@@ -159,6 +186,51 @@ func (s *CRMFieldCatalogService) PropertyValues(
 	result.Values, result.HasMore = stats.values.topN(limit)
 	result.Operators = crmCustomPropertyOperatorsFor(result.ValueType, stats.numericCount)
 	return result, nil
+}
+
+// SetCustomFieldService adds the workspace's field definitions to the catalog.
+func (s *CRMFieldCatalogService) SetCustomFieldService(fields *CustomFieldService) {
+	s.customFields = fields
+}
+
+func (s *CRMFieldCatalogService) definedFields(ctx context.Context, workspaceID, objectType string) ([]model.CustomFieldDefinition, error) {
+	if s.customFields == nil {
+		return nil, nil
+	}
+	object := model.CustomFieldObjectCRMCompany
+	if objectType == model.CRMFieldObjectContact {
+		object = model.CustomFieldObjectCRMContact
+	}
+	return s.customFields.List(ctx, workspaceID, object, false, false)
+}
+
+func definedIndex(defined []model.CustomFieldDefinition, key string) (int, bool) {
+	for i := range defined {
+		if defined[i].Key == key {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// customFieldOperators are the filter operators a defined field's type takes.
+func customFieldOperators(fieldType string) []model.QueryFilterOperator {
+	empty := []model.QueryFilterOperator{model.QueryFilterOpIsEmpty, model.QueryFilterOpIsNotEmpty}
+	switch fieldType {
+	case customfields.TypeNumber:
+		return crmCustomPropertyOperatorsFor("number", 1)
+	case customfields.TypeDate:
+		return append([]model.QueryFilterOperator{model.QueryFilterOpOn, model.QueryFilterOpBefore, model.QueryFilterOpAfter,
+			model.QueryFilterOpOnOrBefore, model.QueryFilterOpOnOrAfter, model.QueryFilterOpBetween}, empty...)
+	case customfields.TypeBoolean:
+		return append([]model.QueryFilterOperator{model.QueryFilterOpIs, model.QueryFilterOpIsNot}, empty...)
+	case customfields.TypeSelect:
+		return append([]model.QueryFilterOperator{model.QueryFilterOpIs, model.QueryFilterOpIsNot,
+			model.QueryFilterOpIsAnyOf, model.QueryFilterOpIsNoneOf}, empty...)
+	case customfields.TypeMultiSelect:
+		return crmCustomPropertyOperatorsFor("list", 0)
+	}
+	return crmCustomPropertyOperatorsFor("text", 0)
 }
 
 // crmCustomPropertyOperatorsFor narrows the operators a custom property
