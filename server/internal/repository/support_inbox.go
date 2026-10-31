@@ -1957,6 +1957,17 @@ func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx conte
 // progress is read only after it has been quiet that long, and consecutive
 // windows still cover every moment.
 func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, openQuietPeriod time.Duration, cursor *CoverageAnalysisCandidateCursor, limit int) ([]model.SupportConversation, *CoverageAnalysisCandidateCursor, error) {
+	return r.listCoverageAnalysisCandidatesPage(ctx, workspaceID, windowStart, windowEnd, openQuietPeriod, cursor, limit, false)
+}
+
+// ListCoverageReanalysisCandidatesPage includes the entire current failure
+// backlog in addition to the normal window. Dead-lettered/configuration-paused
+// work otherwise cannot recover once its conversation ages out of that window.
+func (r *SupportConversationRepository) ListCoverageReanalysisCandidatesPage(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, openQuietPeriod time.Duration, cursor *CoverageAnalysisCandidateCursor, limit int) ([]model.SupportConversation, *CoverageAnalysisCandidateCursor, error) {
+	return r.listCoverageAnalysisCandidatesPage(ctx, workspaceID, windowStart, windowEnd, openQuietPeriod, cursor, limit, true)
+}
+
+func (r *SupportConversationRepository) listCoverageAnalysisCandidatesPage(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, openQuietPeriod time.Duration, cursor *CoverageAnalysisCandidateCursor, limit int, includeFailures bool) ([]model.SupportConversation, *CoverageAnalysisCandidateCursor, error) {
 	if workspaceID == "" {
 		return nil, nil, fmt.Errorf("workspace_id is required")
 	}
@@ -1973,16 +1984,24 @@ func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx c
 		Where("status <> ?", model.SupportConversationStatusSpam).
 		// Sample conversations are not real customer demand; keep them out of
 		// AI coverage analysis.
-		Where(NotSampleDataSQL("support_conversations.id")).
-		Where(`(
+		Where(NotSampleDataSQL("support_conversations.id"))
+	windowQuery := r.db.Where(`(
 			(status = ? AND (
 				(updated_at >= ? AND updated_at < ?)
 				OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
 			))
 			OR (status <> ? AND updated_at >= ? AND updated_at < ?)
 		)`,
-			model.SupportConversationStatusResolved, windowStart, windowEnd, windowStart, windowEnd,
-			model.SupportConversationStatusResolved, windowStart.Add(-openQuietPeriod), windowEnd.Add(-openQuietPeriod))
+		model.SupportConversationStatusResolved, windowStart, windowEnd, windowStart, windowEnd,
+		model.SupportConversationStatusResolved, windowStart.Add(-openQuietPeriod), windowEnd.Add(-openQuietPeriod))
+	if includeFailures {
+		failures := r.db.Model(&model.CoverageAnalysisAttempt{}).Select("1").
+			Where("workspace_id = support_conversations.workspace_id AND source_kind = ? AND source_id = CAST(support_conversations.id AS TEXT)", "conversation").
+			Where("status IN ?", []string{model.CoverageAttemptRetryable, model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration}).
+			Where(currentCoverageAttemptSQL)
+		windowQuery = windowQuery.Or("EXISTS (?)", failures)
+	}
+	query = query.Where(windowQuery)
 	if cursor != nil {
 		query = query.Where("(updated_at > ?) OR (updated_at = ? AND id > ?)", cursor.UpdatedAt, cursor.UpdatedAt, cursor.ID)
 	}
