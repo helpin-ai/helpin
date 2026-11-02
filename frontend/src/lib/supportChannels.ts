@@ -26,7 +26,7 @@ export interface SupportChannelSpec {
 const SUPPORT_CHANNEL_SPECS: Record<TicketSource, SupportChannelSpec> = {
   widget: { key: 'widget', label: 'Chat', inbox: { icon: Message01Icon, label: 'Live chat' }, messageLabel: 'Chat', transport: 'chat', aiMode: 'chat', slaChannel: true },
   email: { key: 'email', label: 'Email', inbox: { icon: Mail01Icon, label: 'Email' }, messageLabel: 'Email', transport: 'email', aiMode: 'email', slaChannel: true },
-  portal: { key: 'portal', label: 'Portal', inbox: { icon: GlobeIcon, label: 'Customer portal' }, transport: 'portal', aiMode: 'portal', slaChannel: true },
+  portal: { key: 'portal', label: 'Portal', inbox: { icon: GlobeIcon, label: 'Customer portal' }, messageLabel: 'Portal', transport: 'portal', aiMode: 'portal', slaChannel: true },
   api: { key: 'api', label: 'API', messageLabel: 'API', transport: 'none', aiMode: null, slaChannel: true },
   internal: { key: 'internal', label: 'Started by team', messageLabel: 'Internal', transport: 'none', aiMode: null, slaChannel: true },
 }

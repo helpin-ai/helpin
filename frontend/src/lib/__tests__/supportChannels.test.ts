@@ -16,7 +16,7 @@ describe('support channel registry', () => {
   it('keeps existing labels per surface', () => {
     expect(SUPPORT_CHANNELS.map((channel) => channel.label)).toEqual(['Chat', 'Email', 'Portal', 'API', 'Started by team'])
     expect(SUPPORT_CHANNELS.map((channel) => channel.inbox?.label ?? null)).toEqual(['Live chat', 'Email', 'Customer portal', null, null])
-    expect(SUPPORT_CHANNELS.map((channel) => channel.messageLabel ?? null)).toEqual(['Chat', 'Email', null, 'API', 'Internal'])
+    expect(SUPPORT_CHANNELS.map((channel) => channel.messageLabel ?? null)).toEqual(['Chat', 'Email', 'Portal', 'API', 'Internal'])
     expect(supportChannelLabel('intercom')).toBe('Intercom')
   })
 

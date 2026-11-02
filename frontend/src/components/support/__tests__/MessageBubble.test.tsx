@@ -490,6 +490,7 @@ describe('MessageBubble', () => {
   it.each([
     { sender: 'customer', via: 'email', source: 'widget', expected: 'via Email' },
     { sender: 'customer', via: 'widget', source: 'email', expected: 'via Chat' },
+    { sender: 'customer', via: 'portal', source: 'portal', expected: 'via Portal' },
     { sender: 'user', via: 'email', source: 'widget', expected: 'via Email' },
     { sender: 'user', via: 'email', source: 'widget', mode: 'chat_and_email', expected: 'via Chat + email' },
     { sender: 'user', via: 'email', source: 'email', internal: true, expected: null },
