@@ -78,6 +78,7 @@ import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
 import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
+import { hasChatTransport } from '@/lib/supportChannels';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -877,7 +878,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 	// including email threads claimed after the customer signed in.
 	const portalReplySurface = Boolean(conversation?.portal_visible) && conversation?.status !== 'spam'
 		&& conversation?.channel !== 'internal' && conversation?.source !== 'internal';
-	const hasChatSession = Boolean(conversation?.anonymous_id) || conversation?.source === 'widget' || Boolean(conversation?.merge_has_widget);
+	const hasChatSession = Boolean(conversation?.anonymous_id) || hasChatTransport(conversation?.source) || Boolean(conversation?.merge_has_widget);
 	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
@@ -889,7 +890,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   });
   const deliveryMode = hiddenPortalIntake ? 'email_only' : selectedDeliveryMode;
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = conversation && !conversation.anonymous_id && conversation.source !== 'widget' && !conversation.merge_has_widget && !portalReplySurface
+  const chatUnavailableReason = conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface
     ? hiddenPortalIntake ? 'This request is hidden from the portal; reply by email' : 'No chat session available' : undefined;
   const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;

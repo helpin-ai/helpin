@@ -20,6 +20,7 @@ import { toggleListValue } from '@/lib/toggleListValue'
 import { useRequestTypes } from '@/hooks/queries/useCustomFields'
 import { SettingsPill } from '../SettingsPill'
 import { SLACompanyPicker } from './SLACompanyPicker'
+import { SUPPORT_CHANNELS } from '@/lib/supportChannels'
 
 const PRIORITIES = [
   { value: 'urgent', label: 'Urgent' },
@@ -28,13 +29,7 @@ const PRIORITIES = [
   { value: 'low', label: 'Low' },
 ]
 
-const CHANNELS = [
-  { value: 'widget', label: 'Chat' },
-  { value: 'email', label: 'Email' },
-  { value: 'portal', label: 'Portal' },
-  { value: 'api', label: 'API' },
-  { value: 'internal', label: 'Started by team' },
-]
+const CHANNELS = SUPPORT_CHANNELS.filter((channel) => channel.slaChannel).map((channel) => ({ value: channel.key, label: channel.label }))
 
 function TargetRow({
   id,

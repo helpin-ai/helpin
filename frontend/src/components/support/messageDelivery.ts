@@ -1,6 +1,7 @@
 import type { SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { isExternalSupportEmailReply, type SupportReceiptStatus } from './helpers';
 import { getReplyDeliveryMode } from './replyDelivery';
+import { hasChatTransport } from '@/lib/supportChannels';
 
 export type DeliveryState = 'sent' | 'delivered' | 'read' | 'queued' | 'sending' | 'failed' | 'unknown' | 'external';
 export interface ChannelDelivery {
@@ -52,11 +53,11 @@ export function getMessageDelivery(
     message.via_channel === 'email' || source === 'email' || !!message.cancellable_until || email.state !== 'unknown'
   );
   const hasChat = mode ? mode !== 'email_only' : (
-    source === 'widget' || message.via_channel === 'widget' || receiptStatus === 'read' || receiptStatus === 'sent' || receiptStatus === 'delivered'
+    hasChatTransport(source) || hasChatTransport(message.via_channel) || receiptStatus === 'read' || receiptStatus === 'sent' || receiptStatus === 'delivered'
   );
   const channels: ChannelDelivery[] = [];
   if (hasChat) {
-    const seen = receiptStatus === 'read' || (source === 'widget' && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
+    const seen = receiptStatus === 'read' || (hasChatTransport(source) && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
     // Persisted in the conversation means sent; only a visitor read cursor confirms seen.
     const state = message.id.startsWith('optimistic-') ? 'sending' : seen ? 'read' : 'sent';
     channels.push({ channel: 'chat', state, description: `Chat ${state === 'read' ? 'seen' : state}` });

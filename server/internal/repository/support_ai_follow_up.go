@@ -199,18 +199,23 @@ func (r *SupportFollowUpRepository) CancelEpisode(ctx context.Context, workspace
 	})
 }
 
+// SupportFollowUpChannels lists the conversation channels AI follow-ups may run on.
+func SupportFollowUpChannels(settings model.SupportInboxSettings) []string {
+	channels := []string{}
+	for _, mode := range []model.SupportAIMode{model.SupportAIModeChat, model.SupportAIModeEmail} {
+		if model.SupportAIChannelEnabled(settings, string(mode)) {
+			channels = append(channels, model.SupportAIModeChannels(mode)...)
+		}
+	}
+	return channels
+}
+
 func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.SupportInboxSettings, now time.Time, includeFuture bool) *gorm.DB {
 	cutoff := now.Add(-time.Duration(settings.AIFollowUpDelayHours) * time.Hour)
 	if includeFuture {
 		cutoff = now
 	}
-	channels := []string{}
-	if model.SupportAIChannelEnabled(settings, "chat") {
-		channels = append(channels, "widget")
-	}
-	if model.SupportAIChannelEnabled(settings, "email") {
-		channels = append(channels, "email")
-	}
+	channels := SupportFollowUpChannels(settings)
 	return tx.Model(&model.SupportConversation{}).Where(`(CASE WHEN source = 'email' OR channel = 'email' OR EXISTS
  (SELECT 1 FROM support_messages m WHERE m.id = support_conversations.last_public_message_id AND m.workspace_id = support_conversations.workspace_id AND m.via_channel = 'email')
  THEN 'email' ELSE channel END) IN ?`, channels).Where(`workspace_id = ? AND flow_state = 'ai_handling' AND ai_state = 'pending'

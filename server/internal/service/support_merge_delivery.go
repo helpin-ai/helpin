@@ -21,7 +21,7 @@ func mergedDeliveryConversation(ctx context.Context, repo *repository.SupportCon
 	result := *c
 	result.MergeEmailRecipients = model.SupportMergeEmailAudience(group)
 	for _, member := range group {
-		if member.AnonymousID != nil || member.Source == "widget" {
+		if member.AnonymousID != nil || model.SupportChannelHasChatSession(member.Source) {
 			result.MergeHasWidget = true
 		}
 	}
