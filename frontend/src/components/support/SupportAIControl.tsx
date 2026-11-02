@@ -20,6 +20,7 @@ import { useChatSettings } from '@/hooks/queries/useSupport';
 import { supportService } from '@/lib/services/supportService';
 import { unwrap } from '@/lib/queryUtils';
 import type { SupportConversation } from '@/lib/pmTypes';
+import { supportChannel } from '@/lib/supportChannels';
 
 export function useSupportAIControl(conversation: SupportConversation) {
   const [confirmReturnFor, setConfirmReturnFor] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
     !conversation.merged_into_id &&
     !conversation.anonymized_at &&
     !['resolved', 'spam'].includes(conversation.status) &&
-    ['widget', 'email'].includes(conversation.channel ?? conversation.source) &&
+    ['chat', 'email'].includes(supportChannel(conversation.channel ?? conversation.source)?.aiMode ?? '') &&
     (channels === 'both' || channels === channel);
   const pausedBy = members?.find(
     (member) => member.user_id === conversation.ai_paused_by_user_id,

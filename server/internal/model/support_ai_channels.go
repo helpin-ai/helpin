@@ -16,13 +16,18 @@ func SupportAIChannelEnabled(settings SupportInboxSettings, channel string) bool
 	if channel == "" || channel == "widget" {
 		channel = "chat"
 	}
-	if channel == "portal" {
-		return settings.PortalAIDraftsEnabled()
+	mode := SupportAIMode(channel) // "chat" arrives from SupportAIReplyChannel
+	if spec, ok := LookupSupportChannel(channel); ok {
+		mode = spec.AIMode
 	}
-	if channel != "chat" && channel != "email" {
+	switch mode {
+	case SupportAIModePortal:
+		return settings.PortalAIDraftsEnabled()
+	case SupportAIModeChat, SupportAIModeEmail:
+		return selection == "both" || selection == string(mode)
+	default:
 		return false
 	}
-	return selection == "both" || selection == channel
 }
 
 // SupportAIReplyAllowed checks the incoming medium, falling back to the

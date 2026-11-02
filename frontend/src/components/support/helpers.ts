@@ -1,5 +1,6 @@
 import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportLinkSecurity, SupportMessage } from '@/lib/pmTypes';
 import { getReplyDeliveryMode } from './replyDelivery';
+import { hasChatTransport } from '@/lib/supportChannels';
 export { AVATAR_COLORS, getAvatarColor } from '@/lib/avatarColor';
 export { getInitials as getInitial } from '@/lib/initials';
 
@@ -102,9 +103,9 @@ export function getSupportReceiptStatus(
     return message.email_notified_at || message.email_delivery_status === 'sent' ? 'sent_email' : null;
   }
   const seen = conversation.contact_last_seen_at;
-  if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
+  if (hasChatTransport(conversation.source) && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
   if (message.email_notified_at) return 'sent_email';
-  if (conversation.source === 'widget') return 'sent';
+  if (hasChatTransport(conversation.source)) return 'sent';
   return null;
 }
 

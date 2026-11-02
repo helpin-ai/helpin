@@ -178,10 +178,15 @@ Each registry entry declares one `transport`:
 
 | `transport` | Channels | Inbound | Outbound |
 |---|---|---|---|
-| `realtime` | widget, portal | session APIs | websocket, after the message is saved |
+| `chat` | widget | widget session APIs | websocket, after the message is saved |
+| `portal` | portal | portal request APIs | portal page, with email notices |
 | `email` | email | Postmark → `support_inbound_jobs` (`kind=email`) | email fallback and explicit-email paths |
 | `provider` | Telegram, Messenger, Instagram, WhatsApp, SMS/RCS, later Slack-as-customer | webhook → `support_inbound_jobs` (`kind=channel_event`) | `EnqueueTx` → `support_channel_outbox` → adapter |
 | `none` | internal, api | n/a | no customer delivery beyond what exists today |
+
+`chat` and `portal` are separate because a portal conversation has no live chat
+session; existing code treats them differently. Phase 0 ships `chat`, `portal`,
+`email` and `none`; phase 1 adds `provider` with its first channel.
 
 Widget, portal and email keep their own transports:
 - Widget and portal are first-party surfaces with sessions, identity
@@ -505,57 +510,80 @@ send the customer the message twice.
 Each phase ships on its own and leaves the product working if later phases
 never land.
 
-### Phase 0: channel registry, with no new channels (5–7 days)
+### Phase 0: channel registry, with no new channels (built)
 
-This is worth doing even if omnichannel is never built. Today's behaviour must
-survive the migration unchanged.
+Built on `feat/support-channel-registry`. Behaviour is unchanged by
+construction: a behaviour-matrix test was written and passed against the old
+code first, then kept passing through the refactor.
 
-- **Audit first.** List every reader and writer of `channel`, `source` and
-  `via_channel`, then write a behaviour matrix before changing code. The matrix
-  covers widget, email, portal, API, internal and imported (Intercom, Help
-  Scout) conversations, including merged conversations with mixed channels. For
-  each it records:
-  - AI eligibility and mode;
-  - triage setting;
-  - SLA eligibility;
-  - report bucket;
-  - CSAT;
-  - default mailbox;
-  - composer delivery options.
-- **The registry holds the policy the code applies today**, rather than a
-  simplified `chat|email` map. `model/support_ai_channels.go` makes these
-  distinctions, and each one must be kept:
-  - portal drafts and portal visibility;
-  - incoming email versus the conversation's original channel;
-  - mailbox AI overrides;
-  - machine-mail suppression.
+**Audit findings that shaped the scope:**
 
-  The registry gives each channel its flags. Those functions keep their extra
-  inputs (mailbox, message) and read the flags instead of string compares.
-- **Transport and provenance stay separate.** `channel` is the conversation's
-  transport, `via_channel` is the transport of each message, and `source` is
-  where the conversation came from (`intercom`, `helpscout`, or the same as
-  `channel`). Imported-history exclusions that key on `source` keep working.
-- **Fix triage reading `source` before `channel`** with a test that pins
-  today's intended result for imported conversations. Backfill only rows the
-  audit proves inconsistent. Add a CHECK on `channel` after the backfill, in a
-  separate migration.
-- **`transport` per channel** (`realtime`, `email`, `provider`, `none`; see
-  How channels fit together).
-  - Today's logic infers this from `source`, `anonymous_id` and
-    `merge_has_widget`: the `hasChatSession` check in `ReplyComposer.tsx`, and
-    the delivery-channel normalisation in `support_inbox.go`. Phase 0 keeps the
-    current results by deriving them from the registry. Its behaviour matrix
-    includes which delivery options each conversation offers.
-  - No `provider` entries exist until phase 1. The value is declared now so
-    phase 1 only adds rows.
-  - Merged groups still compute widget and email reachability per member
-    (`mergedDeliveryConversation`), reading each member's registry entry.
-- **Frontend:** `CHANNEL_META` and `SOURCE_LABELS` come from one map keyed by
-  `channel`. That map includes `transport`, so the composer reads delivery
-  options from it.
-- **Tests:** the behaviour matrix as a table test, run before and after the
-  change, with identical results except for the documented triage fix.
+- `POST /api/support/tickets` copies a client-supplied `source` into both
+  `channel` and `source` (`CreateConversation`). Production rows can hold
+  arbitrary values, and API callers can still send them. **There is no CHECK
+  constraint and no backfill.** Either would risk failed deploys or broken
+  callers. Validation stays in Go, and unknown values keep each consumer's
+  existing fallback.
+- `source` is provenance and is relied on as such:
+  - Intercom imports keep `source = 'intercom'`.
+  - Portal SQL requires `channel = 'portal' AND source = 'portal'`.
+  - Portal email eligibility requires both fields to be `email`.
+
+  Rewriting either field would change those queries. Both fields stay as they
+  are.
+- **Triage still reads `source` before `channel`** (`supportConversationChannel`).
+  For an imported email conversation that resolves to `intercom`, which uses the
+  widget triage toggle and matches no rule channel. Switching to `channel`
+  would change routing for imported conversations that get new activity. That
+  is a product decision, so phase 0 pins today's result and leaves it open.
+- Single-channel checks (`conv.Channel == "portal"`, the widget email-collection
+  prompt, the delayed widget team reply) are channel behaviour, not channel
+  lists. They stay as they are.
+
+**What changed:**
+
+- `server/internal/model/support_channels.go` holds one registry entry per
+  channel, with exact-key lookup. Each entry records `Transport` (`chat`,
+  `portal`, `email`, `none`), `AIMode`, triage toggle, whether triage rules may
+  target the channel, whether SLA policies may, and whether the channel skips
+  the default inbox.
+- These consumers now read the registry and keep all their other inputs:
+  - `SupportAIChannelEnabled`;
+  - `triageChannelEnabled` and `validSupportTriageChannel`;
+  - SLA policy channel validation;
+  - `shouldUseDefaultMailboxForChannel`;
+  - the three "has a chat session" checks: the reply guard in
+    `CreateConversationMessage`, merged-group detail, and
+    `mergedDeliveryConversation`.
+
+  Portal visibility, incoming-email precedence, mailbox AI overrides and
+  machine-mail suppression in `support_ai_channels.go` are untouched.
+- `frontend/src/lib/supportChannels.ts` mirrors the registry, typed as
+  `Record<TicketSource, …>`, so adding a `TicketSource` without an entry fails
+  to compile. It replaces:
+  - the conversation-row `CHANNEL_META`;
+  - message-bubble `SOURCE_LABELS`;
+  - report channel labels;
+  - SLA channel labels and options;
+  - the `source === 'widget'` checks in the composer, receipts and delivery
+    state;
+  - the AI-control channel check.
+
+  The per-surface labels ("Live chat" in the list, "Chat" in reports,
+  "Internal" on message badges) are kept exactly.
+
+**Tests:**
+
+- `service/support_channel_behavior_test.go`: AI eligibility across
+  selections and portal drafts, triage toggle and rule channels, SLA
+  acceptance, default inbox and chat session. Each covers known, unknown,
+  imported and unnormalised values.
+- `model/support_channels_test.go` and `frontend/src/lib/__tests__/supportChannels.test.ts`:
+  registry integrity and exact matching.
+
+**Adding a channel later** means one Go registry entry, one frontend entry and
+the `TicketSource` union. Behaviour specific to that channel lives with its
+transport.
 
 ### Phase 1: foundation plus Telegram (10–14 days)
 
@@ -852,7 +880,7 @@ once phase 0's audit is done.
 
 | Phase | Estimate |
 |---|---|
-| 0 Registry and behaviour matrix | 5–7 days |
+| 0 Registry and behaviour matrix | built |
 | 1 Foundation and Telegram | 10–14 days |
 | 2 Messenger and Instagram | 8–10 days, plus Meta review (weeks, in parallel) |
 | 3+4 WhatsApp with templates | 12–15 days |
