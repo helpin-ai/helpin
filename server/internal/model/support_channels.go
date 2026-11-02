@@ -69,11 +69,6 @@ var supportChannels = []SupportChannelSpec{
 	{Key: SupportChannelInternal, Transport: SupportTransportNone, Triage: SupportTriageSettingInternal, TriageRuleChannel: true, SLAChannel: true},
 }
 
-// SupportChannels returns the registered channels in display order.
-func SupportChannels() []SupportChannelSpec {
-	return append([]SupportChannelSpec(nil), supportChannels...)
-}
-
 // LookupSupportChannel matches key exactly.
 func LookupSupportChannel(key string) (SupportChannelSpec, bool) {
 	for _, spec := range supportChannels {
@@ -82,6 +77,28 @@ func LookupSupportChannel(key string) (SupportChannelSpec, bool) {
 		}
 	}
 	return SupportChannelSpec{}, false
+}
+
+// SupportAIChannelSupported reports whether AI may run on a normalised
+// channel. Blank and "chat" are the widget's aliases.
+func SupportAIChannelSupported(channel string) bool {
+	if channel == "" || channel == string(SupportAIModeChat) {
+		return true
+	}
+	spec, ok := LookupSupportChannel(channel)
+	return ok && spec.AIMode != SupportAIModeNone
+}
+
+// SupportAIModeChannels lists the channels governed by an AI reply mode, in
+// registry order.
+func SupportAIModeChannels(mode SupportAIMode) []string {
+	channels := []string{}
+	for _, spec := range supportChannels {
+		if spec.AIMode == mode {
+			channels = append(channels, spec.Key)
+		}
+	}
+	return channels
 }
 
 // SupportChannelHasChatSession reports whether a conversation source implies a

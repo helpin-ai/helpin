@@ -16,8 +16,10 @@ func SupportAIChannelEnabled(settings SupportInboxSettings, channel string) bool
 	if channel == "" || channel == "widget" {
 		channel = "chat"
 	}
-	mode := SupportAIMode(channel) // "chat" arrives from SupportAIReplyChannel
-	if spec, ok := LookupSupportChannel(channel); ok {
+	mode := SupportAIModeNone
+	if channel == string(SupportAIModeChat) { // SupportAIReplyChannel's widget alias
+		mode = SupportAIModeChat
+	} else if spec, ok := LookupSupportChannel(channel); ok {
 		mode = spec.AIMode
 	}
 	switch mode {

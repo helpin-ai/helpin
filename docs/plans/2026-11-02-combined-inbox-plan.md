@@ -254,8 +254,9 @@ separately.
 
 ### Changes to `support_conversations`
 
-- `channel` gains the provider values, and a CHECK constraint is added after
-  phase 0 normalises the existing values.
+- `channel` gains the provider values, validated in Go through the registry.
+  There is no CHECK constraint, because the ticket-create API accepts free-form
+  sources (see phase 0).
 - `channel_account_id uuid`, `channel_identity_id uuid`.
 - The conversation list shows the customer from `customer_name`, which is
   filled from the identity snapshot. That way list queries need no join.
@@ -539,6 +540,10 @@ code first, then kept passing through the refactor.
 - Single-channel checks (`conv.Channel == "portal"`, the widget email-collection
   prompt, the delayed widget team reply) are channel behaviour, not channel
   lists. They stay as they are.
+- **Setup evidence** (`repository/setup.go`) counts resolved conversations on
+  `widget`, `email` and `api` only. Portal is already left out. Whether a new
+  channel counts toward activation is a product choice, so phase 1 decides it
+  there.
 
 **What changed:**
 
@@ -554,7 +559,10 @@ code first, then kept passing through the refactor.
   - `shouldUseDefaultMailboxForChannel`;
   - the three "has a chat session" checks: the reply guard in
     `CreateConversationMessage`, merged-group detail, and
-    `mergedDeliveryConversation`.
+    `mergedDeliveryConversation`;
+  - AI support checks for conversations and messages
+    (`supportAIConversationSupported`, `supportAIMessageEligible`);
+  - AI follow-up candidate channels (`repository.SupportFollowUpChannels`).
 
   Portal visibility, incoming-email precedence, mailbox AI overrides and
   machine-mail suppression in `support_ai_channels.go` are untouched.

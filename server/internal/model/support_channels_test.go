@@ -4,7 +4,7 @@ import "testing"
 
 func TestSupportChannelRegistryKeysAreUnique(t *testing.T) {
 	seen := map[string]bool{}
-	for _, spec := range SupportChannels() {
+	for _, spec := range supportChannels {
 		if spec.Key == "" || seen[spec.Key] {
 			t.Fatalf("blank or duplicate channel key %q", spec.Key)
 		}
@@ -20,12 +20,5 @@ func TestLookupSupportChannelIsExact(t *testing.T) {
 		if _, ok := LookupSupportChannel(key); ok {
 			t.Errorf("%q must not resolve", key)
 		}
-	}
-}
-
-func TestSupportChannelsReturnsCopy(t *testing.T) {
-	SupportChannels()[0].Key = "changed"
-	if SupportChannels()[0].Key != SupportChannelWidget {
-		t.Fatal("callers must not mutate the registry")
 	}
 }

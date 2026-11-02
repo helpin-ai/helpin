@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // The channel behaviour matrix pins how every channel value, including unknown
@@ -170,5 +171,43 @@ func TestSupportChannelMatrixTriageSourcePrecedence(t *testing.T) {
 	widgetOnly := model.SupportInboxSettings{TriageWidgetEnabled: true}
 	if !triageChannelEnabled(widgetOnly, supportConversationChannel(imported)) {
 		t.Error("imported email conversation must use the widget triage toggle")
+	}
+}
+
+func TestSupportChannelMatrixAISupported(t *testing.T) {
+	// AI may run on chat, email and portal conversations, and on customer
+	// messages that arrived through them. Inputs are normalised first.
+	supported := []string{"", "widget", "chat", "email", "portal", " Email ", "Widget"}
+	for _, channel := range supportChannelMatrixInputs {
+		want := slices.Contains(supported, channel)
+		if got := supportAIConversationSupported(&model.SupportConversation{Channel: channel}); got != want {
+			t.Errorf("conversation channel %q: got %v want %v", channel, got, want)
+		}
+		via := channel
+		message := &model.SupportMessage{SenderType: "customer", Content: "Please help", ViaChannel: &via}
+		if got := supportAIMessageEligible(message); got != want {
+			t.Errorf("message via %q: got %v want %v", channel, got, want)
+		}
+	}
+	if supportAIConversationSupported(nil) {
+		t.Error("nil conversation must not be supported")
+	}
+}
+
+func TestSupportChannelMatrixFollowUpChannels(t *testing.T) {
+	for _, tc := range []struct {
+		selection string
+		want      []string
+	}{
+		{"chat", []string{"widget"}},
+		{"email", []string{"email"}},
+		{"both", []string{"widget", "email"}},
+		{"invalid", []string{}},
+	} {
+		settings := model.DefaultSupportInboxSettings()
+		settings.AIReplyChannels = tc.selection
+		if got := repository.SupportFollowUpChannels(settings); !slices.Equal(got, tc.want) {
+			t.Errorf("selection=%q: got %v want %v", tc.selection, got, tc.want)
+		}
 	}
 }
