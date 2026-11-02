@@ -6,7 +6,7 @@ import type { TicketSource } from '@/lib/pm-types/support'
  * every surface that enumerates channels reads it, so adding a channel is one
  * entry here plus the TicketSource union.
  */
-export type SupportChannelTransport = 'chat' | 'portal' | 'email' | 'none'
+type SupportChannelTransport = 'chat' | 'portal' | 'email' | 'none'
 
 export interface SupportChannelSpec {
   key: TicketSource

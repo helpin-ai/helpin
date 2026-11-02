@@ -1,6 +1,5 @@
 import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportLinkSecurity, SupportMessage } from '@/lib/pmTypes';
 import { getReplyDeliveryMode } from './replyDelivery';
-import { hasChatTransport } from '@/lib/supportChannels';
 export { AVATAR_COLORS, getAvatarColor } from '@/lib/avatarColor';
 export { getInitials as getInitial } from '@/lib/initials';
 
@@ -103,9 +102,10 @@ export function getSupportReceiptStatus(
     return message.email_notified_at || message.email_delivery_status === 'sent' ? 'sent_email' : null;
   }
   const seen = conversation.contact_last_seen_at;
-  if (hasChatTransport(conversation.source) && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
+  // Literal channel: this file is shared with support-mobile, which cannot resolve '@/lib' modules.
+  if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
   if (message.email_notified_at) return 'sent_email';
-  if (hasChatTransport(conversation.source)) return 'sent';
+  if (conversation.source === 'widget') return 'sent';
   return null;
 }
 
