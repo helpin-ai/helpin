@@ -436,10 +436,13 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM pm_team_field_visibility WHERE team_id IN (" + teamQ + ")",
 			"DELETE FROM pm_team_repo_defaults WHERE team_id IN (" + teamQ + ")",
 
-			// Reward profiles (via workspace members)
-			"DELETE FROM reward_profiles WHERE workspace_member_id IN (" + memberQ + ")",
+			// reward_profiles cascade from workspace_members; versioned migrations
+			// never create the table, so it must not be named here.
 
-			// Support messages (via conversations for FK ordering)
+			// Support messages (via conversations for FK ordering). Anonymized
+			// conversations go first, as in SupportConversationRepository.Delete:
+			// message triggers would otherwise update their read-only projections.
+			"DELETE FROM support_conversations WHERE workspace_id = ? AND anonymized_at IS NOT NULL",
 			"DELETE FROM support_messages WHERE conversation_id IN (" + ticketQ + ")",
 
 			// ── Phase 2: Direct workspace_id tables ──
@@ -490,9 +493,6 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 
 			// Workspace key history
 			"DELETE FROM workspace_key_history WHERE workspace_id = ?",
-
-			// Finally, delete the workspace itself
-			"DELETE FROM workspaces WHERE id = ?",
 		}
 
 		for _, q := range queries {
@@ -504,6 +504,16 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			if err := tx.Exec(q, args...).Error; err != nil {
 				return fmt.Errorf("delete workspace %s: %w", id, err)
 			}
+		}
+		// The list above orders known parent/child deletes; the sweep removes
+		// rows from every other workspace-scoped table so none are orphaned.
+		if tx.Dialector.Name() == "postgres" {
+			if err := sweepWorkspaceRows(tx, id); err != nil {
+				return fmt.Errorf("delete workspace %s: %w", id, err)
+			}
+		}
+		if err := tx.Exec("DELETE FROM workspaces WHERE id = ?", id).Error; err != nil {
+			return fmt.Errorf("delete workspace %s: %w", id, err)
 		}
 
 		if orgID != "" {
