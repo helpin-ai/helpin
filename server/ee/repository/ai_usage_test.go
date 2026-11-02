@@ -385,6 +385,13 @@ func setupAIUsageRepository(t *testing.T, mode string, allowance int64) *AIUsage
 	if err := db.AutoMigrate(&model.AIUsagePeriod{}, &model.AIUsageReservation{}, &model.AIUsageLedgerEntry{}, &model.AIUsageSettlement{}); err != nil {
 		t.Fatal(err)
 	}
+	// Period work only runs for live workspaces.
+	if err := db.Exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO workspaces (id) VALUES ('ws'), ('other'), ('ready-workspace')`).Error; err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
 	if err := db.Create(&model.AIUsagePeriod{ID: "period", WorkspaceID: "ws", PeriodStart: now, PeriodEnd: now.Add(time.Hour), AllowanceMicrousd: allowance, EnforcementMode: mode, Status: model.AIUsagePeriodOpen, PricingVersion: "2026-08-13"}).Error; err != nil {
 		t.Fatal(err)
@@ -417,5 +424,25 @@ func TestAIUsageDuePeriodsExcludeClosingReservedBeforeApplyingLimit(t *testing.T
 	repo.db.First(&original, "id = ?", "period")
 	if original.ReservedMicrousd != 100 || original.Status != model.AIUsagePeriodClosing {
 		t.Fatal("retired period lost its outstanding reservations")
+	}
+}
+
+func TestAIUsageDuePeriodsSkipDeletedWorkspaces(t *testing.T) {
+	repo := setupAIUsageRepository(t, model.AIUsageEnforcementSoft, 1_000_000)
+	now := time.Now().UTC()
+	if err := repo.db.Model(&model.AIUsagePeriod{}).Where("id = ?", "period").Update("period_end", now.Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	// A deleted workspace keeps its period as billing history.
+	archived := model.AIUsagePeriod{ID: "archived-period", WorkspaceID: "deleted-workspace", PeriodStart: now.Add(-time.Hour), PeriodEnd: now.Add(-time.Minute), Status: model.AIUsagePeriodOpen, PricingVersion: "test", EnforcementMode: model.AIUsageEnforcementSoft}
+	if err := repo.db.Create(&archived).Error; err != nil {
+		t.Fatal(err)
+	}
+	due, err := repo.ListDuePeriods(context.Background(), now, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 || due[0].ID != "period" {
+		t.Fatalf("due periods = %+v, want only the live workspace's", due)
 	}
 }

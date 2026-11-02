@@ -9,10 +9,12 @@ import (
 )
 
 // workspaceRetainedTables keep their rows when a workspace is deleted.
-// Billing records are financial history; the outboxes null workspace_id
-// through their foreign keys so pending deliveries still go out; git
-// integrations are organization-wide and deactivated separately.
+// Billing records are financial history and keep workspace_id as an archived
+// id (no foreign key); the outboxes null workspace_id through their foreign
+// keys so pending deliveries still go out; git integrations are
+// organization-wide and deactivated separately.
 var workspaceRetainedTables = map[string]bool{
+	"billing_ai_usage_periods":      true,
 	"billing_ai_usage_ledger":       true,
 	"billing_ai_usage_reservations": true,
 	"billing_ai_usage_settlements":  true,

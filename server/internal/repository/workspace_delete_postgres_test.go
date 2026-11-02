@@ -39,7 +39,7 @@ func openWorkspaceDeletePostgres(t *testing.T) *gorm.DB {
 }
 
 type workspaceDeleteFixture struct {
-	workspaceID, notificationID, pipelineID string
+	workspaceID, notificationID, pipelineID, periodID string
 }
 
 // seedWorkspaceForDelete creates rows in tables the explicit delete list never
@@ -47,7 +47,10 @@ type workspaceDeleteFixture struct {
 // workspace_id that block their parents' deletes.
 func seedWorkspaceForDelete(t *testing.T, db *gorm.DB, ownerID, key string) workspaceDeleteFixture {
 	t.Helper()
-	f := workspaceDeleteFixture{workspaceID: uuid.NewString(), notificationID: uuid.NewString(), pipelineID: uuid.NewString()}
+	f := workspaceDeleteFixture{
+		workspaceID: uuid.NewString(), notificationID: uuid.NewString(),
+		pipelineID: uuid.NewString(), periodID: uuid.NewString(),
+	}
 	eventID, conversationID := uuid.NewString(), uuid.NewString()
 	for _, stmt := range []struct {
 		sql  string
@@ -72,6 +75,16 @@ func seedWorkspaceForDelete(t *testing.T, db *gorm.DB, ownerID, key string) work
 		{`INSERT INTO support_messages (workspace_id, conversation_id, sender_type, content) VALUES (?, ?, 'customer', 'Hi')`,
 			[]any{f.workspaceID, conversationID}},
 		{`UPDATE support_conversations SET anonymized_at = now() WHERE id = ?`, []any{conversationID}},
+		// AI usage is billing history and outlives the workspace.
+		{`INSERT INTO billing_ai_usage_periods (id, workspace_id, period_start, period_end, allowance_microusd, enforcement_mode, pricing_version)
+		  VALUES (?, ?, now(), now() + interval '30 days', 1000, 'soft', 'v1')`, []any{f.periodID, f.workspaceID}},
+		{`INSERT INTO billing_ai_usage_ledger (workspace_id, period_id, entry_kind, feature_key, category, model_tier, provider,
+		  canonical_model, route, service_tier, funding_mode, pricing_version, rate_snapshot, measurement_status, idempotency_key)
+		  VALUES (?, ?, 'charge', 'support_ai', 'chat', 'standard', 'anthropic', 'claude', 'direct', 'default', 'included', 'v1', '{}', 'measured', ?)`,
+			[]any{f.workspaceID, f.periodID, "ledger:" + uuid.NewString()}},
+		{`INSERT INTO billing_ai_usage_settlements (workspace_id, period_id, exact_overage_microusd, rounded_invoice_cents,
+		  rounding_adjustment_microusd, idempotency_key, status) VALUES (?, ?, 0, 0, 0, ?, 'settled')`,
+			[]any{f.workspaceID, f.periodID, "settlement:" + uuid.NewString()}},
 		{`INSERT INTO product_analytics_outbox (workspace_id, semantic_key, event_name, source, occurred_at)
 		  VALUES (?, ?, 'workspace_deleted', 'api', now())`, []any{f.workspaceID, "test:" + uuid.NewString()}},
 	} {
@@ -160,6 +173,17 @@ func TestWorkspaceDeleteRemovesEveryWorkspaceRowPostgres(t *testing.T) {
 	}
 	if outbox != 1 {
 		t.Errorf("retained analytics outbox rows = %d, want 1", outbox)
+	}
+
+	// Billing history keeps the deleted workspace's id as an archived value.
+	for _, table := range []string{"billing_ai_usage_periods", "billing_ai_usage_ledger", "billing_ai_usage_settlements"} {
+		var n int64
+		if err := db.Table(table).Where("workspace_id = ?", deleted.workspaceID).Count(&n).Error; err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("retained %s rows for the deleted workspace = %d, want 1", table, n)
+		}
 	}
 
 	keptAfter := workspaceRowCounts(t, db, kept.workspaceID)
