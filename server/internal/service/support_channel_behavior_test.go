@@ -137,3 +137,38 @@ func TestSupportChannelMatrixChatSession(t *testing.T) {
 		}
 	}
 }
+
+func TestSupportChannelMatrixTriageSourcePrecedence(t *testing.T) {
+	// Triage reads source before channel. Imported conversations therefore
+	// resolve to their provenance; changing this would reroute them.
+	for _, tc := range []struct {
+		source, channel, want string
+	}{
+		{"intercom", "email", "intercom"},
+		{"intercom", "widget", "intercom"},
+		{"widget", "email", "widget"},
+		{"email", "widget", "email"},
+		{" Portal ", "email", "portal"},
+		{"", "Email", "email"},
+		{"", "", "widget"},
+	} {
+		conv := &model.SupportConversation{Source: tc.source, Channel: tc.channel}
+		if got := supportConversationChannel(conv); got != tc.want {
+			t.Errorf("source=%q channel=%q: got %q want %q", tc.source, tc.channel, got, tc.want)
+		}
+	}
+	if got := supportConversationChannel(nil); got != "widget" {
+		t.Errorf("nil conversation: got %q want widget", got)
+	}
+
+	// An imported email conversation follows the widget toggle, not the email one.
+	imported := &model.SupportConversation{Source: model.SupportImportSourceIntercom, Channel: "email"}
+	emailOnly := model.SupportInboxSettings{TriageEmailEnabled: true}
+	if triageChannelEnabled(emailOnly, supportConversationChannel(imported)) {
+		t.Error("imported email conversation must not use the email triage toggle")
+	}
+	widgetOnly := model.SupportInboxSettings{TriageWidgetEnabled: true}
+	if !triageChannelEnabled(widgetOnly, supportConversationChannel(imported)) {
+		t.Error("imported email conversation must use the widget triage toggle")
+	}
+}
