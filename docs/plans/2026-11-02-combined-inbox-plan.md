@@ -595,6 +595,8 @@ transport.
 
 ### Phase 1: foundation plus Telegram (10–14 days)
 
+Implementation plan: [Telegram channel](2026-11-03-telegram-channel-plan.md).
+
 Telegram goes first because it needs no app review, no business verification
 and no OAuth. Connecting it means pasting a bot token. That lets one provider
 prove the shared delivery architecture end to end, and it works for self-hosters
