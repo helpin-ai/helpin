@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,6 +49,8 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 		}
 	}
 	actor := (*string)(nil)
+	// The step's run joins the plan's Agent Runtime run group, if it has one.
+	ctx = s.commandBarPlanStepContext(ctx, workspaceID, planID)
 	ctx, actorID, err = s.commandBarAIContext(ctx, workspaceID, planID, actorID)
 	if err != nil {
 		return nil, err
@@ -179,7 +182,30 @@ func (s *AgentService) advanceCommandBarPlanForRun(ctx context.Context, run *mod
 	return nextRun, nil
 }
 
+// startReadyCommandBarPlanSteps runs one scheduling pass under the plan's
+// advancement lock, shared by dispatch, the run finalizer, the completion
+// consumer and the stalled-plan sweep. When another path holds the lock it
+// returns without scheduling: that path advances the plan.
 func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanInput) (*CommandBarPlanProgress, error) {
+	var progress *CommandBarPlanProgress
+	acquired, err := s.withCommandBarPlanLock(ctx, input.PlanID, func() error {
+		var err error
+		progress, err = s.startReadyCommandBarPlanStepsLocked(ctx, input)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !acquired {
+		slog.InfoContext(ctx, "command bar plan is being advanced elsewhere", "workspace_id", input.WorkspaceID, "plan_id", input.PlanID)
+		return &CommandBarPlanProgress{Status: model.CommandBarPlanStatusRunning}, nil
+	}
+	return progress, nil
+}
+
+// startReadyCommandBarPlanStepsLocked is one scheduling pass; the caller
+// holds the plan's advancement lock.
+func (s *AgentService) startReadyCommandBarPlanStepsLocked(ctx context.Context, input CommandBarPlanInput) (*CommandBarPlanProgress, error) {
 	progress := &CommandBarPlanProgress{Status: model.CommandBarPlanStatusRunning}
 	if s == nil || s.commandBarPlanRepo == nil || s.runRepo == nil {
 		return &CommandBarPlanProgress{Terminal: true, Status: "not_configured"}, nil

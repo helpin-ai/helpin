@@ -1015,7 +1015,8 @@ func main() {
 	).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
-		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled).
+		SetCommandBarRunGroups(cfg.CommandBarRunGroupsEnabled, repository.NewCommandBarPlanRunGroupRepository(db))
 	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
@@ -1518,6 +1519,11 @@ func main() {
 					}
 					return err
 				})
+				if cfg.CommandBarRunGroupsEnabled {
+					group.Go(func() error {
+						return agentService.StartCommandBarRunGroupConsumer(groupCtx, 2*time.Second)
+					})
+				}
 				group.Go(func() error {
 					return agentRuntimeProjectionService.StartReconciliationSweep(
 						groupCtx,
