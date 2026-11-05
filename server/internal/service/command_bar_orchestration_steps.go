@@ -112,6 +112,7 @@ func (s *AgentService) advanceCommandBarPlanForRun(ctx context.Context, run *mod
 				Prompt:      payload.Prompt,
 				PageContext: payload.PageContext,
 				Steps:       payload.Steps,
+				SettledRun:  run,
 			}); err != nil {
 				return nil, err
 			}
@@ -203,6 +204,13 @@ func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input 
 	runs, err := s.runRepo.ListByIDs(ctx, input.WorkspaceID, runIDs)
 	if err != nil {
 		return nil, err
+	}
+	if settled := input.SettledRun; settled != nil && isTerminalAgentRunStatus(settled.Status) {
+		for i := range runs {
+			if runs[i].ID == settled.ID {
+				runs[i] = *settled
+			}
+		}
 	}
 	runsByID := make(map[string]model.AgentRun, len(runs))
 	activeCount := 0
