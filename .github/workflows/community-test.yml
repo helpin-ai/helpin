@@ -63,7 +63,7 @@ jobs:
           ref: ${{ steps.runtime.outputs.revision }}
           path: agent-runtime
           token: ${{ secrets.runtime_read_token || github.token }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           package-manager-cache: false
           node-version-file: helpin/.node-version
@@ -141,7 +141,7 @@ jobs:
                       output.write(f'{target}.cache-to=type=gha,scope={scope},mode=max\n')
               output.write('CACHE\n')
           PY
-      - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+      - uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         with:
           source: .
           files: ${{ runner.temp }}/community-bake.json
@@ -188,7 +188,7 @@ jobs:
           Path('release-artifacts/tested-applications.json').write_text(json.dumps(inventory))
           PY
           (cd release-artifacts && sha256sum tested-images.tar.gz > tested-images.tar.gz.sha256)
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: community-tested-${{ inputs.architecture }}
           path: helpin/community/release-artifacts/
