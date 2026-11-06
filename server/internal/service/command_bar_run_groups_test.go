@@ -208,3 +208,46 @@ func TestEnsureCommandBarPlanRunGroup(t *testing.T) {
 		})
 	}
 }
+
+// A completion whose advancement fails leaves the cursor where it was, so
+// the next poll applies it again; once applied, the cursor moves past it
+// and it is not applied again.
+func TestCommandBarRunGroupCompletionIsNeverSkipped(t *testing.T) {
+	db := setupRunGroupPlanTestDB(t)
+	ctx := context.Background()
+	seedTwoStepPlan(t, db)
+	groups := repository.NewCommandBarPlanRunGroupRepository(db)
+	link := model.CommandBarPlanRunGroup{PlanID: runGroupTestPlan, WorkspaceID: runGroupTestWorkspace, GroupID: "rungroup-1"}
+	if err := groups.Create(ctx, &link); err != nil {
+		t.Fatalf("create link: %v", err)
+	}
+	service := &AgentService{commandBarPlanRepo: repository.NewCommandBarPlanRepository(db)}
+	service.SetCommandBarRunGroups(true, groups)
+	cursor := func() int64 {
+		t.Helper()
+		current, err := groups.GetByPlan(ctx, runGroupTestWorkspace, runGroupTestPlan)
+		if err != nil || current == nil {
+			t.Fatalf("get link: %+v %v", current, err)
+		}
+		return current.CompletionCursor
+	}
+
+	applied := 0
+	failing := func() error { applied++; return errors.New("plan advancement failed") }
+	if err := service.applyThenAdvance(ctx, link, 1, failing); err == nil {
+		t.Fatal("failed advancement reported success")
+	}
+	if got := cursor(); got != 0 {
+		t.Fatalf("cursor after failed advancement = %d, want 0", got)
+	}
+	succeeding := func() error { applied++; return nil }
+	if err := service.applyThenAdvance(ctx, link, 1, succeeding); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if got := cursor(); got != 1 || applied != 2 {
+		t.Fatalf("cursor = %d, applied = %d; want 1 and 2", got, applied)
+	}
+	if err := service.applyThenAdvance(ctx, link, 1, succeeding); err != nil || applied != 2 {
+		t.Fatalf("passed completion applied again: applied = %d, %v", applied, err)
+	}
+}

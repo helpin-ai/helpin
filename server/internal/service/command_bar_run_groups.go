@@ -16,11 +16,11 @@ import (
 // join it. The runtime persists each child's terminal transition together
 // with a per-group completion sequence, so a completion is never lost the
 // way an event can be. The consumer reads completions after the plan's
-// cursor and, for each, records the cursor (idempotent per sequence) and
-// advances the plan using the completion's status. The run finalizer and
-// the stalled-plan sweep keep working as before and share the plan's
-// advancement lock, so a sweep racing a completion cannot advance a step
-// twice. Plans without a group keep the existing behavior.
+// cursor and, for each, advances the plan using the completion's status
+// and then records the cursor, so a completion is never skipped. The run
+// finalizer and the stalled-plan sweep keep working as before and share
+// the plan's advancement lock, so a sweep racing a completion cannot
+// advance a step twice. Plans without a group keep the existing behavior.
 
 const (
 	commandBarPlanLockWait        = 15 * time.Second
@@ -170,14 +170,10 @@ func (s *AgentService) consumeCommandBarPlanCompletions(ctx context.Context, cli
 	for _, completion := range completions {
 		applied := false
 		_, err := s.withCommandBarPlanLock(ctx, link.PlanID, func() error {
-			// The cursor update is the host transaction: only the caller
-			// that moves it past this sequence applies the completion.
-			owned, err := s.commandBarRunGroupRepo.AdvanceCursor(ctx, link.WorkspaceID, link.PlanID, completion.Seq)
-			if err != nil || !owned {
-				return err
-			}
-			applied = true
-			return s.applyCommandBarCompletion(ctx, link, completion)
+			return s.applyThenAdvance(ctx, link, completion.Seq, func() error {
+				applied = true
+				return s.applyCommandBarCompletion(ctx, link, completion)
+			})
 		})
 		if err != nil {
 			return err
@@ -188,6 +184,24 @@ func (s *AgentService) consumeCommandBarPlanCompletions(ctx context.Context, cli
 		}
 	}
 	return nil
+}
+
+// applyThenAdvance applies one completion and only then moves the plan's
+// cursor past it, under the plan's lock. A failure or crash before the
+// cursor moves leaves the completion to be applied again on the next poll;
+// applying is idempotent (each step starts at most once), so a completion
+// can repeat but is never skipped. A completion the cursor already passed
+// is not applied again.
+func (s *AgentService) applyThenAdvance(ctx context.Context, link model.CommandBarPlanRunGroup, seq int64, apply func() error) error {
+	current, err := s.commandBarRunGroupRepo.GetByPlan(ctx, link.WorkspaceID, link.PlanID)
+	if err != nil || current == nil || current.CompletionCursor >= seq {
+		return err
+	}
+	if err := apply(); err != nil {
+		return err
+	}
+	_, err = s.commandBarRunGroupRepo.AdvanceCursor(ctx, link.WorkspaceID, link.PlanID, seq)
+	return err
 }
 
 // applyCommandBarCompletion advances the plan with the child's settled
