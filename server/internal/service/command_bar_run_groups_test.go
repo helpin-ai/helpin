@@ -251,3 +251,56 @@ func TestCommandBarRunGroupCompletionIsNeverSkipped(t *testing.T) {
 		t.Fatalf("passed completion applied again: applied = %d, %v", applied, err)
 	}
 }
+
+// A completion for a runtime run the host has not recorded yet is not
+// acknowledged: the cursor stays so the next poll applies it.
+func TestCommandBarRunGroupCompletionWaitsForUnrecordedRun(t *testing.T) {
+	db := setupRunGroupPlanTestDB(t)
+	ctx := context.Background()
+	seedTwoStepPlan(t, db)
+	groups := repository.NewCommandBarPlanRunGroupRepository(db)
+	link := model.CommandBarPlanRunGroup{PlanID: runGroupTestPlan, WorkspaceID: runGroupTestWorkspace, GroupID: "rungroup-1"}
+	if err := groups.Create(ctx, &link); err != nil {
+		t.Fatalf("create link: %v", err)
+	}
+	client := &fakeRunGroupClient{available: true, completions: []CommandBarRunGroupCompletion{
+		{Seq: 1, RuntimeRunID: "runtime-not-recorded", Status: model.AgentRunStatusCompleted},
+	}}
+	service := &AgentService{runRepo: repository.NewAgentRunRepository(db), commandBarPlanRepo: repository.NewCommandBarPlanRepository(db), agentRuntimeClient: client}
+	service.SetCommandBarRunGroups(true, groups)
+	if err := service.consumeCommandBarPlanCompletions(ctx, client, link); !errors.Is(err, errCommandBarRunNotRecorded) {
+		t.Fatalf("consume = %v, want a retryable not-recorded error", err)
+	}
+	current, err := groups.GetByPlan(ctx, runGroupTestWorkspace, runGroupTestPlan)
+	if err != nil || current.CompletionCursor != 0 {
+		t.Fatalf("cursor = %+v, %v; want 0", current, err)
+	}
+}
+
+// A plan whose completion cannot be written is not acknowledged.
+func TestCommandBarPlanWriteFailureIsNotAcknowledged(t *testing.T) {
+	db := setupRunGroupPlanTestDB(t)
+	ctx := context.Background()
+	runIDs := seedTwoStepPlan(t, db)
+	groups := repository.NewCommandBarPlanRunGroupRepository(db)
+	link := model.CommandBarPlanRunGroup{PlanID: runGroupTestPlan, WorkspaceID: runGroupTestWorkspace, GroupID: "rungroup-1"}
+	if err := groups.Create(ctx, &link); err != nil {
+		t.Fatalf("create link: %v", err)
+	}
+	// Plan writes fail: the plans table refuses updates.
+	if err := db.Exec(`CREATE TRIGGER refuse_plan_updates BEFORE UPDATE ON command_bar_plans BEGIN SELECT RAISE(ABORT, 'plan store unavailable'); END`).Error; err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+	client := &fakeRunGroupClient{available: true, completions: []CommandBarRunGroupCompletion{
+		{Seq: 1, RuntimeRunID: "runtime-" + runIDs[1], Status: model.AgentRunStatusCompleted},
+	}}
+	service := &AgentService{runRepo: repository.NewAgentRunRepository(db), commandBarPlanRepo: repository.NewCommandBarPlanRepository(db), agentRuntimeClient: client}
+	service.SetCommandBarRunGroups(true, groups)
+	if err := service.consumeCommandBarPlanCompletions(ctx, client, link); err == nil {
+		t.Fatal("a failed plan write was acknowledged")
+	}
+	current, err := groups.GetByPlan(ctx, runGroupTestWorkspace, runGroupTestPlan)
+	if err != nil || current.CompletionCursor != 0 {
+		t.Fatalf("cursor = %+v, %v; want 0", current, err)
+	}
+}

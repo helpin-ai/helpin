@@ -257,7 +257,9 @@ func (s *AgentService) startReadyCommandBarPlanStepsLocked(ctx context.Context, 
 		}
 		if run.Status == model.AgentRunStatusFailed || run.Status == model.AgentRunStatusCancelled {
 			payload := commandBarTriggerContextPayload{PlanID: input.PlanID, Steps: steps, StepIndex: commandBarStepIndexForRun(runIDsByStep, run.ID)}
-			_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, commandBarTerminalRunMessage(&run, payload, string(run.Status)))
+			if err := s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, commandBarTerminalRunMessage(&run, payload, string(run.Status))); err != nil {
+				return nil, fmt.Errorf("mark plan %s failed: %w", input.PlanID, err)
+			}
 			return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 		}
 	}
@@ -272,7 +274,9 @@ func (s *AgentService) startReadyCommandBarPlanStepsLocked(ctx context.Context, 
 		}
 	}
 	if allCompleted {
-		_ = s.commandBarPlanRepo.MarkCompleted(ctx, input.WorkspaceID, input.PlanID)
+		if err := s.commandBarPlanRepo.MarkCompleted(ctx, input.WorkspaceID, input.PlanID); err != nil {
+			return nil, fmt.Errorf("mark plan %s completed: %w", input.PlanID, err)
+		}
 		return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusCompleted}, nil
 	}
 
@@ -330,7 +334,9 @@ func (s *AgentService) startReadyCommandBarPlanStepsLocked(ctx context.Context, 
 		}
 	}
 	if started == 0 && activeCount == 0 && !observedConcurrentProgress {
-		_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, "Command-bar plan has no runnable steps; check task dependencies for a cycle or missing completed prerequisite.")
+		if err := s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, "Command-bar plan has no runnable steps; check task dependencies for a cycle or missing completed prerequisite."); err != nil {
+			return nil, fmt.Errorf("mark plan %s failed: %w", input.PlanID, err)
+		}
 		return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 	}
 	return progress, nil

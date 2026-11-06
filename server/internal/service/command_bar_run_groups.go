@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -27,6 +29,10 @@ const (
 	commandBarRunGroupPageSize    = 100
 	commandBarRunGroupConsumerMax = 200
 )
+
+// errCommandBarRunNotRecorded means a completion names a runtime run the
+// host has no record of yet; the completion is retried, not acknowledged.
+var errCommandBarRunNotRecorded = errors.New("command bar plan run not recorded yet")
 
 // CommandBarRunGroupCompletion is one child's terminal transition.
 type CommandBarRunGroupCompletion struct {
@@ -209,9 +215,16 @@ func (s *AgentService) applyThenAdvance(ctx context.Context, link model.CommandB
 // must still see the terminal transition.
 func (s *AgentService) applyCommandBarCompletion(ctx context.Context, link model.CommandBarPlanRunGroup, completion CommandBarRunGroupCompletion) error {
 	run, err := s.runRepo.GetByExternalRuntimeID(ctx, agentRuntimeName, completion.RuntimeRunID)
-	if err != nil || run == nil {
+	if err != nil {
 		return err
 	}
+	if run == nil {
+		// The host has not recorded this runtime run yet; leave the
+		// completion unacknowledged so the next poll applies it.
+		return fmt.Errorf("%w: runtime run %s", errCommandBarRunNotRecorded, completion.RuntimeRunID)
+	}
+	// Completions from another workspace or for another plan are not this
+	// plan's to apply; acknowledging them is correct.
 	if run.WorkspaceID != link.WorkspaceID {
 		return nil
 	}
