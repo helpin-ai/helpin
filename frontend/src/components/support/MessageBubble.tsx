@@ -37,6 +37,7 @@ import { toast } from 'sonner';
 import { buildTaskPath } from '@/lib/pmTaskLinks';
 import { openTaskPanelFromLink } from '@/components/pm/task-detail/taskRouteNavigation';
 import { SupportLink } from './SupportLink';
+import { supportChannel } from '@/lib/supportChannels';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -256,13 +257,6 @@ const markdownBaseComponents = {
   ),
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-  widget: 'Chat',
-  email: 'Email',
-  internal: 'Internal',
-  api: 'API',
-};
-
 function previewHostLabel(preview: SupportLinkPreview): string {
   try {
     return new URL(preview.url).hostname.replace(/^www\./, '') || preview.host;
@@ -458,7 +452,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
   const messageSource = message.via_channel ?? source;
   const sourceLabel = isInternal ? null : deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode]
-    : messageSource ? SOURCE_LABELS[messageSource] ?? messageSource : null;
+    : messageSource ? supportChannel(messageSource)?.messageLabel ?? messageSource : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
   // Only strip if the JSON parses as an AI contract (has can_answer + content keys)

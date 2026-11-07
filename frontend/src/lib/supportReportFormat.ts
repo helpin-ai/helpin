@@ -1,3 +1,4 @@
+import { supportChannelLabel } from './supportChannels'
 import type { SupportReportParams } from './supportReportTypes'
 
 export type SupportReportRangePreset = '7d' | '30d' | '90d' | 'month'
@@ -108,14 +109,6 @@ export function describeReportTrend(
   return { label, tone: improved === null ? 'neutral' : improved ? 'positive' : 'negative' }
 }
 
-export const SUPPORT_REPORT_CHANNEL_LABELS: Record<string, string> = {
-  widget: 'Chat',
-  email: 'Email',
-  portal: 'Portal',
-  api: 'API',
-  internal: 'Started by team',
-}
-
 export function reportChannelLabel(channel: string): string {
-  return SUPPORT_REPORT_CHANNEL_LABELS[channel] ?? channel.charAt(0).toUpperCase() + channel.slice(1)
+  return supportChannelLabel(channel)
 }

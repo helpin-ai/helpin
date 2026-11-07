@@ -425,15 +425,14 @@ func supportAIMessageEligible(message *model.SupportMessage) bool {
 		return false
 	}
 	channel := strings.ToLower(strings.TrimSpace(derefString(message.ViaChannel)))
-	return (channel == "" || channel == "widget" || channel == "chat" || channel == "email" || channel == "portal") && (channel != "email" || !model.SupportEmailSuppressesAI(message))
+	return model.SupportAIChannelSupported(channel) && (channel != "email" || !model.SupportEmailSuppressesAI(message))
 }
 
 func supportAIConversationSupported(conversation *model.SupportConversation) bool {
 	if conversation == nil {
 		return false
 	}
-	channel := strings.ToLower(strings.TrimSpace(conversation.Channel))
-	return channel == "" || channel == "widget" || channel == "chat" || channel == "email" || channel == "portal"
+	return model.SupportAIChannelSupported(strings.ToLower(strings.TrimSpace(conversation.Channel)))
 }
 
 // Recheck the saved choice when queued or child work is resumed. The pending

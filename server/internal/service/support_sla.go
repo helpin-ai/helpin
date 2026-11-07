@@ -24,7 +24,10 @@ var supportSLAMetricLabels = map[string]string{
 	model.SupportSLAMetricResolution:    "resolution",
 }
 
-var supportSLAChannels = []string{"widget", "email", "portal", "api", "internal"}
+func supportSLAChannelAllowed(channel string) bool {
+	spec, ok := model.LookupSupportChannel(channel)
+	return ok && spec.SLAChannel
+}
 
 // SupportSLAService manages SLA policies and keeps each conversation's SLA
 // state current. Database triggers queue conversations whose status,
@@ -119,7 +122,7 @@ func (s *SupportSLAService) normalizePolicy(ctx context.Context, workspaceID str
 	if policy.Priorities, err = normalizeSLAList(req.Priorities, model.IsValidSupportConversationPriority, "priority"); err != nil {
 		return err
 	}
-	if policy.Channels, err = normalizeSLAList(req.Channels, func(v string) bool { return slices.Contains(supportSLAChannels, v) }, "channel"); err != nil {
+	if policy.Channels, err = normalizeSLAList(req.Channels, supportSLAChannelAllowed, "channel"); err != nil {
 		return err
 	}
 	mailboxes := map[string]bool{"shared": true}

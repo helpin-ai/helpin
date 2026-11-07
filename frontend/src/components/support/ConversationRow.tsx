@@ -1,6 +1,7 @@
 import { memo, useState, type KeyboardEvent } from 'react';
 import { ConversationPriorityBadge, ConversationRowOperations } from './ConversationRowOperations';
-import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, GlobeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
+import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
+import { supportChannel } from '@/lib/supportChannels';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -34,19 +35,9 @@ export type { ConversationRowVisualState } from './conversationRowVisual';
 
 const EMPTY_ARRAY: string[] = [];
 
-type ChannelMeta = { icon: typeof Message01Icon; label: string };
-
-const CHANNEL_META: Record<TicketSource, ChannelMeta | null> = {
-  widget: { icon: Message01Icon, label: 'Live chat' },
-  email: { icon: Mail01Icon, label: 'Email' },
-  portal: { icon: GlobeIcon, label: 'Customer portal' },
-  api: null,
-  internal: null,
-};
-
 const ChannelIcon = memo(function ChannelIcon({ source }: { source?: TicketSource | null }) {
   if (!source) return null;
-  const meta = CHANNEL_META[source];
+  const meta = supportChannel(source)?.inbox;
   if (!meta) return null;
   const Icon = meta.icon;
   return (
