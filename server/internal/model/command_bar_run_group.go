@@ -13,8 +13,8 @@ type CommandBarPlanRunGroup struct {
 	GroupID     string `json:"group_id" gorm:"not null"`
 	// CompletionCursor is the highest completion sequence already applied.
 	CompletionCursor int64     `json:"completion_cursor" gorm:"not null;default:0"`
-	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime;not null;default:now()"`
+	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime;not null;default:now()"`
 }
 
 // TableName returns the plan run group table.
