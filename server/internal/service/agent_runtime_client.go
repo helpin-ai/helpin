@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
@@ -54,6 +55,10 @@ type AgentRuntimeClient struct {
 	serviceToken  string
 	eventProtocol string
 	httpClient    *http.Client
+
+	runGroupsMu      sync.Mutex
+	runGroupsChecked time.Time
+	runGroupsOK      bool
 }
 
 func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client, eventProtocol ...string) (*AgentRuntimeClient, error) {
@@ -114,6 +119,43 @@ func (c *AgentRuntimeClient) UpsertAgent(ctx context.Context, agent AgentRuntime
 
 func (c *AgentRuntimeClient) StartRun(ctx context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error) {
 	return c.client.StartRun(ctx, req)
+}
+
+// RunGroupsAvailable reports whether the runtime offers run groups to this
+// app. The answer is cached for a minute.
+func (c *AgentRuntimeClient) RunGroupsAvailable(ctx context.Context) bool {
+	c.runGroupsMu.Lock()
+	defer c.runGroupsMu.Unlock()
+	if time.Since(c.runGroupsChecked) < time.Minute {
+		return c.runGroupsOK
+	}
+	capabilities, err := c.client.GetCapabilities(ctx)
+	c.runGroupsOK = err == nil && capabilities.RunGroups != nil && capabilities.RunGroups.Supported
+	c.runGroupsChecked = time.Now()
+	return c.runGroupsOK
+}
+
+// CreateRunGroup creates (or returns, for the same key) a host-owned run
+// group and returns its id.
+func (c *AgentRuntimeClient) CreateRunGroup(ctx context.Context, creationKey string) (string, error) {
+	group, err := c.client.CreateRunGroup(ctx, agentruntime.CreateRunGroupRequest{CreationKey: creationKey})
+	if err != nil {
+		return "", err
+	}
+	return group.ID, nil
+}
+
+// ListRunGroupCompletions returns completions after the cursor, in order.
+func (c *AgentRuntimeClient) ListRunGroupCompletions(ctx context.Context, groupID string, after int64, limit int) ([]CommandBarRunGroupCompletion, error) {
+	page, err := c.client.ListRunGroupCompletions(ctx, groupID, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CommandBarRunGroupCompletion, 0, len(page.Items))
+	for _, item := range page.Items {
+		out = append(out, CommandBarRunGroupCompletion{Seq: item.Seq, RuntimeRunID: item.RunID, Status: item.Status})
+	}
+	return out, nil
 }
 
 // UpdateRunMCPCredential rotates only an already-attached server credential;
