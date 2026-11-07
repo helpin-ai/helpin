@@ -136,3 +136,14 @@ describe('resolveCodingSessionComposerState', () => {
     expect(state.visible).toBe(false);
   });
 });
+
+it('enables native steering in the sheet only after capability discovery', () => {
+  for (const status of ['running', 'queued'] as const) {
+    const session = buildSession({ status, runtime_kind: 'native_sdk' });
+    expect(resolveCodingSessionComposerState(session, null, false, true)).toMatchObject({ enabled: true, mode: 'steer' });
+    expect(resolveCodingSessionComposerState(session, null, false, false).enabled).toBe(false);
+    expect(resolveCodingSessionComposerState(session, null, true, true).enabled).toBe(false);
+    expect(resolveCodingSessionComposerState(session, buildInteraction(), false, true).enabled).toBe(false);
+  }
+  expect(resolveCodingSessionComposerState(buildSession({ status: 'paused', pause_reason: 'manual' }), null, false, true).enabled).toBe(false);
+});
