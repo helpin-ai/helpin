@@ -49,3 +49,17 @@ func (h *DockChatHandler) RunSteering(w http.ResponseWriter, r *http.Request) {
 	}
 	handleRunSteering(w, r, h.agentService, run.ID)
 }
+
+// ChatRunSteering pins the command to the run the user saw. A successor must
+// never receive an instruction intended for the previous run.
+func (h *DockChatHandler) ChatRunSteering(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveOwnedChatRun(w, r)
+	if !ok {
+		return
+	}
+	if run.ID != chi.URLParam(r, "runID") {
+		writeError(w, http.StatusConflict, "The chat run changed. Reopen the chat before steering.")
+		return
+	}
+	handleRunSteering(w, r, h.agentService, run.ID)
+}

@@ -1105,6 +1105,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/pause", h.DockChat.PauseChatRun)
+				r.With(requireCommandBarEdit()).Get("/chats/{chatID}/runs/{runID}/steering", h.DockChat.ChatRunSteering)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/runs/{runID}/steering", h.DockChat.ChatRunSteering)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/resume", h.DockChat.ResumeChatRun)
 				r.With(requireCommandBarRead()).Get("/runs", h.DockChat.ListRuns)
 				r.With(requireCommandBarRead()).Get("/runs/{runID}/snapshot", h.DockChat.GetRunSnapshot)

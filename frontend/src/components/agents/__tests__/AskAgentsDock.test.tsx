@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => ({
   getChat: vi.fn(),
   updateChat: vi.fn(),
   sendMessage: vi.fn(),
+  chatRunSteering: vi.fn(),
+  steerChatRun: vi.fn(),
   listMessages: vi.fn(),
   generateTitle: vi.fn(),
   getChatRun: vi.fn(),
@@ -95,6 +97,8 @@ vi.mock('@/lib/services/dockChatService', () => ({
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
     sendMessage: mocks.sendMessage,
+    chatRunSteering: mocks.chatRunSteering,
+    steerChatRun: mocks.steerChatRun,
     listMessages: mocks.listMessages,
     generateTitle: mocks.generateTitle,
     getChatRun: mocks.getChatRun,
@@ -195,6 +199,8 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  mocks.chatRunSteering.mockReset().mockResolvedValue({ data: [], error: null });
+  mocks.steerChatRun.mockReset().mockImplementation(async (_ws, _chat, _run, command) => ({ data: { ...command, revision: 1, state: 'accepted' }, error: null }));
   mocks.useDockPins.mockReturnValue({ chats: [], runs: [], loading: false, pending: false, unavailable: false, togglePin: vi.fn(), removeArchivedChat: vi.fn() });
   mocks.useAskAgentDefaults.mockReturnValue({ data: { ai_profile_id: 'ask-default' }, isPending: false, isError: false, refetch: vi.fn() });
   container = document.createElement('div');
@@ -2922,4 +2928,41 @@ it('preserves an older pinned chat selection while pins load separately from his
   mocks.useDockPins.mockReturnValue({ ...state, chats: [older], loading: false, unavailable: false });
   await renderDock();
   expect(useDockStore.getState().activeChatId).toBe(older.id);
+});
+
+it('lets the running chat steer with Send while retaining pause and stop controls', async () => {
+  const run = { id: 'run-1', status: 'running', runtime_kind: 'native_sdk', pause_reason: 'none' };
+  mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: { ...CHAT, active_run_id: run.id }, run: run as never }), error: null });
+  mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+  await renderDock();
+  await waitForCondition(() => !dockTextarea().disabled, 'Steering composer stayed disabled');
+  const textarea = dockTextarea();
+  expect(textarea.placeholder).toBe('Send instructions to this run…');
+  await act(async () => { setTextareaValue(textarea, 'Limit the research to three companies'); });
+  const send = document.body.querySelector<HTMLButtonElement>('button[title="Send"]')!;
+  expect(send.disabled).toBe(false);
+  expect(document.body.querySelector('[aria-label="Pause agent"]')).not.toBeNull();
+  expect(document.body.querySelector('[aria-label="Stop agent"]')).not.toBeNull();
+  await act(async () => { send.click(); });
+  expect(mocks.steerChatRun).toHaveBeenCalledWith('ws-1', 'chat-1', 'run-1', expect.objectContaining({ content: 'Limit the research to three companies' }));
+  expect(mocks.sendMessage).not.toHaveBeenCalled();
+  expect(mocks.createChat).not.toHaveBeenCalled();
+  expect(textarea.value).toBe('');
+  expect(document.body.textContent).toContain('Instruction queued for the next safe boundary.');
+});
+
+it('retains a failed steering draft and retries its command instead of posting a chat turn', async () => {
+  const run = { id: 'run-1', status: 'running', runtime_kind: 'native_sdk', pause_reason: 'none' };
+  mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: { ...CHAT, active_run_id: run.id }, run: run as never }), error: null });
+  mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+  mocks.steerChatRun.mockResolvedValueOnce({ data: null, error: 'Connection lost', status: 502 });
+  await renderDock();
+  await waitForCondition(() => !dockTextarea().disabled, 'Steering composer stayed disabled');
+  await act(async () => { setTextareaValue(dockTextarea(), 'Research only'); });
+  await act(async () => { document.body.querySelector<HTMLButtonElement>('button[title="Send"]')!.click(); });
+  expect(dockTextarea().value).toBe('Research only');
+  expect(document.body.textContent).toContain('Connection lost');
+  await act(async () => { document.body.querySelector<HTMLButtonElement>('button[title="Send"]')!.click(); });
+  expect(mocks.steerChatRun.mock.calls[0]).toEqual(mocks.steerChatRun.mock.calls[1]);
+  expect(mocks.sendMessage).not.toHaveBeenCalled();
 });
