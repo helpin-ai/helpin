@@ -111,6 +111,7 @@ vi.mock('@/lib/services/dockChatService', () => ({
     resolveRunInteraction: mocks.resolveRunInteraction,
     sendRunMessage: mocks.sendRunMessage,
     continueRun: mocks.continueRun,
+    runSteering: vi.fn().mockResolvedValue({ data: [], error: null }),
     cancelRun: mocks.cancelRun,
     startRunAuth: mocks.startRunAuth,
     cancelRunAuth: mocks.cancelRunAuth,
