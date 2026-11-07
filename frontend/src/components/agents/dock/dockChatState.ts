@@ -35,6 +35,7 @@ export function resolveDockComposerState(
   run: DockRunLike | null,
   hasStructuredInteraction: boolean,
   loading: boolean,
+  canSteer = false,
 ): DockComposerState {
   if (!run) {
     if (loading) {
@@ -44,6 +45,9 @@ export function resolveDockComposerState(
   }
   if (hasStructuredInteraction) {
     return { visible: true, enabled: false, placeholder: 'Respond to the agent above' };
+  }
+  if (canSteer && (run.status === 'running' || run.status === 'queued')) {
+    return { visible: true, enabled: !loading, placeholder: 'Send instructions to this run…' };
   }
   switch (run.status) {
     case 'completed':
