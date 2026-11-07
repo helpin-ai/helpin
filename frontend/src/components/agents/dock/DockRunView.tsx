@@ -12,7 +12,7 @@ import { PendingInteractionCard } from './PendingInteractionCard';
 import { DockInteractionLayer } from './DockInteractionLayer';
 import { ScrollToLatestButton } from '@/components/agents/transcript';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
-import { dockChatService } from '@/lib/services/dockChatService';
+import { dockChatService, type RunSteeringCommand } from '@/lib/services/dockChatService';
 import type { CodingSessionInteraction } from '@/lib/pmTypes';
 import type { DockRunSummary } from '@/lib/dockTypes';
 import { AgentLiveStatus } from './AgentLiveStatus';
@@ -46,6 +46,9 @@ export function DockRunView({
   const networkAvailable = useDockNetworkActivity();
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const [sending, setSending] = useState(false);
+  const [steeringAvailable, setSteeringAvailable] = useState(false);
+  const [steering, setSteering] = useState<RunSteeringCommand | null>(null);
+  const steeringRequest = useRef<{ command_id: string; expected_revision: number; content: string } | null>(null);
   const [stopping, setStopping] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [resuming, setResuming] = useState(false);
@@ -76,6 +79,32 @@ export function DockRunView({
     && hasAuthoritativeDockRuntimeTimeline(streamState)
   );
   const completedRun = effectiveRun.status === 'completed';
+  const canSteer = steeringAvailable && (effectiveRun.status === 'running' || effectiveRun.status === 'queued') && effectiveRun.runtime_kind === 'native_sdk';
+  useEffect(() => {
+    setSteering(null);
+    setSteeringAvailable(false);
+    steeringRequest.current = null;
+    if (!active) return;
+    let disposed = false;
+    void dockChatService.runSteering(workspaceId, run.id).then(result => {
+      if (!disposed) setSteeringAvailable(!result.error && Array.isArray(result.data));
+      const latest = result.data?.at(-1);
+      if (!disposed && latest) setSteering(current => current && current.revision >= latest.revision ? current : latest);
+    });
+    return () => { disposed = true; };
+  }, [active, workspaceId, run.id]);
+  useEffect(() => {
+    if (!active || steering?.state !== 'accepted') return;
+    let disposed = false;
+    const refresh = async () => {
+      const result = await dockChatService.runSteering(workspaceId, run.id);
+      const command = result.data?.find(value => value.command_id === steering.command_id);
+      if (!disposed && command) setSteering(command);
+    };
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [active, run.id, workspaceId, steering?.command_id, steering?.state]);
+
   const liveProgress = useMemo(() => completedRun ? null : resolveAgentLiveProgress({
     run: effectiveRun,
     stream: streamState,
@@ -149,7 +178,21 @@ export function DockRunView({
     setSending(true);
     setSendError(null);
     try {
-      if (effectiveRun.status === 'failed' || effectiveRun.status === 'cancelled') {
+      if (canSteer) {
+        if (!steeringRequest.current || steeringRequest.current.content !== content) {
+          const history = await dockChatService.runSteering(workspaceId, run.id);
+          if (history.error || !history.data) throw new Error(history.error ?? 'Unable to load steering');
+          steeringRequest.current = { command_id: crypto.randomUUID(), expected_revision: history.data.at(-1)?.revision ?? 0, content };
+        }
+        const result = await dockChatService.steerRun(workspaceId, run.id, steeringRequest.current);
+        if (result.error || !result.data) {
+          if (result.status === 409) steeringRequest.current = null;
+          throw new Error(result.error ?? 'Instruction was not accepted');
+        }
+        setSteering(result.data);
+        steeringRequest.current = null;
+        onDraftChange('');
+      } else if (effectiveRun.status === 'failed' || effectiveRun.status === 'cancelled') {
         const result = await dockChatService.continueRun(workspaceId, run.id, content);
         if (result.error || !result.data) throw new Error(result.error ?? 'Failed to continue agent run');
         onDraftChange('');
@@ -216,7 +259,7 @@ export function DockRunView({
     }
   };
 
-  const composerEnabled = effectiveRun.status === 'failed'
+  const composerEnabled = canSteer || effectiveRun.status === 'failed'
     || effectiveRun.status === 'cancelled'
     || (effectiveRun.status === 'paused' && (effectiveRun.pause_reason === 'human_input' || effectiveRun.pause_reason === 'awaiting_user_message') && !interaction);
   const canPause = effectiveRun.status === 'queued' || effectiveRun.status === 'running';
@@ -292,6 +335,10 @@ export function DockRunView({
       {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !streamState || !dockWorkPlans(streamState).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Current work plan" defaultOpen={false} /></div>}
       {(composerEnabled || canStop || effectiveRun.status === 'paused' || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
+          {steering && <div className="px-5 py-2 text-sm text-muted-foreground">
+            <p role="status">{steering.state === 'accepted' ? 'Instruction queued for the next safe boundary.' : steering.state === 'applied' ? 'Instruction applied to this run.' : 'Instruction was not applied. Review the run before retrying.'}</p>
+            <details><summary>View instruction</summary><p className="whitespace-pre-wrap">{steering.content}</p></details>
+          </div>}
           <DockInput
             workspaceId={workspaceId}
             voiceIdentity={run.id}
@@ -309,7 +356,7 @@ export function DockRunView({
             pausing={pausePending}
             onResume={canResume && !cancellationPending ? () => void resume() : undefined}
             resuming={resumePending}
-            placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : canResume ? 'Agent paused — resume to continue' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
+            placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : canResume ? 'Agent paused — resume to continue' : canSteer ? 'Send instructions to this run…' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
           />
         </div>
       ) : null}

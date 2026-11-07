@@ -11,6 +11,7 @@ import type {
 } from '@/lib/pmTypes';
 import type { DockRunSummary } from '@/lib/dockTypes';
 import { DockRunView } from '../DockRunView';
+import { dockChatService } from '@/lib/services/dockChatService';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -52,7 +53,8 @@ vi.mock('@/components/pm/CodingSession/CodingPlanPanel', () => ({
 }));
 
 vi.mock('../DockInput', () => ({
-  DockInput: ({ disabled, placeholder, onStop, onPause, onResume }: {
+  DockInput: ({ disabled, placeholder, onStop, onPause, onResume, onSubmit }: {
+    onSubmit?: () => void;
     disabled?: boolean;
     placeholder?: string;
     onStop?: () => void;
@@ -67,6 +69,7 @@ vi.mock('../DockInput', () => ({
       data-can-resume={String(Boolean(onResume))}
     >
       {placeholder}
+      <button onClick={onSubmit}>Send</button>
     </div>
   ),
 }));
@@ -80,6 +83,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  vi.spyOn(dockChatService, "runSteering").mockResolvedValue({data: [], error: null});
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -91,7 +95,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 function agentRun(overrides: Partial<AgentRun> = {}): AgentRun {
@@ -173,7 +177,7 @@ function streamState(): CodingSessionStreamState {
 }
 
 describe('DockRunView timeline parity', () => {
-  it('uses the fresh session and the shared Ask Agent timeline presentation', () => {
+  it('uses the fresh session and the shared Ask Agent timeline presentation', async () => {
     mocks.session = codingSession();
     mocks.currentPlan = { plan: [{ step: 'Reconcile timeline events', status: 'in_progress' }] };
     mocks.streamState = streamState();
@@ -183,7 +187,7 @@ describe('DockRunView timeline parity', () => {
       last_activity_at: '2026-08-21T19:50:00Z',
     };
 
-    act(() => {
+    await act(async () => {
       root.render(
         <DockRunView
           workspaceId="ws-1"
@@ -205,20 +209,20 @@ describe('DockRunView timeline parity', () => {
     expect(container.querySelector('[data-testid="run-plan"]')?.getAttribute('data-status')).toBe('running');
     expect(container.textContent).toContain('Current work plan');
     expect(container.querySelector('[data-current-work-plan]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-disabled')).toBe('true');
+    expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-disabled')).toBe('false');
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-can-stop')).toBe('true');
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-can-pause')).toBe('true');
-    expect(container.textContent).toContain('Agent is working…');
+    expect(container.textContent).toContain('Send instructions to this run…');
   });
 
-  it('offers resume for a manually paused run', () => {
+  it('offers resume for a manually paused run', async () => {
     mocks.session = codingSession({ status: 'paused', pause_reason: 'manual' });
     const summary: DockRunSummary = {
       run: agentRun({ status: 'paused', pause_reason: 'manual' }),
       agent: { id: 'agent-1', name: 'Scribe' },
       last_activity_at: '2026-08-21T19:53:00Z',
     };
-    act(() => root.render(<DockRunView workspaceId="ws-1" summary={summary} draft="" onDraftChange={vi.fn()} onRunChanged={vi.fn()} onRunContinued={vi.fn()} />));
+    await act(async () => root.render(<DockRunView workspaceId="ws-1" summary={summary} draft="" onDraftChange={vi.fn()} onRunChanged={vi.fn()} onRunContinued={vi.fn()} />));
     const input = container.querySelector('[data-testid="dock-input"]');
     expect(input?.getAttribute('data-can-resume')).toBe('true');
     expect(input?.getAttribute('data-can-pause')).toBe('false');
@@ -226,7 +230,7 @@ describe('DockRunView timeline parity', () => {
     expect(container.textContent).toContain('Agent paused');
   });
 
-  it('delegates completed work disclosure to the transcript instead of adding a passive footer', () => {
+  it('delegates completed work disclosure to the transcript instead of adding a passive footer', async () => {
     mocks.session = codingSession({
       status: 'completed',
       started_at: '2026-08-21T19:50:00Z',
@@ -239,7 +243,7 @@ describe('DockRunView timeline parity', () => {
       last_activity_at: '2026-08-21T19:53:00Z',
     };
 
-    act(() => {
+    await act(async () => {
       root.render(
         <DockRunView
           workspaceId="ws-1"
@@ -255,4 +259,31 @@ describe('DockRunView timeline parity', () => {
     expect(container.querySelector('[data-testid="dock-transcript"]')?.getAttribute('data-completed-run')).toBe('true');
     expect(container.querySelector('[data-agent-live-status-region]')).toBeNull();
   });
+});
+
+it('steers the existing running execution and reports acceptance without claiming application', async () => {
+  mocks.session = codingSession();
+  const history = vi.spyOn(dockChatService, 'runSteering').mockResolvedValue({ data: [], error: null });
+  const steer = vi.spyOn(dockChatService, 'steerRun').mockResolvedValue({ data: { command_id: 'command', revision: 1, state: 'accepted', content: 'Research only' }, error: null });
+  const continuation = vi.spyOn(dockChatService, 'continueRun');
+  const onDraftChange = vi.fn();
+  const summary = { run: agentRun({ status: 'running' }), agent: { id: 'agent-1', name: 'Researcher' }, last_activity_at: '' } as DockRunSummary;
+  await act(async () => root.render(<DockRunView workspaceId="ws-1" summary={summary} draft="Research only" onDraftChange={onDraftChange} onRunChanged={vi.fn()} onRunContinued={vi.fn()} />));
+  await act(async () => container.querySelector('button')?.click());
+  expect(history).toHaveBeenCalledWith('ws-1', 'run-1');
+  expect(steer).toHaveBeenCalledWith('ws-1', 'run-1', expect.objectContaining({ expected_revision: 0, content: 'Research only' }));
+  expect(continuation).not.toHaveBeenCalled();
+  expect(container.textContent).toContain('Instruction queued for the next safe boundary.');
+  expect(container.textContent).not.toContain('Instruction applied to this run.');
+  expect(onDraftChange).toHaveBeenCalledWith('');
+  vi.restoreAllMocks();
+});
+
+it('keeps steering unavailable when the connected runtime has not been upgraded', async () => {
+  mocks.session = codingSession();
+  vi.spyOn(dockChatService, 'runSteering').mockResolvedValue({ data: null, error: 'Unsupported', status: 404 });
+  const summary = { run: agentRun({ status: 'running' }), agent: { id: 'agent-1', name: 'Researcher' }, last_activity_at: '' } as DockRunSummary;
+  await act(async () => root.render(<DockRunView workspaceId="ws-1" summary={summary} draft="" onDraftChange={vi.fn()} onRunChanged={vi.fn()} onRunContinued={vi.fn()} />));
+  expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-disabled')).toBe('true');
+  expect(container.textContent).not.toContain('Send instructions to this run…');
 });

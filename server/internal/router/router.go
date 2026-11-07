@@ -1120,6 +1120,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/continue", h.DockChat.ContinueRun)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/cancel", h.DockChat.CancelRun)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/pause", h.DockChat.PauseRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/steering", h.DockChat.RunSteering)
+				r.With(requireCommandBarEdit()).Get("/runs/{runID}/steering", h.DockChat.RunSteering)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/resume", h.DockChat.ResumeRun)
 			})
 
@@ -1674,6 +1676,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/resume", h.Agent.ResumeRun)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/steering", h.Agent.RunSteering)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/steering", h.Agent.RunSteering)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/continue", h.Agent.ContinueRun)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
