@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
@@ -107,7 +108,13 @@ func (s *InternalCommandService) executeCRMListCompanies(ctx context.Context, me
 	if req.Offset < 0 {
 		return nil, errCommandInput("offset must be zero or greater")
 	}
-	items, total, err := s.crmCompanyService.List(ctx, meta.WorkspaceID, model.CRMCompanyListFilters{Search: stringPtrOrNil(req.Query), OwnerMemberID: normalizeOptionalCommandString(req.OwnerMemberID), Query: req.Filter}, model.PMPagination{Page: 1, PerPage: limit, Offset: &req.Offset})
+	owner := normalizeOptionalCommandString(req.OwnerMemberID)
+	if owner != nil {
+		if _, err := uuid.Parse(*owner); err != nil {
+			return nil, errCommandInput("owner_member_id must be a workspace member UUID from list_workspace_members; omit it when no owner filter is intended")
+		}
+	}
+	items, total, err := s.crmCompanyService.List(ctx, meta.WorkspaceID, model.CRMCompanyListFilters{Search: stringPtrOrNil(req.Query), OwnerMemberID: owner, Query: req.Filter}, model.PMPagination{Page: 1, PerPage: limit, Offset: &req.Offset})
 	if err != nil {
 		return nil, crmListFilterError(err)
 	}
