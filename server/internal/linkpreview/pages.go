@@ -156,7 +156,14 @@ var recordRoutes = map[string]string{
 }
 
 func pagePreview(p pageContent) model.LinkPreview {
-	return model.LinkPreview{Title: p.title, Description: p.description}
+	label := p.title
+	for _, suffix := range []string{" in Helpin", " to Helpin", " with Helpin"} {
+		label = strings.TrimSuffix(label, suffix)
+	}
+	if label == "Helpin" {
+		label = ""
+	}
+	return model.LinkPreview{Title: p.title, Description: p.description, Type: label}
 }
 
 func workspacePage(path string) model.LinkPreview {

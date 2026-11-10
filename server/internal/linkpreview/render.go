@@ -31,6 +31,8 @@ import (
 //go:embed fonts/*.ttf
 var previewFonts embed.FS
 
+// The unboxed ink mark matches frontend/public/brand/helpin-icon-ink.svg.
+//
 //go:embed assets/helpin-icon.svg
 var previewLogo []byte
 
@@ -55,9 +57,10 @@ func NewRenderer() (*Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse preview logo: %w", err)
 	}
-	r.logo = image.NewRGBA(image.Rect(0, 0, 46, 46))
-	icon.SetTarget(0, 0, 46, 46)
-	icon.Draw(rasterx.NewDasher(46, 46, rasterx.NewScannerGV(46, 46, r.logo, r.logo.Bounds())), 1)
+	r.logo = image.NewRGBA(image.Rect(0, 0, 48, 48))
+	// Scale the viewBox translation too: the brand asset has a nonzero origin.
+	icon.Transform = rasterx.Identity.Scale(48/icon.ViewBox.W, 48/icon.ViewBox.H).Translate(-icon.ViewBox.X, -icon.ViewBox.Y)
+	icon.Draw(rasterx.NewDasher(48, 48, rasterx.NewScannerGV(48, 48, r.logo, r.logo.Bounds())), 1)
 	for _, name := range []string{"Inter", "NotoSansArabic", "NotoSansDevanagari", "NotoSansSC", "NotoEmoji"} {
 		data, err := previewFonts.ReadFile("fonts/" + name + ".ttf")
 		if err != nil {
@@ -136,22 +139,42 @@ func (r *Renderer) draw(card model.LinkPreview) *image.RGBA {
 	green := color.RGBA{38, 79, 55, 255}
 	fill(canvas.Bounds(), bg)
 	fill(image.Rect(0, 0, 1200, 8), green)
-	fill(image.Rect(58, 44, 104, 90), green)
 	p := r.painter(canvas)
-	draw.Draw(canvas, image.Rect(58, 44, 104, 90), r.logo, image.Point{}, draw.Over)
-	p.text("Helpin", 120, 80, 34, 360, 1, 650, ink)
-	p.text(card.Type, 740, 77, 24, 402, 1, 500, muted)
-	titleY := 230
+	draw.Draw(canvas, image.Rect(58, 44, 106, 92), r.logo, image.Point{}, draw.Over)
+	// Preserve the app lockup's 3:2 icon/text ratio, semibold wordmark,
+	// small gap, and -0.04em letter spacing.
+	wordmark := p.layout("Helpin", 32, 360, 1, 600)
+	if len(wordmark.lines) > 0 {
+		shaping.AddSpacing(wordmark.lines[0], []rune("Helpin"), 0, -fixed.I(32)*4/100)
+	}
+	p.paint(wordmark, 111, 80, color.RGBA{36, 36, 36, 255}, false)
+	p.paint(p.layout(card.Type, 24, 402, 1, 500), 740, 77, muted, true)
+
+	// Measure the whole content block before positioning it. The reference,
+	// title and description stay together and centered between header/footer,
+	// whether the title takes one, two or three lines.
+	title := p.layout(card.Title, 54, 1084, 3, 600)
+	description := p.layout(card.Description, 26, 1060, 2, 400)
+	var reference textBlock
 	if card.Reference != "" {
-		p.text(card.Type+" ID: "+card.Reference, 58, 160, 23, 1084, 1, 600, green)
-	} else {
-		titleY = 220
+		reference = p.layout(card.Type+" ID: "+card.Reference, 23, 1084, 1, 600)
 	}
-	lines := p.text(card.Title, 58, titleY, 54, 1084, 3, 600, ink)
-	descriptionY := titleY + lines*64 + 24
-	if descriptionY <= 460 && card.Description != "" {
-		p.text(card.Description, 58, descriptionY, 26, 1060, 2, 400, muted)
+	blockHeight := title.height()
+	if reference.height() > 0 {
+		blockHeight += reference.height() + 16
 	}
+	if description.height() > 0 {
+		blockHeight += 20 + description.height()
+	}
+	const bodyTop, bodyBottom = 124, 475
+	y := bodyTop + (bodyBottom-bodyTop-blockHeight)/2
+	if reference.height() > 0 {
+		p.paint(reference, 58, y+reference.baselineOffset(), green, false)
+		y += reference.height() + 16
+	}
+	p.paint(title, 58, y+title.baselineOffset(), ink, false)
+	y += title.height() + 20
+	p.paint(description, 58, y+description.baselineOffset(), muted, false)
 	fill(image.Rect(58, 507, 1142, 509), color.RGBA{207, 213, 201, 255})
 	if len(card.Fields) == 0 {
 		p.text(Tagline, 58, 558, 25, 1084, 2, 400, muted)
@@ -191,12 +214,47 @@ func (faces previewFontMap) ResolveFace(r rune) *font.Face {
 }
 
 func (p *cardPainter) text(value string, x, y, size, width, maxLines, weight int, ink color.Color) int {
-	if value == "" {
+	block := p.layout(value, size, width, maxLines, weight)
+	p.paint(block, x, y, ink, false)
+	return len(block.lines)
+}
+
+type textBlock struct {
+	lines     []shaping.Line
+	direction di.Direction
+	size      int
+	width     int
+	weight    int
+}
+
+func (b textBlock) height() int { return len(b.lines) * (b.size * 120 / 100) }
+
+// Match a CSS line box: font ascent plus half the remaining line leading.
+func (b textBlock) baselineOffset() int {
+	if len(b.lines) == 0 {
 		return 0
 	}
+	var ascent, descent fixed.Int26_6
+	for _, run := range b.lines[0] {
+		ascent = max(ascent, run.LineBounds.Ascent)
+		descent = min(descent, run.LineBounds.Descent)
+	}
+	leading := fixed.I(b.size*120/100) - (ascent - descent)
+	return (ascent + leading/2).Round()
+}
+
+func (p *cardPainter) setWeight(weight int) {
 	for _, face := range p.faces {
 		face.SetVariations([]font.Variation{{Tag: opentype.MustNewTag("wght"), Value: float32(weight)}})
 	}
+}
+
+func (p *cardPainter) layout(value string, size, width, maxLines, weight int) textBlock {
+	block := textBlock{size: size, width: width, weight: weight}
+	if value == "" {
+		return block
+	}
+	p.setWeight(weight)
 	chars := []rune(value)
 	direction := di.DirectionLTR
 	var paragraph bidi.Paragraph
@@ -216,21 +274,30 @@ func (p *cardPainter) text(value string, x, y, size, width, maxLines, weight int
 	config := shaping.WrapConfig{Direction: direction, TruncateAfterLines: maxLines}.WithTruncator(&shaper, shaping.Input{Text: ellipsis, RunEnd: 1, Face: p.faces[0], Size: fixed.I(size), Direction: direction})
 	var wrapper shaping.LineWrapper
 	lines, _ := wrapper.WrapParagraph(config, width, chars, shaping.NewSliceIterator(outputs))
-	painter := render.Renderer{FontSize: float32(size), PixScale: 1, Color: ink}
-	lineHeight := size * 120 / 100
-	for i, line := range lines {
+	block.lines, block.direction = lines, direction
+	return block
+}
+
+func (p *cardPainter) paint(block textBlock, x, y int, ink color.Color, alignRight bool) {
+	if len(block.lines) == 0 {
+		return
+	}
+	// Layouts retain faces. Restore their weight after measuring other styles.
+	p.setWeight(block.weight)
+	painter := render.Renderer{FontSize: float32(block.size), PixScale: 1, Color: ink}
+	lineHeight := block.size * 120 / 100
+	for i, line := range block.lines {
 		sort.SliceStable(line, func(a, b int) bool { return line[a].VisualIndex < line[b].VisualIndex })
 		left := x
-		if direction == di.DirectionRTL {
+		if alignRight || block.direction == di.DirectionRTL {
 			var advance fixed.Int26_6
 			for _, run := range line {
 				advance += run.Advance
 			}
-			left += width - advance.Ceil()
+			left += block.width - advance.Ceil()
 		}
 		for _, run := range line {
 			left = painter.DrawShapedRunAt(run, p.canvas, left, y+i*lineHeight)
 		}
 	}
-	return len(lines)
 }

@@ -16,8 +16,9 @@
     .workbench{display:grid;grid-template-columns:184px minmax(0,1fr);gap:28px}.record-nav{max-height:680px;overflow:auto;scrollbar-width:thin;padding-right:8px;padding-bottom:8px}.nav-group+.nav-group{margin-top:21px}.nav-heading{font-size:10px;letter-spacing:.075em;text-transform:uppercase;color:#899083;font-weight:600;margin:4px 0 8px;padding-left:10px}.nav-button{display:block;width:100%;border:0;background:none;text-align:left;padding:9px 11px;font-size:12px;color:#5e675d;border-radius:6px;line-height:1.3}.nav-button:hover{background:#e9ece4}.nav-button[aria-pressed=true]{background:#e2e9dd;color:#264f37;font-weight:600}.mobile-picker{display:none}
     .preview-area{min-width:0}.stage{background:#ecefe8;border:1px solid #dce1d6;border-radius:11px;overflow:hidden}.stage-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--line)}.tabs{display:flex;gap:3px;background:#f2f4ef;padding:3px;border-radius:6px}.tab{background:transparent;border:0;color:#67715f;border-radius:4px;font-size:12px;padding:7px 11px}.tab[aria-pressed=true]{background:white;color:#263a2c;box-shadow:0 1px 4px #1e262112;font-weight:550}.dimensions{font-size:10px;font-variant-numeric:tabular-nums;color:#85907e}.stage-body{padding:25px}.card-frame{width:100%;aspect-ratio:1200/630;overflow:hidden;position:relative;background:#faf8f1;box-shadow:0 7px 24px #2738200b,0 0 0 1px #cfd5c9}
     /* Coordinate system, colors, weights and baselines mirror linkpreview/render.go. */
-    .og-card{position:absolute;width:1200px;height:630px;left:0;top:0;transform-origin:top left;background:rgb(250,248,241);color:rgb(30,38,33);font-family:Inter,Arial,sans-serif;overflow:hidden}
-    .og-stripe{position:absolute;inset:0 0 auto;height:8px;background:rgb(38,79,55)}.og-logo{position:absolute;left:58px;top:44px;width:46px;height:46px;background:rgb(38,79,55);color:#fff}.og-logo svg{width:46px;height:46px;fill:currentColor}.og-text{position:absolute;margin:0;padding:0;overflow:hidden;font-style:normal;letter-spacing:normal;overflow-wrap:break-word;display:-webkit-box;-webkit-box-orient:vertical}.og-muted{color:rgb(76,85,77)}.og-reference{color:rgb(38,79,55)}.og-rule{position:absolute;left:58px;top:507px;width:1084px;height:2px;background:rgb(207,213,201)}.og-field-value{white-space:nowrap;display:block;text-overflow:ellipsis}.og-text[hidden]{display:none}
+    .og-card{position:absolute;width:1200px;height:630px;left:0;top:0;transform-origin:top left;background:rgb(250,248,241);color:rgb(30,38,33);font-family:Inter,Arial,sans-serif;font-optical-sizing:none;overflow:hidden}
+    .og-stripe{position:absolute;inset:0 0 auto;height:8px;background:rgb(38,79,55)}.og-logo{position:absolute;left:58px;top:44px;width:48px;height:48px;color:#242424}.og-logo svg{width:48px;height:48px;fill:currentColor}.og-text{position:absolute;margin:0;padding:0;overflow:hidden;font-style:normal;letter-spacing:normal;overflow-wrap:break-word;display:-webkit-box;-webkit-box-orient:vertical}.og-muted{color:rgb(76,85,77)}.og-wordmark{color:#242424;letter-spacing:-.04em}.og-feature{text-align:right}.og-reference{color:rgb(38,79,55)}.og-rule{position:absolute;left:58px;top:507px;width:1084px;height:2px;background:rgb(207,213,201)}.og-field-value{white-space:nowrap;display:block;text-overflow:ellipsis}.og-text[hidden]{display:none}
+    .og-body{position:absolute;left:58px;top:124px;width:1084px;height:351px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start}.og-body .og-text{position:static;flex-shrink:0}.og-body .og-reference{margin-bottom:16px}.og-body .og-description{margin-top:20px}.brand{color:#242424}
     .stage-caption{padding:0 25px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#74806d;font-size:11px;line-height:1.5}.caption-note{color:#52614d}.html-label{white-space:nowrap;color:#8b9384}.metadata{border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:16px}.metadata summary{padding:14px 18px;font-size:12px;font-weight:500;cursor:pointer;color:#586250;list-style:none;display:flex;justify-content:space-between;align-items:center}.metadata summary::after{content:'+';font-size:17px;color:#8c9584}.metadata[open] summary::after{content:'−'}.meta-content{border-top:1px solid #edf0e8;padding:17px 18px;display:grid;gap:17px}.meta-item dt{font-size:10px;color:#8a927f;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em}.meta-item dd{margin:0;font-size:13px;line-height:1.6;color:#3b4635;overflow-wrap:anywhere}.meta-content dl{margin:0}.meta-item code{font:11px/1.6 Inter,Arial,sans-serif}.page-footer{margin:22px 0 0;color:#8a9382;font-size:11px;line-height:1.6}
     .slack{padding:24px 26px 30px;border:1px solid #dcded8;border-radius:8px;background:#fff;color:#1d1c1d;max-width:770px;margin:0 auto}.slack-header{font-size:15px;font-weight:650;padding-bottom:20px;border-bottom:1px solid #eee}.slack-message{display:flex;gap:12px;margin-top:22px}.slack-avatar{width:36px;height:36px;flex:none;background:#ebddc9;color:#6a5436;display:grid;place-items:center;font-size:12px;font-weight:600;border-radius:6px}.slack-content{min-width:0;flex:1;font-size:14px;line-height:1.5}.slack-author{font-weight:650}.slack-time{font-size:11px;color:#777;font-weight:400;margin-left:8px}.slack-message-text{margin:4px 0}.slack-url{font-size:12px;color:#1264a3;overflow-wrap:anywhere}.slack-unfurl{border-left:3px solid #ddd;border-radius:3px;padding-left:14px;margin-top:12px;max-width:550px}.slack-site{font-weight:600;font-size:12px;display:flex;align-items:center;gap:6px;margin-bottom:5px}.slack-site svg{width:14px;height:14px;fill:#264f37}.slack-title{font-weight:650;color:#1264a3;font-size:14px;line-height:1.5}.slack-description{font-size:13px;line-height:1.55;color:#424242;margin:4px 0 12px}.slack .card-frame{max-width:500px;box-shadow:0 0 0 1px #deded8}.slack-label{font-size:11px;color:#828975;text-align:center;line-height:1.5;margin:15px 0 0}
     @media(max-width:1000px){main{padding:26px 24px}.topbar{padding:0 24px}.workbench{grid-template-columns:153px minmax(0,1fr);gap:18px}.stage-body{padding:16px}.stage-caption{padding:0 16px 15px}.slack{padding:18px 16px}.nav-button{font-size:11px}}
@@ -83,16 +84,15 @@
     $('record-select').innerHTML = groups.map(group=>`<optgroup label="${esc(group)}">${examples.filter(r=>r.group===group).map(r=>`<option value="${r.key}">${esc(r.label)}</option>`).join('')}</optgroup>`).join('');
 
     function currentPreview(r) {
-      if (r.page) return {title:r.title,description:r.description,kind:'',fields:[]};
+      if (r.page) return {title:r.title,description:r.description,kind:r.title.replace(/ (?:in|to|with) Helpin$/,''),fields:[]};
       if (r.restricted || r.missing || (!state.details && !r.public)) return {title:r.kind+' in Helpin',description:fallback,kind:r.kind,fields:[]};
       return r;
     }
     function text(value,x,baseline,size,width,lines,weight,classes='') {
-      return `<div class="og-text ${classes}" data-baseline="${baseline}" data-size="${size}" data-weight="${weight}" style="left:${x}px;width:${width}px;font-size:${size}px;line-height:${Math.floor(size*1.2)}px;font-weight:${weight};-webkit-line-clamp:${lines}">${esc(value)}</div>`;
+      return `<div class="og-text ${classes}" ${baseline===null?'':`data-baseline="${baseline}"`} data-size="${size}" data-weight="${weight}" style="left:${x}px;width:${width}px;font-size:${size}px;line-height:${Math.floor(size*1.2)}px;font-weight:${weight};-webkit-line-clamp:${lines};max-height:${lines*Math.floor(size*1.2)}px">${esc(value)}</div>`;
     }
     function card(c) {
-      const titleY = c.reference ? 230 : 220;
-      return `<div class="card-frame"><article class="og-card" aria-label="${esc(c.title)}"><div class="og-stripe"></div><div class="og-logo">${logo}</div>${text('Helpin',120,80,34,360,1,650)}${text(c.kind,740,77,24,402,1,500,'og-muted')}${c.reference?text(c.kind+' ID: '+c.reference,58,160,23,1084,1,600,'og-reference'):''}${text(c.title,58,titleY,54,1084,3,600,'og-title')}${text(c.description,58,titleY+88,26,1060,2,400,'og-muted og-description')}<div class="og-rule"></div>${c.fields.length ? c.fields.map(([label,value],i)=>text(label,58+i*370,546,21,330,1,500,'og-muted')+text(value,58+i*370,585,28,330,1,600,'og-field-value')).join('') : text(tagline,58,558,25,1084,2,400,'og-muted')}</article></div>`;
+      return `<div class="card-frame"><article class="og-card" aria-label="${esc(c.title)}"><div class="og-stripe"></div><div class="og-logo">${logo}</div>${text('Helpin',111,80,32,360,1,600,'og-wordmark')}${text(c.kind,740,77,24,402,1,500,'og-muted og-feature')}<div class="og-body">${c.reference?text(c.kind+' ID: '+c.reference,0,null,23,1084,1,600,'og-reference'):''}${text(c.title,0,null,54,1084,3,600,'og-title')}${text(c.description,0,null,26,1060,2,400,'og-muted og-description')}</div><div class="og-rule"></div>${c.fields.length ? c.fields.map(([label,value],i)=>text(label,58+i*370,546,21,330,1,500,'og-muted')+text(value,58+i*370,585,28,330,1,600,'og-field-value')).join('') : text(tagline,58,558,25,1084,2,400,'og-muted')}</article></div>`;
     }
     function metadataTitle(c) { return c.reference ? c.reference+' · '+c.title : c.title; }
     function exampleURL(r) { return 'https://app.helpin.ai'+(r.public?r.route:'/w/example'+r.route); }
@@ -106,7 +106,7 @@
       const key = size+':'+weight;
       if (baselines.has(key)) return baselines.get(key);
       const probe = document.createElement('div');
-      probe.style.cssText = `position:absolute;left:-10000px;top:0;visibility:hidden;font-family:Inter,Arial,sans-serif;font-size:${size}px;font-weight:${weight};line-height:${Math.floor(size*1.2)}px;white-space:nowrap;`;
+      probe.style.cssText = `position:absolute;left:-10000px;top:0;visibility:hidden;font-family:Inter,Arial,sans-serif;font-optical-sizing:none;font-size:${size}px;font-weight:${weight};line-height:${Math.floor(size*1.2)}px;white-space:nowrap;`;
       const marker = document.createElement('span');
       marker.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
       probe.append(document.createTextNode('Hg'),marker);
@@ -119,14 +119,7 @@
     }
     function arrangeCards() {
       document.querySelectorAll('.og-card').forEach(node=>{
-        node.querySelectorAll('.og-text').forEach(positionText);
-        const title = node.querySelector('.og-title');
-        const description = node.querySelector('.og-description');
-        const lines = Math.max(1,Math.min(3,Math.round(title.offsetHeight/64)));
-        const y = Number(title.dataset.baseline)+lines*64+24;
-        description.dataset.baseline = String(y);
-        description.hidden = y>460;
-        positionText(description);
+        node.querySelectorAll('.og-text[data-baseline]').forEach(positionText);
       });
       resizeCards();
     }
