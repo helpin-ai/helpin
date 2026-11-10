@@ -118,6 +118,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const autoExpandedConversationRef = useRef<string | null>(null);
 
   const workspaceName = config.workspaceName || 'Support';
+  const aiDisplayName = config.aiDisplayName?.trim() || 'Helpin AI';
   const logoUrl = config.branding?.logoUrl;
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const availability = config.availability;
@@ -229,17 +230,17 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (m.role === 'ai') {
-        return { name: 'Helpin AI', avatar: m.senderAvatar, isAI: true };
+        return { name: aiDisplayName, avatar: m.senderAvatar, isAI: true };
       }
       if (m.role === 'agent' && m.senderName) {
         return { name: m.senderName, avatar: m.senderAvatar, isAI: false };
       }
     }
     return null;
-  }, [messages]);
+  }, [messages, aiDisplayName]);
 
   const introRole = aiFirst ? 'ai' as const : 'agent' as const;
-  const introName = aiFirst ? 'Helpin AI' : workspaceName;
+  const introName = aiFirst ? aiDisplayName : workspaceName;
   const introAvatar = aiFirst ? undefined : (logoUrl || undefined);
   const showActiveAgentHeader = Boolean(activeAgent?.name) && !showHumanHandoffState;
   const teammateStatus = activeTeammate?.status || 'online';
@@ -440,7 +441,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
             ) : (
               <>
                 <span className="helpin-conversation-title">
-                  {showHumanHandoffState ? workspaceName : (aiFirst ? 'Helpin AI' : workspaceName)}
+                  {showHumanHandoffState ? workspaceName : (aiFirst ? aiDisplayName : workspaceName)}
                 </span>
                 <span className="helpin-conversation-subtitle">
                   {showHumanHandoffState

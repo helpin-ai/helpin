@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -126,6 +127,27 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	}
 
 	updates := map[string]interface{}{}
+	demoMode := existing != nil && existing.DemoMode
+	if req.DemoMode != nil {
+		demoMode = *req.DemoMode
+		updates["demo_mode"] = demoMode
+	}
+	if req.SearchIndexingEnabled != nil {
+		updates["search_indexing_enabled"] = *req.SearchIndexingEnabled
+	}
+	if demoMode {
+		updates["search_indexing_enabled"] = false
+	}
+	if req.OfficialDocsURL != nil {
+		value := strings.TrimSpace(*req.OfficialDocsURL)
+		if value != "" {
+			parsed, err := url.Parse(value)
+			if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil {
+				return nil, fmt.Errorf("official documentation URL must be an HTTPS URL without credentials")
+			}
+		}
+		updates["official_docs_url"] = value
+	}
 	customDomainChanged := false
 	if req.Subdomain != nil {
 		updates["subdomain"] = *req.Subdomain

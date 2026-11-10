@@ -1474,6 +1474,7 @@ type SupportInboxSettings struct {
 	ForwardedEmailMinConfidence     int    `json:"forwarded_email_min_confidence"`
 
 	// Widget Identity
+	AIDisplayName      string   `json:"ai_display_name"`
 	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
 	WidgetAvatarURL    string   `json:"widget_avatar_url"`     // custom avatar URL for the widget
 	WidgetHelpSpaceIDs []string `json:"widget_help_space_ids"` // selected external-capable docs spaces shown in widget help
@@ -1710,6 +1711,7 @@ type UpdateInstallationSettingsRequest struct {
 	PortalAccessMode                *string                     `json:"portal_access_mode,omitempty"`
 	PortalAIMode                    *string                     `json:"portal_ai_mode,omitempty"`
 	PortalAIAgentID                 *string                     `json:"portal_ai_agent_id,omitempty"`
+	AIDisplayName                   *string                     `json:"ai_display_name,omitempty"`
 	WidgetName                      *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
 	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`
@@ -1980,6 +1982,7 @@ type WidgetConfigPrivacyNotice struct {
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
+	AIDisplayName      string                    `json:"aiDisplayName,omitempty"`
 	PrivacyNotice      WidgetConfigPrivacyNotice `json:"privacyNotice"`
 	WorkspaceID        string                    `json:"workspaceId"`
 	WorkspaceName      string                    `json:"workspaceName,omitempty"`

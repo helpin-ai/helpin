@@ -50,6 +50,8 @@ type supportReplyGateResult struct {
 	Confidence        float64
 	EscalationReason  string
 	ValidationOutcome string
+	ValidationReasons []string
+	UnsupportedClaims []AIResponseClaim
 }
 
 // evaluateSupportReplyGate re-validates an agent-produced reply exactly the
@@ -69,6 +71,8 @@ func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResul
 	if kind == supportReplyKindAnswer {
 		validation := validateSupportAnswer(SupportQueryPlanContract{}, supportEvidenceCoverage{}, input.Evidence, input.Contract)
 		result.ValidationOutcome = validation.Outcome
+		result.ValidationReasons = validation.Reasons
+		result.UnsupportedClaims = validation.UnsupportedClaims
 		if validation.Outcome != supportValidationPass {
 			result.EscalationReason = "answer_validation_" + validation.Outcome
 			return result
@@ -312,6 +316,9 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer turn already has an outcome. Stop; wait for a new customer message."}), nil
 	}
 
+	if turn.ValidationRepairUsed {
+		req.ReplyKind = supportReplyKindAnswer
+	}
 	source, err := supportAI.messageRepo.GetByID(ctx, turn.SourceMessageID)
 	if err != nil {
 		return nil, fmt.Errorf("load support source message: %w", err)
@@ -380,6 +387,23 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 		MCPAssessment: mcpAssessment,
 	})
 	if !gate.OK {
+		supportAI.recordSupportAIAnswerTrace(ctx, meta.WorkspaceID, conversationID, turn.SourceMessageID, turn.SourceMessageID, meta.AgentID,
+			SupportQueryPlanContract{}, evidence, contract, supportEvidenceCoverage{},
+			supportAnswerValidation{Outcome: gate.ValidationOutcome, Reasons: gate.ValidationReasons, UnsupportedClaims: gate.UnsupportedClaims},
+			gate.Confidence, req.ReplyKind, "validation_rejected", false, nil)
+		if supportReplyCanRepairNumeric(gate) && mcpAssessment == nil {
+			allowed, err := s.supportProcessingRepo.ClaimValidationRepair(ctx, meta.WorkspaceID, turn.ID)
+			if err != nil {
+				return nil, fmt.Errorf("claim validation repair: %w", err)
+			}
+			if allowed {
+				return mustJSON(map[string]any{
+					"status": "rewrite_required", "reason": gate.EscalationReason,
+					"validation_reasons": gate.ValidationReasons, "unsupported_claims": gate.UnsupportedClaims,
+					"next_action": "Nothing was sent. You have one correction attempt: correct unsupported numeric claims using their cited evidence, or retrieve missing approved evidence, then call send_reply again as an answer. Do not bypass validation by relabeling the reply. If unsupported, hand off.",
+				}), nil
+			}
+		}
 		slog.WarnContext(ctx, "send_reply: reply gate rejected runtime answer",
 			"workspace_id", meta.WorkspaceID,
 			"conversation_id", conversationID,
@@ -503,7 +527,7 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 	// by search_knowledge; this one records the delivered outcome).
 	supportAI.recordSupportAIAnswerTrace(ctx, meta.WorkspaceID, conversationID, message.ID,
 		triggerMessageID, agentID, SupportQueryPlanContract{}, evidence, contract,
-		supportEvidenceCoverage{}, supportAnswerValidation{Outcome: gate.ValidationOutcome},
+		supportEvidenceCoverage{}, supportAnswerValidation{Outcome: gate.ValidationOutcome, Reasons: gate.ValidationReasons, UnsupportedClaims: gate.UnsupportedClaims},
 		gate.Confidence, kind, "runtime_tool", false, nil)
 	supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
 
@@ -683,4 +707,16 @@ func (s *InternalCommandService) supportTurnSourceMessageID(ctx context.Context,
 // consumeSupportReplyBilling intentionally does not charge runtime-delivered
 // replies because their model work is already covered by the agent-run usage.
 func (s *InternalCommandService) consumeSupportReplyBilling(context.Context, string, string, string) {
+}
+
+func supportReplyCanRepairNumeric(gate supportReplyGateResult) bool {
+	if gate.ValidationOutcome != supportValidationNumeric || len(gate.ValidationReasons) == 0 {
+		return false
+	}
+	for _, reason := range gate.ValidationReasons {
+		if !strings.HasPrefix(reason, "unsupported_numeric:") && !strings.HasPrefix(reason, "numeric_qualifier_mismatch:") {
+			return false
+		}
+	}
+	return true
 }

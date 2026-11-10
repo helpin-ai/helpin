@@ -378,6 +378,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.PortalAccessMode != nil {
 		current.PortalAccessMode = strings.TrimSpace(*patch.PortalAccessMode)
 	}
+	if patch.AIDisplayName != nil {
+		current.AIDisplayName = strings.TrimSpace(*patch.AIDisplayName)
+	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName
 	}
@@ -438,6 +441,9 @@ var hexColorRegex = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // validateSettings checks settings field constraints.
 func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID string, settings model.SupportInboxSettings) error {
+	if len([]rune(settings.AIDisplayName)) > 80 || strings.ContainsAny(settings.AIDisplayName, "\r\n") {
+		return fmt.Errorf("AI assistant name must be a single line of at most 80 characters")
+	}
 	switch settings.EmailCaptureTiming {
 	case "after_ai_reply", "before_handoff", "never":
 	default:

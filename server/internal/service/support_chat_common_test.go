@@ -112,7 +112,8 @@ func (p *greetingProvider) ChatCompletion(ctx context.Context, req llm.ChatReque
 func setupSupportGreetingTest(t *testing.T) (*SupportChatService, *gorm.DB, *model.SupportConversation, *model.SupportMessage, *model.AIMessageProcessing, model.SupportInboxSettings, *greetingProvider) {
 	t.Helper()
 	db := newTestDB(t)
-	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, conversation_id TEXT, source_message_id TEXT UNIQUE, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (
+ validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, conversation_id TEXT, source_message_id TEXT UNIQUE, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	mustExec(t, db, `CREATE TABLE support_attachments (id TEXT PRIMARY KEY, workspace_id TEXT, message_id TEXT)`)
 	settings := model.DefaultSupportInboxSettings()
 	settings.AIEnabled = true
