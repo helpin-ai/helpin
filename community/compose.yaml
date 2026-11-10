@@ -13,6 +13,7 @@ x-helpin-env: &helpin-env
   # Upload links for external agents; empty uses APP_BASE_URL.
   PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
   APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8085}
+  APP_INDEX_URL: http://helpin-frontend/index.html
   CORS_ORIGINS: ${APP_BASE_URL:-http://localhost:8085}
   PUBLIC_WIDGET_URL: ${PUBLIC_WIDGET_URL:-http://localhost:8085}
   PUBLIC_SDK_URL: ${PUBLIC_SDK_URL:-http://localhost:8085/sdk/lib.js}

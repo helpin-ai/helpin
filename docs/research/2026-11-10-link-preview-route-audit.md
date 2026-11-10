@@ -2,7 +2,7 @@
 
 This contract defines what a copied Helpin app URL will show when **Show details in link previews** is on. It gives product and engineering one content decision for every current app route, using the fields and navigation behavior in the code.
 
-**Status:** finalized content proposal; production preview handlers and dynamic images are not implemented by this audit. Reviewed on 2026-11-10 at `f4e97270b` on `waqar-fixes`. The inventory contains 141 frontend route declarations, representing 132 unique URL patterns after merging layouts and trailing-slash variants. Query-selected records and the five account-setting cases in the dynamic settings route are listed separately. No customer records were read.
+**Status:** implemented locally on `waqar-fixes`, not deployed. The original source audit reviewed `f4e97270b` on 2026-11-10. The inventory contains 141 frontend route declarations, representing 132 unique URL patterns after merging layouts and trailing-slash variants. Query-selected records and the five account-setting cases in the dynamic settings route are listed separately. No customer records were read. Implementation and verification details appear at the end of this document.
 
 ## Agreed presentation
 
@@ -47,7 +47,7 @@ This contract defines what a copied Helpin app URL will show when **Show details
 
 Objective Progress uses `stats.key_result_avg_pct` when key results exist; otherwise `stats.epic_progress_pct` when linked epics exist. Omit it when neither basis exists. Do not combine those percentages or invent an objective owner from `created_by`.
 
-Use the existing workflow/state formatters for task, epic, sprint, conversation, and run statuses. Sprint status is read-only in the model; do not derive a competing status from the current date. Assignee/owner resolution must support multiple task owners and legacy single-owner data without displaying the same person twice.
+Use the existing workflow/state names for task, epic, sprint, conversation, and run statuses. Sprint status is read-only in the model and the repository computes it from its dates; previews reuse that same `computeSprintStatus` function. Assignee/owner resolution uses the canonical task-owner join table and compacts multiple names without displaying the same person twice.
 
 A document owner is not necessarily its author. The field is labeled **Owner**, matching `owner_id`. A task has an epic, sprint, and team; it has no separate project relation in its model. **Team** replaces the sample card’s fictional Project field. **Pipeline** replaces the sample deal’s monetary Value field; amounts, forecast values, and custom financial properties are excluded from the initial external preview contract.
 
@@ -267,16 +267,47 @@ Skills, tools, triggers, pipelines, labels, team settings, and template settings
 - Keep app previews noindex; noindex is not an access control. Do not log bearer tokens or place them in image text. Valid explicit share URLs may retain their share token as the link identity; authentication/callback tokens must not appear in metadata URLs or image cache keys.
 - The Go renderer outputs the designed image. Communication apps independently decide how much metadata/image to display and may retain older previews; changing Helpin’s setting cannot retract an already-copied image.
 
-## Code findings that change the earlier mockup assumptions
+## Findings from the original audit
 
-1. Only `/share/:token` currently receives dynamic app HTML metadata, and it uses a document title with a static image. The [current transformer](../../frontend/netlify/edge-functions/share-meta.ts) does not cover ordinary workspace URLs, portal routes, or `/shared/:token`.
+1. Before implementation, only `/share/:token` received dynamic app HTML metadata, using a document title with a static image. The [transformer](../../frontend/netlify/edge-functions/share-meta.ts) now supports ordinary workspace URLs, portal routes, and `/shared/:token` through the Go metadata endpoint.
 2. The [route title helper](../../frontend/src/lib/pageTitle.ts) is a client-side fallback and is incomplete for this purpose. It is not a reusable server-side preview registry today.
 3. Support conversation descriptions in the mockup are sample copy. The model has message previews, including internal-message markers, but no dedicated description. Those message fields will not populate external metadata under this contract.
 4. Deals also lack a standard description. Agents have a role and instructions, not a prose description. Agent session `summary` exists in a DTO, but the inspected constructor does not populate it; it is not a reliable preview source.
 5. Tasks can have multiple owners, objectives can have multiple teams, and docs owners differ from authors. The display rules above account for those cases.
 6. Browser-copy links cannot identify record panels that only exist in local state. The existing copy helpers or URL selectors are required for those records; no metadata renderer can recover absent browser state.
-7. The current mockup still contains its earlier sample fields and a property-prefixed metadata description. The production implementation must use this finalized contract; this audit has not changed the mockup or product code.
+7. The earlier mockup contains sample fields and a property-prefixed metadata description. The implementation uses this finalized contract; this implementation does not update that historical mockup.
 
 ## Audit scope
 
-This is a read-only source analysis plus this reference document. All route and model references point to the reviewed checkout. No application tests, browser tests, builds, live customer requests, deployment changes, or production sharing changes were performed. The route catalog is a source inventory, not a claim that all routes are available in every edition or workspace.
+The original audit was read-only source analysis plus this reference document. All route and model references point to the reviewed checkout. The route catalog is a source inventory, not a claim that all routes are available in every edition or workspace. Subsequent implementation remained local and did not read customer records or change any deployed workspace setting.
+
+## Implementation checklist
+
+Approved for implementation after the audit. Keep this as the single task document.
+
+- [x] Add a default-on workspace preference and admin/owner control in General settings. Description: “Anyone with a link can see its title, description, and key details.”
+- [x] Add a shared route registry, scoped preview repository, and metadata service implementing the profiles, aliases, selectors, and visibility rules above.
+- [x] Render bounded PNG cards in Go with embedded fonts, readable colors, labeled fields, and a bounded cache that cannot bypass current eligibility.
+- [x] Serve metadata and image endpoints; inject tags into the first app HTML response on Netlify and Community. Preserve the existing SPA boot, assets, public shares, and normal navigation.
+- [x] Review the implementation against this route inventory, compile the affected backend/frontend code, and update this document with actual coverage and limitations. Do not run tests, per the user's instruction.
+
+Existing behavior to preserve: `/share/:token` titles and revoked-token fallbacks; app SPA assets and auth redirects; all legacy navigation aliases; existing workspace edit permissions and save behavior; explicit public grants independent of workspace preview preference. No new external rendering service, production data access, or deployment is part of this implementation.
+
+## Implementation and rollout
+
+The [route registry](../../server/internal/linkpreview/routes.go) and [page registry](../../server/internal/linkpreview/pages.go) implement the profiles, aliases, and URL selectors above. The [preview service](../../server/internal/service/link_preview.go) resolves fresh eligibility for both metadata and image requests. The [repository](../../server/internal/repository/link_preview.go) and its module-specific files select permitted fields with workspace-scoped relations. Support preview runs remain creator-only, including through explicit public shares. Unknown run targets use a generic fallback.
+
+The [Go renderer](../../server/internal/linkpreview/render.go) produces 1200×630 PNGs with up to three labeled properties. It adds Go shaping/rasterization dependencies and [bundled open-source fonts](../../server/internal/linkpreview/fonts/README.md), without a browser, Node rendering process, Vercel service, or remote font fetch. Fonts cover Latin, Arabic, Devanagari, CJK and monochrome emoji; unsupported glyphs can still use the font's missing-glyph symbol. Chinese glyph forms use Noto Sans SC. Rendering is limited to two simultaneous images, with a maximum 16 MiB/64-card cache. HTTP responses disallow CDN/browser caching; the image endpoint rechecks current eligibility before using cached bytes. Communication apps can still retain their own earlier previews.
+
+Apply [migration `202611100004`](../../server/internal/dbmigrate/sql/202611100004_workspace_link_previews.sql) as part of the normal deployment. It enables previews for existing and new workspaces without resetting later opt-outs. Workspace admins/owners change the preference under General settings using the existing Save action. The toggle controls ordinary app links; active explicit public-share links retain their separate public grant.
+
+Delivery uses the existing hosting paths:
+
+- Netlify's [edge transformer](../../frontend/netlify/edge-functions/share-meta.ts) obtains escaped metadata from Go for supported app paths and proxies the image endpoint when the image uses the app origin. Unknown deploy-preview hosts keep the static shell.
+- Community's [Nginx configuration](../../community/images/nginx.conf) requests the transformed shell from Go. Compose sets `APP_INDEX_URL=http://helpin-frontend/index.html` so the API fetches the raw shell without recursion.
+- The standalone [frontend image](../../frontend/Dockerfile) accepts `HELPIN_API_ORIGIN` for its internal API proxy. Set the backend's `APP_INDEX_URL` to a reachable raw `/index.html` URL when its normal `APP_BASE_URL` cannot be reached internally. `APP_BASE_URL` and optional `PUBLIC_API_BASE_URL` remain the externally reachable origins used in metadata.
+- Vite development uses the same Go metadata endpoint and has a local image proxy. No live development server was restarted for this change.
+
+If the API or shell lookup fails, the frontend keeps its static SPA fallback. New record routes need an explicit registry mapping before they expose record details; future unknown routes remain generic. Pages whose selected record exists only in local React state cannot generate a record-specific preview from a copied browser URL.
+
+Verification on 2026-11-10: Community API compilation passed with `CGO_ENABLED=0`; Enterprise API compilation passed with `-tags ee`. Frontend application and Vite configuration TypeScript checks passed with `--noEmit`. Documentation naming/link checks passed (185 local links), and `git diff --check` passed. Existing fixtures were adjusted for the new workspace column and metadata contract. No tests were run. Database queries, migrations, PNG appearance, Nginx routing, crawler behavior, and live Slack previews have not been exercised at runtime; compilation and source review do not establish those outcomes. No deployment or production migration was performed.

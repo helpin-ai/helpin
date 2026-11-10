@@ -158,6 +158,9 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	// AppIndexURL is the fixed SPA shell used by the Community metadata proxy.
+	// Empty uses APP_BASE_URL/index.html; it must not point to a rewritten app route.
+	AppIndexURL string
 	// HelpcenterHostedDomain is the hosted help center root, such as
 	// helpin.center. When set, customer portals are served on each workspace's
 	// help center at /requests. Empty keeps them at {AppBaseURL}/portal/{slug}.
@@ -541,6 +544,7 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultRouteDomain)),
 		AppBaseURL:                             appBaseURL,
+		AppIndexURL:                            strings.TrimSpace(os.Getenv("APP_INDEX_URL")),
 		HelpcenterHostedDomain:                 normalizeHostedDomain(os.Getenv("HELPCENTER_HOSTED_DOMAIN")),
 		HelpcenterCustomDomainTarget:           normalizeHostedDomain(firstNonEmpty(os.Getenv("HELPCENTER_CUSTOM_DOMAIN_TARGET"), os.Getenv("HELPCENTER_HOSTED_DOMAIN"))),
 		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),

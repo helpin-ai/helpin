@@ -24,7 +24,7 @@ func TestMCPAuthorizationRequestedWritesAndWorkspaceRestrictions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, slug TEXT, owner_id TEXT, organization_id TEXT, description TEXT, website_url TEXT, logo_url TEXT, timezone TEXT, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, slug TEXT, owner_id TEXT, organization_id TEXT, description TEXT, website_url TEXT, logo_url TEXT, timezone TEXT, link_previews_enabled BOOLEAN NOT NULL DEFAULT true, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE workspace_members (workspace_id TEXT, user_id TEXT, role TEXT, status TEXT)`,
 		`CREATE TABLE workspace_billing (workspace_id TEXT)`,
 		`CREATE TABLE mcp_client_registrations (id TEXT PRIMARY KEY, client_id TEXT, redirect_uris TEXT)`,

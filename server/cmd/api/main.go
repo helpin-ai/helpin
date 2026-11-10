@@ -46,6 +46,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
+	"github.com/helpin-ai/helpin/server/internal/linkpreview"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
@@ -1768,6 +1769,12 @@ func main() {
 	commandService.SetFlowBuilderChat(dockChatService)
 	publicShareSource := service.NewPublicShareSource(dockChatService, agentService, dockChatRepo, agentRunMessageRepo, workspaceRepo)
 	publicShareService := service.NewPublicShareService(publicShareRepo, publicShareSource, cfg.AppBaseURL)
+	previewRenderer, err := linkpreview.NewRenderer()
+	if err != nil {
+		fatalWithSentry("initialize link preview renderer", err)
+	}
+	linkPreviewService := service.NewLinkPreviewService(repository.NewLinkPreviewRepository(db), cfg.EnabledModules)
+	linkPreviewHandler := handler.NewLinkPreviewHandler(linkPreviewService, previewRenderer, cfg.AppBaseURL, cfg.PublicAPIBaseURL, cfg.AppIndexURL)
 	if runFinalizers != nil {
 		// Immediate delivery of settled child-plan results into dock chats;
 		// the sweep below retries chats that were mid-turn at that moment.
@@ -1963,6 +1970,7 @@ func main() {
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
+		LinkPreview:         linkPreviewHandler,
 		Setup:               setupHandler,
 		SampleData:          handler.NewSampleDataHandler(service.NewSampleDataService(db, cfg.DocsOrderingUseSortKey), authzService),
 		Edition:             editionServices.Routes,
