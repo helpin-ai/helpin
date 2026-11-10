@@ -387,22 +387,48 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 		MCPAssessment: mcpAssessment,
 	})
 	if !gate.OK {
+		repairDecision := "excluded_validation"
+		var repairErr error
+		if supportReplyCanRepairEvidence(gate) {
+			if mcpAssessment != nil {
+				repairDecision = "excluded_mcp_review"
+			} else {
+				var allowed bool
+				allowed, repairErr = s.supportProcessingRepo.ClaimValidationRepair(ctx, meta.WorkspaceID, turn.ID)
+				switch {
+				case repairErr != nil:
+					repairDecision = "reservation_error"
+				case allowed:
+					repairDecision = "offered"
+				case turn.ValidationRepairUsed:
+					repairDecision = "exhausted"
+				default:
+					repairDecision = "inactive_or_concurrent"
+				}
+			}
+		}
 		supportAI.recordSupportAIAnswerTrace(ctx, meta.WorkspaceID, conversationID, turn.SourceMessageID, turn.SourceMessageID, meta.AgentID,
 			SupportQueryPlanContract{}, evidence, contract, supportEvidenceCoverage{},
-			supportAnswerValidation{Outcome: gate.ValidationOutcome, Reasons: gate.ValidationReasons, UnsupportedClaims: gate.UnsupportedClaims},
+			supportAnswerValidation{Outcome: gate.ValidationOutcome, Reasons: gate.ValidationReasons, UnsupportedClaims: gate.UnsupportedClaims, RepairDecision: repairDecision},
 			gate.Confidence, req.ReplyKind, "validation_rejected", false, nil)
-		if supportReplyCanRepairNumeric(gate) && mcpAssessment == nil {
-			allowed, err := s.supportProcessingRepo.ClaimValidationRepair(ctx, meta.WorkspaceID, turn.ID)
-			if err != nil {
-				return nil, fmt.Errorf("claim validation repair: %w", err)
+		slog.InfoContext(ctx, "support reply validation repair decision",
+			"workspace_id", meta.WorkspaceID, "conversation_id", conversationID,
+			"run_id", replyRunID, "source_message_id", turn.SourceMessageID,
+			"validation_outcome", gate.ValidationOutcome, "repair_decision", repairDecision)
+		if repairErr != nil {
+			return nil, fmt.Errorf("claim validation repair: %w", repairErr)
+		}
+		if repairDecision == "offered" {
+			evidenceIDs := make([]string, 0, len(evidence))
+			for _, item := range evidence {
+				evidenceIDs = append(evidenceIDs, item.ID)
 			}
-			if allowed {
-				return mustJSON(map[string]any{
-					"status": "rewrite_required", "reason": gate.EscalationReason,
-					"validation_reasons": gate.ValidationReasons, "unsupported_claims": gate.UnsupportedClaims,
-					"next_action": "Nothing was sent. You have one correction attempt: correct unsupported numeric claims using their cited evidence, or retrieve missing approved evidence, then call send_reply again as an answer. Do not bypass validation by relabeling the reply. If unsupported, hand off.",
-				}), nil
-			}
+			return mustJSON(map[string]any{
+				"status": "rewrite_required", "reason": gate.EscalationReason,
+				"validation_reasons": gate.ValidationReasons, "unsupported_claims": gate.UnsupportedClaims,
+				"available_evidence_ids": evidenceIDs,
+				"next_action":            "Nothing was sent. You have one correction attempt: copy complete evidence_id values exactly into claims and source_doc_ids; never abbreviate them. Only cite passages that support the claim. Correct unsupported numeric claims using their cited evidence, or retrieve missing approved evidence, then call send_reply again as an answer. Do not bypass validation by relabeling the reply. If unsupported, hand off.",
+			}), nil
 		}
 		slog.WarnContext(ctx, "send_reply: reply gate rejected runtime answer",
 			"workspace_id", meta.WorkspaceID,
@@ -709,12 +735,13 @@ func (s *InternalCommandService) supportTurnSourceMessageID(ctx context.Context,
 func (s *InternalCommandService) consumeSupportReplyBilling(context.Context, string, string, string) {
 }
 
-func supportReplyCanRepairNumeric(gate supportReplyGateResult) bool {
-	if gate.ValidationOutcome != supportValidationNumeric || len(gate.ValidationReasons) == 0 {
+func supportReplyCanRepairEvidence(gate supportReplyGateResult) bool {
+	if (gate.ValidationOutcome != supportValidationNumeric && gate.ValidationOutcome != supportValidationUngrounded) || len(gate.ValidationReasons) == 0 {
 		return false
 	}
 	for _, reason := range gate.ValidationReasons {
-		if !strings.HasPrefix(reason, "unsupported_numeric:") && !strings.HasPrefix(reason, "numeric_qualifier_mismatch:") {
+		// unsupported_claim means no cited ID resolved, not a semantic verdict.
+		if reason != "unsupported_claim" && !strings.HasPrefix(reason, "unsupported_numeric:") && !strings.HasPrefix(reason, "numeric_qualifier_mismatch:") {
 			return false
 		}
 	}

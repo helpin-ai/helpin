@@ -399,6 +399,7 @@ func (s *SupportAIService) recordSupportAIAnswerTrace(
 			"evidence_missing":   evidenceCoverage.Missing,
 			"validation_outcome": answerValidation.Outcome,
 			"validation_reasons": answerValidation.Reasons,
+			"repair_decision":    answerValidation.RepairDecision,
 			"unsupported_claims": answerValidation.UnsupportedClaims,
 			"retrieval_retried":  retrievalRetried,
 			"stage_latency_ms":   stageLatencies,

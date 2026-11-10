@@ -81,6 +81,7 @@ function RecoveryReview({ email, close }: { email: InboundEmailDetail; close: ()
   const completed = email.status === 'completed'
   const processing = recovery.isPending || recoveryInProgress(email)
   const destination = email.destination ?? selected
+  const notDelivered = !processing && !!email.not_delivered_reason
   const candidates = useInboundConversations(
     email.id,
     query,
@@ -152,7 +153,9 @@ function RecoveryReview({ email, close }: { email: InboundEmailDetail; close: ()
                   ? 'Retry this email'
                   : destination
                     ? 'Confirm the destination'
-                    : 'Choose a conversation'}
+                    : notDelivered
+                      ? 'Not delivered'
+                      : 'Choose a conversation'}
             </h2>
             <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
               {processing
@@ -163,8 +166,16 @@ function RecoveryReview({ email, close }: { email: InboundEmailDetail; close: ()
                     : 'The destination is known. Retry adding the email.'
                   : destination
                     ? 'Check the destination, then add this email.'
-                    : 'This email hasn’t reached an inbox. Choose its original thread.'}
+                    : notDelivered
+                      ? email.not_delivered_reason
+                      : 'This email hasn’t reached an inbox. Choose its original thread.'}
             </p>
+            {notDelivered && !destination && (
+              <p className="mt-3 text-sm leading-relaxed">
+                If you know where it belongs, choose a conversation with this sender to add it
+                there.
+              </p>
+            )}
             {processing && (
               <p role="status" className="mt-5 flex items-center gap-2 text-sm">
                 <LoaderCircle className="size-4 animate-spin" />

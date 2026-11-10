@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { Activity, AlertTriangle, CheckCircle2, Clock, Mail, RefreshCw, Search, ShieldCheck, XCircle } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, Clock, Inbox, Mail, RefreshCw, Search, ShieldCheck, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import type {
   EmailFallbackMessageDiagnostics,
   EmailQueueEntry,
   EmailLogCount,
+  InboundEmailBacklog,
   SupportEmailLog,
   WebhookEvent,
 } from '@/lib/pmTypes'
@@ -35,6 +36,19 @@ function formatSeconds(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remaining = seconds % 60
   return remaining > 0 ? `${minutes}m ${remaining}s` : `${minutes}m`
+}
+
+function formatWait(seconds: number) {
+  if (seconds < 3600) return formatSeconds(seconds)
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+}
+
+function inboundBacklogDetail(backlog: InboundEmailBacklog) {
+  if (backlog.waiting === 0) return 'Every accepted email has reached a conversation'
+  const retrying = backlog.retrying > 0 ? `, ${backlog.retrying} retrying` : ''
+  return `Oldest waiting ${formatWait(backlog.oldest_waiting_seconds)}${retrying}`
 }
 
 function logStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -180,6 +194,7 @@ export function EmailDiagnosticsPage() {
 
   const config = data.config
   const queueTotal = data.queue?.total ?? 0
+  const inboundBacklog = data.inbound_backlog
   const sentCount = data.log_counts
     .filter((count) => count.direction === 'outbound' && ['sent', 'delivered', 'open', 'opened'].includes(count.status))
     .reduce((sum, count) => sum + count.count, 0)
@@ -207,13 +222,21 @@ export function EmailDiagnosticsPage() {
         </Button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <SummaryItem
           icon={<ShieldCheck className="h-4 w-4" />}
           label="Fallback readiness"
           value={configReady ? 'Ready' : 'Needs attention'}
           detail={configReady ? 'Queue, poller, and reply mail are configured' : 'Configuration is incomplete'}
         />
+        {inboundBacklog && (
+          <SummaryItem
+            icon={<Inbox className="h-4 w-4" />}
+            label="Incoming emails"
+            value={`${inboundBacklog.waiting.toLocaleString()} waiting`}
+            detail={inboundBacklogDetail(inboundBacklog)}
+          />
+        )}
         <SummaryItem
           icon={<Clock className="h-4 w-4" />}
           label="Queue"
@@ -233,6 +256,17 @@ export function EmailDiagnosticsPage() {
           detail="Failed, bounced, or complaint logs"
         />
       </div>
+
+      {inboundBacklog?.delayed && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <span>
+            {inboundBacklog.waiting.toLocaleString()} incoming {inboundBacklog.waiting === 1 ? 'email has' : 'emails have'} not reached a
+            conversation; the oldest has waited {formatWait(inboundBacklog.oldest_waiting_seconds)}. Postmark already accepted
+            them, so it will not retry. Check the inbound worker logs.
+          </span>
+        </div>
+      )}
 
       {!config.fallback_poller_enabled && (
         <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">

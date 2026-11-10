@@ -141,10 +141,18 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   );
   const emailTiming = config.features.emailCaptureTiming ?? (config.features.preChatForm ? 'before_handoff' : 'never');
   const needsEmail = !transcriptEmail && !preChatDone;
+  const isFinished = ['resolved', 'closed', 'spam'].includes(conversation?.status || '')
+    || ['resolved_by_human', 'resolved_by_ai'].includes(conversation?.flowState || '');
+  // Explicit current flow takes priority over historical AI escalation state.
+  const hasCurrentHumanHandoff = conversation?.flowState
+    ? ['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human'].includes(conversation.flowState)
+    : conversation?.aiState === 'escalated';
+  const showRequiredHandoffEmailForm = emailTiming === 'before_handoff' && config.features.forceIdentify
+    && needsEmail && hasCurrentHumanHandoff && !isFinished;
   const hasAIReply = messages.some(message => message.role === 'ai' && !message.isInternal && message.aiProgressState !== 'checking');
   const showAIEmailForm = emailTiming === 'after_ai_reply' && needsEmail && hasAIReply && !isAIThinking
     && (config.features.forceIdentify || (!emailDismissed && !contactCaptureCompleted));
-  const showEmailForm = showHumanContactForm || showAIEmailForm;
+  const showEmailForm = showHumanContactForm || showAIEmailForm || showRequiredHandoffEmailForm;
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
   const composeDisabled = connectionStatus === 'connecting';
   const composePlaceholder = connectionStatus === 'failed'
@@ -191,12 +199,6 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       !isAIThinking &&
       !isTyping,
   );
-  const isFinished = ['resolved', 'closed', 'spam'].includes(conversation?.status || '')
-    || ['resolved_by_human', 'resolved_by_ai'].includes(conversation?.flowState || '');
-  // Explicit current flow takes priority over historical AI escalation state.
-  const hasCurrentHumanHandoff = conversation?.flowState
-    ? ['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human'].includes(conversation.flowState)
-    : conversation?.aiState === 'escalated';
   const latestCustomerIndex = messages.reduce((latest, message, index) =>
     !message.isInternal && message.role === 'customer' ? index : latest, -1);
   const latestHumanIndex = messages.reduce((latest, message, index) =>

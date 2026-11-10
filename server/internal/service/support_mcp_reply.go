@@ -265,7 +265,7 @@ func supportClaimsSchema(description string) map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"text":         map[string]any{"type": "string"},
-				"evidence_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"evidence_ids": map[string]any{"type": "array", "description": "Copy complete evidence_id values or exact MCP tool names from the tool result. Never shorten or abbreviate them.", "items": map[string]any{"type": "string"}},
 			},
 			"required":             []string{"text", "evidence_ids"},
 			"additionalProperties": false,

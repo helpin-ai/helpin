@@ -1371,10 +1371,18 @@ export class WidgetManager {
   }
 
   private requiresEmailForChat(): boolean {
-    return Boolean(this.widgetConfig?.features?.emailCaptureTiming === 'after_ai_reply'
-      && this.widgetConfig.features.forceIdentify
-      && !this.currentEmail && !this.config?.user?.email
-      && this.messages.some(message => message.role === 'ai' && !message.isInternal && message.aiProgressState !== 'checking' && !message.isStreaming));
+    const features = this.widgetConfig?.features;
+    if (!features?.forceIdentify || this.currentEmail || this.config?.user?.email) return false;
+    const timing = features.emailCaptureTiming ?? (features.preChatForm ? 'before_handoff' : 'never');
+    if (timing === 'before_handoff') {
+      const conversation = this.conversations.find(item => item.id === this.activeConversationId);
+      if (['resolved', 'closed', 'spam'].includes(conversation?.status || '')) return false;
+      return conversation?.flowState
+        ? ['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human'].includes(conversation.flowState)
+        : conversation?.aiState === 'escalated';
+    }
+    return timing === 'after_ai_reply'
+      && this.messages.some(message => message.role === 'ai' && !message.isInternal && message.aiProgressState !== 'checking' && !message.isStreaming);
   }
 
   private flushPendingOutgoingMessages(): void {
@@ -2257,6 +2265,9 @@ export class WidgetManager {
           if (this.activeConversationId) {
             this.activeTeammate = this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate;
           }
+          if (this.widgetConfig?.features.emailCaptureTiming === 'before_handoff') {
+            this.waitingForEmail = this.requiresEmailForChat();
+          }
           this.syncUnreadCount();
           this.render();
         }
@@ -2362,6 +2373,8 @@ export class WidgetManager {
         const newConfig = data.data;
         if (newConfig && typeof newConfig === 'object') {
           this.widgetConfig = normalizeWidgetConfig(newConfig);
+          this.waitingForEmail = this.requiresEmailForChat();
+          this.flushPendingOutgoingMessages();
           // Update localStorage cache with fresh config
           if (this.widgetKey) {
             cacheConfig(this.widgetKey, this.widgetConfig);
@@ -2373,7 +2386,9 @@ export class WidgetManager {
 
       case 'connection:error':
         if (data.data?.code === 'email_required') {
-          this.waitingForEmail = this.widgetConfig?.features?.emailCaptureTiming === 'after_ai_reply';
+          this.waitingForEmail = true;
+          // Refresh handoff state if the server enforced email before its state update reached us.
+          this.wsSend('conversations:list', {});
           this.isAIThinking = false;
           for (const pending of this.pendingOutgoingMessages) {
             if (pending.conversationId === this.activeConversationId) pending.lastSentConnection = -1;

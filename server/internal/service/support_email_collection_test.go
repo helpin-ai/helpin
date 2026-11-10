@@ -78,6 +78,73 @@ func TestWidgetRequiredEmailRejectsNextMessageAfterAIReply(t *testing.T) {
 	}
 }
 
+func TestWidgetEmailAfterAutomaticHandoff(t *testing.T) {
+	for _, tc := range []struct {
+		timing   string
+		required bool
+	}{
+		{"before_handoff", true},
+		{"after_ai_reply", true},
+		{"before_handoff", false},
+		{"never", true},
+	} {
+		t.Run(fmt.Sprintf("%s/required=%t", tc.timing, tc.required), func(t *testing.T) {
+			svc, db, conv, settings := setupAIControlTest(t)
+			ctx := context.Background()
+			settings.EmailCaptureTiming = tc.timing
+			settings.ForceVisitorIdentity = tc.required
+			raw, err := json.Marshal(settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('install','ws','key','secret',?,true)`, string(raw))
+			svc.installationRepo = repository.NewSupportInboxInstallationRepository(db)
+			svc.sessionRepo = repository.NewSupportInboxSessionRepository(db)
+			session := &model.SupportWidgetSession{WorkspaceID: conv.WorkspaceID, SessionToken: "handoff-session", AnonymousID: "handoff-visitor", IsAnonymous: true, ConversationID: &conv.ID, ExpiresAt: time.Now().Add(time.Hour)}
+			if err := svc.sessionRepo.Create(ctx, session); err != nil {
+				t.Fatal(err)
+			}
+			ai := &SupportAIService{conversationRepo: svc.conversationRepo, messageRepo: svc.messageRepo, installationRepo: svc.installationRepo, handoffRepo: repository.NewAgentHandoffRepository(db)}
+			for range 2 {
+				if err := ai.EscalateToHuman(ctx, conv.WorkspaceID, conv.ID, "cannot_answer"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if derefString(readControlConversation(t, db).AIState) != "escalated" {
+				t.Fatal("email capture must not prevent team routing")
+			}
+			blocked := tc.required && tc.timing != "never"
+			_, err = svc.WidgetCreateMessage(ctx, session.SessionToken, "Another question", nil)
+			if blocked && (err == nil || err.Error() != "email is required") {
+				t.Fatalf("visitor bypassed email requirement: %v", err)
+			}
+			if !blocked && err != nil {
+				t.Fatalf("optional email blocked chat: %v", err)
+			}
+			var waits int64
+			if err := db.Model(&model.SupportMessage{}).Where("conversation_id = ? AND system_event_type = ?", conv.ID, model.SystemEventVisitorEmailRequested).Count(&waits).Error; err != nil {
+				t.Fatal(err)
+			}
+			if (blocked && waits != 1) || (!blocked && waits != 0) {
+				t.Fatalf("email wait milestones = %d, required = %v", waits, blocked)
+			}
+			if tc.timing == "before_handoff" && tc.required {
+				// Returning to AI should stop enforcing a historical handoff.
+				flow := readControlConversation(t, db).FlowState
+				mustExec(t, db, `UPDATE support_conversations SET flow_state = 'ai_handling' WHERE id = ?`, conv.ID)
+				if _, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "Continue with AI", nil); err != nil {
+					t.Fatalf("historical handoff blocked AI chat: %v", err)
+				}
+				mustExec(t, db, `UPDATE support_conversations SET flow_state = ? WHERE id = ?`, flow, conv.ID)
+			}
+			mustExec(t, db, `UPDATE support_conversations SET customer_email = 'visitor@example.com' WHERE id = ?`, conv.ID)
+			if _, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "Another question", nil); err != nil {
+				t.Fatalf("saved email did not unlock chat: %v", err)
+			}
+		})
+	}
+}
+
 func TestEmailCollectionPolicyModesAndMilestones(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
