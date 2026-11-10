@@ -71,7 +71,10 @@ func crawlWithColly(
 		if err != nil {
 			return 0, fmt.Errorf("crawler proxy setup: %w", err)
 		}
-		transport.Proxy = switcher
+		// Colly's switcher annotates its request; net/http may already be reading it.
+		transport.Proxy = func(req *http.Request) (*url.URL, error) {
+			return switcher(req.Clone(req.Context()))
+		}
 	}
 	skipped := map[string]bool{}
 	guarded := newRobotsTransport(ctx, transport, func(rawURL string, err error) {
@@ -254,6 +257,14 @@ func crawlWithColly(
 
 	collector.OnError(func(r *colly.Response, err error) {
 		logger.Warn("crawl request failed", "url", r.Request.URL.String(), "status", r.StatusCode, "error", err)
+		// An incomplete refresh must not prune previously indexed pages.
+		if !errors.Is(err, errRobotsDisallowed) && (r.StatusCode == 0 || r.StatusCode == http.StatusTooManyRequests || r.StatusCode >= 500 || r.Request.Depth == 1) {
+			mu.Lock()
+			if crawlErr == nil {
+				crawlErr = fmt.Errorf("fetch crawl page: %w", err)
+			}
+			mu.Unlock()
+		}
 	})
 
 	// Sitemap fetches use exactly the same robots policy and cache.

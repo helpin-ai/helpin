@@ -13,6 +13,10 @@ import (
 
 const WorkflowSignalContentSourceSync = "ContentSourceSync"
 
+// ContentSourceSyncMaxAttempts is shared with sync-state reporting so an
+// intermediate activity failure is not presented as a terminal source failure.
+const ContentSourceSyncMaxAttempts = 3
+
 type ContentSourceSyncInput struct {
 	WorkspaceID     string `json:"workspace_id"`
 	ContentSourceID string `json:"content_source_id"`
@@ -31,7 +35,7 @@ func ContentSourceSyncWorkflow(ctx workflow.Context, input ContentSourceSyncInpu
 			InitialInterval:    5 * time.Second,
 			BackoffCoefficient: 2,
 			MaximumInterval:    2 * time.Minute,
-			MaximumAttempts:    3,
+			MaximumAttempts:    ContentSourceSyncMaxAttempts,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
