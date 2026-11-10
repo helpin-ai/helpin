@@ -54,6 +54,22 @@ func CaptureMessage(message string) *sentry.EventID {
 	return sentry.CaptureMessage(message)
 }
 
+// CaptureAlert reports an operational problem as an error-level event. The
+// message is the fingerprint, so repeated alerts group into one Sentry issue.
+func CaptureAlert(message string, extras map[string]any) *sentry.EventID {
+	if strings.TrimSpace(message) == "" {
+		return nil
+	}
+	var eventID *sentry.EventID
+	sentry.WithScope(func(scope *sentry.Scope) {
+		scope.SetLevel(sentry.LevelError)
+		scope.SetFingerprint([]string{message})
+		scope.SetExtras(extras)
+		eventID = sentry.CaptureMessage(message)
+	})
+	return eventID
+}
+
 func CaptureRecovered(recovered any) *sentry.EventID {
 	if recovered == nil {
 		return nil

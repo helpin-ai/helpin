@@ -119,6 +119,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			website_url TEXT,
 			logo_url TEXT,
 			timezone TEXT NOT NULL DEFAULT 'UTC',
+			link_previews_enabled BOOLEAN NOT NULL DEFAULT true,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

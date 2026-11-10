@@ -352,6 +352,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	if codeCheckPosted {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, codeCheckCard, "ai:investigation"))
 	}
+	s.recordRequiredEmailWait(ctx, workspaceID, conversationID, "")
 	if selection != nil && strings.TrimSpace(selection.UserID) != "" && s.assignmentSystemMessageEmitter != nil {
 		s.assignmentSystemMessageEmitter(ctx, workspaceID, conversationID, selection.UserID)
 	}
