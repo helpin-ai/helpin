@@ -217,8 +217,10 @@ func normalizedNumericValues(text string) map[string]struct{} {
 			values[normalized] = struct{}{}
 		}
 	}
-	text = currencyValuePattern.ReplaceAllString(text, "")
-	qualifiers = numericQualifiers(text)
+	// Preserve offsets so a removed price cannot move its qualifier onto the next quantity.
+	text = currencyValuePattern.ReplaceAllStringFunc(text, func(value string) string {
+		return strings.Repeat(" ", len(value))
+	})
 	for _, span := range numericValuePattern.FindAllStringIndex(text, -1) {
 		normalized := normalizeNumericToken(text[span[0]:span[1]])
 		if normalized != "" {

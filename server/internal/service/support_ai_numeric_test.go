@@ -25,6 +25,7 @@ func TestNumericGroundingMatrix(t *testing.T) {
 		{"different unit cannot excuse bound", "Supports up to 20 users. Includes 20 days.", "Includes 20 users.", false},
 		{"same claim drops one qualifier", "Supports up to 20 users.", "Supports up to 20 users and includes 20 users.", false},
 		{"plain currency alongside bound", "Costs up to $49. Setup costs $49.", "Setup costs $49.", true},
+		{"currency qualifier does not leak to adjacent quantity", "Up to $49 20 users included.", "20 users included.", true},
 		{"qualified currency billing aliases", "Costs up to USD 49 per month.", "Costs up to $49/month.", true},
 		{"currency prefix bound removed", "Costs up to USD 49.", "Costs $49.", false},
 		{"currency suffix bound removed", "Costs up to 49 USD.", "Costs $49.", false},
