@@ -101,6 +101,7 @@ export function buildSitemapPath({ multilingual, locale, kind, slug, publicId })
 }
 
 export function collectSitemapEntries({ publicUrl, config, navigationByLocale }) {
+  if (isSearchIndexingDisabled(config)) return []
   const multilingual = (config?.enabled_locales || []).length > 1
   const locales = multilingual ? config.enabled_locales : [config?.default_locale || 'en']
   const entries = new Map()
@@ -157,12 +158,16 @@ export function renderSitemapXml(entries) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>`
 }
 
-export function renderRobotsTxt(publicUrl) {
+export function isSearchIndexingDisabled(config) {
+  return config?.demo_mode === true || config?.search_indexing_enabled === false
+}
+
+export function renderRobotsTxt(publicUrl, config) {
   return [
     'User-agent: *',
     `Disallow: ${publicUrl.basepath || ''}/preview/`,
     'Crawl-delay: 1',
-    `Sitemap: ${joinPublicUrl(publicUrl, '/sitemap.xml')}`,
+    ...(isSearchIndexingDisabled(config) ? [] : [`Sitemap: ${joinPublicUrl(publicUrl, '/sitemap.xml')}`]),
   ].join('\n')
 }
 
@@ -173,6 +178,7 @@ export function renderRobotsTxt(publicUrl) {
  * signed-in customers never appear.
  */
 export function renderLlmsTxt({ publicUrl, config, spaces }) {
+  if (isSearchIndexingDisabled(config)) return ""
   const multilingual = (config?.enabled_locales || []).length > 1
   const locale = config?.default_locale || 'en'
   const title = `${config?.brand_name || 'Help'} help center`

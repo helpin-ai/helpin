@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -18,7 +19,8 @@ func TestSupportReplyRequiresUnansweredCustomerTurn(t *testing.T) {
 	settings.AIResponseMode = "ai_first"
 	env := setupEmailFallbackInboundTestEnv(t, settings)
 	db := env.convRepo.DB()
-	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (
+ validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	conv := &model.SupportConversation{ID: "conv", WorkspaceID: "11111111-1111-1111-1111-111111111111", Channel: "widget", Source: "widget", Status: "open"}
 	if err := env.convRepo.Create(ctx, conv); err != nil {
 		t.Fatal(err)
@@ -82,7 +84,8 @@ func TestSupportReplyAtomicPersistence(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	mustExec(t, db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,status,channel) VALUES ('conv','ws',1,'Test','open','widget')`)
-	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (
+ validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,conversation_id,status) VALUES ('turn','ws','conv','processing')`)
 	repo := repository.NewAIMessageProcessingRepository(db)
 	reply := func(id string) *model.SupportMessage {
@@ -131,7 +134,8 @@ func TestSupportReplyConcurrentPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (
+ validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
 	mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,conversation_id,status) VALUES ('turn','ws','conv','processing')`)
 	repo := repository.NewAIMessageProcessingRepository(db)
 	var wg sync.WaitGroup
@@ -169,7 +173,8 @@ func TestSupportReplyEmailChoiceDeliversEmailAndStillDeduplicates(t *testing.T) 
 	settings.AIResponseMode = "ai_first"
 	env := setupEmailFallbackInboundTestEnv(t, settings)
 	db := env.convRepo.DB()
-	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (
+ validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	conv := &model.SupportConversation{ID: "conv", WorkspaceID: "11111111-1111-1111-1111-111111111111", Channel: "widget", Source: "widget", Status: "open"}
 	if err := env.convRepo.Create(ctx, conv); err != nil {
 		t.Fatal(err)
@@ -203,7 +208,8 @@ func TestSupportReplyEmailChoiceDeliversEmailAndStillDeduplicates(t *testing.T) 
 func TestSupportReplyPendingCustomerAfterAIResolutionReopens(t *testing.T) {
 	db := newTestDB(t)
 	mustExec(t, db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,status,channel,ai_state) VALUES ('conv','ws',1,'Test','resolved','widget','resolved')`)
-	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (
+ validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
 	source := &model.SupportMessage{ID: "customer", WorkspaceID: "ws", ConversationID: "conv", SenderType: "customer", MessageType: "reply", Content: "Actually, one more question"}
 	if err := repository.NewSupportMessageRepository(db).Create(context.Background(), source); err != nil {
 		t.Fatal(err)
@@ -220,5 +226,104 @@ func TestSupportReplyPendingCustomerAfterAIResolutionReopens(t *testing.T) {
 	}
 	if conv.Status != "open" || derefString(conv.AIState) != "pending" {
 		t.Fatalf("status=%s ai_state=%s", conv.Status, derefString(conv.AIState))
+	}
+}
+
+func TestValidationRepairIsDurableAndScoped(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,status TEXT,reply_message_id TEXT,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,updated_at DATETIME)`)
+	mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,status) VALUES ('turn','ws','processing')`)
+	repo := repository.NewAIMessageProcessingRepository(db)
+	if ok, err := repo.ClaimValidationRepair(ctx, "other", "turn"); err != nil || ok {
+		t.Fatalf("cross-workspace repair: %v %v", ok, err)
+	}
+	if ok, err := repo.ClaimValidationRepair(ctx, "ws", "turn"); err != nil || !ok {
+		t.Fatalf("first repair: %v %v", ok, err)
+	}
+	repo = repository.NewAIMessageProcessingRepository(db)
+	if ok, err := repo.ClaimValidationRepair(ctx, "ws", "turn"); err != nil || ok {
+		t.Fatalf("second repair after restart: %v %v", ok, err)
+	}
+	mustExec(t, db, `UPDATE ai_message_processing SET validation_repair_used=0,status='completed' WHERE id='turn'`)
+	if ok, err := repo.ClaimValidationRepair(ctx, "ws", "turn"); err != nil || ok {
+		t.Fatalf("completed turn repair: %v %v", ok, err)
+	}
+}
+
+func TestNumericRepairThroughReplyTool(t *testing.T) {
+	for _, corrected := range []bool{true, false} {
+		t.Run(fmt.Sprint("corrected=", corrected), func(t *testing.T) {
+			ctx := context.Background()
+			settings := model.DefaultSupportInboxSettings()
+			settings.AIEnabled = true
+			settings.AIAgentID = strPtr("agent")
+			settings.AIResponseMode = "ai_first"
+			settings.AIConfidenceThreshold = 0.1
+			env := setupEmailFallbackInboundTestEnv(t, settings)
+			db := env.convRepo.DB()
+			mustExec(t, db, `CREATE TABLE ai_message_processing (validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,attempts INTEGER,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
+			copySupportRunEvidenceSchema(t, db)
+			var schema string
+			if err := setupSupportKnowledgeTestDB(t).Raw("SELECT sql FROM sqlite_master WHERE name='agent_runs'").Scan(&schema).Error; err != nil {
+				t.Fatal(err)
+			}
+			mustExec(t, db, schema)
+			conv := &model.SupportConversation{ID: "conv", WorkspaceID: "11111111-1111-1111-1111-111111111111", Channel: "widget", Source: "widget", Status: "open"}
+			if err := env.convRepo.Create(ctx, conv); err != nil {
+				t.Fatal(err)
+			}
+			if err := env.messageRepo.Create(ctx, &model.SupportMessage{ID: "source", WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "customer", MessageType: "reply", Content: "What does Pro cost?"}); err != nil {
+				t.Fatal(err)
+			}
+			mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,conversation_id,source_message_id,status,updated_at) VALUES ('turn',?,'conv','source','processing',CURRENT_TIMESTAMP)`, conv.WorkspaceID)
+			mustExec(t, db, `INSERT INTO agent_runs(id,workspace_id,agent_id,target_type,target_id,status,external_runtime,external_runtime_id) VALUES ('run',?,'agent','support_conversation','conv','running','agent-runtime','rt')`, conv.WorkspaceID)
+			mustExec(t, db, `UPDATE agent_runs SET input=x'7b7d',output_summary=x'7b7d' WHERE id='run'`)
+			if err := db.Create(&model.SupportRunEvidence{WorkspaceID: conv.WorkspaceID, RunID: "run", EvidenceID: "e", SourceType: "docs", Content: "The Pro plan costs $49 per month.", VectorScore: 0.9, CombinedScore: 0.9}).Error; err != nil {
+				t.Fatal(err)
+			}
+			ai := &SupportAIService{handoffRepo: repository.NewAgentHandoffRepository(db), processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
+			svc := &InternalCommandService{supportAIService: ai, supportProcessingRepo: repository.NewAIMessageProcessingRepository(db), agentRunRepo: repository.NewAgentRunRepository(db), supportRunEvidenceRepo: repository.NewSupportRunEvidenceRepository(db)}
+			meta := model.InternalCommandContext{WorkspaceID: conv.WorkspaceID, RunID: "rt", TargetType: "support_conversation", TargetID: conv.ID}
+			send := func(content, kind string) string {
+				raw, _ := json.Marshal(map[string]any{"content": content, "reply_kind": kind, "confidence": 0.99, "can_answer": true, "source_doc_ids": []string{"e"}, "claims": []AIResponseClaim{{Text: content, EvidenceIDs: []string{"e"}}}})
+				output, err := svc.executeSupportSendReply(ctx, meta, raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var result struct {
+					Status string `json:"status"`
+				}
+				if err := json.Unmarshal(output, &result); err != nil {
+					t.Fatal(err)
+				}
+				return result.Status
+			}
+			if got := send("The Pro plan costs $99 per month.", "answer"); got != "rewrite_required" {
+				t.Fatalf("first rejection=%s", got)
+			}
+			var count int64
+			if err := db.Model(&model.SupportMessage{}).Where("sender_type='ai'").Count(&count).Error; err != nil || count != 0 {
+				t.Fatalf("rejected answer leaked: %d %v", count, err)
+			}
+			if !corrected {
+				if got := send("The Pro plan costs $99 per month.", "conversational"); got != "escalated" {
+					t.Fatalf("second invalid answer=%s", got)
+				}
+				if got := send("The Pro plan costs $99 per month.", "answer"); got != "suppressed" {
+					t.Fatalf("after handoff=%s", got)
+				}
+				if err := db.Model(&model.SupportMessage{}).Where("sender_type='ai' AND is_internal=false AND content LIKE '%$99%'").Count(&count).Error; err != nil || count != 0 {
+					t.Fatalf("invalid price sent: %d %v", count, err)
+				}
+				return
+			}
+			if got := send("The Pro plan costs $49 per month.", "conversational"); got != "sent" {
+				t.Fatalf("corrected answer=%s", got)
+			}
+			if got := send("The Pro plan costs $49 per month.", "answer"); got != "suppressed" {
+				t.Fatalf("duplicate=%s", got)
+			}
+		})
 	}
 }

@@ -338,6 +338,9 @@ interface ConfigState {
   is_published: boolean;
   chat_widget_enabled: boolean;
   ai_answers_enabled: boolean;
+  demo_mode: boolean;
+  search_indexing_enabled: boolean;
+  official_docs_url: string;
   seo_title: string;
   seo_description: string;
   og_title: string;
@@ -374,6 +377,9 @@ const DEFAULT_CONFIG: ConfigState = {
   is_published: false,
   chat_widget_enabled: true,
   ai_answers_enabled: true,
+  demo_mode: false,
+  search_indexing_enabled: true,
+  official_docs_url: '',
   seo_title: '',
   seo_description: '',
   og_title: '',
@@ -660,6 +666,9 @@ export function HelpcenterTab({
           is_published: d.is_published ?? false,
           chat_widget_enabled: d.chat_widget_enabled !== false,
           ai_answers_enabled: d.ai_answers_enabled !== false,
+          demo_mode: d.demo_mode ?? false,
+          search_indexing_enabled: d.search_indexing_enabled ?? true,
+          official_docs_url: d.official_docs_url ?? '',
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
           og_title: d.og_title ?? '',
@@ -754,6 +763,9 @@ export function HelpcenterTab({
       is_published: config.is_published,
       chat_widget_enabled: config.chat_widget_enabled,
       ai_answers_enabled: config.ai_answers_enabled,
+      demo_mode: config.demo_mode,
+      search_indexing_enabled: config.demo_mode ? false : config.search_indexing_enabled,
+      official_docs_url: config.official_docs_url,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
       og_title: config.og_title,
@@ -1483,6 +1495,17 @@ export function HelpcenterTab({
           </div>
           <div className="space-y-4">
             <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="hc-demo-mode">Demo mode</Label>
+                <Switch id="hc-demo-mode" checked={config.demo_mode} onCheckedChange={(checked) => setConfig({ ...config, demo_mode: checked, search_indexing_enabled: checked ? false : config.search_indexing_enabled })} />
+              </div>
+              <p className="text-xs text-muted-foreground">Shows a demo disclosure and excludes this Help Center from search engines. This does not restrict public access.</p>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="hc-indexing">Allow search engine indexing</Label>
+                <Switch id="hc-indexing" disabled={config.demo_mode} checked={!config.demo_mode && config.search_indexing_enabled} onCheckedChange={(checked) => setConfig({ ...config, search_indexing_enabled: checked })} />
+              </div>
+              <Label htmlFor="hc-official-docs">Official documentation URL</Label>
+              <Input id="hc-official-docs" type="url" value={config.official_docs_url} onChange={(e) => setConfig({ ...config, official_docs_url: e.target.value })} placeholder="https://docs.example.com" />
               <Label htmlFor="hc-seo-title">Meta Title</Label>
               <Input
                 id="hc-seo-title"

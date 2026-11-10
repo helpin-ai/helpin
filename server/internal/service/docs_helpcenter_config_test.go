@@ -29,6 +29,9 @@ func setupDocsHelpcenterConfigTestDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 
 	if err := db.Exec(`CREATE TABLE docs_helpcenter_configs (
+ demo_mode BOOLEAN NOT NULL DEFAULT 0,
+ search_indexing_enabled BOOLEAN NOT NULL DEFAULT 1,
+ official_docs_url TEXT NOT NULL DEFAULT '',
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		workspace_id TEXT NOT NULL UNIQUE,
 		subdomain TEXT NOT NULL DEFAULT '',
@@ -134,5 +137,45 @@ func assertHelpcenterConfigJSONBool(t *testing.T, cfg *model.DocsHelpcenterConfi
 	}
 	if got != want {
 		t.Fatalf("expected %s=%v, got %v", key, want, got)
+	}
+}
+
+func TestDocsHelpcenterDemoIndexingLifecycle(t *testing.T) {
+	svc := newDocsHelpcenterConfigServiceForTest(setupDocsHelpcenterConfigTestDB(t))
+	ctx := context.Background()
+	on, off := true, false
+	cfg, err := svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{Subdomain: stringPtr("demo"), BrandName: stringPtr("Example")})
+	if err != nil || !cfg.SearchIndexingEnabled || cfg.DemoMode {
+		t.Fatalf("defaults: %+v %v", cfg, err)
+	}
+	cfg, err = svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{DemoMode: &on, SearchIndexingEnabled: &on})
+	if err != nil || !cfg.DemoMode || cfg.SearchIndexingEnabled {
+		t.Fatalf("demo must force noindex: %+v %v", cfg, err)
+	}
+	cfg, err = svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{DemoMode: &off})
+	if err != nil || cfg.SearchIndexingEnabled {
+		t.Fatalf("leaving demo must not enable indexing: %+v %v", cfg, err)
+	}
+	cfg, err = svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{SearchIndexingEnabled: &on})
+	if err != nil || !cfg.SearchIndexingEnabled {
+		t.Fatalf("explicit enable: %+v %v", cfg, err)
+	}
+	for _, raw := range []string{"javascript:alert(1)", "https://user:secret@example.com", "http://example.com"} {
+		if _, err := svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{OfficialDocsURL: &raw}); err == nil {
+			t.Errorf("accepted unsafe URL %q", raw)
+		}
+	}
+}
+
+func TestDocsHelpcenterCreatedAsDemo(t *testing.T) {
+	svc := newDocsHelpcenterConfigServiceForTest(setupDocsHelpcenterConfigTestDB(t))
+	on := true
+	cfg, err := svc.UpsertConfig(context.Background(), "new-demo", model.UpdateDocsHelpcenterConfigRequest{Subdomain: stringPtr("new-demo"), BrandName: stringPtr("Example"), DemoMode: &on, OfficialDocsURL: stringPtr("https://docs.example.com")})
+	if err != nil || !cfg.DemoMode || cfg.SearchIndexingEnabled || cfg.OfficialDocsURL != "https://docs.example.com" {
+		t.Fatalf("initial demo: %+v %v", cfg, err)
+	}
+	saved, err := svc.GetConfig(context.Background(), "new-demo")
+	if err != nil || saved.SearchIndexingEnabled {
+		t.Fatalf("persisted demo: %+v %v", saved, err)
 	}
 }

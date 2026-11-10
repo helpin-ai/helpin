@@ -1457,6 +1457,7 @@ export interface SupportInboxSettings {
   logo_url: string;
   launcher_position: string;
   launcher_icon: string;
+  ai_display_name?: string;
   widget_name: string;
   widget_avatar_url: string;
   widget_help_space_ids: string[];

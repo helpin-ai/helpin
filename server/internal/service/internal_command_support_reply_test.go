@@ -336,3 +336,20 @@ func TestSupportReplyGateRejectsUnreviewedMCPResult(t *testing.T) {
 		t.Fatal("an MCP tool's successful execution must not prove an unsupported answer")
 	}
 }
+
+func TestNumericRepairDoesNotRelaxSourceGate(t *testing.T) {
+	for _, tc := range []struct {
+		reasons []string
+		allowed bool
+	}{
+		{[]string{"unsupported_numeric:20"}, true},
+		{[]string{"unsupported_numeric:20", "unsupported_claim"}, false},
+		{[]string{"unsupported_numeric:20", "answer_without_claim_map"}, false},
+		{nil, false},
+	} {
+		got := supportReplyCanRepairNumeric(supportReplyGateResult{ValidationOutcome: supportValidationNumeric, ValidationReasons: tc.reasons})
+		if got != tc.allowed {
+			t.Fatalf("reasons=%v repair=%v", tc.reasons, got)
+		}
+	}
+}

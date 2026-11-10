@@ -571,10 +571,13 @@ type HelpcenterSpaceNavConfig struct {
 
 // DocsHelpcenterConfig stores workspace-level help center configuration.
 type DocsHelpcenterConfig struct {
-	ID           string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID  string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
-	Subdomain    string  `json:"subdomain" gorm:"not null"`
-	CustomDomain *string `json:"custom_domain"`
+	DemoMode              bool    `json:"demo_mode" gorm:"not null;default:false"`
+	SearchIndexingEnabled bool    `json:"search_indexing_enabled" gorm:"not null;default:true"`
+	OfficialDocsURL       string  `json:"official_docs_url" gorm:"not null;default:''"`
+	ID                    string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Subdomain             string  `json:"subdomain" gorm:"not null"`
+	CustomDomain          *string `json:"custom_domain"`
 	// Custom domain verification. The domain serves the help center only while
 	// CustomDomainLive; admins see the rest in settings, never the public.
 	CustomDomainStatus        *string         `json:"custom_domain_status,omitempty"`
@@ -985,6 +988,9 @@ type CreateDocsLinkRequest struct {
 
 // UpdateDocsHelpcenterConfigRequest is the payload for updating help center config.
 type UpdateDocsHelpcenterConfigRequest struct {
+	DemoMode                *bool           `json:"demo_mode"`
+	SearchIndexingEnabled   *bool           `json:"search_indexing_enabled"`
+	OfficialDocsURL         *string         `json:"official_docs_url"`
 	Subdomain               *string         `json:"subdomain"`
 	CustomDomain            *string         `json:"custom_domain"`
 	PublicURLMode           *string         `json:"public_url_mode"`

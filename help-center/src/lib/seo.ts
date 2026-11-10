@@ -285,8 +285,9 @@ export function buildRootHead(loaderData?: RootRouteData) {
     links: config?.favicon_url
       ? [{ rel: 'icon', href: config.favicon_url }]
       : undefined,
-    meta: config?.brand_color
-      ? [{ name: 'theme-color', content: config.brand_color }]
-      : undefined,
+    meta: [
+      ...(config?.brand_color ? [{ name: 'theme-color', content: config.brand_color }] : []),
+      ...(!config || config.demo_mode || config.search_indexing_enabled === false ? [{ name: 'robots', content: 'noindex' }] : []),
+    ],
   }
 }

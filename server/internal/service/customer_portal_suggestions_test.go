@@ -91,10 +91,13 @@ func TestSuggestArticlesGuards(t *testing.T) {
 
 func TestPortalSuggestionsWithoutHelpSpacesDoNotCompleteSearch(t *testing.T) {
 	db := newEmptySQLite(t)
-	if err := db.Exec(`CREATE TABLE docs_helpcenter_configs (id TEXT PRIMARY KEY, workspace_id TEXT, is_published BOOLEAN)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE docs_helpcenter_configs (
+ demo_mode BOOLEAN NOT NULL DEFAULT 0,
+ search_indexing_enabled BOOLEAN NOT NULL DEFAULT 1,
+ official_docs_url TEXT NOT NULL DEFAULT '',id TEXT PRIMARY KEY, workspace_id TEXT, is_published BOOLEAN)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`INSERT INTO docs_helpcenter_configs VALUES ('config', 'ws', true)`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO docs_helpcenter_configs (id,workspace_id,is_published) VALUES ('config', 'ws', true)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := &CustomerPortalService{
