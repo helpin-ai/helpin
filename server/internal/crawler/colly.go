@@ -256,6 +256,10 @@ func crawlWithColly(
 	})
 
 	collector.OnError(func(r *colly.Response, err error) {
+		var visited *colly.AlreadyVisitedError
+		if errors.As(err, &visited) {
+			return
+		}
 		logger.Warn("crawl request failed", "url", r.Request.URL.String(), "status", r.StatusCode, "error", err)
 		// An incomplete refresh must not prune previously indexed pages.
 		if !errors.Is(err, errRobotsDisallowed) && (r.StatusCode == 0 || r.StatusCode == http.StatusTooManyRequests || r.StatusCode >= 500 || r.Request.Depth == 1) {

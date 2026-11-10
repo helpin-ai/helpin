@@ -75,3 +75,26 @@ func TestCrawlHTTPFailureIsRetriedByFreshCrawl(t *testing.T) {
 		})
 	}
 }
+
+func TestCrawlRedirectToVisitedPageDoesNotFailRefresh(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/robots.txt":
+			return
+		case "/legacy":
+			http.Redirect(w, r, "/guide", http.StatusMovedPermanently)
+			return
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><body><p>Documentation home.</p><a href="/guide">Guide</a><a href="/legacy">Old guide URL</a></body></html>`)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, "<html><body><p>Connect your account from the settings page.</p></body></html>")
+		}
+	}))
+	defer srv.Close()
+	n, err := crawlWithColly(context.Background(), model.SupportContentSource{StartURL: srv.URL, CrawlSource: "links", CrawlDepth: 2}, nil, newTestLogger(t), func(CrawlRecord) error { return nil })
+	if err != nil || n != 2 {
+		t.Fatalf("canonical duplicate must be deduplicated, not fail refresh: n=%d err=%v", n, err)
+	}
+}
