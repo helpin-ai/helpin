@@ -1,9 +1,10 @@
 /// <reference types="vitest" />
 import path from "path"
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { injectShareMetadata, loadPreviewHead } from './netlify/edge-functions/share-meta'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -13,6 +14,21 @@ export default defineConfig(({ mode }) => {
 
   return {
   plugins: [
+    {
+      name: 'helpin-link-preview-metadata',
+      apply: 'serve',
+      async transformIndexHtml(html, context) {
+        if (!context.originalUrl || context.originalUrl === '/index.html') return html
+        const apiBase = env.VITE_API_URL?.startsWith('http') ? env.VITE_API_URL : 'http://localhost:8080/api'
+        try {
+          const url = new URL(context.originalUrl, 'http://localhost')
+          const head = await loadPreviewHead(url.pathname, url.search.slice(1), apiBase)
+          return head ? injectShareMetadata({ html, head }) : html
+        } catch {
+          return html
+        }
+      },
+    } satisfies Plugin,
     TanStackRouterVite({
       autoCodeSplitting: true,
       ...(env.VITE_EDITION === 'ee' ? {} : {
@@ -38,6 +54,12 @@ export default defineConfig(({ mode }) => {
     },
   ].filter(Boolean),
   server: {
+    proxy: {
+      '/api/link-previews/image': {
+        target: env.VITE_API_URL?.startsWith('http') ? new URL(env.VITE_API_URL).origin : 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
     headers: {
       'Cache-Control': 'no-store',
     },

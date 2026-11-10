@@ -168,9 +168,20 @@ export interface SupportEmailLog {
   created_at: string
 }
 
+// Incoming email accepted from Postmark but not yet processed into conversations.
+export interface InboundEmailBacklog {
+  waiting: number
+  retrying: number
+  oldest_waiting_since?: string
+  oldest_waiting_seconds: number
+  alert_after_seconds: number
+  delayed: boolean
+}
+
 export interface EmailDiagnosticsResponse {
   config: EmailDiagnosticsConfig
   queue: EmailQueueResponse
+  inbound_backlog?: InboundEmailBacklog
   recent_logs: SupportEmailLog[]
   log_counts: EmailLogCount[]
   recent_webhooks: WebhookEvent[]

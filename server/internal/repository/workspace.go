@@ -173,7 +173,7 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizat
 	var results []model.WorkspaceWithRole
 	q := r.db.WithContext(ctx).
 		Table("workspaces w").
-		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.website_url, w.logo_url, w.timezone, w.created_at, w.updated_at, wm.role").
+		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.website_url, w.logo_url, w.timezone, w.link_previews_enabled, w.created_at, w.updated_at, wm.role").
 		Joins("JOIN workspace_members wm ON w.id = wm.workspace_id").
 		Where("wm.user_id = ? AND wm.status = ?", userID, model.WorkspaceMemberStatusActive)
 	if organizationID != "" {
@@ -340,8 +340,11 @@ func (r *WorkspaceRepository) ListTeams(ctx context.Context, workspaceID string)
 }
 
 // Update modifies workspace fields.
-func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, companyProductContext, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, companyProductContext, websiteURL, logoURL, timezone *string, linkPreviewsEnabled *bool) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
+	if linkPreviewsEnabled != nil {
+		updates["link_previews_enabled"] = *linkPreviewsEnabled
+	}
 	if name != nil {
 		updates["name"] = *name
 	}

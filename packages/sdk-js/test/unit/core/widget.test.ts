@@ -1847,13 +1847,14 @@ describe('WidgetManager', () => {
       expect(emailSpy).toHaveBeenCalledWith('visitor@example.com');
       expect((widget as any).preChatDone).toBe(true);
     });
-    it('holds queued messages behind required email and sends after confirmed capture', async () => {
+    it.each(['after_ai_reply', 'before_handoff'])('holds queued messages for %s and sends after confirmed capture', async timing => {
       const manager = widget as any;
       manager.widgetKey = 'test-key';
       manager.anonymousId = 'visitor-id';
-      manager.widgetConfig = { features: { emailCaptureTiming: 'after_ai_reply', forceIdentify: true } };
+      manager.widgetConfig = { features: { emailCaptureTiming: timing, forceIdentify: true } };
       manager.messages = [{ id: 'answer', role: 'ai', content: 'Answer' }];
       manager.activeConversationId = 'conv-1';
+      manager.conversations = [{ id: 'conv-1', status: 'open', aiState: 'escalated', flowState: 'after_hours_queue' }];
       manager.connectionStatus = 'connected';
       const sent: string[] = [];
       manager.wsConnection = { readyState: WebSocket.OPEN, send: (payload: string) => sent.push(payload), close: vi.fn() };
@@ -1862,9 +1863,32 @@ describe('WidgetManager', () => {
       expect(sent).toEqual([]);
       manager.handleWSMessage({type:'connection:error', data:{code:'email_required'}});
       expect(manager.isAIThinking).toBe(false);
+      expect(manager.waitingForEmail).toBe(true);
       fetchMock.mockResolvedValueOnce({ok:true,json:async()=>({success:true})});
       await manager.handleCaptureEmail('visitor@example.com');
       expect(sent.map(frame=>JSON.parse(frame))).toContainEqual({type:'message:send',data:{content:'Next question'}});
+    });
+    it.each(['return to AI', 'optional email', 'never ask'])('releases queued handoff messages after %s', change => {
+      const manager = widget as any;
+      manager.widgetConfig = { features: { emailCaptureTiming: 'before_handoff', forceIdentify: true } };
+      manager.activeConversationId = 'conv-1';
+      manager.conversations = [{ id: 'conv-1', status: 'open', flowState: 'ai_handling' }];
+      manager.connectionStatus = 'connected';
+      const sent: string[] = [];
+      manager.wsConnection = { readyState: WebSocket.OPEN, send: (payload: string) => sent.push(payload), close: vi.fn() };
+      manager.pendingOutgoingMessages = [{ id: 'queued', content: 'Next question', conversationId: 'conv-1', queuedAt: Date.now(), lastSentConnection: -1 }];
+      manager.handleWSMessage({ type: 'conversation:escalated', data: { conversation_id: 'conv-1', flow_state: 'waiting_for_human', handoff_state: 'live' } });
+      manager.flushPendingOutgoingMessages();
+      expect(sent).toEqual([]);
+      manager.handleWSMessage({ type: 'connection:error', data: { code: 'email_required' } });
+      expect(sent.map(frame => JSON.parse(frame).type)).toEqual(['conversations:list']);
+      if (change === 'return to AI') {
+        manager.handleWSMessage({ type: 'conversations:listed', data: { conversations: [{ id: 'conv-1', status: 'open', flow_state: 'ai_handling', ai_state: 'escalated' }] } });
+      } else {
+        manager.handleWSMessage({ type: 'config:updated', data: { features: { emailCaptureTiming: change === 'never ask' ? 'never' : 'before_handoff', forceIdentify: change === 'never ask' } } });
+      }
+      manager.flushPendingOutgoingMessages();
+      expect(sent.map(frame => JSON.parse(frame))).toContainEqual({ type: 'message:send', data: { content: 'Next question' } });
     });
     it('does not save a rejected identity locally', async () => {
       (widget as any).widgetKey = 'test-key';

@@ -33,6 +33,8 @@ func TestAdminInboundRecoveryPostgres(t *testing.T) {
 	if err := svc.AcceptInboundEmail(ctx, payload, ""); err != nil {
 		t.Fatal(err)
 	}
+	// Mail to the shared sender waits a minute for any copy sent elsewhere.
+	privacyExec(t, db, `UPDATE support_inbound_jobs SET available_at = now() - interval '1 second' WHERE kind = 'email'`)
 	if err := svc.processNextInboundJob(ctx, "email"); err != nil {
 		t.Fatal(err)
 	}

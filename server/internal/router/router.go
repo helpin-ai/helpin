@@ -44,6 +44,7 @@ type Handlers struct {
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
+	LinkPreview         *handler.LinkPreviewHandler
 	Setup               *handler.SetupHandler
 	Capability          *handler.CapabilityHandler
 	SampleData          *handler.SampleDataHandler
@@ -539,6 +540,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/docs/shared/{shareToken}", h.Docs.PublicGetSharedDoc)
 		if h.PublicShare != nil {
 			r.Get("/public/shares/{token}", h.PublicShare.GetPublic)
+		}
+		if h.LinkPreview != nil {
+			r.Route("/link-previews", func(r chi.Router) {
+				r.Use(h.LinkPreview.Limit)
+				r.Get("/metadata", h.LinkPreview.Metadata)
+				r.Get("/image", h.LinkPreview.Image)
+				r.Head("/image", h.LinkPreview.Image)
+				r.Get("/html", h.LinkPreview.HTML)
+				r.Head("/html", h.LinkPreview.HTML)
+			})
 		}
 
 		// ---- Public widget routes (no JWT, open CORS) ----

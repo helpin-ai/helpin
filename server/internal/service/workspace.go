@@ -319,7 +319,7 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 		}
 	}
 
-	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.CompanyProductContext, websiteURL, req.LogoURL, req.Timezone)
+	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.CompanyProductContext, websiteURL, req.LogoURL, req.Timezone, req.LinkPreviewsEnabled)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to update workspace", "error", err, "workspace_id", id)
 		return nil, err
@@ -392,7 +392,7 @@ func (s *WorkspaceService) UploadLogo(ctx context.Context, id string, body io.Re
 	}
 
 	logoURL := s.s3Client.PublicURL(key)
-	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, nil, &logoURL, nil)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, nil, &logoURL, nil, nil)
 }
 
 // DeleteLogo removes the workspace logo.
@@ -413,7 +413,7 @@ func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Wo
 	}
 
 	empty := ""
-	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, nil, &empty, nil)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, nil, &empty, nil, nil)
 }
 
 // Delete removes a workspace and all associated data including S3 attachments.

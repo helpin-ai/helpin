@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -36,6 +37,7 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
   const [websiteUrl, setWebsiteUrl] = useState(workspace?.website_url ?? '');
   const [workspaceKeyInput, setWorkspaceKeyInput] = useState(workspace?.workspace_key ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
+  const [linkPreviewsEnabled, setLinkPreviewsEnabled] = useState(workspace?.link_previews_enabled ?? true);
   const [logoUrl, setLogoUrl] = useState(workspace?.logo_url ?? '');
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -52,6 +54,7 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
     setWorkspaceKeyInput(workspace?.workspace_key ?? '');
     setLogoUrl(workspace?.logo_url ?? '');
     setTimezone(workspace?.timezone ?? 'UTC');
+    setLinkPreviewsEnabled(workspace?.link_previews_enabled ?? true);
   }, [workspace?.id, workspace?.updated_at]);
 
   useEffect(() => {
@@ -142,6 +145,7 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
       name: name.trim(),
       website_url: websiteUrl.trim(),
       timezone,
+      link_previews_enabled: linkPreviewsEnabled,
     };
     const trimmedKey = (keyOverride || workspaceKeyInput.trim().toUpperCase());
     if (trimmedKey && trimmedKey !== workspace?.workspace_key) {
@@ -395,6 +399,28 @@ export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
             </div>
           </div>
 
+        </CardContent>
+      </Card>
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle>Link previews</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-6">
+            <div className="space-y-1">
+              <Label htmlFor="ws-link-previews">Show details in link previews</Label>
+              <p id="ws-link-previews-description" className="text-sm text-muted-foreground">
+                Anyone with a link can see its title, description, and key details.
+              </p>
+            </div>
+            <Switch
+              id="ws-link-previews"
+              aria-describedby="ws-link-previews-description"
+              checked={linkPreviewsEnabled}
+              onCheckedChange={setLinkPreviewsEnabled}
+              disabled={!editable || saving}
+            />
+          </div>
         </CardContent>
       </Card>
       {canDeleteWorkspace && (

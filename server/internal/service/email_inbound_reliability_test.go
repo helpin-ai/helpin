@@ -124,13 +124,16 @@ func TestInboundReceiptDurability(t *testing.T) {
 		t.Fatal(err)
 	}
 	var row struct {
-		Status   string
-		Payload  string
-		Attempts int
+		Status    string
+		Payload   string
+		Attempts  int
+		LastError string
 	}
 	env.convRepo.DB().Table("support_inbound_jobs").First(&row)
-	if row.Status != "pending" || row.Payload == "" || row.Attempts != 1 {
-		t.Fatalf("failed routing must remain retryable: %+v", row)
+	// No retry can route it, so it fails at once instead of sitting in the
+	// backlog, and keeps its content for an admin to recover.
+	if row.Status != "failed" || row.Payload == "" || row.Attempts != 1 || !strings.Contains(row.LastError, "invalid@example.com") {
+		t.Fatalf("unroutable email must stay recoverable with a reason: %+v", row)
 	}
 }
 
