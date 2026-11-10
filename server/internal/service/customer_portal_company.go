@@ -19,7 +19,7 @@ import (
 // Company portal errors returned to customers and support admins.
 var (
 	ErrPortalCompanyNotFound = errors.New("company not found")
-	ErrPortalRoleInvalid     = errors.New("portal role must be requester, member, or empty")
+	ErrPortalRoleInvalid     = errors.New("portal role must be requester or member (admin only per company), or empty")
 	ErrPortalScopeInvalid    = errors.New("unknown request scope")
 )
 
@@ -38,6 +38,9 @@ const companyViewAuditInterval = time.Hour
 type PortalRequestAccess struct {
 	Conversation *model.SupportConversation
 	Own          bool
+	// Copied is true when the request is visible only because it copies
+	// the customer.
+	Copied bool
 }
 
 // Companies returns the portal companies of the session's contact. A
@@ -64,7 +67,7 @@ func (s *CustomerPortalService) memberCompanyIDs(ctx context.Context, access *Po
 	}
 	var ids []string
 	for _, membership := range memberships {
-		if membership.Role == model.PortalRoleMember {
+		if model.PortalRoleSeesCompany(membership.Role) {
 			ids = append(ids, membership.ID)
 		}
 	}
@@ -120,23 +123,39 @@ func (s *CustomerPortalService) findRequest(ctx context.Context, access *PortalA
 		return nil, err
 	}
 	conv, err = s.repo.FindCompanyRequest(ctx, access.Workspace.ID, companyIDs, reference)
+	if err != nil {
+		return nil, err
+	}
+	if conv != nil {
+		return &PortalRequestAccess{Conversation: conv}, nil
+	}
+	// Copied requests show only while requesters may copy people.
+	if access.Workspace.Settings.PortalCCMode == "" {
+		return nil, nil
+	}
+	conv, err = s.repo.FindCopiedRequest(ctx, access.Workspace.ID, access.Identity.ID, access.Identity.Email, reference)
 	if err != nil || conv == nil {
 		return nil, err
 	}
-	return &PortalRequestAccess{Conversation: conv}, nil
+	return &PortalRequestAccess{Conversation: conv, Copied: true}, nil
 }
 
-// auditCompanyView records a colleague opening a request through company
-// visibility, at most once per companyViewAuditInterval.
-func (s *CustomerPortalService) auditCompanyView(ctx context.Context, access *PortalAccess, conv *model.SupportConversation) {
+// auditCompanyView records someone other than the requester opening a
+// request, through company visibility or a copy, at most once per
+// companyViewAuditInterval.
+func (s *CustomerPortalService) auditCompanyView(ctx context.Context, access *PortalAccess, conv *model.SupportConversation, copied bool) {
 	now := time.Now().UTC()
-	recent, err := s.repo.RecentAuditEventExists(ctx, access.Workspace.ID, conv.ID, access.Identity.ID, model.SupportPortalAuditCompanyRequestViewed, now.Add(-companyViewAuditInterval))
+	eventType, metadata := model.SupportPortalAuditCompanyRequestViewed, `{"via":"company"}`
+	if copied {
+		eventType, metadata = model.SupportPortalAuditCopiedRequestViewed, `{"via":"cc"}`
+	}
+	recent, err := s.repo.RecentAuditEventExists(ctx, access.Workspace.ID, conv.ID, access.Identity.ID, eventType, now.Add(-companyViewAuditInterval))
 	if err == nil && !recent {
 		identityID := access.Identity.ID
 		err = s.repo.CreateAuditEvent(ctx, &model.SupportPortalAuditEvent{
 			ID: uuid.NewString(), WorkspaceID: access.Workspace.ID, ConversationID: conv.ID,
 			PortalIdentityID: &identityID, ActorType: model.SupportPortalActorCustomer,
-			EventType: model.SupportPortalAuditCompanyRequestViewed, Metadata: `{"via":"company"}`, OccurredAt: now,
+			EventType: eventType, Metadata: metadata, OccurredAt: now,
 		})
 	}
 	if err != nil {
@@ -153,6 +172,12 @@ type PortalCompanyAccess struct {
 	PortalEnabled bool   `json:"portal_enabled"`
 	// RequestCount is how many of the company's requests members could see.
 	RequestCount int64 `json:"request_count"`
+	// AdminInvites lets the company's portal admins invite colleagues;
+	// InviteAnyDomain lifts the company domain rule. Activity lists recent
+	// changes company admins made to the company's people.
+	AdminInvites    bool                              `json:"admin_invites"`
+	InviteAnyDomain bool                              `json:"invite_any_domain"`
+	Activity        []model.SupportPortalCompanyEvent `json:"activity"`
 }
 
 // CompanyAccess returns a company's portal settings and contacts.
@@ -179,6 +204,11 @@ func (s *CustomerPortalService) CompanyAccess(ctx context.Context, workspaceID, 
 	if settings != nil {
 		result.AccessMode, result.PortalEnabled = settings.EffectivePortalAccessMode(), settings.PortalEnabled
 	}
+	team, activity, err := s.CompanyTeamActivity(ctx, workspaceID, companyID)
+	if err != nil {
+		return nil, err
+	}
+	result.AdminInvites, result.InviteAnyDomain, result.Activity = team.AdminInvites, team.InviteAnyDomain, activity
 	return result, nil
 }
 

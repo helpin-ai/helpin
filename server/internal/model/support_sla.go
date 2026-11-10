@@ -47,8 +47,10 @@ type SupportSLAPolicy struct {
 	// CompanyTierIDs matches the SLA tier of the conversation's company;
 	// SupportSLANoTier matches conversations whose company has no tier, or
 	// that have no company. CompanyIDs matches specific companies.
-	CompanyTierIDs       DocsStringArray `json:"company_tier_ids" gorm:"type:text[];not null;default:'{}'"`
-	CompanyIDs           DocsStringArray `json:"company_ids" gorm:"type:text[];not null;default:'{}'"`
+	CompanyTierIDs DocsStringArray `json:"company_tier_ids" gorm:"type:text[];not null;default:'{}'"`
+	CompanyIDs     DocsStringArray `json:"company_ids" gorm:"type:text[];not null;default:'{}'"`
+	// RequestTypeIDs matches the conversation's request type.
+	RequestTypeIDs       DocsStringArray `json:"request_type_ids" gorm:"type:text[];not null;default:'{}'"`
 	FirstResponseMinutes *int            `json:"first_response_minutes,omitempty" gorm:"type:integer"`
 	NextResponseMinutes  *int            `json:"next_response_minutes,omitempty" gorm:"type:integer"`
 	ResolutionMinutes    *int            `json:"resolution_minutes,omitempty" gorm:"type:integer"`
@@ -306,6 +308,7 @@ type SupportSLAPolicyRequest struct {
 	Channels               []string `json:"channels"`
 	CompanyTierIDs         []string `json:"company_tier_ids"`
 	CompanyIDs             []string `json:"company_ids"`
+	RequestTypeIDs         []string `json:"request_type_ids"`
 	FirstResponseMinutes   *int     `json:"first_response_minutes"`
 	NextResponseMinutes    *int     `json:"next_response_minutes"`
 	ResolutionMinutes      *int     `json:"resolution_minutes"`

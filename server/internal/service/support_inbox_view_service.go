@@ -311,6 +311,7 @@ func supportInboxViewConversationListParams(workspaceID, userID string, filters 
 	if sla := strings.TrimSpace(filters["sla"]); sla == "breached" || sla == "due_soon" || sla == "active" {
 		params.SLA = sla
 	}
+	params.RequestTypeIDs = splitSupportViewCSV(filters["request_type_ids"])
 
 	if mailboxIDs := splitSupportViewCSV(filters["mailbox_ids"]); len(mailboxIDs) > 0 {
 		hasAll := false

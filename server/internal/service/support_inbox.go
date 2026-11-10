@@ -53,6 +53,8 @@ type SupportInboxService struct {
 	sessionRepo             *repository.SupportInboxSessionRepository
 	cannedResponseRepo      *repository.SupportCannedResponseRepository
 	activitySvc             *PMActivityService
+	requestTypes            *SupportRequestTypeService
+	customFields            *CustomFieldService
 	wsPublisher             *websocket.Publisher
 	contactRepo             *repository.CRMContactRepository
 	companyRepo             *repository.CRMCompanyRepository
@@ -1659,7 +1661,7 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 		if len(group) > 1 {
 			ticket.MergeEmailRecipients = model.SupportMergeEmailAudience(group)
 			for _, c := range group {
-				if c.AnonymousID != nil || c.Source == "widget" {
+				if c.AnonymousID != nil || model.SupportChannelHasChatSession(c.Source) {
 					ticket.MergeHasWidget = true
 				}
 				label := strings.TrimSpace(derefString(c.CustomerEmail))
@@ -2256,7 +2258,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// thread claimed after sign-in) can receive replies there.
 	portalReplySurface := supportConversationPortalReplySurface(conv)
 	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
-		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && conv.Source != "widget" && !deliveryConversation.MergeHasWidget && !portalReplySurface {
+		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && !model.SupportChannelHasChatSession(conv.Source) && !deliveryConversation.MergeHasWidget && !portalReplySurface {
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
 	}
 

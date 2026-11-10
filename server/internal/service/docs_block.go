@@ -391,6 +391,7 @@ type aggregateDoc struct {
 }
 
 func decodeBlockNode(raw json.RawMessage) (map[string]any, error) {
+	raw = tiptap.NormalizeImageNodes(raw)
 	var node map[string]any
 	if err := json.Unmarshal(raw, &node); err != nil {
 		return nil, fmt.Errorf("invalid block content: %w", err)

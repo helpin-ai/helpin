@@ -45,6 +45,8 @@ export interface QueryBuilderFieldDefinition {
   placeholder?: string;
   operators?: QueryFilterOperator[];
   options?: QueryBuilderOption[];
+  /** Heading the field picker lists this field under; ungrouped fields come first. */
+  group?: string;
 }
 
 export const QUERY_FILTER_OPERATOR_LABELS: Record<QueryFilterOperator, string> = {

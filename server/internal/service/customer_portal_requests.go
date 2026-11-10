@@ -52,6 +52,16 @@ type PortalRequestDetail struct {
 	// ReplyExpectedBy is when the team's next reply is due; see
 	// portalReplyExpectedBy.
 	ReplyExpectedBy *time.Time `json:"reply_expected_by,omitempty"`
+	// RequestType and Fields are the request's type and the values of its
+	// customer-visible fields; internal fields never reach the portal.
+	RequestType *string            `json:"request_type,omitempty"`
+	Fields      []PortalFieldValue `json:"fields"`
+	// CC is who the request copies; CanEditCC is true for the requester
+	// when the workspace lets requesters copy people. Copied is true when
+	// the viewer sees the request because it copies them.
+	CC        []string `json:"cc"`
+	CanEditCC bool     `json:"can_edit_cc"`
+	Copied    bool     `json:"copied,omitempty"`
 }
 
 type portalReplySourceKey struct{}
@@ -122,7 +132,7 @@ func (s *CustomerPortalService) ConfirmAnonymousAttachment(ctx context.Context, 
 // the address owner exchanges the confirmation link sent here. An address
 // that may not use the portal gets a receipt without a link instead, and
 // agents reply by email. Submitting never grants portal access.
-func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *PortalWorkspace, secret, subject, description string, attachmentIDs []string, intake *model.PortalIntake) error {
+func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *PortalWorkspace, secret, subject, description string, attachmentIDs []string, intake *model.PortalIntake, typed PortalRequestFields) error {
 	session, err := s.anonymousIntakeSession(ctx, ws, secret)
 	if err != nil {
 		return err
@@ -137,11 +147,19 @@ func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *
 	if intake, err = normalizePortalIntake(intake); err != nil {
 		return err
 	}
-	draft, err := s.routeNewRequest(ctx, ws.ID, session.Email, nil)
+	if len(typed.CCEmails) > 0 {
+		return invalidPortalCC("sign in to copy people on a request")
+	}
+	requestType, fields, err := s.inbox.requestTypes.ValidateSubmission(ctx, ws.ID, typed.RequestTypeID, typed.Fields)
+	if err != nil {
+		return err
+	}
+	draft, err := s.routeNewRequest(ctx, ws.ID, session.Email, nil, requestType)
 	if err != nil {
 		return err
 	}
 	draft.Subject, draft.Description, draft.AttachmentIDs, draft.Intake = subject, description, attachmentIDs, intake
+	applyPortalRequestType(&draft, requestType, fields)
 	var conversation *model.SupportConversation
 	err = s.repo.ConsumeIntakeSession(ctx, ws.ID, portalHash(secret), time.Now(), func(tx *gorm.DB, current *model.PortalIntakeSession) error {
 		draft.UploadSessionID = current.ID
@@ -191,7 +209,7 @@ func (s *CustomerPortalService) sendIntakeReceipt(ctx context.Context, ws *Porta
 }
 
 // CreateRequest creates a request owned by the signed-in identity.
-func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *PortalAccess, subject, description string, attachmentIDs []string, intake *model.PortalIntake) (*model.SupportPortalRequest, error) {
+func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *PortalAccess, subject, description string, attachmentIDs []string, intake *model.PortalIntake, typed PortalRequestFields) (*model.SupportPortalRequest, error) {
 	if !access.Workspace.Settings.PortalIntakeEnabled {
 		return nil, ErrPortalIntakeDisabled
 	}
@@ -205,13 +223,23 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	if intake, err = normalizePortalIntake(intake); err != nil {
 		return nil, err
 	}
+	requestType, fields, err := s.inbox.requestTypes.ValidateSubmission(ctx, access.Workspace.ID, typed.RequestTypeID, typed.Fields)
+	if err != nil {
+		return nil, err
+	}
+	cc, err := s.normalizeCC(ctx, access, access.Identity.Email, typed.CCEmails, nil)
+	if err != nil {
+		return nil, err
+	}
 	identity := access.Identity
-	draft, err := s.routeNewRequest(ctx, access.Workspace.ID, identity.Email, identity.DisplayName)
+	draft, err := s.routeNewRequest(ctx, access.Workspace.ID, identity.Email, identity.DisplayName, requestType)
 	if err != nil {
 		return nil, err
 	}
 	draft.Identity = &identity
 	draft.Subject, draft.Description, draft.AttachmentIDs, draft.UploadSessionID, draft.Intake = subject, description, attachmentIDs, access.Session.ID, intake
+	applyPortalRequestType(&draft, requestType, fields)
+	draft.EmailCC = cc
 	if portalAIQueueAllowed(access.Workspace.Settings, draft.OwnerID) {
 		draft.DispatchAIMode = access.Workspace.Settings.PortalAIMode
 	}
@@ -221,6 +249,12 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	}
 	s.publishNewRequest(ctx, conversation)
 	s.recordIntakeCoverageSignal(&access.Workspace, conversation, intake)
+	if len(cc) > 0 {
+		s.recordPortalCCChange(ctx, access, conversation, cc, nil)
+		for _, address := range cc {
+			s.sendCopyNotice(ctx, access, conversation, request.Reference, address)
+		}
+	}
 	return request, nil
 }
 
@@ -265,7 +299,18 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 	detail := &PortalRequestDetail{ReplyExpectedBy: s.replyExpectedBy(ctx, &access.Workspace, conv.ID, status), Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: status, LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}, Own: request.Own}
 	if !request.Own {
 		detail.RequesterName = s.portalRequesterName(ctx, conv)
-		s.auditCompanyView(ctx, access, conv)
+		s.auditCompanyView(ctx, access, conv, request.Copied)
+	}
+	// Teammates and inbound email also add people; only the requester sees
+	// the list.
+	detail.CC = []string{}
+	if request.Own {
+		detail.CC = append(detail.CC, conv.EmailCC...)
+	}
+	detail.CanEditCC = request.Own && access.Workspace.Settings.PortalCCMode != "" && conv.AnonymizedAt == nil
+	detail.Copied = request.Copied
+	if detail.RequestType, detail.Fields, err = s.inbox.requestTypes.CustomerView(ctx, access.Workspace.ID, conv); err != nil {
+		return nil, err
 	}
 	// Only the requester rates their request.
 	if request.Own && access.Workspace.Settings.CSATEnabled && conv.AnonymizedAt == nil {
@@ -668,9 +713,21 @@ func validPortalRequest(subject, description string) (string, string, error) {
 }
 
 // routeNewRequest applies portal mailbox routing, ownership, and CRM matching.
-func (s *CustomerPortalService) routeNewRequest(ctx context.Context, workspaceID, email string, name *string) (repository.PortalRequestDraft, error) {
+func (s *CustomerPortalService) routeNewRequest(ctx context.Context, workspaceID, email string, name *string, requestType *model.SupportRequestType) (repository.PortalRequestDraft, error) {
 	draft := repository.PortalRequestDraft{WorkspaceID: workspaceID, Email: email, DisplayName: name}
-	mailboxID, mailbox, err := s.inbox.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, nil, true, "portal")
+	// A request type's inbox takes the request there, before the default.
+	// An inbox turned off since falls back to usual routing.
+	var explicitMailboxID *string
+	if requestType != nil && requestType.MailboxID != nil && s.inbox.mailboxRepo != nil {
+		mailbox, err := s.inbox.mailboxRepo.GetByID(ctx, workspaceID, *requestType.MailboxID)
+		if err != nil {
+			return draft, err
+		}
+		if mailbox != nil && mailbox.Active {
+			explicitMailboxID = requestType.MailboxID
+		}
+	}
+	mailboxID, mailbox, err := s.inbox.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, explicitMailboxID, true, "portal")
 	if err != nil {
 		return draft, err
 	}
@@ -683,6 +740,18 @@ func (s *CustomerPortalService) routeNewRequest(ctx context.Context, workspaceID
 		draft.CRMContactID = s.inbox.matchOrCreateCRMContact(ctx, workspaceID, &email, name)
 	}
 	return draft, nil
+}
+
+// applyPortalRequestType records the request type, its default priority and
+// the submitted field values on a new request.
+func applyPortalRequestType(draft *repository.PortalRequestDraft, requestType *model.SupportRequestType, fields map[string]any) {
+	if requestType == nil {
+		return
+	}
+	draft.RequestTypeID, draft.CustomFields = &requestType.ID, fields
+	if requestType.DefaultPriority != nil {
+		draft.Priority = *requestType.DefaultPriority
+	}
 }
 
 func (s *CustomerPortalService) publishNewRequest(ctx context.Context, conversation *model.SupportConversation) {

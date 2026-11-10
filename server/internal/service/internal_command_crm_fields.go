@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ func (s *InternalCommandService) executeCRMDescribeFields(ctx context.Context, m
 	}
 	var req struct {
 		ObjectType string `json:"object_type"`
+		Compact    bool   `json:"compact"`
 		Key        string `json:"key"`
 		ValueQuery string `json:"value_query"`
 		Limit      int    `json:"limit"`
@@ -39,6 +41,9 @@ func (s *InternalCommandService) executeCRMDescribeFields(ctx context.Context, m
 		catalog, err := s.crmFieldCatalog.Catalog(ctx, meta.WorkspaceID, objectType)
 		if err != nil {
 			return nil, crmFieldCatalogError(err)
+		}
+		if req.Compact {
+			return compactCRMFieldCatalog(meta.WorkspaceID, catalog), nil
 		}
 		return mustJSON(catalog), nil
 	}
@@ -57,4 +62,20 @@ func crmFieldCatalogError(err error) error {
 		return errCommandInput("%s", input.Message)
 	}
 	return err
+}
+
+// Compact discovery is opt-in so existing MCP and UI consumers keep their catalog.
+func compactCRMFieldCatalog(workspaceID string, catalog *model.CRMFieldCatalog) json.RawMessage {
+	properties := make([]map[string]any, 0, len(catalog.CustomProperties))
+	for _, field := range catalog.CustomProperties {
+		entry := map[string]any{"key": field.Key, "field": field.Field, "value_type": field.ValueType, "operators": field.Operators}
+		if field.Definition != nil {
+			entry["definition"] = field.Definition
+		}
+		properties = append(properties, entry)
+	}
+	schema := map[string]any{"workspace_id": workspaceID, "object_type": catalog.ObjectType, "fields": catalog.Fields, "custom_properties": properties, "truncated": catalog.Truncated}
+	schema["schema_revision"] = fmt.Sprintf("%x", sha256.Sum256(mustJSON(schema)))
+	schema["usage"] = "Reuse within this workspace and connection. Refresh after field changes or unknown-key errors. Request a specific key to inspect values; compact mode omits record samples."
+	return mustJSON(schema)
 }

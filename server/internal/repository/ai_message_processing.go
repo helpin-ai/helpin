@@ -380,3 +380,11 @@ func (r *AIMessageProcessingRepository) ListUnstartedOlderThan(ctx context.Conte
 		Order("m.created_at ASC").Limit(limit).Find(&rows).Error
 	return rows, err
 }
+
+// ClaimValidationRepair grants one correction per customer turn, surviving run retries.
+func (r *AIMessageProcessingRepository) ClaimValidationRepair(ctx context.Context, workspaceID, id string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
+		Where("id = ? AND workspace_id = ? AND status = ? AND reply_message_id IS NULL AND validation_repair_used = ?", id, workspaceID, "processing", false).
+		Update("validation_repair_used", true)
+	return result.RowsAffected == 1, result.Error
+}

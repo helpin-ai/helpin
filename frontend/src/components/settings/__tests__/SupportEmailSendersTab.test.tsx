@@ -38,7 +38,11 @@ function button(text: string) {
   expect(found, `button: ${text}`).toBeDefined();
   return found!;
 }
-async function click(text: string) { await act(async () => button(text).click()); }
+async function settlePopoverFocus() {
+  // Radix restores focus after unmount; finish that before opening another menu.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+}
+async function click(text: string) { await settlePopoverFocus(); await act(async () => button(text).click()); }
 async function submit() { await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))); }
 async function choose(id: string, text: string) {
   await act(async () => document.getElementById(id)!.click());
@@ -66,7 +70,7 @@ beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
 });
-afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { act(() => root.unmount()); await settlePopoverFocus(); container.remove(); vi.unstubAllGlobals(); });
 
 describe('sender address settings', () => {
   it('opens new sender setup when arriving from an inbox sender field', () => {

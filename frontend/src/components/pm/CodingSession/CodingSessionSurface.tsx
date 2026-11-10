@@ -1,3 +1,4 @@
+import { useRunSteering } from '@/components/agents/dock/useRunSteering';
 import { useNotificationView } from '@/hooks/useNotificationView';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -68,6 +69,7 @@ export function CodingSessionSurface({
   useNotificationView(workspaceId, 'run', activeSessionId, active);
 
   const [session, setSession] = useState<CodingSession | null>(null);
+  const steering = useRunSteering(workspaceId, session?.id === activeSessionId ? session : null, active, 'pm');
   const [events, setEvents] = useState<CodingSessionEvent[]>([]);
   const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -395,7 +397,12 @@ export function CodingSessionSurface({
   const sendMessage = useCallback(async (content: string) => {
     if (!workspaceId || !activeSessionId || !session) return;
     setSendingMessage(true);
+    setError(null);
     try {
+      if (steering.canSteer) {
+        await steering.send(content);
+        return;
+      }
       if (session.status === 'failed' || session.status === 'cancelled') {
         await continueRun(content);
         return;
@@ -404,14 +411,15 @@ export function CodingSessionSurface({
       if (result.error) throw new Error(result.error);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
+      throw err;
     } finally {
       setSendingMessage(false);
     }
-  }, [workspaceId, activeSessionId, session, continueRun]);
+  }, [workspaceId, activeSessionId, session, continueRun, steering]);
 
   const messageComposer = useMemo(
-    () => resolveCodingSessionComposerState(session, activeInteraction, loading),
-    [activeInteraction, loading, session],
+    () => resolveCodingSessionComposerState(session, activeInteraction, loading, steering.canSteer && !acting),
+    [activeInteraction, loading, session, steering.canSteer, acting],
   );
   const terminalContinuation = session !== null && session.execution_location !== 'local' && (session.status === 'failed' || session.status === 'cancelled');
 
@@ -601,6 +609,7 @@ export function CodingSessionSurface({
           activeInteraction={activeInteraction}
           acting={acting}
           messageComposer={messageComposer}
+          steeringReceipt={steering.receipt}
           availablePreviewPanelKey={approvalPreviewPanelKey}
           attachedPreview={approvalPreview}
           onViewPreview={handleViewPreview}

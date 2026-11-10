@@ -139,9 +139,10 @@ func (r *AIUsageRepository) OpenNextPeriod(ctx context.Context, input AIUsagePer
 }
 
 // ListDuePeriods returns expired allowances, drained periods, and interrupted rollovers.
+// Periods of deleted workspaces are billing history and never roll over.
 func (r *AIUsageRepository) ListDuePeriods(ctx context.Context, now time.Time, limit int) ([]model.AIUsagePeriod, error) {
 	var periods []model.AIUsagePeriod
-	err := r.db.WithContext(ctx).Where(`period_end <= ? AND (
+	err := r.db.WithContext(ctx).Where(`EXISTS (SELECT 1 FROM workspaces w WHERE w.id = billing_ai_usage_periods.workspace_id) AND period_end <= ? AND (
   status = ? OR
   (status = ? AND reserved_microusd = 0 AND NOT EXISTS (
    SELECT 1 FROM billing_ai_usage_reservations reservation

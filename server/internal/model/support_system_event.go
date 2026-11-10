@@ -108,6 +108,14 @@ const (
 	// SystemEventTaskUnlinked — PM task unlinked from the conversation.
 	// Admin-only.
 	SystemEventTaskUnlinked SupportSystemEventType = "task_unlinked"
+
+	// SystemEventRequestTypeChanged — a teammate set, changed or cleared the
+	// request type. Admin-only.
+	SystemEventRequestTypeChanged SupportSystemEventType = "request_type_changed"
+
+	// SystemEventFieldChanged — a teammate set or cleared a conversation
+	// field. Admin-only; metadata carries the key and value.
+	SystemEventFieldChanged SupportSystemEventType = "field_changed"
 )
 
 // allSupportSystemEventTypes is the authoritative set of valid event types.
@@ -142,6 +150,8 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventSLABreached:            {},
 	SystemEventTaskLinked:             {},
 	SystemEventTaskUnlinked:           {},
+	SystemEventRequestTypeChanged:     {},
+	SystemEventFieldChanged:           {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

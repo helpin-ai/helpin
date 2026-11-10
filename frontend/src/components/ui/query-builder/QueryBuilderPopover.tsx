@@ -11,7 +11,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -47,6 +49,16 @@ interface QueryBuilderPopoverProps {
 
 interface DraftRule extends QueryFilterRule {
   id: string;
+}
+
+/** Fields by group in first-seen order; ungrouped fields come first. */
+function groupFields(fields: QueryBuilderFieldDefinition[]): Array<[string, QueryBuilderFieldDefinition[]]> {
+  const groups = new Map<string, QueryBuilderFieldDefinition[]>([['', []]]);
+  for (const field of fields) {
+    const group = field.group ?? '';
+    groups.set(group, [...(groups.get(group) ?? []), field]);
+  }
+  return [...groups].filter(([, entries]) => entries.length > 0);
 }
 
 const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
@@ -90,10 +102,15 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
           <SelectValue placeholder="Field" />
         </SelectTrigger>
         <SelectContent>
-          {fields.map((entry) => (
-            <SelectItem key={entry.field} value={entry.field}>
-              {entry.label}
-            </SelectItem>
+          {groupFields(fields).map(([group, entries]) => (
+            <SelectGroup key={group || '__fields__'}>
+              {group ? <SelectLabel>{group}</SelectLabel> : null}
+              {entries.map((entry) => (
+                <SelectItem key={entry.field} value={entry.field}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
         </SelectContent>
       </Select>

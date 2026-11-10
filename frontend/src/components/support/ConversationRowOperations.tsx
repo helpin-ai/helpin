@@ -25,17 +25,20 @@ export function ConversationPriorityBadge({ priority }: { priority: SupportConve
   )
 }
 
-/** Snooze and SLA markers on a conversation row. */
+/** Snooze, SLA and request type markers on a conversation row. */
 export function ConversationRowOperations({
   conversation,
+  requestTypeName,
 }: {
   conversation: Pick<SupportConversation, 'snoozed_until' | 'status' | 'sla'>
+  requestTypeName?: string
 }) {
   const snoozed = isSnoozedConversation(conversation) && conversation.snoozed_until
   const showSLA = Boolean(conversation.sla?.next_due_at) && conversation.status !== 'resolved' && conversation.status !== 'spam'
-  if (!snoozed && !showSLA) return null
+  if (!snoozed && !showSLA && !requestTypeName) return null
   return (
     <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden" data-testid="conversation-row-operations">
+      {requestTypeName ? <span className="min-w-0 truncate text-[10.5px] text-muted-foreground">{requestTypeName}</span> : null}
       {showSLA ? <SupportSLABadge sla={conversation.sla} size="xs" /> : null}
       {snoozed ? (
         <span className="inline-flex shrink-0 items-center gap-1 text-[10.5px] font-medium text-violet-700 dark:text-violet-300">

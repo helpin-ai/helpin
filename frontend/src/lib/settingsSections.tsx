@@ -39,6 +39,7 @@ import {
   ServerStack01Icon,
   UserSharingIcon,
   Timer01Icon,
+  LeftToRightListBulletIcon,
   WebhookIcon,
 } from '@hugeicons/core-free-icons';
 
@@ -79,6 +80,7 @@ const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const CustomerPortal = hi(Globe02Icon);
 const SLAPolicies = hi(Timer01Icon);
+const Fields = hi(LeftToRightListBulletIcon);
 const Webhooks = hi(WebhookIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
@@ -114,6 +116,7 @@ export type SettingsSection =
   | 'helpcenter'
   | 'redirects'
   | 'crm-pipelines'
+  | 'crm-fields'
   | 'crm-email'
   | 'crm-meetings'
   | 'crm-autonomy'
@@ -122,6 +125,7 @@ export type SettingsSection =
   | 'chat-general'
   | 'customer-portal'
   | 'support-sla'
+  | 'support-conversation-fields'
   | 'support-webhooks'
   | 'inboxes-routing';
 
@@ -399,6 +403,14 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Support',
   },
   {
+    id: 'support-conversation-fields',
+    label: 'Request types & fields',
+    description: 'Choose what customers ask for on the portal and the fields conversations carry.',
+    keywords: ['custom fields', 'fields', 'attributes', 'ticket fields', 'form fields', 'request types', 'ticket forms', 'forms'],
+    icon: Fields,
+    group: 'Support',
+  },
+  {
     id: 'support-webhooks',
     label: 'Webhooks',
     description: 'Send signed support events to your own systems as they happen.',
@@ -454,6 +466,14 @@ const allSettingsSections: SettingsSectionMeta[] = [
     label: 'Deal pipelines',
     description: 'Configure deal pipelines and stages.',
     icon: Pipelines,
+    group: 'CRM',
+  },
+  {
+    id: 'crm-fields',
+    keywords: ['custom fields', 'custom properties', 'attributes', 'contact fields', 'company fields'],
+    label: 'Fields',
+    description: 'Give contact and company keys a label and type.',
+    icon: Fields,
     group: 'CRM',
   },
   {

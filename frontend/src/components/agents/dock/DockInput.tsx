@@ -368,21 +368,7 @@ export function DockInput({
       )}
     </button>
   ) : null;
-  const submitControl = onPause || onResume ? (
-    <div className="flex shrink-0 items-center gap-1.5">
-      <button
-        type="button"
-        onClick={onPause ?? onResume}
-        disabled={pausing || resuming}
-        title={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
-        aria-label={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background transition hover:bg-foreground/85 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {pausing || resuming ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : onPause ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
-      </button>
-      {stopControl}
-    </div>
-  ) : stopControl ?? (
+  const sendControl = (
     <button
       type="button"
       onClick={onSubmit}
@@ -400,6 +386,23 @@ export function DockInput({
       )}
     </button>
   );
+  const submitControl = onPause || onResume ? (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onPause ?? onResume}
+        disabled={pausing || resuming}
+        title={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
+        aria-label={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background transition hover:bg-foreground/85 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {pausing || resuming ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : onPause ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
+      </button>
+      {stopControl}
+      {!disabled && sendControl}
+    </div>
+  ) : stopControl ? <div className="flex items-center gap-1.5">{stopControl}{!disabled && sendControl}</div> : sendControl;
+
 
   return (
     <div className="flex flex-col gap-2 px-3.5 pb-2.5 pt-2">

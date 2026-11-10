@@ -80,6 +80,7 @@ func (s *CommandBarService) dispatchPlanCore(ctx context.Context, workspaceID, a
 	}
 	planKind := commandBarPlanKindForSteps(steps)
 	if planKind == model.CommandBarPlanKindTaskPipeline || planKind == model.CommandBarPlanKindDAG {
+		s.agentService.ensureCommandBarPlanRunGroup(ctx, workspaceID, planID)
 		if _, err := s.agentService.startReadyCommandBarPlanSteps(ctx, CommandBarPlanInput{
 			WorkspaceID: workspaceID,
 			ActorID:     actorID,

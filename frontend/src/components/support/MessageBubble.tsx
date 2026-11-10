@@ -37,6 +37,7 @@ import { toast } from 'sonner';
 import { buildTaskPath } from '@/lib/pmTaskLinks';
 import { openTaskPanelFromLink } from '@/components/pm/task-detail/taskRouteNavigation';
 import { SupportLink } from './SupportLink';
+import { supportChannel } from '@/lib/supportChannels';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -210,6 +211,10 @@ function renderSupportAuditSystemEventContent(
     return renderBoldedSupportMatches(content, /(\b(?:from|to)\s+)(Low|Medium|High|Urgent)((?=\s+to\s)|\.$)/g);
   }
 
+  if (eventType === 'request_type_changed') {
+    return renderBoldedSupportMatches(content, /(\b(?:from|to)\s+)(.+?)((?=\s+to\s)|\.$)/g);
+  }
+
   if (eventType && SUPPORT_TASK_EVENT_TYPES.has(eventType)) {
     const taskMatch = content.match(/^(.*\b(?:created|linked|unlinked) task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
     if (taskMatch) {
@@ -250,13 +255,6 @@ const markdownBaseComponents = {
       className={`max-h-60 max-w-full rounded-lg object-cover ${className ?? ''}`.trim()}
     />
   ),
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  widget: 'Chat',
-  email: 'Email',
-  internal: 'Internal',
-  api: 'API',
 };
 
 function previewHostLabel(preview: SupportLinkPreview): string {
@@ -454,7 +452,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
   const messageSource = message.via_channel ?? source;
   const sourceLabel = isInternal ? null : deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode]
-    : messageSource ? SOURCE_LABELS[messageSource] ?? messageSource : null;
+    : messageSource ? supportChannel(messageSource)?.messageLabel ?? messageSource : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
   // Only strip if the JSON parses as an AI contract (has can_answer + content keys)
@@ -663,6 +661,8 @@ export const MessageBubble = memo(function MessageBubble({
       'tag_removed',
       ...SUPPORT_TASK_EVENT_TYPES,
       'priority_changed',
+      'request_type_changed',
+      'field_changed',
       'snoozed',
       'unsnoozed',
       'sla_breached',

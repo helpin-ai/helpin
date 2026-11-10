@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { QueryBuilderPopover } from '@/components/ui/query-builder/QueryBuilderPopover';
 import { useContactsSearchParams } from '@/hooks/useContactsSearchParams';
 import { useContactFilterOptions } from '@/hooks/useContactFilterOptions';
+import { useCustomFields } from '@/hooks/queries/useCustomFields';
 import { buildCRMContactQueryFields } from '@/lib/crmContactQueryBuilder';
 import { QUERY_FILTER_OPERATOR_LABELS, operatorUsesRange, operatorUsesValue, operatorUsesValueList, type QueryBuilderFieldDefinition, type QueryFilterRule } from '@/lib/queryBuilder';
 import { Button } from '@/components/ui/button';
@@ -15,9 +16,10 @@ interface ContactsFilterBarProps {
 
 function useContactQueryFields(workspaceId: string, assignableMembers: AssignableMember[]) {
   const { data: filterOptions } = useContactFilterOptions(workspaceId);
+  const { fields: definitions } = useCustomFields(workspaceId, 'crm_contact');
   return useMemo(
-    () => buildCRMContactQueryFields(assignableMembers, filterOptions),
-    [assignableMembers, filterOptions],
+    () => buildCRMContactQueryFields(assignableMembers, filterOptions, definitions),
+    [assignableMembers, filterOptions, definitions],
   );
 }
 

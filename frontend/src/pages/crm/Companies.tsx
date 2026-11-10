@@ -15,6 +15,8 @@ import { CreateCompanyDialog } from '@/components/crm/CreateCompanyDialog';
 import { CompanySLATierBulkBar } from '@/components/crm/CompanySLATierBulkBar';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { useSLATiers } from '@/hooks/queries/useSupportSLATiers';
+import { useCustomFields } from '@/hooks/queries/useCustomFields';
+import { isConditionFilter } from '@/lib/pmFilterConditions';
 import { CRMDataEmptyState, CRMNoResultsState } from '@/components/crm/CRMDataEmptyState';
 import { CompaniesAppliedFilters, CompaniesFilterTrigger } from '@/components/crm/CompaniesFilterBar';
 import { useCompanyFilterOptions } from '@/hooks/useCompanyFilterOptions';
@@ -64,19 +66,24 @@ export function CompaniesPage() {
   const routeSearch = useSearch({ strict: false }) as { filters?: string };
   const { data: filterOptions } = useCompanyFilterOptions(wsId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
+  const { fields: fieldDefinitions } = useCustomFields(wsId, 'crm_company');
   const filterDefinitions = useMemo(
-    () => buildCompanyFilterDefinitions(filterOptions, assignableMembers),
-    [filterOptions, assignableMembers],
+    () => buildCompanyFilterDefinitions(filterOptions, assignableMembers, fieldDefinitions),
+    [filterOptions, assignableMembers, fieldDefinitions],
   );
   const numberFilterKeys = useMemo(
-    () => new Set(filterDefinitions.filter((definition) => definition.kind === 'number').map((definition) => definition.key)),
+    () => new Set(filterDefinitions.filter(isConditionFilter).map((definition) => definition.key)),
+    [filterDefinitions],
+  );
+  const dateFilterKeys = useMemo(
+    () => new Set(filterDefinitions.filter((definition) => definition.kind === 'date').map((definition) => definition.key)),
     [filterDefinitions],
   );
   const appliedFilters = useMemo(
     () => companyFilterGroupToState(parseQueryFilterGroup(routeSearch.filters), numberFilterKeys),
     [routeSearch.filters, numberFilterKeys],
   );
-  const appliedFilterGroup = companyFiltersToGroup(appliedFilters);
+  const appliedFilterGroup = companyFiltersToGroup(appliedFilters, dateFilterKeys);
   const serializedFilters = serializeQueryFilterGroup(appliedFilterGroup);
   const appliedFilterCount = appliedFilterGroup?.rules.length ?? 0;
   // Fields added from the trigger but still awaiting a value keep their pill
@@ -98,11 +105,11 @@ export function CompaniesPage() {
     void navigate({
       search: (previous: Record<string, unknown>) => ({
         ...previous,
-        filters: serializeQueryFilterGroup(companyFiltersToGroup(next)),
+        filters: serializeQueryFilterGroup(companyFiltersToGroup(next, dateFilterKeys)),
       }),
       replace: true,
     } as never);
-  }, [navigate]);
+  }, [navigate, dateFilterKeys]);
   const visibleFilterKeys = useMemo(() => {
     const keys = new Set([...pendingFilterKeys, ...Object.keys(filterConditions), ...Object.keys(appliedFilters.modes)]);
     for (const [key, selected] of Object.entries(filterValues)) {
@@ -148,8 +155,10 @@ export function CompaniesPage() {
   };
   const addFilter = (key: string) => {
     setPendingFilterKeys((current) => new Set(current).add(key));
-    if (filterDefinitions.find((definition) => definition.key === key)?.kind === 'number') {
-      setDraftConditions((current) => ({ ...current, [key]: { operator: 'gt' } }));
+    const definition = filterDefinitions.find((entry) => entry.key === key);
+    if (definition && isConditionFilter(definition)) {
+      // Dates start at "before", numbers at "greater than".
+      setDraftConditions((current) => ({ ...current, [key]: { operator: definition.kind === 'date' ? 'lt' : 'gt' } }));
     }
   };
   const toggleFilter = (key: string, value: string) => {

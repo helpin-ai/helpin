@@ -26,6 +26,10 @@ vi.mock('@/hooks/queries/useSupportOperations', () => {
   };
 });
 
+vi.mock('@/hooks/queries/useCustomFields', () => ({
+  useRequestTypes: () => ({ requestTypes: [] }),
+}))
+
 vi.mock('@/hooks/queries/useSupport', () => ({
   useInfiniteConversations: (...args: unknown[]) => mockUseInfiniteConversations(...args),
   useMarkConversationRead: (...args: unknown[]) => mockUseMarkConversationRead(...args),

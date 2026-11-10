@@ -40,7 +40,7 @@ func setupCompanyPortal(t *testing.T) *companyPortal {
 	addPortalMember(t, db, ws.ID, p.acme, p.alice)
 	addPortalMember(t, db, ws.ID, p.acme, p.bob)
 	p.bobIn = signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "bob@acme.test", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(context.Background(), p.bobIn, "Invoices are missing", "We cannot find March invoices", nil, nil)
+	request, err := svc.CreateRequest(context.Background(), p.bobIn, "Invoices are missing", "We cannot find March invoices", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestCompanyPortalRequestCompanyIsSnapshotted(t *testing.T) {
 	// member's requests away from their portal company.
 	claimed := createPortalCompany(t, p.db, p.ws.ID, "Claimed", nil)
 	linkContactCompany(t, p.db, p.ws.ID, p.alice, claimed)
-	request, err := p.svc.CreateRequest(context.Background(), p.aliceIn, "Still Acme", "Which account?", nil, nil)
+	request, err := p.svc.CreateRequest(context.Background(), p.aliceIn, "Still Acme", "Which account?", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestCompanyPortalRequestCompanyIsSnapshotted(t *testing.T) {
 	other := createPortalCompany(t, p.db, p.ws.ID, "Other", nil)
 	linkContactCompany(t, p.db, p.ws.ID, p.alice, other)
 	addPortalMember(t, p.db, p.ws.ID, other, p.alice)
-	request, err = p.svc.CreateRequest(context.Background(), p.aliceIn, "Two companies", "Which account?", nil, nil)
+	request, err = p.svc.CreateRequest(context.Background(), p.aliceIn, "Two companies", "Which account?", nil, nil, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -646,7 +646,7 @@ func TestCompanyPortalAdminAccess(t *testing.T) {
 	if err != nil || derefString(contact.PortalRole) != model.PortalRoleRequester {
 		t.Fatalf("set contact role = %+v, %v", contact, err)
 	}
-	if _, err := p.svc.SetContactRole(ctx, p.ws.ID, p.alice, "admin", portalAccess("admin")); !errors.Is(err, ErrPortalRoleInvalid) {
+	if _, err := p.svc.SetContactRole(ctx, p.ws.ID, p.alice, "admin", portalAccess("owner")); !errors.Is(err, ErrPortalRoleInvalid) {
 		t.Fatalf("invalid contact role err = %v", err)
 	}
 	if _, err := p.svc.SetContactRole(ctx, p.ws.ID, uuid.NewString(), "admin", nil); !errors.Is(err, ErrPortalContactNotFound) {

@@ -12,14 +12,18 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
-	MailboxAIRepliesDisabled       bool            `json:"-" gorm:"-"`
-	MergeEmailRecipients           []string        `json:"merge_email_recipients,omitempty" gorm:"-"`
-	MergeHasWidget                 bool            `json:"merge_has_widget,omitempty" gorm:"-"`
-	MergeContinuationID            *string         `json:"merge_continuation_id,omitempty" gorm:"-"`
-	MergeParticipants              []string        `json:"merge_participants,omitempty" gorm:"-"`
-	MergedIntoID                   *string         `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
-	MergeRevision                  int64           `json:"merge_revision" gorm:"not null;default:0"`
-	AnonymizedAt                   *time.Time      `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
+	MailboxAIRepliesDisabled bool       `json:"-" gorm:"-"`
+	MergeEmailRecipients     []string   `json:"merge_email_recipients,omitempty" gorm:"-"`
+	MergeHasWidget           bool       `json:"merge_has_widget,omitempty" gorm:"-"`
+	MergeContinuationID      *string    `json:"merge_continuation_id,omitempty" gorm:"-"`
+	MergeParticipants        []string   `json:"merge_participants,omitempty" gorm:"-"`
+	MergedIntoID             *string    `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
+	MergeRevision            int64      `json:"merge_revision" gorm:"not null;default:0"`
+	AnonymizedAt             *time.Time `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
+	// RequestTypeID and CustomFields are read-only here: their own endpoints
+	// validate and write them, and inserts leave the column defaults.
+	RequestTypeID                  *string         `json:"request_type_id,omitempty" gorm:"type:uuid;->"`
+	CustomFields                   JSONB           `json:"custom_fields,omitempty" gorm:"type:jsonb;not null;default:'{}';->"`
 	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	MailboxID                      *string         `json:"mailbox_id" gorm:"type:uuid;index"`
@@ -1470,6 +1474,7 @@ type SupportInboxSettings struct {
 	ForwardedEmailMinConfidence     int    `json:"forwarded_email_min_confidence"`
 
 	// Widget Identity
+	AIDisplayName      string   `json:"ai_display_name"`
 	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
 	WidgetAvatarURL    string   `json:"widget_avatar_url"`     // custom avatar URL for the widget
 	WidgetHelpSpaceIDs []string `json:"widget_help_space_ids"` // selected external-capable docs spaces shown in widget help
@@ -1493,6 +1498,9 @@ type SupportInboxSettings struct {
 	// PortalShowReplyBy shows customers when to expect the team's reply on
 	// their portal requests, from the running SLA target.
 	PortalShowReplyBy bool `json:"portal_show_reply_by"`
+	// PortalCCMode lets requesters copy people on their portal requests:
+	// "" (off), SupportPortalCCColleagues or SupportPortalCCAny.
+	PortalCCMode string `json:"portal_cc_mode"`
 	// HelpAssistantEnabled turns on the Ask AI help assistant on the help
 	// center and in the customer portal.
 	HelpAssistantEnabled bool `json:"help_assistant_enabled"`
@@ -1698,10 +1706,12 @@ type UpdateInstallationSettingsRequest struct {
 	PortalAnonymousIntakeEnabled    *bool                       `json:"portal_anonymous_intake_enabled,omitempty"`
 	PortalIntakeEnabled             *bool                       `json:"portal_intake_enabled,omitempty"`
 	PortalShowReplyBy               *bool                       `json:"portal_show_reply_by,omitempty"`
+	PortalCCMode                    *string                     `json:"portal_cc_mode,omitempty"`
 	HelpAssistantEnabled            *bool                       `json:"help_assistant_enabled,omitempty"`
 	PortalAccessMode                *string                     `json:"portal_access_mode,omitempty"`
 	PortalAIMode                    *string                     `json:"portal_ai_mode,omitempty"`
 	PortalAIAgentID                 *string                     `json:"portal_ai_agent_id,omitempty"`
+	AIDisplayName                   *string                     `json:"ai_display_name,omitempty"`
 	WidgetName                      *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
 	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`
@@ -1972,6 +1982,7 @@ type WidgetConfigPrivacyNotice struct {
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
+	AIDisplayName      string                    `json:"aiDisplayName,omitempty"`
 	PrivacyNotice      WidgetConfigPrivacyNotice `json:"privacyNotice"`
 	WorkspaceID        string                    `json:"workspaceId"`
 	WorkspaceName      string                    `json:"workspaceName,omitempty"`
@@ -2114,6 +2125,15 @@ type SupportAIControlRequest struct {
 	ExpectedVersion     int64  `json:"expected_version"`
 	ConfirmHumanRequest bool   `json:"confirm_human_request"`
 }
+
+// Portal copy modes: who requesters may copy on a request.
+const (
+	// SupportPortalCCColleagues allows members of the requester's portal
+	// companies and addresses on those companies' domains.
+	SupportPortalCCColleagues = "colleagues"
+	// SupportPortalCCAny allows any email address.
+	SupportPortalCCAny = "any"
+)
 
 // EffectivePortalAccessMode returns the portal access mode, treating any
 // unknown value as the safer approved-contacts mode.

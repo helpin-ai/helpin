@@ -15,12 +15,13 @@ export interface SupportViewEditValues {
 }
 
 // Mount per session: edit saved criteria or create with shared inbox defaults.
-export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes, slaEnabled, isPending, onSave, onClose }: {
+export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes, slaEnabled, requestTypes, isPending, onSave, onClose }: {
   view?: SupportInboxView;
   canManageSettings: boolean;
   tags: SupportTag[];
   mailboxes: Pick<SupportInboxScope, 'id' | 'name'>[];
   slaEnabled: boolean;
+  requestTypes?: { id: string; name: string }[];
   isPending: boolean;
   onSave: (values: SupportViewEditValues) => void;
   onClose: () => void;
@@ -32,7 +33,7 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
     if (!name.trim() || isPending) return;
     // Replace editable keys, retaining other saved criteria and future fields.
     const filters = { ...view?.filters };
-    for (const key of ['nav_filter', 'states', 'mailbox_id', 'search', 'assignment', 'mailbox_ids', 'tag_ids', 'ai', 'system_tags', 'sort', 'sla', 'priority']) delete filters[key];
+    for (const key of ['nav_filter', 'states', 'mailbox_id', 'search', 'assignment', 'mailbox_ids', 'tag_ids', 'ai', 'system_tags', 'sort', 'sla', 'priority', 'request_type_ids']) delete filters[key];
     Object.assign(filters, buildSupportInboxViewFilters(draft));
     onSave({ name: name.trim(), ...(canManageSettings ? { is_shared: shared } : {}), filters });
   };
@@ -57,7 +58,7 @@ export function SupportViewEditDialog({ view, canManageSettings, tags, mailboxes
               selectedMailboxId={draft.selectedMailboxId}
               setConversationListFilter={(key, value) => setDraft(current => ({ ...current, listFilters: { ...current.listFilters, [key]: value } }))}
               setConversationMailboxFilters={(ids) => setDraft(current => ({ ...current, selectedMailboxId: 'all', listFilters: { ...current.listFilters, mailboxIds: ids } }))}
-              supportTags={tags} teamInboxFilterOptions={mailboxes} slaEnabled={slaEnabled}
+              supportTags={tags} teamInboxFilterOptions={mailboxes} slaEnabled={slaEnabled} requestTypes={requestTypes}
             />
           </div>
         </div>

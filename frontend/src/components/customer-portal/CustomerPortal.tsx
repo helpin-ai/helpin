@@ -1,4 +1,9 @@
 import { PortalRatingCard } from './PortalRatingCard'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select'
+import { PortalCCEditor, PortalRequestCC } from './PortalCCEditor'
+import { usePortalCCOptions } from './usePortalCCOptions'
+import { PortalRequestTypeFields, PortalRequestTypePicker } from './PortalRequestTypeFields'
+import { portalFieldsForSubmit, type PortalFieldValues } from '@/lib/portalRequestFields'
 import {
   createContext,
   useCallback,
@@ -31,7 +36,7 @@ import { PortalActivityRow, PortalMessage } from './PortalConversation'
 import { PortalFrame, type PortalFrameWidth } from './PortalFrame'
 import { portalPublicRedirect } from './portalPaths'
 import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
-import { MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
+import { COPIED_SCOPE, MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
 import { requestNumber } from './portalRequestFormat'
 import { formatPortalRelativeTime, formatPortalReplyBy } from './portalTime'
 import { usePortalLiveUpdates } from './usePortalLiveUpdates'
@@ -47,6 +52,8 @@ import {
   CustomerPortalApiError,
   customerPortalService,
   type CustomerPortalAttachmentPolicy,
+  type CustomerPortalRequestType,
+  type CustomerPortalTeam,
   type CustomerPortalConfiguration,
   type CustomerPortalRequest,
   type CustomerPortalRequestDetail,
@@ -279,11 +286,14 @@ export function CustomerPortalProvider({ slug }: { slug: string }) {
 
 // ── Sign in and requests without sign-in ────────────────────────────────
 
-function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: string; fileUploadsEnabled: boolean; policy?: CustomerPortalAttachmentPolicy }) {
+function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy, requestTypes }: { slug: string; fileUploadsEnabled: boolean; policy?: CustomerPortalAttachmentPolicy; requestTypes: CustomerPortalRequestType[] }) {
   const [email, setEmail] = useState('')
   const [token, setToken] = useState('')
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
+  const [requestTypeId, setRequestTypeId] = useState('')
+  const [fieldValues, setFieldValues] = useState<PortalFieldValues>({})
+  const requestType = requestTypes.find((type) => type.id === requestTypeId) ?? (requestTypes.length === 1 ? requestTypes[0] : undefined)
   const suggestions = usePortalArticleSuggestions(slug, token ? subject : '', token ? message : '')
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAnonymousAttachment(slug, token, file, options),
@@ -309,17 +319,27 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
   async function send(event: FormEvent) {
     event.preventDefault()
     if (uploads.blocked || !token) return
+    if (requestTypes.length > 0 && !requestType) {
+      setError('Choose what your request is about.')
+      return
+    }
+    const typed = portalFieldsForSubmit(requestType, fieldValues)
+    if (typed.error) {
+      setError(typed.error)
+      return
+    }
     setWorking(true)
     setError(null)
     try {
       await customerPortalService.createAnonymousRequest(slug, token, {
         subject: subject.trim(), message: message.trim(), attachment_ids: uploads.attachmentIds, intake: suggestions.intake(),
+        ...(requestType ? { request_type_id: requestType.id, fields: typed.fields } : {}),
       })
       setSubmitted(true)
       setToken('')
       uploads.clear()
-    } catch {
-      setError('Your request could not be sent. Please try again.')
+    } catch (requestError) {
+      setError(portalRequestErrorMessage(requestError))
     } finally { setWorking(false) }
   }
 
@@ -345,12 +365,16 @@ function AnonymousIntakeForm({ slug, fileUploadsEnabled, policy }: { slug: strin
             <span aria-hidden="true"> · </span>
             <QuietTextAction type="button" onClick={() => { setToken(''); uploads.clear() }}>Change email</QuietTextAction>
           </p>
+          {requestTypes.length > 1 ? (
+            <PortalRequestTypePicker types={requestTypes} value={requestType?.id ?? ''} onChange={setRequestTypeId} />
+          ) : null}
           <PortalField id="intake-subject" label="Subject">
             <QuietUnderlineInput id="intake-subject" required maxLength={200} value={subject} onChange={(event) => setSubject(event.target.value)} />
           </PortalField>
           <PortalField id="intake-message" label="How can we help?">
             <QuietUnderlineTextarea id="intake-message" required rows={4} className="max-h-none min-h-24" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} />
           </PortalField>
+          {requestType ? <PortalRequestTypeFields idPrefix="intake" type={requestType} values={fieldValues} onChange={setFieldValues} /> : null}
           <PortalArticleSuggestions slug={slug} articles={suggestions.articles} onOpen={suggestions.recordOpened} />
           <PortalDropCue visible={dragging} />
           {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
@@ -421,7 +445,7 @@ export function CustomerPortalSignIn() {
           </form>
         </>
       )}
-      {configuration?.anonymous_intake_enabled ? <AnonymousIntakeForm slug={slug} fileUploadsEnabled={configuration.file_uploads_enabled} policy={configuration.attachments} /> : null}
+      {configuration?.anonymous_intake_enabled ? <AnonymousIntakeForm slug={slug} fileUploadsEnabled={configuration.file_uploads_enabled} policy={configuration.attachments} requestTypes={configuration.request_types ?? []} /> : null}
     </PortalShell>
   )
 }
@@ -509,16 +533,22 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   onCreated: (reference: string) => void
   handleSessionError: (error: unknown) => boolean
 }) {
-  const { session } = usePortal()
+  const { session, configuration } = usePortal()
   // A help assistant handoff opens this form with the conversation filled in.
   const [prefill] = useState(readRequestPrefill)
-  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill && { subject: prefill.subject, message: prefill.message })
+  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill && { subject: prefill.subject, message: prefill.message, requestTypeId: prefill.requestType })
   useEffect(() => {
     if (prefill) clearRequestPrefill()
   }, [prefill])
   const { subject, message } = draft
-  const setSubject = (value: string) => setDraft({ subject: value, message })
-  const setMessage = (value: string) => setDraft({ subject, message: value })
+  const fieldValues = draft.fields ?? {}
+  const setSubject = (value: string) => setDraft({ ...draft, subject: value })
+  const setMessage = (value: string) => setDraft({ ...draft, message: value })
+  const requestTypes = configuration?.request_types ?? []
+  const requestType = requestTypes.find((type) => type.id === draft.requestTypeId) ?? (requestTypes.length === 1 ? requestTypes[0] : undefined)
+  const ccEnabled = Boolean(configuration?.cc_mode)
+  const ccOptions = usePortalCCOptions(slug, ccEnabled)
+  const [ccPending, setCCPending] = useState('')
   const suggestions = usePortalArticleSuggestions(slug, subject, message)
   const upload = useCallback<Parameters<typeof usePortalAttachmentUploads>[0]['upload']>(
     (file, options) => customerPortalService.uploadAttachment(slug, file, undefined, options),
@@ -531,6 +561,19 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   async function createRequest(event: FormEvent) {
     event.preventDefault()
     if (uploads.blocked) return
+    if (requestTypes.length > 0 && !requestType) {
+      setError('Choose what your request is about.')
+      return
+    }
+    const typed = portalFieldsForSubmit(requestType, fieldValues)
+    if (typed.error) {
+      setError(typed.error)
+      return
+    }
+    if (ccEnabled && ccPending) {
+      setError(`Press Enter to copy ${ccPending}, or clear it.`)
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -539,13 +582,15 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         message: message.trim(),
         attachment_ids: uploads.attachmentIds,
         intake: { ...suggestions.intake(), assistant_session_id: prefill?.assistantSession },
+        ...(requestType ? { request_type_id: requestType.id, fields: typed.fields } : {}),
+        ...(ccEnabled && draft.cc?.length ? { cc_emails: draft.cc } : {}),
       })
       uploads.clear()
       clearDraft()
       onCreated(created.reference)
     } catch (requestError) {
       if (handleSessionError(requestError)) return
-      setError('Your request could not be sent. Please try again.')
+      setError(portalRequestErrorMessage(requestError))
     } finally {
       setSubmitting(false)
     }
@@ -554,12 +599,21 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   return (
     <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-12">
       <form className={cn('-mx-3 max-w-[784px] space-y-6 rounded-lg px-3 py-3 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-label="New request" {...dropProps}>
+        {requestTypes.length > 1 ? (
+          <PortalRequestTypePicker types={requestTypes} value={requestType?.id ?? ''} onChange={(id) => setDraft({ ...draft, requestTypeId: id })} />
+        ) : null}
         <PortalField id="request-subject" label="Subject">
           <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} placeholder="A short summary, e.g. “Invoices export is missing VAT”" />
         </PortalField>
         <PortalField id="request-message" label="How can we help?">
           <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
         </PortalField>
+        {requestType ? (
+          <PortalRequestTypeFields idPrefix="request" type={requestType} values={fieldValues} onChange={(fields) => setDraft({ ...draft, fields })} />
+        ) : null}
+        {ccEnabled ? (
+          <PortalCCEditor label="Copy colleagues (optional)" value={draft.cc ?? []} options={ccOptions} onChange={(cc) => setDraft({ ...draft, cc })} onPendingChange={setCCPending} />
+        ) : null}
         <PortalArticleSuggestions slug={slug} className="lg:hidden" articles={suggestions.articles} onOpen={suggestions.recordOpened} />
         <PortalDropCue visible={dragging} />
         {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
@@ -575,7 +629,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
 }
 
 /** readRequestPrefill reads a request filled in from the help assistant. */
-function readRequestPrefill(): { subject: string; message: string; assistantSession?: string } | undefined {
+function readRequestPrefill(): { subject: string; message: string; assistantSession?: string; requestType?: string } | undefined {
   const params = new URLSearchParams(window.location.search)
   // The router JSON-quotes values that would otherwise parse as JSON.
   const read = (key: string) => {
@@ -589,7 +643,17 @@ function readRequestPrefill(): { subject: string; message: string; assistantSess
   const subject = read('subject').trim().slice(0, 200)
   const message = read('message').trim().slice(0, 8000)
   const assistantSession = read('assistant_session').trim()
-  return subject || message ? { subject, message, assistantSession: /^[0-9a-f-]{36}$/i.test(assistantSession) ? assistantSession : undefined } : undefined
+  const requestType = read('request_type').trim()
+  const uuid = /^[0-9a-f-]{36}$/i
+  return subject || message || uuid.test(requestType)
+    ? { subject, message, assistantSession: uuid.test(assistantSession) ? assistantSession : undefined, requestType: uuid.test(requestType) ? requestType : undefined }
+    : undefined
+}
+
+/** A request the server refused for a reason the customer can fix shows that reason. */
+function portalRequestErrorMessage(error: unknown): string {
+  if (error instanceof CustomerPortalApiError && error.status === 400 && error.message) return error.message
+  return 'Your request could not be sent. Please try again.'
 }
 
 /** clearRequestPrefill drops the prefill from the address, so a reload starts from the saved draft. */
@@ -598,13 +662,14 @@ function clearRequestPrefill() {
   url.searchParams.delete('subject')
   url.searchParams.delete('message')
   url.searchParams.delete('assistant_session')
+  url.searchParams.delete('request_type')
   window.history.replaceState(window.history.state, '', url.toString())
 }
 
 export function CustomerPortalHome() {
   const { configuration, handleSessionError, session, slug, status } = usePortal()
   const [reload, setReload] = useState(0)
-  const requestScope = usePortalRequestScope(slug, session?.companies ?? [])
+  const requestScope = usePortalRequestScope(slug, session?.companies ?? [], Boolean(configuration?.cc_mode))
   // The skeleton shows only on the first load of a list, so live refreshes
   // keep the table, its filters and its open groups in place.
   const [result, setResult] = useState<{ scope: string; requests: CustomerPortalRequest[]; error: string | null } | null>(null)
@@ -630,7 +695,7 @@ export function CustomerPortalHome() {
     let active = true
     // Every request is loaded once; the table filters and counts them locally.
     customerPortalService
-      .requests(slug, 'all', scopeKey === MINE_SCOPE ? { kind: 'mine' } : { kind: 'company', companyId: scopeKey })
+      .requests(slug, 'all', scopeKey === MINE_SCOPE ? { kind: 'mine' } : scopeKey === COPIED_SCOPE ? { kind: 'copied' } : { kind: 'company', companyId: scopeKey })
       .then((nextRequests) => {
         if (active) setResult({ scope: scopeKey, requests: nextRequests, error: null })
       })
@@ -650,13 +715,18 @@ export function CustomerPortalHome() {
   return (
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
-        title={companyName ? `${companyName} requests` : 'Your requests'}
-        actions={hasHelp || configuration?.intake_enabled || configuration?.assistant_enabled ? (
+        title={companyName ? `${companyName} requests` : scopeKey === COPIED_SCOPE ? 'Copied to you' : 'Your requests'}
+        actions={hasHelp || configuration?.intake_enabled || configuration?.assistant_enabled || requestScope.company?.role === 'admin' ? (
           <>
             {configuration?.assistant_enabled ? <PortalAskAI slug={slug} /> : null}
             {hasHelp ? (
               <QuietTextAction asChild>
                 <Link to="/portal/$slug/help" params={{ slug }}>Help articles</Link>
+              </QuietTextAction>
+            ) : null}
+            {requestScope.company?.role === 'admin' ? (
+              <QuietTextAction asChild>
+                <Link to="/portal/$slug/team/$companyId" params={{ slug, companyId: requestScope.company.id }}>Team</Link>
               </QuietTextAction>
             ) : null}
             {configuration?.intake_enabled ? (
@@ -668,13 +738,14 @@ export function CustomerPortalHome() {
         ) : null}
       />
 
-      {requestScope.memberCompanies.length > 0 ? (
+      {requestScope.memberCompanies.length > 0 || requestScope.copiedEnabled ? (
         <Tabs value={scopeKey} onValueChange={requestScope.select} className="mt-4 gap-0">
           <TabsList variant="quiet" aria-label="Which requests to show">
             <TabsTrigger value={MINE_SCOPE}>My requests</TabsTrigger>
             {requestScope.memberCompanies.map((company) => (
               <TabsTrigger key={company.id} value={company.id}>{company.name}</TabsTrigger>
             ))}
+            {requestScope.copiedEnabled ? <TabsTrigger value={COPIED_SCOPE}>Copied to me</TabsTrigger> : null}
           </TabsList>
         </Tabs>
       ) : null}
@@ -697,7 +768,8 @@ export function CustomerPortalHome() {
             action={<QuietTextAction onClick={refresh}>Try again</QuietTextAction>}
           />
         ) : (
-          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} />
+          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} copied={scopeKey === COPIED_SCOPE}
+            scope={scopeKey === MINE_SCOPE ? { kind: 'mine' } : scopeKey === COPIED_SCOPE ? { kind: 'copied' } : { kind: 'company', companyId: scopeKey }} />
         )}
       </section>
     </PortalShell>
@@ -921,6 +993,7 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
             className="text-[12px]"
             items={[
               requestNumber(request),
+              request.request_type ?? null,
               request.own === false ? `Asked by ${request.requester_name || 'a colleague'}` : null,
               request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null,
               replyBy ? <span key="reply-by" className="font-medium text-quiet-text-secondary">Expect a reply by {replyBy}</span> : null,
@@ -939,6 +1012,19 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         <QuietEmptyState className="mt-8" title={error} description="Go back to your requests to see what you can open." action={<QuietTextAction onClick={backToRequests}>All requests</QuietTextAction>} />
       ) : request ? (
         <>
+          {request.fields?.length ? (
+            <dl className="mt-5 grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2" aria-label="Request details">
+              {request.fields.map((field, index) => (
+                <div key={`${index}:${field.label}`} className="min-w-0">
+                  <dt className="text-[12px] text-quiet-text-tertiary">{field.label}</dt>
+                  <dd className="whitespace-pre-wrap break-words text-quiet-text-primary">{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+          {configuration?.cc_mode || request.cc?.length ? (
+            <PortalRequestCC slug={slug} request={request} onUpdated={setRequest} />
+          ) : null}
           <ol className="mt-6 border-t border-quiet-divider-strong pt-3" aria-label="Messages">
             {request.messages.map((message) => <PortalMessage key={message.id} message={message} supportName={configuration?.branding.name || 'Support'} />)}
             {typing ? <PortalActivityRow label={`${configuration?.branding.name || 'Support'} is replying…`} /> : null}
@@ -954,6 +1040,160 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
           )}
         </>
       ) : null}
+    </PortalShell>
+  )
+}
+
+// ── Company team (company admins) ───────────────────────────────────────
+
+const TEAM_ROLES: Array<{ value: 'admin' | 'member' | 'requester'; label: string; description: string }> = [
+  { value: 'admin', label: 'Admin', description: 'Sees company requests and manages people' },
+  { value: 'member', label: 'Member', description: 'Sees every company request' },
+  { value: 'requester', label: 'Requester', description: 'Sees only their own requests' },
+]
+
+function teamRoleLabel(role: string) {
+  return TEAM_ROLES.find((item) => item.value === role)?.label ?? 'No role'
+}
+
+function portalTeamErrorMessage(error: unknown, fallback: string) {
+  return error instanceof CustomerPortalApiError && error.status < 500 && error.message ? error.message : fallback
+}
+
+/** A company's people, for its portal admins: invite, change roles, remove. */
+export function CustomerPortalTeamPage({ companyId }: { companyId: string }) {
+  const { configuration, handleSessionError, slug, status } = usePortal()
+  const navigate = useNavigate()
+  const [team, setTeam] = useState<CustomerPortalTeam | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [role, setRole] = useState<'member' | 'requester'>('member')
+  const [invited, setInvited] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    let active = true
+    customerPortalService.team(slug, companyId)
+      .then((result) => { if (active) setTeam(result) })
+      .catch((reason) => {
+        if (!active || handleSessionError(reason)) return
+        setError(portalTeamErrorMessage(reason, 'The team could not be loaded.'))
+      })
+    return () => { active = false }
+  }, [companyId, handleSessionError, slug, status])
+
+  if (status !== 'authenticated') return null
+  const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
+
+  const run = async (action: () => Promise<CustomerPortalTeam>, done?: () => void) => {
+    setBusy(true)
+    setActionError(null)
+    try {
+      const next = await action()
+      setTeam(next)
+      done?.()
+      // Stepping down as admin ends access to this page.
+      if (!next.members.some((member) => member.you && member.role === 'admin')) backToRequests()
+    } catch (reason) {
+      if (!handleSessionError(reason)) setActionError(portalTeamErrorMessage(reason, 'That change could not be saved. Please try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const invite = (event: FormEvent) => {
+    event.preventDefault()
+    const address = email.trim()
+    if (!address) return
+    void run(() => customerPortalService.inviteColleague(slug, companyId, { email: address, name: name.trim(), role }), () => {
+      setInvited(address)
+      setEmail('')
+      setName('')
+    })
+  }
+
+  return (
+    <PortalShell account={<PortalAccount />} width="wide">
+      <QuietPageHeader
+        navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
+        title={team ? `${team.company_name} team` : 'Team'}
+        description="People at your company who use this support portal."
+      />
+      {error ? (
+        <QuietEmptyState className="mt-8" title={error} description="Only company admins manage the team." action={<QuietTextAction onClick={backToRequests}>All requests</QuietTextAction>} />
+      ) : !team ? (
+        <div className="mt-8 space-y-3" role="status" aria-label="Loading team">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+        </div>
+      ) : (
+        <>
+          <ul className="mt-6 divide-y divide-quiet-divider-light border-y border-quiet-divider-strong" aria-label="Team members">
+            {team.members.map((member) => (
+              <li key={member.contact_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13.5px] font-medium text-quiet-text-primary">
+                    {member.name || member.email}
+                    {member.you ? <span className="ml-1.5 text-[12px] font-normal text-quiet-text-tertiary">(you)</span> : null}
+                  </div>
+                  <div className="truncate text-[12px] text-quiet-text-tertiary">
+                    {[member.email, member.can_sign_in ? null : 'Cannot sign in', member.last_signed_in_at ? `Signed in ${formatPortalRelativeTime(member.last_signed_in_at)}` : 'Never signed in'].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <Select value={member.role || 'requester'} disabled={busy} onValueChange={(value) => void run(() => customerPortalService.setColleagueRole(slug, companyId, member.contact_id, value as 'admin' | 'member' | 'requester'))}>
+                  <SelectTrigger aria-label={`Role of ${member.name || member.email}`} variant="underline" className="w-36 px-0.5"><SelectValue>{teamRoleLabel(member.role)}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    {TEAM_ROLES.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <QuietTextAction
+                  type="button"
+                  disabled={busy}
+                  aria-label={`Remove ${member.name || member.email} from ${team.company_name}`}
+                  onClick={() => void run(() => customerPortalService.removeColleague(slug, companyId, member.contact_id))}
+                >
+                  Remove
+                </QuietTextAction>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[12px] text-quiet-text-tertiary">Removing someone keeps their own requests; they stop seeing the company’s. {TEAM_ROLES.map((item) => `${item.label}: ${item.description.toLowerCase()}`).join('. ')}.</p>
+          {actionError ? <PortalError className="mt-3">{actionError}</PortalError> : null}
+
+          <section className="mt-10 border-t border-quiet-divider-strong pt-6" aria-labelledby="team-invite-heading">
+            <h2 id="team-invite-heading" className="text-[14px] font-semibold text-quiet-text-primary">Invite a colleague</h2>
+            {team.can_invite ? (
+              <form className="mt-4 grid max-w-2xl gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_9rem]" onSubmit={invite}>
+                <PortalField id="team-invite-email" label="Email address">
+                  <QuietUnderlineInput id="team-invite-email" type="email" required value={email} placeholder={team.any_domain || !team.domains[0] ? 'name@company.com' : `name@${team.domains[0]}`} onChange={(event) => { setEmail(event.target.value); setInvited(null) }} />
+                </PortalField>
+                <PortalField id="team-invite-name" label="Name (optional)">
+                  <QuietUnderlineInput id="team-invite-name" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} />
+                </PortalField>
+                <PortalField id="team-invite-role" label="Role">
+                  <Select value={role} onValueChange={(value) => setRole(value as 'member' | 'requester')}>
+                    <SelectTrigger id="team-invite-role" aria-label="Role" variant="underline" className="w-full px-0.5"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="requester">Requester</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </PortalField>
+                <div className="flex items-center gap-4 sm:col-span-3">
+                  <QuietPrimaryAction type="submit" disabled={busy}>{busy ? 'Inviting…' : 'Send invitation'}</QuietPrimaryAction>
+                  {invited ? <p role="status" className="text-[12.5px] text-quiet-text-tertiary">Invited {invited}. They’ll get a sign-in link by email.</p> : null}
+                </div>
+                {!team.any_domain && team.domains[0] ? <p className="text-[12px] text-quiet-text-tertiary sm:col-span-3">You can invite addresses ending in @{team.domains[0]}.</p> : null}
+              </form>
+            ) : (
+              <p className="mt-2 text-sm text-quiet-text-tertiary">{configuration?.branding.name || 'Support'} adds people for your company. Ask them to turn on invitations if you’d like to add colleagues yourself.</p>
+            )}
+          </section>
+        </>
+      )}
     </PortalShell>
   )
 }

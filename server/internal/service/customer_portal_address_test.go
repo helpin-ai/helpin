@@ -19,7 +19,10 @@ func addPortalHelpcenter(t *testing.T, db *gorm.DB, workspaceID, subdomain, mode
 
 func addPortalHelpcenterWithStatus(t *testing.T, db *gorm.DB, workspaceID, subdomain, mode, customDomain, proxyHost, proxyPath, status string) {
 	t.Helper()
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_helpcenter_configs (id TEXT PRIMARY KEY, workspace_id TEXT UNIQUE, subdomain TEXT, custom_domain TEXT, custom_domain_status TEXT, public_url_mode TEXT, reverse_proxy_host TEXT, reverse_proxy_base_path TEXT)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_helpcenter_configs (
+ demo_mode BOOLEAN NOT NULL DEFAULT 0,
+ search_indexing_enabled BOOLEAN NOT NULL DEFAULT 1,
+ official_docs_url TEXT NOT NULL DEFAULT '',id TEXT PRIMARY KEY, workspace_id TEXT UNIQUE, subdomain TEXT, custom_domain TEXT, custom_domain_status TEXT, public_url_mode TEXT, reverse_proxy_host TEXT, reverse_proxy_base_path TEXT)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`DELETE FROM docs_helpcenter_configs WHERE workspace_id = ?`, workspaceID).Error; err != nil {

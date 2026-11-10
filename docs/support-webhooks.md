@@ -52,6 +52,8 @@ Each event is a `POST` with a JSON body:
       "inbox_id": null, "assignee_id": "…",
       "customer": { "name": "Ada", "email": "ada@example.com", "crm_contact_id": null },
       "tags": ["billing"], "snoozed_until": null, "sla": { … },
+      "request_type": { "id": "…", "name": "Bug report" },
+      "fields": { "severity": "high", "account_id": "A-1042" },
       "created_at": "…", "updated_at": "…", "resolved_at": "…",
       "url": "https://app.helpin.ai/w/acme/support/…"
     },
@@ -61,7 +63,9 @@ Each event is a `POST` with a JSON body:
 ```
 
 `data.conversation` is the conversation when the event is sent, which may be
-moments after it happened. The rest of `data` depends on the event:
+moments after it happened. `request_type` is null for conversations without
+one, and `fields` holds conversation field values by key, internal fields
+included. Changing a field sends no event of its own. The rest of `data` depends on the event:
 
 | Event | Extra fields |
 | --- | --- |

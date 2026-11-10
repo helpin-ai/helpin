@@ -102,6 +102,7 @@ export function getSupportReceiptStatus(
     return message.email_notified_at || message.email_delivery_status === 'sent' ? 'sent_email' : null;
   }
   const seen = conversation.contact_last_seen_at;
+  // Literal channel: this file is shared with support-mobile, which cannot resolve '@/lib' modules.
   if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
   if (message.email_notified_at) return 'sent_email';
   if (conversation.source === 'widget') return 'sent';

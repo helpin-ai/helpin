@@ -270,3 +270,41 @@ func TestCRMListCompaniesNoneOfIncludesMissingAndChecksListElements(t *testing.T
 		t.Fatalf("support_tools is none of zendesk = %v, want Crisp list and No tools", found)
 	}
 }
+
+func TestCRMListCompaniesRejectsMalformedOwnerBeforeQuery(t *testing.T) {
+	env := newCRMOperationalCommandTestEnv(t, setupCRMOperationalCommandTestDB(t))
+	for _, owner := range []string{"x", "mem_invented", "' OR 1=1"} {
+		_, err := env.commands.Execute(context.Background(), env.meta("workspace", ""), "crm.list_companies", mustJSON(map[string]any{"owner_member_id": owner}))
+		var input *CommandError
+		if !errors.As(err, &input) || input.Kind != CommandErrorInvalidInput {
+			t.Fatalf("owner %q: expected actionable input error, got %v", owner, err)
+		}
+	}
+	listFilteredCompanies(t, env, `{}`)
+	listFilteredCompanies(t, env, `{"owner_member_id":null}`)
+	listFilteredCompanies(t, env, `{"owner_member_id":""}`)
+}
+
+func TestCompactCRMFieldMapOmitsSamplesAndScopesRevision(t *testing.T) {
+	catalog := &model.CRMFieldCatalog{ObjectType: "company", CustomProperties: []model.CRMCustomPropertyDescriptor{{CRMCustomPropertySummary: model.CRMCustomPropertySummary{Key: "fit", ValueType: "text", Values: []model.CRMFilterValueCount{{Value: "customer-specific-sample", Count: 1}}}, Field: "custom_properties.fit"}}}
+	first := compactCRMFieldCatalog("workspace-one", catalog)
+	var view map[string]any
+	if err := json.Unmarshal(first, &view); err != nil {
+		t.Fatal(err)
+	}
+	property := view["custom_properties"].([]any)[0].(map[string]any)
+	if _, ok := property["values"]; ok {
+		t.Fatal("compact map includes samples")
+	}
+	if property["key"] != "fit" || view["schema_revision"] == "" {
+		t.Fatalf("lost schema: %s", first)
+	}
+	var second map[string]any
+	json.Unmarshal(compactCRMFieldCatalog("workspace-two", catalog), &second)
+	if view["schema_revision"] == second["schema_revision"] {
+		t.Fatal("schema revision is not workspace scoped")
+	}
+	if len(catalog.CustomProperties[0].Values) != 1 {
+		t.Fatal("compact view mutated legacy response")
+	}
+}

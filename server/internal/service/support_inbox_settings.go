@@ -369,11 +369,17 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.PortalShowReplyBy != nil {
 		current.PortalShowReplyBy = *patch.PortalShowReplyBy
 	}
+	if patch.PortalCCMode != nil {
+		current.PortalCCMode = strings.TrimSpace(*patch.PortalCCMode)
+	}
 	if patch.HelpAssistantEnabled != nil {
 		current.HelpAssistantEnabled = *patch.HelpAssistantEnabled
 	}
 	if patch.PortalAccessMode != nil {
 		current.PortalAccessMode = strings.TrimSpace(*patch.PortalAccessMode)
+	}
+	if patch.AIDisplayName != nil {
+		current.AIDisplayName = strings.TrimSpace(*patch.AIDisplayName)
 	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName
@@ -435,6 +441,9 @@ var hexColorRegex = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // validateSettings checks settings field constraints.
 func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID string, settings model.SupportInboxSettings) error {
+	if len([]rune(settings.AIDisplayName)) > 80 || strings.ContainsAny(settings.AIDisplayName, "\r\n") {
+		return fmt.Errorf("AI assistant name must be a single line of at most 80 characters")
+	}
 	switch settings.EmailCaptureTiming {
 	case "after_ai_reply", "before_handoff", "never":
 	default:
@@ -1274,6 +1283,11 @@ func (s *SupportInboxService) validatePortalSettings(ctx context.Context, worksp
 	case model.SupportPortalAccessModeApprovedContacts, model.SupportPortalAccessModeAnyVerifiedEmail, model.SupportPortalAccessModeCompanyMembers:
 	default:
 		return fmt.Errorf("unsupported portal access mode")
+	}
+	switch merged.PortalCCMode {
+	case "", model.SupportPortalCCColleagues, model.SupportPortalCCAny:
+	default:
+		return fmt.Errorf("portal_cc_mode must be empty, colleagues or any")
 	}
 	if merged.PortalAIMode != model.SupportPortalAIModeOff && merged.PortalAIMode != model.SupportPortalAIModeInternalNote {
 		return fmt.Errorf("portal_ai_mode must be off or internal_note: people answer portal requests, and AI can only suggest replies privately")

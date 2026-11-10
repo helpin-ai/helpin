@@ -1090,11 +1090,14 @@ func (s *SupportInboxTriageService) loadMailboxName(ctx context.Context, workspa
 	return mailbox.Name
 }
 
+// triageChannelEnabled expects a normalised channel; unknown channels use the
+// widget toggle.
 func triageChannelEnabled(settings model.SupportInboxSettings, channel string) bool {
-	switch channel {
-	case "email":
+	spec, _ := model.LookupSupportChannel(channel)
+	switch spec.Triage {
+	case model.SupportTriageSettingEmail:
 		return settings.TriageEmailEnabled
-	case "internal", "api":
+	case model.SupportTriageSettingInternal:
 		return settings.TriageInternalEnabled
 	default:
 		return settings.TriageWidgetEnabled
@@ -1292,12 +1295,8 @@ func normalizedSupportTriageConfidence(value float64) float64 {
 }
 
 func validSupportTriageChannel(channel string) bool {
-	switch strings.ToLower(strings.TrimSpace(channel)) {
-	case "widget", "email", "internal", "api":
-		return true
-	default:
-		return false
-	}
+	spec, ok := model.LookupSupportChannel(strings.ToLower(strings.TrimSpace(channel)))
+	return ok && spec.TriageRuleChannel
 }
 
 func containsTriageChannel(channels []string, target string) bool {

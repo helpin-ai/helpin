@@ -16,6 +16,7 @@ export interface SLAPolicyDraft {
   channels: string[]
   companyTierIds: string[]
   companies: { id: string; name: string }[]
+  requestTypeIds: string[]
   firstResponse: SLATargetDraft
   nextResponse: SLATargetDraft
   resolution: SLATargetDraft
@@ -49,6 +50,7 @@ export function emptySLAPolicyDraft(): SLAPolicyDraft {
     channels: [],
     companyTierIds: [],
     companies: [],
+    requestTypeIds: [],
     firstResponse: { enabled: true, amount: '1', unit: 'hours' },
     nextResponse: { enabled: false, amount: '4', unit: 'hours' },
     resolution: { enabled: false, amount: '1', unit: 'days' },
@@ -71,6 +73,7 @@ export function policyToDraft(policy: SupportSLAPolicy): SLAPolicyDraft {
     channels: [...policy.channels],
     companyTierIds: [...(policy.company_tier_ids ?? [])],
     companies: [...(policy.companies ?? [])],
+    requestTypeIds: [...(policy.request_type_ids ?? [])],
     firstResponse: targetDraft(policy.first_response_minutes, empty.firstResponse),
     nextResponse: targetDraft(policy.next_response_minutes, empty.nextResponse),
     resolution: targetDraft(policy.resolution_minutes, empty.resolution),
@@ -127,6 +130,7 @@ export function draftToPolicyInput(draft: SLAPolicyDraft): { input: SupportSLAPo
       channels: draft.channels,
       company_tier_ids: draft.companyTierIds,
       company_ids: draft.companies.map((company) => company.id),
+      request_type_ids: draft.requestTypeIds,
       first_response_minutes: first,
       next_response_minutes: next,
       resolution_minutes: resolution,

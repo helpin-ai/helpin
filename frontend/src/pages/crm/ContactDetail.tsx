@@ -63,7 +63,7 @@ import {
 import { EntitySignals } from '@/components/crm/EntitySignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
-import { CustomPropertyMetadataRows } from '@/components/crm/CustomPropertyMetadataRows';
+import { CustomFieldRailRows } from '@/components/crm/CustomFieldRailRows';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
@@ -1554,7 +1554,7 @@ export function ContactDetailPage({
                     </>
                   )}
 
-                  <CustomPropertyMetadataRows properties={contact.custom_properties} />
+                  <CustomFieldRailRows workspaceId={wsId} objectType="crm_contact" recordId={contact.id} properties={contact.custom_properties} editable={permissions.has('crm.edit')} />
 
                   <div className="col-span-3 pt-1">
                     <button

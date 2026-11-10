@@ -267,6 +267,7 @@ func (r *CoverageV2Repository) claimAttempts(ctx context.Context, workspaceID, o
 		query := tx.Where("((status IN ? AND (retry_at IS NULL OR retry_at <= ?)) OR (status = ? AND lease_expires_at <= ?))",
 			[]string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable}, now, model.CoverageAttemptLeased, now).
 			Where("NOT EXISTS (SELECT 1 FROM coverage_analysis_attempts newer WHERE newer.workspace_id = coverage_analysis_attempts.workspace_id AND newer.logical_work_key = coverage_analysis_attempts.logical_work_key AND newer.attempt > coverage_analysis_attempts.attempt)").
+			Where(currentCoverageAttemptSQL).
 			Order("created_at ASC, id ASC").Limit(limit)
 		if workspaceID != "" {
 			query = query.Where("workspace_id = ?", workspaceID)
@@ -331,7 +332,8 @@ func (r *CoverageV2Repository) ListQueuedWorkspaces(ctx context.Context, limit i
 	// Pending assignments must keep a workspace scheduled even after its
 	// conversation cursor advances and no new conversations arrive.
 	attempts := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).Select("workspace_id").
-		Where("status IN ? AND (retry_at IS NULL OR retry_at <= ?)", []string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable}, time.Now().UTC())
+		Where("status IN ? AND (retry_at IS NULL OR retry_at <= ?)", []string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable}, time.Now().UTC()).
+		Where(currentCoverageAttemptSQL)
 	findings := r.db.WithContext(ctx).Model(&model.CoverageFinding{}).Select("workspace_id").
 		Where("is_current = ? AND assignment_status IN ?", true, []string{"pending", "retryable"})
 	err := r.db.WithContext(ctx).Table("(? UNION ?) AS queued_workspaces", attempts, findings).
@@ -834,9 +836,19 @@ func (r *CoverageV2Repository) CoverageRolloutStats(ctx context.Context, workspa
 	return stats, nil
 }
 
-// ListFailedAttempts returns unresolved work across batches, prioritizing work
-// that needs intervention. A newer attempt for the same source segment and
-// content supersedes its previous failure, including explicit reassessments.
+// The analyzer evaluates the latest lifecycle segment and transcript of a
+// source. A newer reassessment supersedes older failures even when its content
+// hash or segment changed. Keep history, but never present or retry it as
+// outstanding work after the source has been reassessed.
+const currentCoverageAttemptSQL = `NOT EXISTS (SELECT 1 FROM coverage_analysis_attempts newer
+    WHERE newer.workspace_id = coverage_analysis_attempts.workspace_id
+      AND newer.source_kind = coverage_analysis_attempts.source_kind
+      AND newer.source_id = coverage_analysis_attempts.source_id
+      AND (newer.created_at > coverage_analysis_attempts.created_at
+        OR (newer.created_at = coverage_analysis_attempts.created_at AND newer.attempt > coverage_analysis_attempts.attempt)))`
+
+// ListFailedAttempts returns current unresolved sources across batches,
+// prioritizing work that needs intervention over automatic retries.
 func (r *CoverageV2Repository) ListFailedAttempts(ctx context.Context, workspaceID string, limit int) ([]model.CoverageAnalysisAttempt, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 25
@@ -844,14 +856,7 @@ func (r *CoverageV2Repository) ListFailedAttempts(ctx context.Context, workspace
 	var attempts []model.CoverageAnalysisAttempt
 	err := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).
 		Where("workspace_id = ? AND status IN ?", workspaceID, []string{model.CoverageAttemptRetryable, model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration}).
-		Where(`NOT EXISTS (SELECT 1 FROM coverage_analysis_attempts newer
-            WHERE newer.workspace_id = coverage_analysis_attempts.workspace_id
-              AND newer.source_kind = coverage_analysis_attempts.source_kind
-              AND newer.source_id = coverage_analysis_attempts.source_id
-              AND newer.segment_id = coverage_analysis_attempts.segment_id
-              AND newer.content_hash = coverage_analysis_attempts.content_hash
-              AND (newer.created_at > coverage_analysis_attempts.created_at
-                OR (newer.created_at = coverage_analysis_attempts.created_at AND newer.attempt > coverage_analysis_attempts.attempt)))`).
+		Where(currentCoverageAttemptSQL).
 		Order("CASE WHEN status = 'retryable' THEN 1 ELSE 0 END, created_at DESC, id").Limit(limit).Find(&attempts).Error
 	return attempts, err
 }

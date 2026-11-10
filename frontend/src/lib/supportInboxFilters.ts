@@ -37,6 +37,8 @@ export interface ConversationListFilters {
   sort: ConversationSortOrder;
   /** Only conversations with an overdue SLA target, or one due soon. */
   sla?: ConversationSLAFilter;
+  /** Request type ids, or "none" for conversations without a type. */
+  requestTypeIds?: string[];
 }
 
 export const DEFAULT_CONVERSATION_LIST_FILTERS: ConversationListFilters = {
@@ -62,6 +64,7 @@ export type ConversationListRequestFilters = {
   priority?: string;
   ai?: string;
   sla?: string;
+  request_type_ids?: string;
 };
 
 export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilter[] {
@@ -147,7 +150,8 @@ export function conversationListFiltersEqual(a: ConversationListFilters, b: Conv
     stringArraysEqual(a.priorities ?? [], b.priorities ?? []) &&
     stringArraysEqual(a.aiStates, b.aiStates) &&
     a.sort === b.sort &&
-    a.sla === b.sla
+    a.sla === b.sla &&
+    stringArraysEqual(a.requestTypeIds ?? [], b.requestTypeIds ?? [])
   );
 }
 
@@ -211,6 +215,7 @@ export function normalizeConversationListFilters(
     aiStates: filters && 'aiStates' in filters ? normalizeAIStateFilters(filters.aiStates) : defaults.aiStates,
     sort: filters?.sort ?? defaults.sort,
     ...(filters?.sla ? { sla: filters.sla } : {}),
+    ...(filters?.requestTypeIds?.length ? { requestTypeIds: filters.requestTypeIds } : {}),
   };
 }
 
@@ -233,7 +238,8 @@ export function hasConversationListChanges({
     (normalized.priorities?.length ?? 0) > 0 ||
     !stringArraysEqual(normalized.aiStates, defaultAIStatesForNav(navFilter)) ||
     normalized.sort !== 'newest' ||
-    Boolean(normalized.sla)
+    Boolean(normalized.sla) ||
+    (normalized.requestTypeIds?.length ?? 0) > 0
   );
 }
 
@@ -258,6 +264,7 @@ export function filterChangeCountFromBaseline({
   if (!stringArraysEqual(listFilters.priorities ?? [], baselineFilters.priorities ?? [])) count += 1;
   if (listFilters.sort !== baselineFilters.sort) count += 1;
   if (listFilters.sla !== baselineFilters.sla) count += 1;
+  if (!stringArraysEqual(listFilters.requestTypeIds ?? [], baselineFilters.requestTypeIds ?? [])) count += 1;
   return count;
 }
 
@@ -325,6 +332,7 @@ export function parseSupportInboxViewFilters(
       aiStates,
       sort: parseConversationSortOrder(rawFilters.sort),
       ...(parseConversationSLAFilter(rawFilters.sla) ? { sla: parseConversationSLAFilter(rawFilters.sla) } : {}),
+      ...(rawFilters.request_type_ids ? { requestTypeIds: parseViewStringList(rawFilters.request_type_ids) } : {}),
     },
   };
 }
@@ -360,6 +368,7 @@ export function buildSupportInboxViewFilters({
   if (normalizedFilters.priorities?.length) filters.priority = normalizedFilters.priorities.join(',');
   if (normalizedFilters.sort !== 'newest') filters.sort = normalizedFilters.sort;
   if (normalizedFilters.sla) filters.sla = normalizedFilters.sla;
+  if (normalizedFilters.requestTypeIds?.length) filters.request_type_ids = normalizedFilters.requestTypeIds.join(',');
   return filters;
 }
 
@@ -452,6 +461,7 @@ export function buildConversationListRequestFilters({
   if (normalizedFilters.priorities?.length) f.priority = normalizedFilters.priorities.join(',');
   if (normalizedFilters.sort !== 'newest') f.sort = normalizedFilters.sort;
   if (normalizedFilters.sla) f.sla = normalizedFilters.sla;
+  if (normalizedFilters.requestTypeIds?.length) f.request_type_ids = normalizedFilters.requestTypeIds.join(',');
   return Object.keys(f).length > 0 ? f : undefined;
 }
 
@@ -512,6 +522,7 @@ export function filterSupportConversations(
     aiStates?: ConversationAIStateFilter[];
     sla?: ConversationSLAFilter;
     priorities?: ConversationPriority[];
+    requestTypeIds?: string[];
   }
 ): SupportConversation[] {
   const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false, aiStates, sla } = options;
@@ -523,6 +534,10 @@ export function filterSupportConversations(
   if (sla) {
     const now = Date.now();
     result = result.filter((conversation) => matchesConversationSLAFilter(conversation, sla, now));
+  }
+  if (options.requestTypeIds?.length) {
+    const wanted = options.requestTypeIds;
+    result = result.filter((conversation) => wanted.includes(conversation.request_type_id ?? 'none'));
   }
 
   if (statusFilter !== 'all') {

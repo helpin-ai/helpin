@@ -30,6 +30,9 @@ type CRMCustomPropertyDescriptor struct {
 	CRMCustomPropertySummary
 	Field     string                `json:"field"`
 	Operators []QueryFilterOperator `json:"operators"`
+	// Definition is the workspace's field definition for the key: its label,
+	// type and options. Absent for keys that are only in use.
+	Definition *CustomFieldDefinition `json:"definition,omitempty"`
 }
 
 // CRMFieldCatalog describes every field a contact or company list filter

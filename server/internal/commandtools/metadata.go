@@ -78,6 +78,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"link_support_conversation_task":    RiskLevelRoutine,
 	"set_support_conversation_status":   RiskLevelRoutine,
 	"set_support_conversation_priority": RiskLevelRoutine,
+	"set_support_conversation_fields":   RiskLevelRoutine,
 	// A tier changes what a company is promised.
 	"set_company_sla_tier":          RiskLevelSensitive,
 	"snooze_support_conversation":   RiskLevelRoutine,
@@ -680,9 +681,11 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		Description: "Describe the fields list_contacts and list_crm_companies can filter on: native fields with their types, operators, and allowed values, " +
 			"and every custom property key in use with its value type, record count, most common values, and numeric range. " +
 			"Pass key to list one custom property's values, and value_query to search them. " +
-			"Call this before filtering on or writing custom properties, and reuse existing keys instead of inventing near-duplicates.",
+			"Call this before filtering on or writing custom properties, and reuse existing keys instead of inventing near-duplicates. Use compact=true for a reusable field map without record samples.",
 		InputSchema: closedObjectSchema(map[string]any{
 			"object_type": map[string]any{"type": "string", "enum": []string{"contact", "company"}, "description": "Which records to describe."},
+			"compact":     map[string]any{"type": "boolean", "description": "Return field definitions without record samples. Reuse in this workspace and connection; refresh after field changes."},
+			"refresh":     map[string]any{"type": "boolean", "description": "Refresh a cached compact field map after schema changes or unknown-field errors."},
 			"key": map[string]any{
 				"type": "string", "maxLength": 100,
 				"description": "Optional custom property key (with or without the custom_properties. prefix). Returns that key's values instead of the field catalog.",
@@ -791,6 +794,13 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		Category:    "Support / Discovery",
 		Description: "Get one support conversation in the current workspace.",
 		InputSchema: requiredEntityIDSchema("conversation_id"),
+	},
+	{
+		CommandName: "support.list_request_types",
+		Alias:       "list_support_request_types",
+		Category:    "Support / Discovery",
+		Description: "List the workspace's request types, such as Bug report, with the conversation fields each asks for, and every active conversation field with its type and options.",
+		InputSchema: closedObjectSchema(map[string]any{}, nil),
 	},
 	{
 		CommandName: "support.list_sla_tiers",
@@ -916,6 +926,17 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 			"conversation_id": optionalIDSchema("Support conversation ID."),
 			"priority":        map[string]any{"type": "string", "enum": []string{"low", "medium", "high", "urgent"}},
 		}, []string{"conversation_id", "priority"}),
+	},
+	{
+		CommandName: "support.set_conversation_fields",
+		Alias:       "set_support_conversation_fields",
+		Category:    "Support / Triage",
+		Description: "Set a support conversation's request type and conversation field values. Fields are set key by key; null clears one. Values must fit the field: text, a number, a YYYY-MM-DD date, true/false, or option values for choice fields. List request types and fields first.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"request_type_id": map[string]any{"type": []string{"string", "null"}, "description": "Request type ID; empty or null clears it. Leave out to keep the type."},
+			"fields":          map[string]any{"type": "object", "description": "Field values by key; null clears a field.", "additionalProperties": true},
+		}, []string{"conversation_id"}),
 	},
 	{
 		CommandName: "support.snooze_conversation",

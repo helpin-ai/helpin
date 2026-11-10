@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -199,6 +200,21 @@ func (h *CRMContactHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contact)
+}
+
+// SetCustomFields handles PATCH /api/crm/contacts/{id}/custom-properties:
+// defined field values, key by key; null clears a field.
+func (h *CRMContactHandler) SetCustomFields(w http.ResponseWriter, r *http.Request) {
+	var req model.SetCustomFieldValuesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.contactService.SetCustomFieldValues(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req.Values); err != nil {
+		writeCustomFieldError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Delete handles DELETE /api/crm/contacts/{id}.

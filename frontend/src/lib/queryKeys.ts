@@ -221,6 +221,12 @@ export const queryKeys = {
     githubAppStatus: (wsId: string) => ['git', wsId, 'github-app-status'] as const,
   },
 
+  customFields: {
+    requestTypes: (wsId: string) => ['custom-fields', wsId, 'request-types'] as const,
+    all: (wsId: string, objectType: string) => ['custom-fields', wsId, objectType] as const,
+    list: (wsId: string, objectType: string, options: { archived?: boolean; usage?: boolean }) =>
+      ['custom-fields', wsId, objectType, options] as const,
+  },
   support: {
     ...supportQueryKeys,
     conversationAssignees: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'assignees'] as const,

@@ -83,6 +83,7 @@ func AutoMigrationModels() []any {
 		// versioned migration 202607100003_public_mcp.sql. Letting GORM
 		// reconcile those tables can attempt incompatible constraint changes.
 		&model.CommandBarPlanRecord{},
+		&model.CommandBarPlanRunGroup{},
 		&model.CommandBarPlanDismissal{},
 		&model.DockChat{},
 		&model.DockPin{},
@@ -112,6 +113,9 @@ func AutoMigrationModels() []any {
 		&model.SupportCSATResponse{},
 		&model.SupportSLAPolicy{},
 		&model.SupportSLATier{},
+		&model.SupportRequestType{},
+		&model.SupportPortalCompanyEvent{},
+		&model.CustomFieldDefinition{},
 		&model.SupportConversationSLARecord{},
 		&model.SupportSLAWork{},
 		&model.WebhookEndpoint{},

@@ -24,7 +24,10 @@ var supportSLAMetricLabels = map[string]string{
 	model.SupportSLAMetricResolution:    "resolution",
 }
 
-var supportSLAChannels = []string{"widget", "email", "portal", "api", "internal"}
+func supportSLAChannelAllowed(channel string) bool {
+	spec, ok := model.LookupSupportChannel(channel)
+	return ok && spec.SLAChannel
+}
 
 // SupportSLAService manages SLA policies and keeps each conversation's SLA
 // state current. Database triggers queue conversations whose status,
@@ -119,7 +122,7 @@ func (s *SupportSLAService) normalizePolicy(ctx context.Context, workspaceID str
 	if policy.Priorities, err = normalizeSLAList(req.Priorities, model.IsValidSupportConversationPriority, "priority"); err != nil {
 		return err
 	}
-	if policy.Channels, err = normalizeSLAList(req.Channels, func(v string) bool { return slices.Contains(supportSLAChannels, v) }, "channel"); err != nil {
+	if policy.Channels, err = normalizeSLAList(req.Channels, supportSLAChannelAllowed, "channel"); err != nil {
 		return err
 	}
 	mailboxes := map[string]bool{"shared": true}
@@ -137,6 +140,18 @@ func (s *SupportSLAService) normalizePolicy(ctx context.Context, workspaceID str
 	}
 	if err := s.normalizePolicyCompanies(ctx, workspaceID, req, policy); err != nil {
 		return err
+	}
+	if policy.RequestTypeIDs, err = normalizeSLAList(req.RequestTypeIDs, validSupportSLAID, "request type"); err != nil {
+		return err
+	}
+	existingTypes, err := s.repo.ExistingRequestTypeIDs(ctx, workspaceID, policy.RequestTypeIDs)
+	if err != nil {
+		return err
+	}
+	for _, id := range policy.RequestTypeIDs {
+		if !slices.Contains(existingTypes, id) {
+			return invalidSLAPolicy("unknown request type %q", id)
+		}
 	}
 	if err := s.normalizePolicyAlerts(ctx, workspaceID, req, policy); err != nil {
 		return err
@@ -201,7 +216,7 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 		return nil, err
 	}
 	wasEnabled := policy.Enabled
-	before := [5][]string{policy.Priorities, policy.MailboxIDs, policy.Channels, policy.CompanyTierIDs, policy.CompanyIDs}
+	before := [6][]string{policy.Priorities, policy.MailboxIDs, policy.Channels, policy.CompanyTierIDs, policy.CompanyIDs, policy.RequestTypeIDs}
 	if req.Enabled != nil {
 		policy.Enabled = *req.Enabled
 	}
@@ -211,7 +226,7 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 	if err := s.normalizePolicy(ctx, workspaceID, req, policy); err != nil {
 		return nil, err
 	}
-	after := [5][]string{policy.Priorities, policy.MailboxIDs, policy.Channels, policy.CompanyTierIDs, policy.CompanyIDs}
+	after := [6][]string{policy.Priorities, policy.MailboxIDs, policy.Channels, policy.CompanyTierIDs, policy.CompanyIDs, policy.RequestTypeIDs}
 	for i := range before {
 		if !sameSLAConditionValues(before[i], after[i]) {
 			policy.ConditionsChangedAt = timePtr(s.now())

@@ -63,6 +63,9 @@ type Config struct {
 	AgentRuntimeAppID         string
 	AgentRuntimeEventProtocol string
 	AgentRuntimeLaunchEnabled bool
+	// CommandBarRunGroupsEnabled puts new pipeline and DAG command-bar plans
+	// on Agent Runtime run groups when the runtime offers them to the app.
+	CommandBarRunGroupsEnabled bool
 
 	// S3 / object storage (optional — attachments disabled if not set)
 	AWSAccessKeyID        string
@@ -458,6 +461,7 @@ func Load() (*Config, error) {
 		AgentRuntimeAppID:                      strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_APP_ID"), "helpin")),
 		AgentRuntimeEventProtocol:              strings.ToLower(strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_EVENT_PROTOCOL"), "v1"))),
 		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
+		CommandBarRunGroupsEnabled:             parseBoolEnv(os.Getenv("COMMAND_BAR_RUN_GROUPS_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		AWSPresignEndpointURL:                  strings.TrimSpace(os.Getenv("AWS_S3_PRESIGN_ENDPOINT_URL")),

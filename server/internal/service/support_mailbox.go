@@ -700,7 +700,7 @@ func shouldUseDefaultMailboxForChannel(settings *model.SupportInboxSettings, cha
 		return false
 	}
 	normalizedChannel := strings.ToLower(strings.TrimSpace(channel))
-	if normalizedChannel == "widget" {
+	if spec, ok := model.LookupSupportChannel(normalizedChannel); ok && spec.SkipsDefaultMailbox {
 		return false
 	}
 	if settings.TriageEnabled && triageChannelEnabled(*settings, normalizedChannel) && settings.TriageFallbackBehavior == "shared" {

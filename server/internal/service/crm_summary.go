@@ -740,7 +740,7 @@ type summaryPromptEntity struct {
 	OpenDeals      []dealSummarySnapshot    `json:"open_deals,omitempty"`
 	LinkedContacts []contactSummarySnapshot `json:"linked_contacts,omitempty"`
 	RecentEmails   []summaryEmailSnippet    `json:"recent_emails,omitempty"`
-	Signals   []summarySignalSnippet   `json:"signals,omitempty"`
+	Signals        []summarySignalSnippet   `json:"signals,omitempty"`
 	RelatedDeals   []dealSummarySnapshot    `json:"related_deals,omitempty"`
 	RelatedTasks   []summaryTaskSnapshot    `json:"related_tasks,omitempty"`
 	RelatedSupport []summarySupportSnapshot `json:"related_support,omitempty"`
@@ -870,7 +870,7 @@ func (s *CRMSummaryService) generateContactSummary(ctx context.Context, workspac
 		Companies:      companies,
 		OpenDeals:      openDeals,
 		RecentEmails:   messages,
-		Signals:   signals,
+		Signals:        signals,
 		RecentActivity: recentActivity,
 	}
 	payloadJSON, err := json.Marshal(payload)
@@ -928,7 +928,7 @@ func (s *CRMSummaryService) generateDealSummary(ctx context.Context, workspaceID
 		LinkedContacts: contacts,
 		Companies:      companies,
 		RecentEmails:   messages,
-		Signals:   signals,
+		Signals:        signals,
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -1045,7 +1045,7 @@ func (s *CRMSummaryService) generateCompanySummary(ctx context.Context, workspac
 		RelatedDeals:   dealSnapshots,
 		RelatedTasks:   taskSnapshots,
 		RelatedSupport: supportSnapshots,
-		Signals:   signalSnapshots,
+		Signals:        signalSnapshots,
 		RecentActivity: activities,
 	}
 	payloadJSON, err := json.Marshal(payload)

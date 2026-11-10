@@ -117,7 +117,7 @@ func (r *SupportSLARepository) SavePolicy(ctx context.Context, policy *model.Sup
 		Updates(map[string]any{
 			"name": policy.Name, "enabled": policy.Enabled, "priorities": policy.Priorities,
 			"mailbox_ids": policy.MailboxIDs, "channels": policy.Channels,
-			"company_tier_ids": policy.CompanyTierIDs, "company_ids": policy.CompanyIDs,
+			"company_tier_ids": policy.CompanyTierIDs, "company_ids": policy.CompanyIDs, "request_type_ids": policy.RequestTypeIDs,
 			"first_response_minutes": policy.FirstResponseMinutes, "next_response_minutes": policy.NextResponseMinutes,
 			"resolution_minutes": policy.ResolutionMinutes, "business_hours": policy.BusinessHours,
 			"pause_while_waiting": policy.PauseWhileWaiting, "active_since": policy.ActiveSince,

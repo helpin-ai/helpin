@@ -67,12 +67,12 @@ func TestCreateRequestRecordsIntake(t *testing.T) {
 	suggested, opened := uuid.NewString(), uuid.NewString()
 
 	bad := &model.PortalIntake{IntakeID: "nope"}
-	if _, err := svc.CreateRequest(ctx, access, "Export fails", "On Safari", nil, bad); !errors.Is(err, ErrPortalIntakeInvalid) {
+	if _, err := svc.CreateRequest(ctx, access, "Export fails", "On Safari", nil, bad, PortalRequestFields{}); !errors.Is(err, ErrPortalIntakeInvalid) {
 		t.Fatalf("malformed intake err = %v", err)
 	}
 
 	intake := &model.PortalIntake{IntakeID: uuid.NewString(), SuggestedArticleIDs: []string{suggested, opened}, OpenedArticleIDs: []string{opened}, SearchCompleted: true}
-	request, err := svc.CreateRequest(ctx, access, "Export fails", "On Safari", nil, intake)
+	request, err := svc.CreateRequest(ctx, access, "Export fails", "On Safari", nil, intake, PortalRequestFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestCreateRequestWithoutSuggestionsSignalsCoverageGap(t *testing.T) {
 	svc.inbox.SetSupportEventRecorder(recorder)
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	if _, err := svc.CreateRequest(ctx, access, "Webhook retries are missing", "We never see retries", nil, &model.PortalIntake{IntakeID: uuid.NewString(), SearchCompleted: true}); err != nil {
+	if _, err := svc.CreateRequest(ctx, access, "Webhook retries are missing", "We never see retries", nil, &model.PortalIntake{IntakeID: uuid.NewString(), SearchCompleted: true}, PortalRequestFields{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(recorder.events) != 1 {
@@ -138,7 +138,7 @@ func TestCreateRequestWithoutSuggestionsSignalsCoverageGap(t *testing.T) {
 	}
 
 	// Without an intake the form never searched; nothing is reported.
-	if _, err := svc.CreateRequest(ctx, access, "Another question", "No intake", nil, nil); err != nil {
+	if _, err := svc.CreateRequest(ctx, access, "Another question", "No intake", nil, nil, PortalRequestFields{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(recorder.events) != 1 {
@@ -146,7 +146,7 @@ func TestCreateRequestWithoutSuggestionsSignalsCoverageGap(t *testing.T) {
 	}
 	// Skipped, failed, and still-pending searches carry an intake but no
 	// completion evidence. They must not be treated as empty search results.
-	if _, err := svc.CreateRequest(ctx, access, "Search never completed", "No search result", nil, &model.PortalIntake{IntakeID: uuid.NewString()}); err != nil {
+	if _, err := svc.CreateRequest(ctx, access, "Search never completed", "No search result", nil, &model.PortalIntake{IntakeID: uuid.NewString()}, PortalRequestFields{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(recorder.events) != 1 {

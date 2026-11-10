@@ -68,6 +68,9 @@ type UpdateCRMCompanyRequest struct {
 
 // CRMCompanyListFilters applies filters when listing companies.
 type CRMCompanyListFilters struct {
+	// DateKeys are custom properties defined as date fields; filters on them
+	// compare dates. Set by the service from the field definitions.
+	DateKeys      map[string]bool `json:"-"`
 	Industry      *string
 	OwnerMemberID *string
 	Search        *string

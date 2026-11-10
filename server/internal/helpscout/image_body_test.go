@@ -29,6 +29,8 @@ func TestImageBody(t *testing.T) {
 		wantErr     error
 	}{
 		{name: "declared image", contentType: "image/jpeg; charset=binary", body: []byte("x"), want: "image/jpeg"},
+		{name: "download type sniffed", contentType: "application/force-download", body: _pngHeader, want: "image/png"},
+		{name: "download filename is insufficient", contentType: "application/force-download", body: []byte("<html>expired</html>"), filename: "banner.jpg", wantErr: ErrNotImage},
 		{name: "generic type sniffed", contentType: "application/octet-stream", body: _pngHeader, want: "image/png"},
 		{name: "missing type from name", body: []byte("<svg/>"), filename: "logo.svg", want: "image/svg+xml"},
 		{name: "html page", contentType: "text/html", body: []byte("<html>"), wantErr: ErrNotImage},

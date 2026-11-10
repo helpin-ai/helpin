@@ -21,6 +21,10 @@ func TestBillingUsageWindowAdvancesDespiteOutstandingReservation(t *testing.T) {
 	}
 	ctx := context.Background()
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	// Period work only runs for live workspaces.
+	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, owner_id, created_at, updated_at) VALUES ('ws', 'Workspace', 'ws', 'owner-1', ?, ?)`, now, now).Error; err != nil {
+		t.Fatal(err)
+	}
 	boundary := time.Date(2026, 9, 1, 9, 59, 46, 116239000, time.UTC)
 	repo := eerepository.NewBillingRepository(db)
 	if err := repo.UpsertWorkspaceBilling(ctx, &model.WorkspaceBilling{

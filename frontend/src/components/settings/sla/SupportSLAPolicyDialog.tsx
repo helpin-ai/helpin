@@ -17,8 +17,10 @@ import {
   type SLATargetUnit,
 } from '@/lib/supportSLAPolicyForm'
 import { toggleListValue } from '@/lib/toggleListValue'
+import { useRequestTypes } from '@/hooks/queries/useCustomFields'
 import { SettingsPill } from '../SettingsPill'
 import { SLACompanyPicker } from './SLACompanyPicker'
+import { SUPPORT_CHANNELS } from '@/lib/supportChannels'
 
 const PRIORITIES = [
   { value: 'urgent', label: 'Urgent' },
@@ -27,13 +29,7 @@ const PRIORITIES = [
   { value: 'low', label: 'Low' },
 ]
 
-const CHANNELS = [
-  { value: 'widget', label: 'Chat' },
-  { value: 'email', label: 'Email' },
-  { value: 'portal', label: 'Portal' },
-  { value: 'api', label: 'API' },
-  { value: 'internal', label: 'Started by team' },
-]
+const CHANNELS = SUPPORT_CHANNELS.filter((channel) => channel.slaChannel).map((channel) => ({ value: channel.key, label: channel.label }))
 
 function TargetRow({
   id,
@@ -149,6 +145,7 @@ function SupportSLAPolicyForm({
   onCancel: () => void
   onSave: (input: SupportSLAPolicyInput) => Promise<void>
 }) {
+  const { requestTypes } = useRequestTypes(workspaceId)
   const [draft, setDraft] = useState<SLAPolicyDraft>(() => (policy ? policyToDraft(policy) : emptySLAPolicyDraft()))
   const [errors, setErrors] = useState<string[]>([])
 
@@ -200,6 +197,16 @@ function SupportSLAPolicyForm({
             ))}
           </div>
         </div>
+        {requestTypes.length > 0 ? (
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">Request type</div>
+            <div className="flex flex-wrap gap-1.5">
+              {requestTypes.map((requestType) => (
+                <SettingsPill key={requestType.id} selected={draft.requestTypeIds.includes(requestType.id)} onClick={() => update({ requestTypeIds: toggleListValue(draft.requestTypeIds, requestType.id) })}>{requestType.name}</SettingsPill>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {tiers.length > 0 || draft.companyTierIds.length > 0 ? (
           <div className="space-y-1.5">
             <div className="text-xs font-medium text-muted-foreground">Company tier</div>

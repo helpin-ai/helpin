@@ -46,6 +46,7 @@ type portalRequestBody struct {
 	AttachmentIDs []string `json:"attachment_ids"`
 	// Intake is what the customer saw while writing; optional.
 	Intake *model.PortalIntake `json:"intake"`
+	service.PortalRequestFields
 }
 
 // workspace resolves the enabled portal for the slug or writes a 404.
@@ -261,7 +262,7 @@ func (h *CustomerPortalHandler) CreateAnonymousRequest(w http.ResponseWriter, r 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs, body.Intake); err != nil {
+	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs, body.Intake, body.PortalRequestFields); err != nil {
 		writePortalError(w, r, ws.ID, err, "unable to create request")
 		return
 	}
@@ -326,7 +327,7 @@ func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs, body.Intake)
+	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs, body.Intake, body.PortalRequestFields)
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to create request")
 		return
@@ -355,6 +356,8 @@ func (h *CustomerPortalHandler) Requests(w http.ResponseWriter, r *http.Request)
 		requests, err = h.portal.Requests(r.Context(), access, status)
 	case service.PortalScopeCompany:
 		requests, err = h.portal.CompanyRequests(r.Context(), access, strings.TrimSpace(query.Get("company_id")), status)
+	case service.PortalScopeCopied:
+		requests, err = h.portal.CopiedRequests(r.Context(), access, status)
 	default:
 		writeError(w, http.StatusBadRequest, service.ErrPortalScopeInvalid.Error())
 		return
@@ -386,8 +389,131 @@ func portalRequestListRow(request model.SupportPortalRequest, viewerIdentityID s
 		row["own"] = request.OwnerIdentityID == viewerIdentityID
 		row["requested_by"] = portalRequestedBy(request)
 		row["company"] = map[string]any{"id": *request.CompanyID, "name": request.CompanyName}
+	} else if request.OwnerIdentityID != viewerIdentityID {
+		// A request that copies the viewer.
+		row["own"] = false
+		row["requested_by"] = portalRequestedBy(request)
 	}
 	return row
+}
+
+type portalCCBody struct {
+	CCEmails []string `json:"cc_emails"`
+	// BaseCC is the list the customer started editing from.
+	BaseCC []string `json:"base_cc"`
+}
+
+// SetRequestCC replaces who a request copies; only its requester may.
+func (h *CustomerPortalHandler) SetRequestCC(w http.ResponseWriter, r *http.Request) {
+	access := h.authorized(w, r)
+	if access == nil {
+		return
+	}
+	var body portalCCBody
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	detail, err := h.portal.SetRequestCC(r.Context(), access, chi.URLParam(r, "reference"), body.CCEmails, body.BaseCC)
+	if err != nil {
+		writePortalError(w, r, access.Workspace.ID, err, "unable to update who is copied")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, detail)
+}
+
+// SearchRequests searches the subjects and messages of one request list.
+func (h *CustomerPortalHandler) SearchRequests(w http.ResponseWriter, r *http.Request) {
+	access := h.authorized(w, r)
+	if access == nil {
+		return
+	}
+	query := r.URL.Query()
+	results, err := h.portal.SearchRequests(r.Context(), access, query.Get("q"), query.Get("scope"), strings.TrimSpace(query.Get("company_id")))
+	if err != nil {
+		writePortalError(w, r, access.Workspace.ID, err, "unable to search requests")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, results)
+}
+
+type portalInviteBody struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+}
+
+type portalRoleBody struct {
+	Role string `json:"role"`
+}
+
+// Team lists a company's people for one of its admins.
+func (h *CustomerPortalHandler) Team(w http.ResponseWriter, r *http.Request) {
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.Team(r.Context(), access, companyID)
+	})
+}
+
+// InviteColleague invites a colleague to the company.
+func (h *CustomerPortalHandler) InviteColleague(w http.ResponseWriter, r *http.Request) {
+	var body portalInviteBody
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.Invite(r.Context(), access, companyID, service.PortalInvite{Email: body.Email, Name: body.Name, Role: body.Role})
+	})
+}
+
+// SetColleagueRole changes a member's company role.
+func (h *CustomerPortalHandler) SetColleagueRole(w http.ResponseWriter, r *http.Request) {
+	var body portalRoleBody
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.SetMemberRole(r.Context(), access, companyID, chi.URLParam(r, "contactId"), strings.TrimSpace(body.Role))
+	})
+}
+
+// RemoveColleague drops a member from the company.
+func (h *CustomerPortalHandler) RemoveColleague(w http.ResponseWriter, r *http.Request) {
+	h.teamAction(w, r, func(access *service.PortalAccess, companyID string) (*service.PortalTeam, error) {
+		return h.portal.RemoveMember(r.Context(), access, companyID, chi.URLParam(r, "contactId"))
+	})
+}
+
+func (h *CustomerPortalHandler) teamAction(w http.ResponseWriter, r *http.Request, action func(*service.PortalAccess, string) (*service.PortalTeam, error)) {
+	access := h.authorized(w, r)
+	if access == nil {
+		return
+	}
+	team, err := action(access, chi.URLParam(r, "companyId"))
+	if err != nil {
+		writePortalError(w, r, access.Workspace.ID, err, "unable to update the team")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, team)
+}
+
+// CCOptions tells the portal whether and whom the customer may copy.
+func (h *CustomerPortalHandler) CCOptions(w http.ResponseWriter, r *http.Request) {
+	access := h.authorized(w, r)
+	if access == nil {
+		return
+	}
+	options, err := h.portal.CCOptions(r.Context(), access)
+	if err != nil {
+		writePortalError(w, r, access.Workspace.ID, err, "unable to load colleagues")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, options)
 }
 
 // RequestDetail returns one of the signed-in customer's requests.
@@ -508,6 +634,26 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalIntakeDisabled), errors.Is(err, service.ErrPortalAnonymousIntakeDisabled), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
 		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrPortalTeamDenied), errors.Is(err, service.ErrPortalInvitesOff):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrPortalInviteInvalid):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrPortalInviteInvalid.Error()+": "))
+	case errors.Is(err, service.ErrPortalRoleInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrPortalLastAdmin):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrPortalInviteLimit):
+		writeError(w, http.StatusTooManyRequests, err.Error())
+	case errors.Is(err, service.ErrPortalTeamMemberMissing):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrPortalSearchInvalid), errors.Is(err, service.ErrPortalScopeInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrPortalCCDisabled), errors.Is(err, service.ErrPortalCCDenied):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrPortalCCInvalid):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrPortalCCInvalid.Error()+": "))
+	case errors.Is(err, service.ErrSupportRequestTypeInvalid):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrSupportRequestTypeInvalid.Error()+": "))
 	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalReplyInvalid), errors.Is(err, service.ErrPortalIntakeInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalTooManyAttachments):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:

@@ -31,6 +31,29 @@ export interface CustomerPortalConfiguration {
   public_url?: string
   /** Whether the portal offers the Ask AI help assistant. */
   assistant_enabled?: boolean
+  /** Kinds of request to choose from; empty keeps the plain form. */
+  request_types?: CustomerPortalRequestType[]
+  /** Whom requesters may copy; empty when copying is off. */
+  cc_mode?: '' | 'colleagues' | 'any'
+}
+
+export type CustomerPortalFieldType = 'text' | 'long_text' | 'number' | 'date' | 'boolean' | 'select' | 'multi_select'
+
+/** A field a request type asks customers to fill in. */
+export interface CustomerPortalRequestField {
+  key: string
+  label: string
+  field_type: CustomerPortalFieldType
+  options: Array<{ value: string; label: string }>
+  required: boolean
+  help_text: string
+}
+
+export interface CustomerPortalRequestType {
+  id: string
+  name: string
+  description: string
+  fields: CustomerPortalRequestField[]
 }
 
 /** Server upload rules plus the portal's per-message file limit. */
@@ -59,7 +82,7 @@ export interface CustomerPortalCompany {
   id: string
   name: string
   /** Requesters see their own requests; members see every company request. */
-  role: 'requester' | 'member'
+  role: 'requester' | 'member' | 'admin'
 }
 
 export interface CustomerPortalSession {
@@ -68,7 +91,32 @@ export interface CustomerPortalSession {
 }
 
 /** Which requests a list shows: the customer's own, or one company's. */
-export type CustomerPortalRequestScope = { kind: 'mine' } | { kind: 'company'; companyId: string }
+export type CustomerPortalRequestScope = { kind: 'mine' } | { kind: 'company'; companyId: string } | { kind: 'copied' }
+
+/** A company's people as its portal admins manage them. */
+export interface CustomerPortalTeam {
+  company_id: string
+  company_name: string
+  can_invite: boolean
+  domains: string[]
+  any_domain: boolean
+  members: Array<{
+    contact_id: string
+    name: string
+    email: string
+    role: 'requester' | 'member' | 'admin' | ''
+    can_sign_in: boolean
+    last_signed_in_at?: string | null
+    you: boolean
+  }>
+}
+
+/** Whom a customer may copy: nobody (""), colleagues, or anyone. */
+export interface CustomerPortalCCOptions {
+  mode: '' | 'colleagues' | 'any'
+  colleagues: Array<{ email: string; name: string }>
+  domains: string[]
+}
 
 export interface CustomerPortalRequest {
   reference: string
@@ -99,6 +147,14 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   own?: boolean
   /** Who asked, for a colleague's request. */
   requester_name?: string | null
+  /** The request type and the values customers can see. */
+  request_type?: string | null
+  fields?: Array<{ label: string; value: string }>
+  /** Who the request copies, and whether the viewer may change it. */
+  cc?: string[]
+  can_edit_cc?: boolean
+  /** The viewer sees the request because it copies them. */
+  copied?: boolean
   messages: Array<{
     id: string
     content: string
@@ -165,6 +221,9 @@ export interface CreateCustomerPortalRequestInput {
   message: string
   attachment_ids?: string[]
   intake?: CustomerPortalIntake
+  request_type_id?: string
+  fields?: Record<string, unknown>
+  cc_emails?: string[]
 }
 
 export class CustomerPortalApiError extends Error {
@@ -276,6 +335,8 @@ export const customerPortalService = {
     if (scope.kind === 'company') {
       params.set('scope', 'company')
       params.set('company_id', scope.companyId)
+    } else if (scope.kind === 'copied') {
+      params.set('scope', 'copied')
     }
     const query = params.toString()
     return portalRequest<CustomerPortalRequest[]>(slug, `/requests${query ? `?${query}` : ''}`)
@@ -303,6 +364,30 @@ export const customerPortalService = {
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/replies`, {
       method: 'POST', body: JSON.stringify({ content, attachment_ids }),
     }),
+  // base is the list the customer started from, so others' changes are kept.
+  // Searches subjects and every message the portal shows in one request list.
+  searchRequests: (slug: string, query: string, scope: CustomerPortalRequestScope, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ q: query })
+    if (scope.kind === 'company') {
+      params.set('scope', 'company')
+      params.set('company_id', scope.companyId)
+    } else if (scope.kind === 'copied') {
+      params.set('scope', 'copied')
+    }
+    return portalRequest<Array<{ reference: string; snippet?: string }>>(slug, `/requests/search?${params.toString()}`, { signal })
+  },
+  setCC: (slug: string, reference: string, ccEmails: string[], base: string[]) =>
+    portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/cc`, { method: 'PUT', body: JSON.stringify({ cc_emails: ccEmails, base_cc: base }) }),
+  team: (slug: string, companyId: string) =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team`),
+  inviteColleague: (slug: string, companyId: string, invite: { email: string; name: string; role: 'member' | 'requester' }) =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team/invites`, { method: 'POST', body: JSON.stringify(invite) }),
+  setColleagueRole: (slug: string, companyId: string, contactId: string, role: 'requester' | 'member' | 'admin') =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team/${encodeURIComponent(contactId)}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  removeColleague: (slug: string, companyId: string, contactId: string) =>
+    portalRequest<CustomerPortalTeam>(slug, `/companies/${encodeURIComponent(companyId)}/team/${encodeURIComponent(contactId)}`, { method: 'DELETE' }),
+  ccOptions: (slug: string) =>
+    portalRequest<CustomerPortalCCOptions>(slug, '/cc-options'),
   rate: (slug: string, reference: string, rating: number, comment: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/csat`, {
       method: 'POST', body: JSON.stringify({ rating, comment }),

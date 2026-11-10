@@ -82,6 +82,10 @@ func writePortalAdminError(w http.ResponseWriter, r *http.Request, workspaceID s
 	switch {
 	case errors.Is(err, service.ErrPortalContactNotFound), errors.Is(err, service.ErrPortalRequestNotFound), errors.Is(err, service.ErrPortalCompanyNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrPortalLastAdmin):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrPortalTeamMemberMissing):
+		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrPortalAccessInvalid), errors.Is(err, service.ErrPortalRoleInvalid):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalUnavailable):
@@ -124,6 +128,33 @@ func (h *CustomerPortalAdminHandler) UpdateCompanyAccess(w http.ResponseWriter, 
 	writeJSON(w, http.StatusOK, access)
 }
 
+// UpdateCompanyTeamSettings handles
+// PUT /api/support/inbox/portal/companies/{companyId}/team-settings: whether
+// the company's portal admins may invite colleagues, and from which
+// addresses.
+func (h *CustomerPortalAdminHandler) UpdateCompanyTeamSettings(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	var body struct {
+		AdminInvites    bool `json:"admin_invites"`
+		InviteAnyDomain bool `json:"invite_any_domain"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	companyID := chi.URLParam(r, "companyId")
+	if err := h.portal.SetCompanyTeamSettings(r.Context(), workspaceID, companyID, body.AdminInvites, body.InviteAnyDomain); err != nil {
+		writePortalAdminError(w, r, workspaceID, err)
+		return
+	}
+	access, err := h.portal.CompanyAccess(r.Context(), workspaceID, companyID)
+	if err != nil {
+		writePortalAdminError(w, r, workspaceID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
+}
+
 // AddCompanyDomainMembers handles
 // POST /api/support/inbox/portal/companies/{companyId}/members/from-domain:
 // company access for every contact on the company's email domain.
@@ -150,6 +181,27 @@ func (h *CustomerPortalAdminHandler) UpdateCompanyMember(w http.ResponseWriter, 
 		return
 	}
 	access, err := h.portal.SetCompanyMember(r.Context(), workspaceID, chi.URLParam(r, "companyId"), chi.URLParam(r, "contactId"), middleware.GetUserID(r.Context()), *body.Member)
+	if err != nil {
+		writePortalAdminError(w, r, workspaceID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
+}
+
+// UpdateCompanyMemberRole handles
+// PUT /api/support/inbox/portal/companies/{companyId}/members/{contactId}/role:
+// the contact's role in this company only, admin included; null follows the
+// contact's role.
+func (h *CustomerPortalAdminHandler) UpdateCompanyMemberRole(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	var body struct {
+		Role *string `json:"role"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	access, err := h.portal.SetCompanyMemberRoleBySupport(r.Context(), workspaceID, chi.URLParam(r, "companyId"), chi.URLParam(r, "contactId"), middleware.GetUserID(r.Context()), body.Role)
 	if err != nil {
 		writePortalAdminError(w, r, workspaceID, err)
 		return

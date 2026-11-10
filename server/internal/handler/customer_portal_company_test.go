@@ -33,7 +33,7 @@ func openCompanyPortalHandlerDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, first_name TEXT, last_name TEXT, email TEXT, portal_access TEXT, portal_role TEXT, updated_at DATETIME)`,
 		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, domain TEXT, portal_default_role TEXT, updated_at DATETIME)`,
 		`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
-		`CREATE TABLE support_portal_company_members (workspace_id TEXT, crm_company_id TEXT, crm_contact_id TEXT, added_by_user_id TEXT, created_at DATETIME, PRIMARY KEY (crm_company_id, crm_contact_id))`,
+		`CREATE TABLE support_portal_company_members (workspace_id TEXT, crm_company_id TEXT, crm_contact_id TEXT, added_by_user_id TEXT, role TEXT, created_at DATETIME, PRIMARY KEY (crm_company_id, crm_contact_id))`,
 		`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, crm_contact_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME, reconciled_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, id TEXT PRIMARY KEY, workspace_id TEXT, display_id INTEGER, last_public_message_id TEXT, last_public_sender_type TEXT, customer_awaiting_response BOOLEAN, customer_email TEXT, customer_name TEXT, crm_contact_id TEXT, crm_company_id TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, anonymized_at DATETIME)`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, customer_last_read_at DATETIME, UNIQUE(workspace_id, conversation_id))`,
@@ -176,7 +176,7 @@ func TestCustomerPortalAdminCompanyErrors(t *testing.T) {
 		{"member without a decision", http.MethodPut, "/portal/companies/" + acme + "/members/" + alice, `{}`, http.StatusBadRequest},
 		{"invalid company role", http.MethodPut, "/portal/companies/" + acme, `{"default_role":"owner"}`, http.StatusBadRequest},
 		{"malformed company body", http.MethodPut, "/portal/companies/" + acme, `{`, http.StatusBadRequest},
-		{"invalid contact role", http.MethodPut, "/portal/contacts/" + alice + "/role", `{"portal_role":"admin"}`, http.StatusBadRequest},
+		{"invalid contact role", http.MethodPut, "/portal/contacts/" + alice + "/role", `{"portal_role":"owner"}`, http.StatusBadRequest},
 		{"unknown contact", http.MethodPut, "/portal/contacts/missing/role", `{"portal_role":"member"}`, http.StatusNotFound},
 		{"malformed contact body", http.MethodPut, "/portal/contacts/" + alice + "/role", `[]`, http.StatusBadRequest},
 	} {

@@ -48,6 +48,9 @@ func supportSLAPolicyMatches(policy model.SupportSLAPolicy, conversation model.S
 	if len(policy.CompanyIDs) > 0 && (company == nil || !slices.Contains([]string(policy.CompanyIDs), company.ID)) {
 		return false
 	}
+	if len(policy.RequestTypeIDs) > 0 && (conversation.RequestTypeID == nil || !slices.Contains([]string(policy.RequestTypeIDs), *conversation.RequestTypeID)) {
+		return false
+	}
 	return true
 }
 

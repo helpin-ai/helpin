@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -29,6 +30,7 @@ type CRMContactService struct {
 		RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error
 		RefreshContactCompanyMotionSignals(ctx context.Context, workspaceID, contactID string) error
 	}
+	customFields *CustomFieldService
 }
 
 // SetMotionSignalRefresher keeps lifecycle-derived applicability current.
@@ -73,6 +75,11 @@ func (s *CRMContactService) SetEntitlementService(entitlementSvc EntitlementPoli
 	return s
 }
 
+// SetCustomFieldService lets filters and edits use field definitions.
+func (s *CRMContactService) SetCustomFieldService(fields *CustomFieldService) {
+	s.customFields = fields
+}
+
 // List returns contacts with filters and pagination.
 func (s *CRMContactService) List(ctx context.Context, workspaceID string, filters model.CRMContactListFilters, pagination model.PMPagination) ([]model.CRMContact, int64, error) {
 	if workspaceID == "" {
@@ -81,6 +88,11 @@ func (s *CRMContactService) List(ctx context.Context, workspaceID string, filter
 	if err := s.requireContactViewEntitlement(ctx, workspaceID); err != nil {
 		return nil, 0, err
 	}
+	dateKeys, err := s.customFields.DateKeys(ctx, workspaceID, model.CustomFieldObjectCRMContact, filters.Query)
+	if err != nil {
+		return nil, 0, err
+	}
+	filters.DateKeys = dateKeys
 	contacts, total, err := s.contactRepo.List(ctx, workspaceID, filters, pagination)
 	if err != nil {
 		return nil, 0, err
@@ -448,6 +460,23 @@ func (s *CRMContactService) UpdateWithActor(
 	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	s.refreshContactSignalMotions(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
+}
+
+// SetCustomFieldValues writes defined field values on a contact key by key
+// and tells open views about the change.
+func (s *CRMContactService) SetCustomFieldValues(ctx context.Context, workspaceID, contactID, actorUserID string, values map[string]any) error {
+	if s.customFields == nil {
+		return errors.New("custom fields are not configured")
+	}
+	if err := s.customFields.SetValues(ctx, workspaceID, model.CustomFieldObjectCRMContact, contactID, values); err != nil {
+		return err
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "crm_contact", EntityID: contactID, WorkspaceID: workspaceID, ActorID: actorUserID})
+	}
+	s.requestCompanySummaryRefresh(ctx, workspaceID, contactID)
+	s.refreshContactSignalMotions(ctx, workspaceID, contactID)
+	return nil
 }
 
 func (s *CRMContactService) refreshContactSignalMotions(ctx context.Context, workspaceID, contactID string) {

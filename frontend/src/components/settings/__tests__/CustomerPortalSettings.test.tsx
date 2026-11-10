@@ -97,6 +97,7 @@ describe('CustomerPortalSettings', () => {
       portal_intake_enabled: true,
       portal_anonymous_intake_enabled: false,
       portal_show_reply_by: false,
+      portal_cc_mode: '',
       portal_access_mode: 'approved_contacts',
       portal_ai_mode: 'off',
       portal_ai_agent_id: '',

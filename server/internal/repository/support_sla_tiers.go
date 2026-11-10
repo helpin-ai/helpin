@@ -193,6 +193,20 @@ func (r *SupportSLARepository) ExistingCompanyIDs(ctx context.Context, workspace
 	return ids, nil
 }
 
+// ExistingRequestTypeIDs returns which of ids are request types of the
+// workspace.
+func (r *SupportSLARepository) ExistingRequestTypeIDs(ctx context.Context, workspaceID string, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var existing []string
+	if err := r.db.WithContext(ctx).Table("support_request_types").Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Pluck("id", &existing).Error; err != nil {
+		return nil, fmt.Errorf("check request types: %w", err)
+	}
+	return existing, nil
+}
+
 // CompanyNames returns the names of the given companies in the workspace.
 func (r *SupportSLARepository) CompanyNames(ctx context.Context, workspaceID string, companyIDs []string) (map[string]string, error) {
 	names := map[string]string{}
