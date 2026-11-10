@@ -127,16 +127,12 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	}
 
 	updates := map[string]interface{}{}
-	demoMode := existing != nil && existing.DemoMode
+	// Demo mode suppresses discovery without overwriting the saved indexing preference.
 	if req.DemoMode != nil {
-		demoMode = *req.DemoMode
-		updates["demo_mode"] = demoMode
+		updates["demo_mode"] = *req.DemoMode
 	}
 	if req.SearchIndexingEnabled != nil {
 		updates["search_indexing_enabled"] = *req.SearchIndexingEnabled
-	}
-	if demoMode {
-		updates["search_indexing_enabled"] = false
 	}
 	if req.OfficialDocsURL != nil {
 		value := strings.TrimSpace(*req.OfficialDocsURL)

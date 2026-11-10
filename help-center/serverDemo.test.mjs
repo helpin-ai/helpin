@@ -16,4 +16,11 @@ describe('demo discovery policy', () => {
     expect(isSearchIndexingDisabled({})).toBe(false)
     expect(renderRobotsTxt({origin:'https://docs.example.com',basepath:'/help'},{})).toContain('Sitemap: https://docs.example.com/help/sitemap.xml')
   })
+  it.each([null, undefined])('does not invent a sitemap or indexing opt-out for missing config %s', (config) => {
+    expect(isSearchIndexingDisabled(config)).toBe(false)
+    const body = renderRobotsTxt({origin:'https://docs.example.com',basepath:'/help'}, config)
+    expect(body).toContain('Disallow: /help/preview/')
+    expect(body).not.toContain('Sitemap:')
+    expect(body).not.toMatch(/Disallow: \/\s*$/m)
+  })
 })

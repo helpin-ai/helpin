@@ -76,7 +76,7 @@ describe('server SEO helpers', () => {
     expect(xml).toContain('<loc>https://acme.com/docs/</loc>')
     expect(xml).toContain('<loc>https://acme.com/docs/c/getting-started-abc123ef</loc>')
     expect(xml).toContain('<loc>https://acme.com/docs/articles/install-def456ab</loc>')
-    expect(renderRobotsTxt(publicUrl)).toContain('Sitemap: https://acme.com/docs/sitemap.xml')
+    expect(renderRobotsTxt(publicUrl, config)).toContain('Sitemap: https://acme.com/docs/sitemap.xml')
     expect(renderRobotsTxt(publicUrl)).toContain('Disallow: /docs/preview/')
   })
 })
