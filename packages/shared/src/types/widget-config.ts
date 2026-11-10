@@ -35,6 +35,7 @@ export interface WidgetConfig {
   branding: {
     primaryColor: string;
     logoUrl?: string;
+    avatarUrl?: string;
     welcomeMessage: string;
     widgetPosition: 'bottom-right' | 'bottom-left';
     showBranding: boolean;

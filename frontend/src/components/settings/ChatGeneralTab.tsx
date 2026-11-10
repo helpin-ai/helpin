@@ -688,6 +688,8 @@ function Dashboard() {
       privacyNotice={{ enabled: privacyNoticeEnabled, policyUrl: privacyPolicyUrl, text: privacyNoticeText }}
       initialView={isExpanded('privacy') ? 'conversation' : previewInitialView}
       workspaceName={widgetName || workspace?.name}
+      aiDisplayName={aiDisplayName}
+      avatarUrl={widgetAvatarUrl}
       workspaceLogoUrl={widgetAvatarUrl || workspace?.logo_url}
       colorScheme={colorScheme}
       buttonColor={buttonColor}

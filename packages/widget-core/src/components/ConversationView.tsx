@@ -120,6 +120,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const workspaceName = config.workspaceName || 'Support';
   const aiDisplayName = config.aiDisplayName?.trim() || 'Helpin AI';
   const logoUrl = config.branding?.logoUrl;
+  const avatarUrl = config.branding?.avatarUrl;
+  const identityAvatar = avatarUrl || logoUrl;
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const availability = config.availability;
   const aiFirst = Boolean(config.features?.aiFirst);
@@ -230,18 +232,18 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (m.role === 'ai') {
-        return { name: aiDisplayName, avatar: m.senderAvatar, isAI: true };
+        return { name: aiDisplayName, avatar: avatarUrl || m.senderAvatar, isAI: true };
       }
       if (m.role === 'agent' && m.senderName) {
         return { name: m.senderName, avatar: m.senderAvatar, isAI: false };
       }
     }
     return null;
-  }, [messages, aiDisplayName]);
+  }, [messages, aiDisplayName, avatarUrl]);
 
   const introRole = aiFirst ? 'ai' as const : 'agent' as const;
   const introName = aiFirst ? aiDisplayName : workspaceName;
-  const introAvatar = aiFirst ? undefined : (logoUrl || undefined);
+  const introAvatar = aiFirst ? avatarUrl : (identityAvatar || undefined);
   const showActiveAgentHeader = Boolean(activeAgent?.name) && !showHumanHandoffState;
   const teammateStatus = activeTeammate?.status || 'online';
 
@@ -413,14 +415,14 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
                 />
               )}
             </div>
-          ) : logoUrl ? (
+          ) : identityAvatar ? (
             <div
               className="helpin-conversation-logo helpin-conversation-logo--brand"
               style={{ backgroundColor: brandColor }}
             >
               <img
-                src={logoUrl}
-                alt={workspaceName}
+                src={identityAvatar}
+                alt={aiFirst && !showHumanHandoffState ? aiDisplayName : workspaceName}
                 className="helpin-conversation-brand-logo"
               />
             </div>

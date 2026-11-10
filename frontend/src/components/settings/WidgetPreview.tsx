@@ -13,6 +13,8 @@ interface WidgetPreviewProps {
   launcherIcon: string;
   welcomeMessage: string;
   workspaceName?: string;
+  aiDisplayName?: string;
+  avatarUrl?: string;
   workspaceLogoUrl?: string;
   colorScheme?: string;
   buttonColor?: string;
@@ -41,6 +43,8 @@ export function WidgetPreview({
   launcherIcon,
   welcomeMessage,
   workspaceName = 'Your Company',
+  aiDisplayName,
+  avatarUrl,
   workspaceLogoUrl,
   colorScheme = 'light',
   buttonColor,
@@ -69,8 +73,10 @@ export function WidgetPreview({
         workspaceId: workspaceName,
         privacyNotice,
         workspaceName,
+        aiDisplayName,
         branding: {
           primaryColor: brandColor,
+          avatarUrl,
           logoUrl: resolvedLogoUrl,
           welcomeMessage,
           widgetPosition: (launcherPosition === 'bottom_left' ? 'bottom-left' : 'bottom-right') as 'bottom-left' | 'bottom-right',
@@ -105,7 +111,7 @@ export function WidgetPreview({
       widgetKey,
       host,
     });
-  }, [privacyNotice, initialView, brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, availability, aiFirst, showTalkToHuman, escalationMessage, widgetKey, host]);
+  }, [privacyNotice, initialView, brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, aiDisplayName, avatarUrl, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, availability, aiFirst, showTalkToHuman, escalationMessage, widgetKey, host]);
 
   // Unmount only when the React component itself unmounts
   useEffect(() => {
