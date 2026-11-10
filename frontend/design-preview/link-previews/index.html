@@ -95,7 +95,7 @@
     const allowed = ()=>state.access!=='restricted'&&(state.surface==='helpin'||state.details);
     const generic = ()=>state.version==='current';
     const recordUrl = ()=>state.access==='public'?`https://app.helpin.ai/shared/sample-${state.type}`:`https://app.helpin.ai${records[state.type].path}`;
-    const visibleTitle = ()=>generic()?'Helpin — Your Team’s Work, Connected':allowed()?records[state.type].title:`Shared ${state.type==='conversation'?'support conversation':records[state.type].kind.toLowerCase()}`;
+    const visibleTitle = ()=>generic()?'Helpin — Your Team’s Work, Connected':allowed()?records[state.type].title:`${state.type==='conversation'?'Support conversation':records[state.type].kind} in Helpin`;
     const visibleDescription = ()=>generic()?'Projects, support, sales, docs, and AI agents in one connected workspace.':!allowed()?'Open to view details.':state.summary?records[state.type].short:'';
     const metadataTitle = ()=>!generic()&&allowed()&&['task','conversation'].includes(state.type)?`${records[state.type].id} · ${visibleTitle()}`:visibleTitle();
     const metadataDescription = ()=>{const r=records[state.type];return generic()||!allowed()?visibleDescription():[state.properties?`${r.status} · ${r.person} · ${r.third}`:'',state.summary?r.short:''].filter(Boolean).join('. ')};
