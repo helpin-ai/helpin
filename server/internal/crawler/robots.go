@@ -88,11 +88,11 @@ func (t *robotsTransport) load(origin string) (*robotstxt.RobotsData, error) {
 	}}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("robots.txt unavailable; retry sync after the site is reachable: %w", err)
+		return nil, fmt.Errorf("robots.txt unavailable: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 || resp.StatusCode < 200 || resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return nil, fmt.Errorf("robots.txt unavailable (HTTP %d); retry sync after the site is reachable", resp.StatusCode)
+		return nil, fmt.Errorf("robots.txt unavailable (HTTP %d)", resp.StatusCode)
 	}
 	if resp.StatusCode >= 400 {
 		return robotstxt.FromBytes(nil)
