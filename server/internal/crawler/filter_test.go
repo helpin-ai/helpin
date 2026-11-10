@@ -23,6 +23,18 @@ func TestURLFilter_Allowed(t *testing.T) {
 			want:     true,
 		},
 		{
+			name: "www alias is allowed", startURL: "https://example.com", testURL: "https://www.example.com/docs", want: true,
+		},
+		{
+			name: "apex alias is allowed", startURL: "https://www.example.com", testURL: "https://example.com/docs", want: true,
+		},
+		{
+			name: "www does not allow sibling subdomains", startURL: "https://www.example.com", testURL: "https://blog.example.com/docs", want: false,
+		},
+		{
+			name: "www alias obeys exclusions", startURL: "https://example.com", testURL: "https://www.example.com/private", excludePatterns: []string{"/private"}, want: false,
+		},
+		{
 			name:     "different domain is blocked",
 			startURL: "https://example.com/docs",
 			testURL:  "https://other.com/about",
