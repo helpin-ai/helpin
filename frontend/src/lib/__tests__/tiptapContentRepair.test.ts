@@ -32,6 +32,17 @@ afterEach(() => {
 })
 
 describe('repairTiptapDocument', () => {
+  it('renames standard image nodes recursively without changing attributes or the original', () => {
+    const image = { type: 'image', attrs: { src: 'https://example.test/a.png', alt: 'Original', width: 320, metadata: { type: 'image' } } }
+    const original = { type: 'doc', content: [image, { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }, image] }] }] }
+    const repaired = repairTiptapDocument(original)
+    expect(repaired.content?.[0]).toEqual({ ...image, type: 'resizableImage' })
+    expect(repaired.content?.[1]?.content?.[0]?.content?.[1]).toEqual({ ...image, type: 'resizableImage' })
+    expect(original.content[0].type).toBe('image')
+    expect(repairTiptapDocument(repaired)).toEqual(repaired)
+    expectSchemaValid(repaired)
+  })
+
   it('wraps a paragraph stored directly in an ordered list', () => {
     const repaired = repairTiptapDocument({
       type: 'doc',

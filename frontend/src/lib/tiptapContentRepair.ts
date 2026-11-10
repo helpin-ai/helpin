@@ -116,8 +116,10 @@ function splitTextBlockAroundBlocks(node: RawNode, children: JSONContent[]): JSO
   return output.length > 0 ? output : [withContent(node, [])]
 }
 
-function repairNode(value: unknown): JSONContent[] {
-  if (!isObject(value)) return []
+function repairNode(input: unknown): JSONContent[] {
+  if (!isObject(input)) return []
+
+  const value = input.type === 'image' ? { ...input, type: 'resizableImage' } : input
 
   const type = typeof value.type === 'string' ? value.type : ''
   if (!type) return rawChildren(value).flatMap(repairNode)
