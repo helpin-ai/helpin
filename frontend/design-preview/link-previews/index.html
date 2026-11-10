@@ -95,8 +95,8 @@
     const allowed = ()=>state.access!=='restricted'&&(state.surface==='helpin'||state.details);
     const generic = ()=>state.version==='current';
     const recordUrl = ()=>state.access==='public'?`https://app.helpin.ai/shared/sample-${state.type}`:`https://app.helpin.ai${records[state.type].path}`;
-    const visibleTitle = ()=>generic()?'Helpin — Your Team’s Work, Connected':allowed()?records[state.type].title:`${state.type==='conversation'?'Support conversation':records[state.type].kind} in Helpin`;
-    const visibleDescription = ()=>generic()?'Projects, support, sales, docs, and AI agents in one connected workspace.':!allowed()?(state.access==='public'?`Open this shared ${records[state.type].kind.toLowerCase()} in Helpin.`:`Sign in to view this ${records[state.type].kind.toLowerCase()}.`):state.summary?records[state.type].short:'';
+    const visibleTitle = ()=>generic()?'Helpin — Your Team’s Work, Connected':allowed()?records[state.type].title:state.type==='conversation'?'Support conversation':records[state.type].kind;
+    const visibleDescription = ()=>generic()?'Projects, support, sales, docs, and AI agents in one connected workspace.':!allowed()?'Open to view details.':state.summary?records[state.type].short:'';
     const metadataTitle = ()=>!generic()&&allowed()&&['task','conversation'].includes(state.type)?`${records[state.type].id} · ${visibleTitle()}`:visibleTitle();
     const metadataDescription = ()=>{const r=records[state.type];return generic()||!allowed()?visibleDescription():[state.properties?`${r.status} · ${r.person} · ${r.third}`:'',state.summary?r.short:''].filter(Boolean).join('. ')};
     const statusIcon = ()=>`<span class="status-icon ${state.type==='document'?'green':''}"></span>`;
@@ -105,7 +105,7 @@
     function ogGraphic(compact=false){
       const r=records[state.type];
       if(generic())return `<div class="og-card ${compact?'compact':''}"><div class="og-top">${icon('brand','brand-icon')}Helpin</div><div class="og-main"><h2 class="og-title">Your team’s work,<br>connected.</h2><p class="og-description">One workspace for everything you do.</p></div><div class="og-bottom"><span>Projects · Support · Sales · Docs</span><span class="origin">helpin.ai</span></div></div>`;
-      return `<div class="og-card ${state.type} ${compact?'compact':''} ${allowed()?'':'details-hidden'}"><div class="og-top">${icon('brand','brand-icon')}Helpin<span class="og-category">${state.type==='conversation'?'Support':r.kind}</span></div><div class="og-main">${allowed()?(['task','conversation'].includes(state.type)?`<div class="og-id">${r.kind} ID: ${r.id}</div>`:''):`<span class="og-symbol">${icon(state.access==='restricted'?'lock':state.type)}</span>`}<h2 class="og-title">${esc(visibleTitle())}</h2>${visibleDescription()?`<p class="og-description">${esc(visibleDescription())}</p>`:''}</div><div class="og-bottom">${allowed()&&state.properties?ogProperties():`<span>${allowed()?'Shared via Helpin':`Access: <strong>${state.access==='public'?'Public link':'Sign-in required'}</strong>`}</span>`}<span class="origin">app.helpin.ai</span></div></div>`;
+      return `<div class="og-card ${state.type} ${compact?'compact':''} ${allowed()?'':'details-hidden'}"><div class="og-top">${icon('brand','brand-icon')}Helpin<span class="og-category">${state.type==='conversation'?'Support':r.kind}</span></div><div class="og-main">${allowed()?(['task','conversation'].includes(state.type)?`<div class="og-id">${r.kind} ID: ${r.id}</div>`:''):`<span class="og-symbol">${icon(state.access==='restricted'?'lock':state.type)}</span>`}<h2 class="og-title">${esc(visibleTitle())}</h2>${visibleDescription()?`<p class="og-description">${esc(visibleDescription())}</p>`:''}</div><div class="og-bottom">${allowed()&&state.properties?ogProperties():allowed()?'<span>Shared via Helpin</span>':''}<span class="origin">app.helpin.ai</span></div></div>`;
     }
     function unfurl(){
       const r=records[state.type];
