@@ -18,7 +18,7 @@ const Tagline = "One place for your team’s projects, support, sales, and docs.
 
 // TemplateVersion must change when fonts or image layout change, so external
 // consumers receive a new image URL even when record content stays the same.
-const TemplateVersion = "2"
+const TemplateVersion = "3"
 
 // Target is a validated route identity. Query text is never preview content.
 type Target struct {

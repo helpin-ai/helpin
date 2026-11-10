@@ -153,11 +153,15 @@ func (r *Renderer) draw(card model.LinkPreview) *image.RGBA {
 	// Measure the whole content block before positioning it. The reference,
 	// title and description stay together and centered between header/footer,
 	// whether the title takes one, two or three lines.
-	title := p.layout(card.Title, 54, 1084, 3, 600)
-	description := p.layout(card.Description, 26, 1060, 2, 400)
+	titleSize, descriptionSize := 54, 26
+	if len(card.Fields) > 0 || card.Reference != "" {
+		titleSize, descriptionSize = 46, 24
+	}
+	title := p.layout(card.Title, titleSize, 1084, 3, 600)
+	description := p.layout(card.Description, descriptionSize, 1060, 2, 400)
 	var reference textBlock
 	if card.Reference != "" {
-		reference = p.layout(card.Type+" ID: "+card.Reference, 23, 1084, 1, 600)
+		reference = p.layout(card.Type+" ID: "+card.Reference, 21, 1084, 1, 600)
 	}
 	blockHeight := title.height()
 	if reference.height() > 0 {
@@ -182,7 +186,7 @@ func (r *Renderer) draw(card model.LinkPreview) *image.RGBA {
 		for i, f := range card.Fields {
 			x := 58 + i*370
 			p.text(f.Label, x, 546, 21, 330, 1, 500, muted)
-			p.text(f.Value, x, 585, 28, 330, 1, 600, ink)
+			p.text(f.Value, x, 585, 24, 330, 1, 600, ink)
 		}
 	}
 	return canvas
