@@ -216,7 +216,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     return null;
   }
   const isCustomer = message.role === 'customer';
-  const isAI = message.role === 'ai';
+  const isAI = message.role === 'ai' || (message.role === 'system' && message.senderName === 'Helpin AI');
   const isAgent = message.role === 'agent';
   const isSystem = message.role === 'system';
 
@@ -272,7 +272,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   // only widget-visible routing event. Internal routing and escalation
   // events are filtered; their public handoff replies render normally.
   const showSystemPill = isSystem && message.systemEventType === 'teammate_joined';
-  const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
+  const displayName = isCustomer ? '' : (isAI ? (config?.aiDisplayName?.trim() || 'Helpin AI') : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);
 
   if (showSystemPill) {
@@ -324,7 +324,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 </span>
               ) : null}
               {displayName && (
-                <span className="helpin-message-agent-name">{displayName}</span>
+                <span className="helpin-message-agent-name">{displayName}{isAI && config?.aiDisplayName?.trim() ? ' · AI' : ''}</span>
               )}
             </div>
           )}

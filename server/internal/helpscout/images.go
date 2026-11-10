@@ -251,15 +251,16 @@ func ImageBody(resp *http.Response, filename string) (io.Reader, string, error) 
 	if idx := strings.Index(contentType, ";"); idx >= 0 {
 		contentType = strings.TrimSpace(contentType[:idx])
 	}
+	// Some export CDNs label real images as downloads; require a byte signature for those.
 	reader := bufio.NewReaderSize(resp.Body, 512)
 	if !strings.HasPrefix(contentType, "image/") {
-		if contentType != "" && contentType != "application/octet-stream" && contentType != "binary/octet-stream" {
+		if contentType != "" && contentType != "application/octet-stream" && contentType != "binary/octet-stream" && contentType != "application/force-download" {
 			return nil, "", ErrNotImage
 		}
 		head, _ := reader.Peek(512)
 		if sniffed := http.DetectContentType(head); strings.HasPrefix(sniffed, "image/") {
 			contentType = sniffed
-		} else if byName := mime.TypeByExtension(strings.ToLower(path.Ext(filename))); strings.HasPrefix(byName, "image/") {
+		} else if byName := mime.TypeByExtension(strings.ToLower(path.Ext(filename))); contentType != "application/force-download" && strings.HasPrefix(byName, "image/") {
 			contentType = byName
 		} else {
 			return nil, "", ErrNotImage

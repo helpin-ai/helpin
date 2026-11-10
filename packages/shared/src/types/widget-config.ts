@@ -24,6 +24,7 @@ export interface WidgetConfig {
   workspaceId: string;
   privacyNotice?: { enabled: boolean; policyUrl: string; text: string };
   workspaceName?: string;
+  aiDisplayName?: string;
   visitorName?: string;
   availableTeammates?: Array<{
     userId: string;

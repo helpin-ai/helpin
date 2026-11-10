@@ -370,6 +370,10 @@ func (s *SupportAIService) recordSupportAIAnswerTrace(
 ) {
 	canAnswer := "true"
 	canResolve := "true"
+	if answerValidation.Outcome != supportValidationPass {
+		canAnswer = "false"
+		canResolve = "false"
+	}
 	trace, err := BuildSupportAIRetrievalTrace(SupportAIRetrievalTraceInput{
 		WorkspaceID:    workspaceID,
 		ConversationID: conversationID,
@@ -395,6 +399,7 @@ func (s *SupportAIService) recordSupportAIAnswerTrace(
 			"evidence_missing":   evidenceCoverage.Missing,
 			"validation_outcome": answerValidation.Outcome,
 			"validation_reasons": answerValidation.Reasons,
+			"unsupported_claims": answerValidation.UnsupportedClaims,
 			"retrieval_retried":  retrievalRetried,
 			"stage_latency_ms":   stageLatencies,
 		},

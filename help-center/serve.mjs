@@ -10,6 +10,7 @@ import {
   shouldAttemptRedirectResolution,
 } from './serverRedirects.mjs'
 import {
+  isSearchIndexingDisabled,
   collectSitemapEntries,
   renderLlmsTxt,
   renderRobotsTxt,
@@ -540,17 +541,21 @@ async function fetchHelpCenterConfig(apiBase, subdomain) {
 async function handleRobotsTxt(_request, response, hcContext) {
   const apiBase = process.env.INTERNAL_API_URL
   let publicUrl = { origin: hcContext.origin, basepath: hcContext.basepath }
+  let config
   try {
-    const config = await fetchHelpCenterConfig(apiBase, hcContext.subdomain)
-    if (config) {
-      publicUrl = resolvePublicUrlParts(hcContext, config)
-    }
+    config = await fetchHelpCenterConfig(apiBase, hcContext.subdomain)
+    if (!config) throw new Error('Help Center configuration unavailable')
+    publicUrl = resolvePublicUrlParts(hcContext, config)
   } catch (error) {
     console.error('failed to resolve robots public URL', error)
+    response.statusCode = 503
+    response.setHeader('Cache-Control', 'no-store')
+    response.end('Robots configuration unavailable')
+    return
   }
-  const body = renderRobotsTxt(publicUrl)
+  const body = renderRobotsTxt(publicUrl, config)
   response.statusCode = 200
-  response.setHeader('Cache-Control', 'public, max-age=3600')
+  response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
   response.setHeader('Content-Type', 'text/plain; charset=utf-8')
   response.end(body)
 }
@@ -572,6 +577,13 @@ async function handleSitemapXml(_request, response, hcContext) {
       return
     }
     const config = await fetchHelpCenterConfig(apiBase, subdomain)
+    if (isSearchIndexingDisabled(config)) {
+      response.statusCode = 404
+      response.setHeader('X-Robots-Tag', 'noindex')
+      response.setHeader('Cache-Control', 'no-store')
+      response.end('Not found')
+      return
+    }
     const locales = config.enabled_locales?.length > 1
       ? config.enabled_locales
       : [config.default_locale || 'en']
@@ -606,7 +618,7 @@ async function handleSitemapXml(_request, response, hcContext) {
     const body = renderSitemapXml(entries)
 
     response.statusCode = 200
-    response.setHeader('Cache-Control', 'public, max-age=3600')
+    response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
     response.setHeader('Content-Type', 'application/xml; charset=utf-8')
     response.end(body)
   } catch (error) {
@@ -630,6 +642,13 @@ async function handleLlmsTxt(_request, response, hcContext) {
     const apiBase = process.env.INTERNAL_API_URL
     if (!apiBase || !subdomain) return unavailable()
     const config = await fetchHelpCenterConfig(apiBase, subdomain)
+    if (isSearchIndexingDisabled(config)) {
+      response.statusCode = 404
+      response.setHeader('X-Robots-Tag', 'noindex')
+      response.setHeader('Cache-Control', 'no-store')
+      response.end('Not found')
+      return
+    }
     const multilingual = config.enabled_locales?.length > 1
     const locale = config.default_locale || 'en'
     const prefix = multilingual ? `/hc/${subdomain}/${locale}` : `/hc/${subdomain}`
@@ -642,7 +661,7 @@ async function handleLlmsTxt(_request, response, hcContext) {
     }
     const body = renderLlmsTxt({ publicUrl: resolvePublicUrlParts(hcContext, config), config, spaces })
     response.statusCode = 200
-    response.setHeader('Cache-Control', 'public, max-age=3600')
+    response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
     response.setHeader('Content-Type', 'text/plain; charset=utf-8')
     response.end(body)
   } catch (error) {
@@ -864,6 +883,9 @@ async function handleRequest(request, response) {
       const headersToCache = Array.from(fetchResponse.headers.entries())
         .filter(([name]) => !['cache-control', 'content-encoding', 'content-length'].includes(name))
       headersToCache.push(['cache-control', 'public, max-age=0, must-revalidate'])
+      if (/<meta\s+[^>]*name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(renderedBody)) {
+        headersToCache.push(['x-robots-tag', 'noindex'])
+      }
       let cacheEntry
       if (isHtmlRequest(request, routeUrl)) {
         cacheEntry = {

@@ -1179,6 +1179,7 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 	customerTeammates := s.customerTeammates(ctx, inst.WorkspaceID, settings.BusinessHoursTimezone, now)
 
 	return &model.WidgetConfigResponse{
+		AIDisplayName: settings.AIDisplayName,
 		PrivacyNotice: model.WidgetConfigPrivacyNotice{Enabled: settings.PrivacyNoticeEnabled, PolicyURL: settings.PrivacyPolicyURL, Text: settings.PrivacyNoticeText},
 		WorkspaceID:   inst.WorkspaceID,
 		WorkspaceName: settings.WidgetName,
