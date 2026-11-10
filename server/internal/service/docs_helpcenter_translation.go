@@ -384,6 +384,7 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 		return nil, err
 	}
 	if len(req.Content) > 0 && string(req.Content) != "null" {
+		req.Content = tiptap.NormalizeImageNodes(req.Content)
 		if err := tiptap.ValidateDocument(req.Content); err != nil {
 			return nil, fmt.Errorf("invalid translation content: %w", err)
 		}
