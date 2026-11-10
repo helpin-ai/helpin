@@ -35,6 +35,10 @@ type AuthHandler struct {
 	setupGuideEnabled bool
 	// signupPolicy is the self-hosted signup policy; nil means open signup.
 	signupPolicy signupPolicyReader
+	// oidc is the generic OpenID Connect provider; nil means SSO is not configured.
+	oidc *oidcClient
+	// localLoginDisabled turns off password, passkey and password-reset sign-in.
+	localLoginDisabled bool
 }
 
 type GoogleOAuthConfig struct {
@@ -67,6 +71,9 @@ func NewAuthHandler(authService *service.AuthService, googleConfig ...GoogleOAut
 
 // Signup handles POST /api/auth/signup.
 func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
+	if h.rejectLocalLoginDisabled(w) {
+		return
+	}
 	var req model.SignupRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -151,7 +158,7 @@ func (h *AuthHandler) GoogleStart(w http.ResponseWriter, r *http.Request) {
 			SameSite: http.SameSiteLaxMode,
 		})
 	}
-	if redirectPath := sanitizeGoogleRedirectPath(r.URL.Query().Get("redirect")); redirectPath != "" {
+	if redirectPath := sanitizeRedirectPath(r.URL.Query().Get("redirect")); redirectPath != "" {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "helpin_google_oauth_redirect",
 			Value:    base64.RawURLEncoding.EncodeToString([]byte(redirectPath)),
@@ -205,6 +212,10 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "signup_restricted"), http.StatusFound)
 		return
 	}
+	if errors.Is(err, service.ErrOIDCEmailInUse) {
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "email_in_use"), http.StatusFound)
+		return
+	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "google auth signin failed", "error", err)
 		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "signin_failed"), http.StatusFound)
@@ -247,6 +258,9 @@ func (h *AuthHandler) GoogleMobileExchange(w http.ResponseWriter, r *http.Reques
 
 // Signin handles POST /api/auth/signin.
 func (h *AuthHandler) Signin(w http.ResponseWriter, r *http.Request) {
+	if h.rejectLocalLoginDisabled(w) {
+		return
+	}
 	var req model.SigninRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -286,6 +300,9 @@ func (h *AuthHandler) DemoSignin(w http.ResponseWriter, r *http.Request) {
 
 // ForgotPassword handles POST /api/auth/forgot-password.
 func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	if h.rejectLocalLoginDisabled(w) {
+		return
+	}
 	var req model.ForgotPasswordRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -309,6 +326,9 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 // ResetPassword handles POST /api/auth/reset-password.
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if h.rejectLocalLoginDisabled(w) {
+		return
+	}
 	var req model.ResetPasswordRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -524,13 +544,13 @@ func googleRedirectPathFromCookie(r *http.Request) string {
 	if err != nil {
 		return "/workspaces"
 	}
-	if path := sanitizeGoogleRedirectPath(string(raw)); path != "" {
+	if path := sanitizeRedirectPath(string(raw)); path != "" {
 		return path
 	}
 	return "/workspaces"
 }
 
-func sanitizeGoogleRedirectPath(path string) string {
+func sanitizeRedirectPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.ContainsAny(path, "\r\n\t") {
 		return ""
@@ -661,6 +681,9 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 
 // Verify2FASignin handles POST /api/auth/2fa/verify-signin.
 func (h *AuthHandler) Verify2FASignin(w http.ResponseWriter, r *http.Request) {
+	if h.rejectLocalLoginDisabled(w) {
+		return
+	}
 	var req model.TwoFASigninRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -759,6 +782,9 @@ func (h *AuthHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		"email_verification_required": h.authService.EmailVerificationRequired(),
 		"app_email_configured":        h.authService.AppEmailConfigured(),
 		"google_login_enabled":        h.googleOAuth != nil,
+		"oidc_login_enabled":          h.oidc != nil,
+		"oidc_provider_name":          h.oidcProviderName(),
+		"local_login_enabled":         !h.localLoginDisabled,
 		"demo_enabled":                h.authService.DemoEnabled(),
 		"demo_requires_email":         h.authService.DemoRequiresEmail(),
 		"setup_guide_enabled":         h.setupGuideEnabled,

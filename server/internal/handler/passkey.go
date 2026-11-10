@@ -13,11 +13,18 @@ import (
 )
 
 type PasskeyHandler struct {
-	passkeyService *service.PasskeyService
+	passkeyService     *service.PasskeyService
+	localLoginDisabled bool
 }
 
 func NewPasskeyHandler(passkeyService *service.PasskeyService) *PasskeyHandler {
 	return &PasskeyHandler{passkeyService: passkeyService}
+}
+
+// SetLocalLoginDisabled turns off passkey sign-in (registering and managing
+// passkeys for a signed-in user is unaffected).
+func (h *PasskeyHandler) SetLocalLoginDisabled(disabled bool) {
+	h.localLoginDisabled = disabled
 }
 
 func (h *PasskeyHandler) RegistrationOptions(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +58,10 @@ func (h *PasskeyHandler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PasskeyHandler) AuthenticationOptions(w http.ResponseWriter, r *http.Request) {
+	if h.localLoginDisabled {
+		writeErrorCode(w, http.StatusForbidden, localLoginDisabledMsg, "local_login_disabled")
+		return
+	}
 	var req model.PasskeyAuthenticationOptionsRequest
 	if err := decodeJSON(r, &req); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -71,6 +82,10 @@ func (h *PasskeyHandler) AuthenticationOptions(w http.ResponseWriter, r *http.Re
 }
 
 func (h *PasskeyHandler) Authenticate(w http.ResponseWriter, r *http.Request) {
+	if h.localLoginDisabled {
+		writeErrorCode(w, http.StatusForbidden, localLoginDisabledMsg, "local_login_disabled")
+		return
+	}
 	var req model.PasskeyAuthenticateRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")

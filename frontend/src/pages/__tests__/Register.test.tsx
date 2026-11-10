@@ -80,6 +80,12 @@ describe('Register', () => {
     expect(page.textContent).toContain('dev@acme.com');
   });
 
+  it('offers only the provider button when local sign-in is off', () => {
+    const { page } = render({ ...baseConfig, signup_mode: 'open', local_login_enabled: false, oidc_login_enabled: true, oidc_provider_name: 'Authelia' });
+    expect(page.querySelector('form')).toBeNull();
+    expect(Array.from(page.querySelectorAll('button')).map((button) => button.textContent)).toEqual(['Sign in with Authelia']);
+  });
+
   it('keeps older servers without a signup policy open', () => {
     const { page } = render(baseConfig);
     expect(page.querySelector('form')).not.toBeNull();

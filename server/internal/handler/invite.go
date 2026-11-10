@@ -12,7 +12,13 @@ import (
 
 // InviteHandler handles invitation HTTP requests.
 type InviteHandler struct {
-	service *service.InviteService
+	service            *service.InviteService
+	localLoginDisabled bool
+}
+
+// SetLocalLoginDisabled turns off accepting an invitation by creating a password account.
+func (h *InviteHandler) SetLocalLoginDisabled(disabled bool) {
+	h.localLoginDisabled = disabled
 }
 
 // NewInviteHandler creates a new InviteHandler.
@@ -107,6 +113,10 @@ func (h *InviteHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 
 // AcceptWithSignup handles POST /api/invitations/accept-with-signup — public, register + accept.
 func (h *InviteHandler) AcceptWithSignup(w http.ResponseWriter, r *http.Request) {
+	if h.localLoginDisabled {
+		writeErrorCode(w, http.StatusForbidden, localLoginDisabledMsg, "local_login_disabled")
+		return
+	}
 	var req model.AcceptInvitationWithSignupRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")

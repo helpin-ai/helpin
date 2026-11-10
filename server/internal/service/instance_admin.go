@@ -410,6 +410,11 @@ func (s *InstanceService) requireAdmin(ctx context.Context, userID string) error
 	return nil
 }
 
+// IsEnvAdmin reports whether HELPIN_ADMIN_EMAILS lists the address.
+func (s *InstanceService) IsEnvAdmin(email string) bool {
+	return s.isEnvAdmin(email)
+}
+
 func (s *InstanceService) isEnvAdmin(email string) bool {
 	_, ok := s.adminEmails[normalizeAuthEmail(email)]
 	return ok

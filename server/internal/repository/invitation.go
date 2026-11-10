@@ -80,6 +80,20 @@ func (r *InvitationRepository) GetPendingByEmail(ctx context.Context, workspaceI
 	return inv, nil
 }
 
+// ListPendingByEmail returns the unexpired pending invitations for an email
+// address across all workspaces.
+func (r *InvitationRepository) ListPendingByEmail(ctx context.Context, email string, now time.Time) ([]model.WorkspaceInvitation, error) {
+	var invitations []model.WorkspaceInvitation
+	err := r.db.WithContext(ctx).
+		Where("LOWER(email) = LOWER(?) AND status = 'pending' AND expires_at > ?", email, now).
+		Order("created_at").
+		Find(&invitations).Error
+	if err != nil {
+		return nil, fmt.Errorf("list pending invitations by email: %w", err)
+	}
+	return invitations, nil
+}
+
 // UpdateStatus updates the status (and optionally accepted_at) of an invitation.
 func (r *InvitationRepository) UpdateStatus(ctx context.Context, id, status string, acceptedAt *time.Time) error {
 	updates := map[string]interface{}{"status": status}
