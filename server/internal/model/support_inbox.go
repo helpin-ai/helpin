@@ -1867,6 +1867,7 @@ type WidgetTokensResponse struct {
 type WidgetConfigBranding struct {
 	PrimaryColor    string `json:"primaryColor"`
 	LogoURL         string `json:"logoUrl,omitempty"`
+	AvatarURL       string `json:"avatarUrl,omitempty"`
 	WelcomeMessage  string `json:"welcomeMessage"`
 	WidgetPosition  string `json:"widgetPosition"`
 	ShowBranding    bool   `json:"showBranding"`
