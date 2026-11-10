@@ -532,8 +532,10 @@ globalThis.__hcGetRequestContext__ = () => requestContextStorage.getStore() ?? n
 
 
 async function fetchHelpCenterConfig(apiBase, subdomain) {
-  if (!apiBase || !subdomain) return null
-  const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`)
+  if (!apiBase) throw new Error('Help Center API unavailable')
+  if (!subdomain) return null
+  const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`, { signal: AbortSignal.timeout(5000) })
+  if (configRes.status === 404) return null
   if (!configRes.ok) throw new Error(`config fetch failed: ${configRes.status}`)
   return configRes.json()
 }
@@ -542,21 +544,23 @@ async function handleRobotsTxt(_request, response, hcContext) {
   const apiBase = process.env.INTERNAL_API_URL
   let publicUrl = { origin: hcContext.origin, basepath: hcContext.basepath }
   let config
+  response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+  response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
   try {
     config = await fetchHelpCenterConfig(apiBase, hcContext.subdomain)
-    if (!config) throw new Error('Help Center configuration unavailable')
+    if (!config) {
+      response.statusCode = 404
+      response.setHeader('Cache-Control', 'no-store')
+      response.end('Not found')
+      return
+    }
     publicUrl = resolvePublicUrlParts(hcContext, config)
   } catch (error) {
     console.error('failed to resolve robots public URL', error)
-    response.statusCode = 503
     response.setHeader('Cache-Control', 'no-store')
-    response.end('Robots configuration unavailable')
-    return
   }
   const body = renderRobotsTxt(publicUrl, config)
   response.statusCode = 200
-  response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
-  response.setHeader('Content-Type', 'text/plain; charset=utf-8')
   response.end(body)
 }
 
@@ -577,9 +581,9 @@ async function handleSitemapXml(_request, response, hcContext) {
       return
     }
     const config = await fetchHelpCenterConfig(apiBase, subdomain)
-    if (isSearchIndexingDisabled(config)) {
+    if (!config || isSearchIndexingDisabled(config)) {
       response.statusCode = 404
-      response.setHeader('X-Robots-Tag', 'noindex')
+      if (config) response.setHeader('X-Robots-Tag', 'noindex')
       response.setHeader('Cache-Control', 'no-store')
       response.end('Not found')
       return
@@ -642,9 +646,9 @@ async function handleLlmsTxt(_request, response, hcContext) {
     const apiBase = process.env.INTERNAL_API_URL
     if (!apiBase || !subdomain) return unavailable()
     const config = await fetchHelpCenterConfig(apiBase, subdomain)
-    if (isSearchIndexingDisabled(config)) {
+    if (!config || isSearchIndexingDisabled(config)) {
       response.statusCode = 404
-      response.setHeader('X-Robots-Tag', 'noindex')
+      if (config) response.setHeader('X-Robots-Tag', 'noindex')
       response.setHeader('Cache-Control', 'no-store')
       response.end('Not found')
       return

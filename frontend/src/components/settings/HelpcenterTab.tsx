@@ -764,7 +764,7 @@ export function HelpcenterTab({
       chat_widget_enabled: config.chat_widget_enabled,
       ai_answers_enabled: config.ai_answers_enabled,
       demo_mode: config.demo_mode,
-      search_indexing_enabled: config.demo_mode ? false : config.search_indexing_enabled,
+      search_indexing_enabled: config.search_indexing_enabled,
       official_docs_url: config.official_docs_url,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
@@ -1497,7 +1497,7 @@ export function HelpcenterTab({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="hc-demo-mode">Demo mode</Label>
-                <Switch id="hc-demo-mode" checked={config.demo_mode} onCheckedChange={(checked) => setConfig({ ...config, demo_mode: checked, search_indexing_enabled: checked ? false : config.search_indexing_enabled })} />
+                <Switch id="hc-demo-mode" checked={config.demo_mode} onCheckedChange={(checked) => setConfig({ ...config, demo_mode: checked })} />
               </div>
               <p className="text-xs text-muted-foreground">Shows a demo disclosure and excludes this Help Center from search engines. This does not restrict public access.</p>
               <div className="flex items-center justify-between">

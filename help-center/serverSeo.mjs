@@ -167,7 +167,7 @@ export function renderRobotsTxt(publicUrl, config) {
     'User-agent: *',
     `Disallow: ${publicUrl.basepath || ''}/preview/`,
     'Crawl-delay: 1',
-    ...(isSearchIndexingDisabled(config) ? [] : [`Sitemap: ${joinPublicUrl(publicUrl, '/sitemap.xml')}`]),
+    ...(!config || isSearchIndexingDisabled(config) ? [] : [`Sitemap: ${joinPublicUrl(publicUrl, '/sitemap.xml')}`]),
   ].join('\n')
 }
 
