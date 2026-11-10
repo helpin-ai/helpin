@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -251,9 +251,19 @@ func TestValidationRepairIsDurableAndScoped(t *testing.T) {
 	}
 }
 
-func TestNumericRepairThroughReplyTool(t *testing.T) {
-	for _, corrected := range []bool{true, false} {
-		t.Run(fmt.Sprint("corrected=", corrected), func(t *testing.T) {
+func TestEvidenceRepairThroughReplyTool(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		corrected     bool
+		citationError bool
+	}{
+		{"numeric corrected", true, false},
+		{"numeric unresolved", false, false},
+		{"abbreviated citations corrected", true, true},
+		{"abbreviated citations unresolved", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			corrected := tc.corrected
 			ctx := context.Background()
 			settings := model.DefaultSupportInboxSettings()
 			settings.AIEnabled = true
@@ -279,49 +289,97 @@ func TestNumericRepairThroughReplyTool(t *testing.T) {
 			mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,conversation_id,source_message_id,status,updated_at) VALUES ('turn',?,'conv','source','processing',CURRENT_TIMESTAMP)`, conv.WorkspaceID)
 			mustExec(t, db, `INSERT INTO agent_runs(id,workspace_id,agent_id,target_type,target_id,status,external_runtime,external_runtime_id) VALUES ('run',?,'agent','support_conversation','conv','running','agent-runtime','rt')`, conv.WorkspaceID)
 			mustExec(t, db, `UPDATE agent_runs SET input=x'7b7d',output_summary=x'7b7d' WHERE id='run'`)
-			if err := db.Create(&model.SupportRunEvidence{WorkspaceID: conv.WorkspaceID, RunID: "run", EvidenceID: "e", SourceType: "docs", Content: "The Pro plan costs $49 per month.", VectorScore: 0.9, CombinedScore: 0.9}).Error; err != nil {
+			evidenceID := "aaaaaaaa-1111-4111-8111-111111111111"
+			citationID := evidenceID
+			badAnswer := "The Pro plan costs $99 per month."
+			goodAnswer := "The Pro plan costs $49 per month."
+			if tc.citationError {
+				citationID = "aaaaaaaa"
+				badAnswer = "**1. In the identity provider**\nCopy the x509 certificate.\n\n**2. In the app**\nEnable SSO.\n\n**3. Test it**\nSign in."
+				goodAnswer = badAnswer
+			}
+			if err := db.Create(&model.SupportRunEvidence{WorkspaceID: conv.WorkspaceID, RunID: "run", EvidenceID: evidenceID, SourceType: "docs", Content: "The Pro plan costs $49 per month. Copy the x509 certificate, enable SSO, and sign in.", VectorScore: 0.9, CombinedScore: 0.9}).Error; err != nil {
 				t.Fatal(err)
 			}
 			ai := &SupportAIService{handoffRepo: repository.NewAgentHandoffRepository(db), processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
+			recorder := &capturePlatformTraceRecorder{traces: make(chan *model.SupportAIRetrievalTrace, 1)}
+			ai.SetSupportAIRetrievalTraceRecorder(recorder)
 			svc := &InternalCommandService{supportAIService: ai, supportProcessingRepo: repository.NewAIMessageProcessingRepository(db), agentRunRepo: repository.NewAgentRunRepository(db), supportRunEvidenceRepo: repository.NewSupportRunEvidenceRepository(db)}
 			meta := model.InternalCommandContext{WorkspaceID: conv.WorkspaceID, RunID: "rt", TargetType: "support_conversation", TargetID: conv.ID}
 			send := func(content, kind string) string {
-				raw, _ := json.Marshal(map[string]any{"content": content, "reply_kind": kind, "confidence": 0.99, "can_answer": true, "source_doc_ids": []string{"e"}, "claims": []AIResponseClaim{{Text: content, EvidenceIDs: []string{"e"}}}})
+				raw, _ := json.Marshal(map[string]any{"content": content, "reply_kind": kind, "confidence": 0.99, "can_answer": true, "source_doc_ids": []string{citationID}, "claims": []AIResponseClaim{{Text: content, EvidenceIDs: []string{citationID}}}})
 				output, err := svc.executeSupportSendReply(ctx, meta, raw)
 				if err != nil {
 					t.Fatal(err)
 				}
 				var result struct {
-					Status string `json:"status"`
+					Status               string   `json:"status"`
+					AvailableEvidenceIDs []string `json:"available_evidence_ids"`
 				}
 				if err := json.Unmarshal(output, &result); err != nil {
 					t.Fatal(err)
 				}
+				if result.Status == "rewrite_required" || result.Status == "escalated" {
+					select {
+					case trace := <-recorder.traces:
+						var metadata map[string]any
+						if err := json.Unmarshal(trace.Metadata, &metadata); err != nil {
+							t.Fatal(err)
+						}
+						want := "offered"
+						if result.Status == "escalated" {
+							want = "exhausted"
+						}
+						if metadata["repair_decision"] != want {
+							t.Fatalf("repair decision=%v want %s", metadata["repair_decision"], want)
+						}
+					case <-time.After(time.Second):
+						t.Fatal("missing repair trace")
+					}
+				}
+				if result.Status == "rewrite_required" && (len(result.AvailableEvidenceIDs) != 1 || result.AvailableEvidenceIDs[0] != evidenceID) {
+					t.Fatalf("missing complete correction evidence IDs: %v", result.AvailableEvidenceIDs)
+				}
 				return result.Status
 			}
-			if got := send("The Pro plan costs $99 per month.", "answer"); got != "rewrite_required" {
+			if got := send(badAnswer, "answer"); got != "rewrite_required" {
 				t.Fatalf("first rejection=%s", got)
+			}
+			var processing model.AIMessageProcessing
+			if err := db.First(&processing, "id = ?", "turn").Error; err != nil {
+				t.Fatal(err)
+			}
+			if processing.Status != "processing" || !processing.ValidationRepairUsed || processing.ReplyMessageID != nil {
+				t.Fatalf("repair settled or lost turn: %+v", processing)
+			}
+			var run model.AgentRun
+			if err := db.First(&run, "id = ?", "run").Error; err != nil {
+				t.Fatal(err)
+			}
+			if run.Status != "running" {
+				t.Fatalf("repair stopped run: %s", run.Status)
 			}
 			var count int64
 			if err := db.Model(&model.SupportMessage{}).Where("sender_type='ai'").Count(&count).Error; err != nil || count != 0 {
 				t.Fatalf("rejected answer leaked: %d %v", count, err)
 			}
 			if !corrected {
-				if got := send("The Pro plan costs $99 per month.", "conversational"); got != "escalated" {
+				if got := send(badAnswer, "conversational"); got != "escalated" {
 					t.Fatalf("second invalid answer=%s", got)
 				}
-				if got := send("The Pro plan costs $99 per month.", "answer"); got != "suppressed" {
+				if got := send(badAnswer, "answer"); got != "suppressed" {
 					t.Fatalf("after handoff=%s", got)
 				}
-				if err := db.Model(&model.SupportMessage{}).Where("sender_type='ai' AND is_internal=false AND content LIKE '%$99%'").Count(&count).Error; err != nil || count != 0 {
+				if err := db.Model(&model.SupportMessage{}).Where("sender_type='ai' AND is_internal=false AND content = ?", badAnswer).Count(&count).Error; err != nil || count != 0 {
 					t.Fatalf("invalid price sent: %d %v", count, err)
 				}
 				return
 			}
-			if got := send("The Pro plan costs $49 per month.", "conversational"); got != "sent" {
+			citationID = evidenceID
+			if got := send(goodAnswer, "conversational"); got != "sent" {
 				t.Fatalf("corrected answer=%s", got)
 			}
-			if got := send("The Pro plan costs $49 per month.", "answer"); got != "suppressed" {
+			if got := send(goodAnswer, "answer"); got != "suppressed" {
 				t.Fatalf("duplicate=%s", got)
 			}
 		})

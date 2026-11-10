@@ -22,6 +22,7 @@ type supportEvidenceCoverage struct {
 
 type supportAnswerValidation struct {
 	Outcome              string
+	RepairDecision       string
 	Reasons              []string
 	UnsupportedClaims    []AIResponseClaim
 	SupportedClaimCount  int
