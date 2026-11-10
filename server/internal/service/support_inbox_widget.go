@@ -1186,6 +1186,7 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 		Branding: model.WidgetConfigBranding{
 			PrimaryColor:    primaryColor,
 			LogoURL:         settings.LogoURL,
+			AvatarURL:       settings.WidgetAvatarURL,
 			WelcomeMessage:  settings.WelcomeMessage,
 			WidgetPosition:  position,
 			ShowBranding:    settings.ShowBranding,

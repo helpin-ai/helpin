@@ -266,7 +266,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   };
 
   const agentName = message.senderName;
-  const agentAvatar = message.senderAvatar;
+  const agentAvatar = isAI ? (config?.branding?.avatarUrl || message.senderAvatar) : message.senderAvatar;
   const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
   // Flat pill is reserved for teammate_joined — the one and
   // only widget-visible routing event. Internal routing and escalation
@@ -314,7 +314,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 >
                   <img src={agentAvatar} alt={displayName} className="helpin-message-brand-logo" />
                 </span>
-              ) : isAI ? (
+              ) : isAI && !config?.branding?.avatarUrl ? (
                 <AskAgentAvatar />
               ) : agentAvatar ? (
                 <img src={agentAvatar} alt={displayName} className="helpin-message-avatar" />
