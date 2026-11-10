@@ -149,12 +149,12 @@ func TestDocsHelpcenterDemoIndexingLifecycle(t *testing.T) {
 		t.Fatalf("defaults: %+v %v", cfg, err)
 	}
 	cfg, err = svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{DemoMode: &on, SearchIndexingEnabled: &on})
-	if err != nil || !cfg.DemoMode || cfg.SearchIndexingEnabled {
-		t.Fatalf("demo must force noindex: %+v %v", cfg, err)
+	if err != nil || !cfg.DemoMode || !cfg.SearchIndexingEnabled {
+		t.Fatalf("demo must preserve indexing preference: %+v %v", cfg, err)
 	}
 	cfg, err = svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{DemoMode: &off})
-	if err != nil || cfg.SearchIndexingEnabled {
-		t.Fatalf("leaving demo must not enable indexing: %+v %v", cfg, err)
+	if err != nil || !cfg.SearchIndexingEnabled {
+		t.Fatalf("leaving demo must restore indexing preference: %+v %v", cfg, err)
 	}
 	cfg, err = svc.UpsertConfig(ctx, "demo", model.UpdateDocsHelpcenterConfigRequest{SearchIndexingEnabled: &on})
 	if err != nil || !cfg.SearchIndexingEnabled {
@@ -171,11 +171,36 @@ func TestDocsHelpcenterCreatedAsDemo(t *testing.T) {
 	svc := newDocsHelpcenterConfigServiceForTest(setupDocsHelpcenterConfigTestDB(t))
 	on := true
 	cfg, err := svc.UpsertConfig(context.Background(), "new-demo", model.UpdateDocsHelpcenterConfigRequest{Subdomain: stringPtr("new-demo"), BrandName: stringPtr("Example"), DemoMode: &on, OfficialDocsURL: stringPtr("https://docs.example.com")})
-	if err != nil || !cfg.DemoMode || cfg.SearchIndexingEnabled || cfg.OfficialDocsURL != "https://docs.example.com" {
+	if err != nil || !cfg.DemoMode || !cfg.SearchIndexingEnabled || cfg.OfficialDocsURL != "https://docs.example.com" {
 		t.Fatalf("initial demo: %+v %v", cfg, err)
 	}
 	saved, err := svc.GetConfig(context.Background(), "new-demo")
-	if err != nil || saved.SearchIndexingEnabled {
+	if err != nil || !saved.SearchIndexingEnabled {
 		t.Fatalf("persisted demo: %+v %v", saved, err)
+	}
+}
+
+func TestDocsHelpcenterDemoPreservesExplicitIndexingOptOut(t *testing.T) {
+	svc := newDocsHelpcenterConfigServiceForTest(setupDocsHelpcenterConfigTestDB(t))
+	ctx := context.Background()
+	on, off := true, false
+	_, err := svc.UpsertConfig(ctx, "private", model.UpdateDocsHelpcenterConfigRequest{Subdomain: stringPtr("private"), BrandName: stringPtr("Example"), SearchIndexingEnabled: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, demo := range []bool{true, false, true, false} {
+		cfg, err := svc.UpsertConfig(ctx, "private", model.UpdateDocsHelpcenterConfigRequest{DemoMode: &demo})
+		if err != nil || cfg.SearchIndexingEnabled || cfg.DemoMode != demo {
+			t.Fatalf("demo=%v: %+v %v", demo, cfg, err)
+		}
+	}
+	// An explicit preference change is retained even while demo mode suppresses discovery.
+	cfg, err := svc.UpsertConfig(ctx, "private", model.UpdateDocsHelpcenterConfigRequest{DemoMode: &on, SearchIndexingEnabled: &on})
+	if err != nil || !cfg.SearchIndexingEnabled || !cfg.DemoMode {
+		t.Fatalf("explicit preference: %+v %v", cfg, err)
+	}
+	cfg, err = svc.UpsertConfig(ctx, "private", model.UpdateDocsHelpcenterConfigRequest{DemoMode: &off})
+	if err != nil || !cfg.SearchIndexingEnabled || cfg.DemoMode {
+		t.Fatalf("restored preference: %+v %v", cfg, err)
 	}
 }

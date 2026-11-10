@@ -25,4 +25,17 @@ describe('WidgetPreview configuration', () => {
     expect(config.features.aiFirst).toBe(aiFirst);
     expect(config.branding.welcomeMessage).toBe('');
   });
+
+  it('updates the assistant identity and keeps the identity avatar separate from the logo', () => {
+    const props = { brandColor: '#123456', showBranding: true, launcherPosition: 'bottom_right', launcherIcon: 'chat_bubble', welcomeMessage: '', aiFirst: true };
+    act(() => root.render(<WidgetPreview {...props} aiDisplayName="Demo assistant" avatarUrl="https://example.com/avatar.png" logoUrl="https://example.com/logo.png" />));
+    expect(mountWidget.mock.lastCall![1].config).toMatchObject({
+      aiDisplayName: 'Demo assistant',
+      branding: { avatarUrl: 'https://example.com/avatar.png', logoUrl: 'https://example.com/logo.png' },
+    });
+    act(() => root.render(<WidgetPreview {...props} aiDisplayName="Updated assistant" avatarUrl="https://example.com/updated.png" />));
+    expect(mountWidget.mock.lastCall![1].config).toMatchObject({
+      aiDisplayName: 'Updated assistant', branding: { avatarUrl: 'https://example.com/updated.png' },
+    });
+  });
 });

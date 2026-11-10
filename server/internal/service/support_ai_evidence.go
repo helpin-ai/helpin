@@ -33,9 +33,9 @@ var (
 	groupedNumberPattern = regexp.MustCompile(`^\d{1,3}(?:,\d{3})+(?:\.\d+)?$`)
 	numericTokenPattern  = regexp.MustCompile(`\d+(?:[,.]\d+)*`)
 
-	dateValuePattern      = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
-	rangeValuePattern     = regexp.MustCompile(`(?i)([+−-]?\b\d+(?:\.\d+)?)\s*(?:[-–]|to)\s*([+−-]?\d+(?:\.\d+)?)\b`)
-	qualifiedValuePattern = regexp.MustCompile(`(?i)\b(up to|at most|at least|more than|less than|over|under|exactly)\s+((?:[$€£]\s*)?[+−-]?\d+(?:[,.]\d+)*(?:\s*(?:thousand|million|billion|k)\b)?(?:\s*%|\s+percent\b|\s*(?:percentage points?|users?|seats?|events?|sessions?|months?|years?|days?|hours?|minutes?|seconds?|requests?|credits?|gb|mb)\b)?)`)
+	dateValuePattern        = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
+	rangeValuePattern       = regexp.MustCompile(`(?i)([+−-]?\b\d+(?:\.\d+)?)\s*(?:[-–]|to)\s*([+−-]?\d+(?:\.\d+)?)\b`)
+	numericQualifierPattern = regexp.MustCompile(`(?i)\b(up\s+to|at\s+most|at\s+least|more\s+than|less\s+than|over|under|exactly)\s+`)
 
 	currencyValuePattern      = regexp.MustCompile(`(?i)(?:[+−-]?[$€£]\s?[+−-]?\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?|\b(?:usd|eur|gbp)\s?[+−-]?\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?|[+−-]?\b\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b)`)
 	monetaryScalePattern      = regexp.MustCompile(`(?i)\b(thousand|million|billion|k)\b`)
@@ -99,19 +99,6 @@ func validateSupportAnswer(
 					validation.Outcome = supportValidationNumeric
 					validation.Reasons = append(validation.Reasons, "unsupported_numeric:"+value)
 					validation.UnsupportedClaims = append(validation.UnsupportedClaims, claim)
-				}
-			}
-			for value := range claimValues {
-				if strings.HasPrefix(value, "qualified:") {
-					quantity := value[strings.LastIndex(value, "|")+1:]
-					_, mentioned := claimNumbers[quantity]
-					if mentioned {
-						if _, ok := claimNumbers[value]; !ok {
-							validation.Outcome = supportValidationNumeric
-							validation.Reasons = append(validation.Reasons, "numeric_qualifier_mismatch:"+value)
-							validation.UnsupportedClaims = append(validation.UnsupportedClaims, claim)
-						}
-					}
 				}
 			}
 			validation.SupportedClaimCount++
@@ -179,17 +166,12 @@ func normalizedNumericValues(text string) map[string]struct{} {
 		match := rangeValuePattern.FindStringSubmatch(value)
 		return match[1] + " to " + match[2]
 	})
-	for _, match := range qualifiedValuePattern.FindAllStringSubmatch(text, -1) {
-		qualifier := strings.ToLower(strings.Join(strings.Fields(match[1]), " "))
-		for quantity := range normalizedNumericValues(match[2]) {
-			values["qualified:"+qualifier+"|"+quantity] = struct{}{}
-		}
-	}
 	for _, value := range technicalValuePattern.FindAllString(text, -1) {
 		values["identifier:"+strings.Replace(technicalSeparatorPattern.ReplaceAllString(strings.ToLower(value), ""), "x.", "x", 1)] = struct{}{}
 	}
 	text = technicalValuePattern.ReplaceAllString(text, "")
 
+	qualifiers := numericQualifiers(text)
 	for _, span := range currencyValuePattern.FindAllStringIndex(text, -1) {
 		value := strings.ToLower(text[span[0]:span[1]])
 		currency := "usd"
@@ -213,6 +195,7 @@ func normalizedNumericValues(text string) map[string]struct{} {
 			number += " " + scale
 		}
 		normalized := currency + ":" + number
+		normalized = qualifyNumericValue(qualifiers[span[0]], normalized)
 		var billingUnits []string
 		remaining := text[span[1]:]
 		for match := adjacentBillingPattern.FindStringSubmatch(remaining); match != nil; match = adjacentBillingPattern.FindStringSubmatch(remaining) {
@@ -234,14 +217,33 @@ func normalizedNumericValues(text string) map[string]struct{} {
 			values[normalized] = struct{}{}
 		}
 	}
-	text = currencyValuePattern.ReplaceAllString(text, "")
-	for _, value := range numericValuePattern.FindAllString(strings.ToLower(text), -1) {
-		normalized := normalizeNumericToken(value)
+	// Preserve offsets so a removed price cannot move its qualifier onto the next quantity.
+	text = currencyValuePattern.ReplaceAllStringFunc(text, func(value string) string {
+		return strings.Repeat(" ", len(value))
+	})
+	for _, span := range numericValuePattern.FindAllStringIndex(text, -1) {
+		normalized := normalizeNumericToken(text[span[0]:span[1]])
 		if normalized != "" {
-			values[normalized] = struct{}{}
+			values[qualifyNumericValue(qualifiers[span[0]], normalized)] = struct{}{}
 		}
 	}
 	return values
+}
+
+// Qualifiers belong to individual occurrences, not every matching number in an article.
+func qualifyNumericValue(qualifier, value string) string {
+	if qualifier != "" {
+		return "qualified:" + qualifier + "|" + value
+	}
+	return value
+}
+
+func numericQualifiers(text string) map[int]string {
+	qualifiers := map[int]string{}
+	for _, match := range numericQualifierPattern.FindAllStringSubmatchIndex(text, -1) {
+		qualifiers[match[1]] = strings.ToLower(strings.Join(strings.Fields(text[match[2]:match[3]]), " "))
+	}
+	return qualifiers
 }
 
 // Normalize only unambiguous English numeric formatting; comma decimals stay distinct.

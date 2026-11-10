@@ -287,7 +287,7 @@ export function buildRootHead(loaderData?: RootRouteData) {
       : undefined,
     meta: [
       ...(config?.brand_color ? [{ name: 'theme-color', content: config.brand_color }] : []),
-      ...(!config || config.demo_mode || config.search_indexing_enabled === false ? [{ name: 'robots', content: 'noindex' }] : []),
+      ...(config?.demo_mode === true || config?.search_indexing_enabled === false ? [{ name: 'robots', content: 'noindex' }] : []),
     ],
   }
 }
