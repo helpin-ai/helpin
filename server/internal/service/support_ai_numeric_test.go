@@ -12,6 +12,9 @@ func TestNumericGroundingMatrix(t *testing.T) {
 		pass                   bool
 	}{
 		{"currency spacing", "Costs $ 49.", "Costs $49.", true},
+		{"percent word", "Saves 20%.", "Saves 20 percent.", true},
+		{"percent word reverse", "Saves 20 percent.", "Saves 20%.", true},
+		{"percentage points differ", "Saves 20 percentage points.", "Saves 20 percent.", false},
 		{"percent spacing", "Saves 20 %.", "Saves 20%.", true},
 		{"decimal ambiguity", "Costs 1,5 euros.", "Costs 15 euros.", false},
 		{"upper bound removed", "Includes up to 20 users.", "Includes 20 users.", false},
@@ -49,6 +52,12 @@ func TestNumericGroundingMatrix(t *testing.T) {
 		{"range order matters", "Includes 10-20 users.", "Includes 20-10 users.", false},
 		{"list numbering", "Enable SSO.", "1. Enable SSO.", true},
 		{"percent versus count", "Includes 20 users.", "Saves 20%.", false},
+		{"billing slash to words", "Costs $49/month.", "Costs $49 per month.", true},
+		{"billing words to slash", "Costs $49 per month.", "Costs $49/month.", true},
+		{"billing short aliases", "Costs $49/mo.", "Costs $49 each month.", true},
+		{"billing slash spacing", "Costs $49 / month.", "Costs $49 per month.", true},
+		{"billing seat period reversed", "Costs $49 per user per month.", "Costs $49 per user per year.", false},
+		{"billing axes reordered", "Costs $49 per user per month.", "Costs $49/month/user.", true},
 		{"monthly yearly", "Costs $49 per month.", "Costs $49 per year.", false},
 		{"negative quantity", "Changes by -5 users.", "Changes by 5 users.", false},
 		{"invented negative", "Changes by 5 users.", "Changes by -5 users.", false},

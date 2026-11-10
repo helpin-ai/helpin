@@ -35,14 +35,13 @@ var (
 
 	dateValuePattern      = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
 	rangeValuePattern     = regexp.MustCompile(`(?i)([+−-]?\b\d+(?:\.\d+)?)\s*(?:[-–]|to)\s*([+−-]?\d+(?:\.\d+)?)\b`)
-	qualifiedValuePattern = regexp.MustCompile(`(?i)\b(up to|at most|at least|more than|less than|over|under|exactly)\s+((?:[$€£]\s*)?[+−-]?\d+(?:[,.]\d+)*(?:\s*(?:thousand|million|billion|k)\b)?(?:\s*%|\s*(?:percentage points?|users?|seats?|events?|sessions?|months?|years?|days?|hours?|minutes?|seconds?|requests?|credits?|gb|mb)\b)?)`)
+	qualifiedValuePattern = regexp.MustCompile(`(?i)\b(up to|at most|at least|more than|less than|over|under|exactly)\s+((?:[$€£]\s*)?[+−-]?\d+(?:[,.]\d+)*(?:\s*(?:thousand|million|billion|k)\b)?(?:\s*%|\s+percent\b|\s*(?:percentage points?|users?|seats?|events?|sessions?|months?|years?|days?|hours?|minutes?|seconds?|requests?|credits?|gb|mb)\b)?)`)
 
 	currencyValuePattern      = regexp.MustCompile(`(?i)(?:[+−-]?[$€£]\s?[+−-]?\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?|\b(?:usd|eur|gbp)\s?[+−-]?\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?|[+−-]?\b\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b)`)
 	monetaryScalePattern      = regexp.MustCompile(`(?i)\b(thousand|million|billion|k)\b`)
-	adjacentBillingPattern    = regexp.MustCompile(`(?i)^\s*(?:/|per\s+|a\s+|each\s+)(months?|mo|years?|yr|days?|users?|seats?)\b`)
-	numericValuePattern       = regexp.MustCompile(`(?i)[+−-]?\b\d+(?:[,.]\d+)*(?:\s*(?:thousand|million|billion|k)\b)?(?:\s*%|\s*(?:percentage points?|users?|seats?|events?|sessions?|months?|years?|days?|hours?|minutes?|seconds?|requests?|credits?|gb|mb)\b)?`)
+	adjacentBillingPattern    = regexp.MustCompile(`(?i)^\s*(?:/\s*|per\s+|a\s+|each\s+)(months?|mo|years?|yr|days?|users?|seats?)\b`)
+	numericValuePattern       = regexp.MustCompile(`(?i)[+−-]?\b\d+(?:[,.]\d+)*(?:\s*(?:thousand|million|billion|k)\b)?(?:\s*%|\s+percent\b|\s*(?:percentage points?|users?|seats?|events?|sessions?|months?|years?|days?|hours?|minutes?|seconds?|requests?|credits?|gb|mb)\b)?`)
 	technicalValuePattern     = regexp.MustCompile(`(?i)\b(?:saml|tls|http|oauth|x)[ .-]*\d+(?:\.\d+)*\b`)
-	billingPeriodPattern      = regexp.MustCompile(`(?i)\b(?:per|a|each)\s+(month|year|day|user|seat)\b`)
 	technicalSeparatorPattern = regexp.MustCompile(`[ -]+`)
 	orderedListPattern        = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s+)?(?:\*\*|__)?\d+[.)](?:\*\*|__)?\s+`)
 	freePlanClaimPattern      = regexp.MustCompile(`(?i)\bfree\s+(?:plan|tier)\b|\bfree\s+forever\b`)
@@ -190,11 +189,7 @@ func normalizedNumericValues(text string) map[string]struct{} {
 		values["identifier:"+strings.Replace(technicalSeparatorPattern.ReplaceAllString(strings.ToLower(value), ""), "x.", "x", 1)] = struct{}{}
 	}
 	text = technicalValuePattern.ReplaceAllString(text, "")
-	if currencyValuePattern.MatchString(text) {
-		for _, match := range billingPeriodPattern.FindAllStringSubmatch(text, -1) {
-			values["billing:"+strings.ToLower(match[1])] = struct{}{}
-		}
-	}
+
 	for _, span := range currencyValuePattern.FindAllStringIndex(text, -1) {
 		value := strings.ToLower(text[span[0]:span[1]])
 		currency := "usd"
@@ -218,15 +213,22 @@ func normalizedNumericValues(text string) map[string]struct{} {
 			number += " " + scale
 		}
 		normalized := currency + ":" + number
-		if match := adjacentBillingPattern.FindStringSubmatch(text[span[1]:]); match != nil {
-			period := strings.TrimSuffix(strings.ToLower(match[1]), "s")
-			if period == "mo" {
-				period = "month"
+		var billingUnits []string
+		remaining := text[span[1]:]
+		for match := adjacentBillingPattern.FindStringSubmatch(remaining); match != nil; match = adjacentBillingPattern.FindStringSubmatch(remaining) {
+			unit := strings.TrimSuffix(strings.ToLower(match[1]), "s")
+			if unit == "mo" {
+				unit = "month"
 			}
-			if period == "yr" {
-				period = "year"
+			if unit == "yr" {
+				unit = "year"
 			}
-			values[normalized+"/"+period] = struct{}{}
+			billingUnits = append(billingUnits, unit)
+			remaining = remaining[len(match[0]):]
+		}
+		if len(billingUnits) > 0 {
+			sort.Strings(billingUnits)
+			values[normalized+"/"+strings.Join(billingUnits, "/")] = struct{}{}
 		}
 		if normalized != "" {
 			values[normalized] = struct{}{}
@@ -252,6 +254,9 @@ func normalizeNumericToken(value string) string {
 		return number
 	})
 	value = strings.ReplaceAll(strings.Join(strings.Fields(value), " "), "−", "-")
+	if strings.HasSuffix(value, " percent") {
+		value = strings.TrimSuffix(value, " percent") + "%"
+	}
 	value = strings.ReplaceAll(value, " %", "%")
 	for _, symbol := range []string{"$", "€", "£"} {
 		value = strings.ReplaceAll(value, symbol+" ", symbol)
