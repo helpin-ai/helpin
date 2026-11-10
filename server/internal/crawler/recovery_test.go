@@ -98,3 +98,31 @@ func TestCrawlRedirectToVisitedPageDoesNotFailRefresh(t *testing.T) {
 		t.Fatalf("canonical duplicate must be deduplicated, not fail refresh: n=%d err=%v", n, err)
 	}
 }
+
+func TestCrawlOutOfScopeRedirectDoesNotFailRefresh(t *testing.T) {
+	for _, target := range []string{"https://outside.example.test/", "/private"} {
+		t.Run(target, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/robots.txt":
+					return
+				case "/redirect":
+					http.Redirect(w, r, target, http.StatusFound)
+					return
+				case "/private":
+					t.Error("fetched excluded redirect destination")
+					return
+				default:
+					w.Header().Set("Content-Type", "text/html")
+					fmt.Fprint(w, `<html><body><p>Documentation home.</p><a href="/redirect">More information</a></body></html>`)
+				}
+			}))
+			defer srv.Close()
+			source := model.SupportContentSource{StartURL: srv.URL, CrawlSource: "links", CrawlDepth: 2, ExcludePatterns: model.DocsStringArray{"/private"}}
+			n, err := crawlWithColly(context.Background(), source, nil, newTestLogger(t), func(CrawlRecord) error { return nil })
+			if err != nil || n != 1 {
+				t.Fatalf("out-of-scope redirect must be skipped: n=%d err=%v", n, err)
+			}
+		})
+	}
+}
