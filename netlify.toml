@@ -1,4 +1,5 @@
 [build]
+  # Keep paths independent of each site's base-directory setting.
   base = "."
   publish = "frontend/dist"
   edge_functions = "frontend/netlify/edge-functions"
