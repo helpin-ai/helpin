@@ -28,13 +28,6 @@ const docsImportSourceIntercomPublic = "intercom_public"
 // that the person starting it can fix. Its message is safe to show.
 var ErrPublicImportInvalid = errors.New("invalid help center import")
 
-// SetPublicIntercomClient replaces the client that reads public help
-// centers. Tests point it at a local server.
-func (s *DocsImportService) SetPublicIntercomClient(client *intercom.PublicClient) *DocsImportService {
-	s.publicIntercom = client
-	return s
-}
-
 func (s *DocsImportService) publicIntercomClient() *intercom.PublicClient {
 	if s.publicIntercom == nil {
 		s.publicIntercom = intercom.NewPublicClient()
@@ -127,9 +120,9 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 		return "", fmt.Errorf("%w: choose a space or name a new one", ErrPublicImportInvalid)
 	}
 	// One request confirms the address before anything is created.
-	site, err := s.publicIntercomClient().LoadTheme(ctx, req.URL)
+	homeURL, _, err := s.CheckPublicHelpCenter(ctx, req.URL)
 	if err != nil {
-		return "", publicImportError(err)
+		return "", err
 	}
 	if newSpaceName == "" {
 		if err := s.checkIntercomTargetSpace(ctx, workspaceID, targetSpaceID); err != nil {
@@ -155,7 +148,7 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 		}
 		spaceID = space.ID
 	}
-	stored := model.DocsImportStartRequest{SourceURL: site.BaseURL, TargetSpaceID: &spaceID, ImportStatus: req.ImportStatus}
+	stored := model.DocsImportStartRequest{SourceURL: homeURL, TargetSpaceID: &spaceID, ImportStatus: req.ImportStatus}
 	payload, err := json.Marshal(stored)
 	if err != nil {
 		return "", fmt.Errorf("marshal import payload: %w", err)
@@ -164,7 +157,7 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 	if err != nil {
 		return "", fmt.Errorf("encrypt import payload: %w", err)
 	}
-	config, err := json.Marshal(docsImportJobConfig{ImportStatus: normalizeDocsImportStatus(req.ImportStatus), SourceURL: site.BaseURL})
+	config, err := json.Marshal(docsImportJobConfig{ImportStatus: normalizeDocsImportStatus(req.ImportStatus), SourceURL: homeURL})
 	if err != nil {
 		return "", fmt.Errorf("marshal import config: %w", err)
 	}
@@ -188,7 +181,7 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 		}
 	}
 	s.logger.InfoContext(ctx, "public help center import started",
-		"job_id", job.ID, "workspace_id", workspaceID, "space_id", spaceID, "source_host", hostOfURL(site.BaseURL))
+		"job_id", job.ID, "workspace_id", workspaceID, "space_id", spaceID, "source_host", hostOfURL(homeURL))
 	return job.ID, nil
 }
 

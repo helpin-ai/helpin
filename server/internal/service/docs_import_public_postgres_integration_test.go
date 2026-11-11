@@ -163,7 +163,7 @@ func TestPublicHelpCenterImportPostgres(t *testing.T) {
 	defer func() { helpscout.ImageHTTPClient = originalImageClient }()
 	uploader := &countingImageUploader{}
 	svc := newIntercomDocsImportService(db, "")
-	svc.SetPublicIntercomClient(intercom.NewPublicClientWithHTTP(plain))
+	svc.publicIntercom = intercom.NewPublicClientWithHTTP(plain)
 	svc.imageUploader = uploader
 
 	preview, err := svc.PreviewPublicHelpCenter(ctx, model.PublicHelpCenterImportRequest{URL: site.URL})
@@ -312,7 +312,7 @@ func TestPublicHelpCenterImportPartialFailurePostgres(t *testing.T) {
 	defer site.Close()
 	plain := &http.Client{Timeout: 10 * time.Second}
 	svc := newIntercomDocsImportService(db, "")
-	svc.SetPublicIntercomClient(intercom.NewPublicClientWithHTTP(plain))
+	svc.publicIntercom = intercom.NewPublicClientWithHTTP(plain)
 
 	broken := site.Articles["13"]
 	broken.Status = http.StatusForbidden
@@ -369,7 +369,7 @@ func TestPublicHelpCenterImportIntoUsedSpacePostgres(t *testing.T) {
 	site := seedPublicImportSite()
 	defer site.Close()
 	svc := newIntercomDocsImportService(db, "")
-	svc.SetPublicIntercomClient(intercom.NewPublicClientWithHTTP(&http.Client{Timeout: 10 * time.Second}))
+	svc.publicIntercom = intercom.NewPublicClientWithHTTP(&http.Client{Timeout: 10 * time.Second})
 
 	space, err := svc.spaceSvc.Create(ctx, workspaceID, model.CreateDocsSpaceRequest{Name: "Help", Visibility: model.SpaceVisibilityWorkspaceWide, Type: model.SpaceTypeExternalCapable}, userID)
 	if err != nil {
@@ -442,7 +442,7 @@ func TestPublicHelpCenterImportUnusableSourcePostgres(t *testing.T) {
 	defer site.Close()
 	site.NotHelpCenter = true
 	svc := newIntercomDocsImportService(db, "")
-	svc.SetPublicIntercomClient(intercom.NewPublicClientWithHTTP(&http.Client{Timeout: 10 * time.Second}))
+	svc.publicIntercom = intercom.NewPublicClientWithHTTP(&http.Client{Timeout: 10 * time.Second})
 
 	if _, err := svc.PreviewPublicHelpCenter(ctx, model.PublicHelpCenterImportRequest{URL: site.URL}); err == nil || !strings.Contains(err.Error(), "not an Intercom help center") {
 		t.Fatalf("preview error = %v", err)

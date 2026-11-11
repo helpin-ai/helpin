@@ -44,14 +44,14 @@ export interface ImportSummary {
 }
 
 /** A link to the source help center that matched nothing imported. */
-export interface ImportUnresolvedLink {
+interface ImportUnresolvedLink {
   document_id: string;
   article_title: string;
   url: string;
 }
 
 /** An image that could not be copied; the article still loads it from the source. */
-export interface ImportFailedImage {
+interface ImportFailedImage {
   document_id?: string;
   article_title: string;
   url: string;

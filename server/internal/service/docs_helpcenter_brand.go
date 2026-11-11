@@ -131,12 +131,6 @@ func NewHelpcenterBrandImporter() *HelpcenterBrandImporter {
 	return &HelpcenterBrandImporter{intercom: intercom.NewPublicClient(), pages: brandPageHTTPClient}
 }
 
-// NewHelpcenterBrandImporterWithClients creates an importer on caller-supplied
-// clients. Tests use it to reach a local server.
-func NewHelpcenterBrandImporterWithClients(publicIntercom *intercom.PublicClient, pages *http.Client) *HelpcenterBrandImporter {
-	return &HelpcenterBrandImporter{intercom: publicIntercom, pages: pages}
-}
-
 // SetBrandImporter replaces the importer that reads public sites. Tests
 // point it at a local server.
 func (s *DocsHelpcenterService) SetBrandImporter(importer *HelpcenterBrandImporter) {

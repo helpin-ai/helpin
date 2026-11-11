@@ -165,7 +165,7 @@ func TestProposeBrandFromIntercomHelpCenter(t *testing.T) {
 	site.Name, site.Color, site.Headline = "Acme Help Center", "0B17BF", "How can we help?"
 	site.Logo, site.Favicon = site.URL+"/assets/logo.png", site.URL+"/assets/favicon"
 	plain := &http.Client{Timeout: 5 * time.Second}
-	importer := NewHelpcenterBrandImporterWithClients(intercom.NewPublicClientWithHTTP(plain), plain)
+	importer := &HelpcenterBrandImporter{intercom: intercom.NewPublicClientWithHTTP(plain), pages: plain}
 
 	proposal, err := importer.Propose(context.Background(), site.URL)
 	if err != nil {
@@ -198,7 +198,7 @@ func TestProposeBrandFromWebsite(t *testing.T) {
 	}))
 	defer server.Close()
 	plain := &http.Client{Timeout: 5 * time.Second}
-	importer := NewHelpcenterBrandImporterWithClients(intercom.NewPublicClientWithHTTP(plain), plain)
+	importer := &HelpcenterBrandImporter{intercom: intercom.NewPublicClientWithHTTP(plain), pages: plain}
 
 	proposal, err := importer.Propose(context.Background(), server.URL)
 	if err != nil {
@@ -213,7 +213,7 @@ func TestProposeBrandFromWebsite(t *testing.T) {
 
 func TestProposeBrandErrors(t *testing.T) {
 	plain := &http.Client{Timeout: 5 * time.Second}
-	importer := NewHelpcenterBrandImporterWithClients(intercom.NewPublicClientWithHTTP(plain), plain)
+	importer := &HelpcenterBrandImporter{intercom: intercom.NewPublicClientWithHTTP(plain), pages: plain}
 	for _, address := range []string{"", "ftp://example.com", "https://user:pw@example.com"} {
 		if _, err := importer.Propose(context.Background(), address); !errors.Is(err, ErrHelpcenterBrandInvalid) {
 			t.Errorf("Propose(%q) error = %v, want ErrHelpcenterBrandInvalid", address, err)
