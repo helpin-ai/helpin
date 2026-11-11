@@ -4,7 +4,7 @@ import { flushSupportDrafts } from '@/stores/supportInboxStore';
 import { clearSupportRecoveryDraft, loadSupportRecoveryDraft, saveSupportRecoveryDraft } from './supportDraftRecovery';
 import { createSupportComposerExtensions, normalizeSupportLinkInput } from './supportComposerExtensions';
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
-import { onSupportShortcut } from '@/lib/supportShortcuts';
+import { onSupportShortcut, supportShortcutLabel } from '@/lib/supportShortcuts';
 import { usePendingMacroStore } from '@/stores/supportPendingMacroStore';
 import { useOutgoingSupportTranslation } from '@/hooks/queries/useOutgoingSupportTranslation';
 import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
@@ -2178,6 +2178,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         </div> : <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
+          title={`Reply (${supportShortcutLabel('reply')})`}
           onClick={() => {
             setReplyMode('reply');
             setShortcutsPanelOpen(false);
@@ -2194,6 +2195,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         </button>
         <button
           type="button"
+          title={`Internal note (${supportShortcutLabel('note')})`}
           onClick={() => {
             setReplyMode('note');
             setShortcutsPanelOpen(false);

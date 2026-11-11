@@ -20,3 +20,10 @@ export function isEditableShortcutTarget(target: EventTarget | null): boolean {
     ),
   );
 }
+
+/** Whether shortcuts use the Command key (Apple devices) rather than Ctrl. */
+export function isMacPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform) || /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+}

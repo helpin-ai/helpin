@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
+import { memo, useEffect, useRef, useState, type JSX, type ReactNode, type SVGProps } from 'react';
 import { ConversationPriorityPicker } from './ConversationPriorityPicker';
 import { SupportSLABadge } from './SupportSLABadge';
 import { useUpdateConversationPriority } from '@/hooks/queries/useSupportOperations';
@@ -31,6 +31,7 @@ import { SidebarCompanyDetails } from './SidebarCompanyDetails';
 import { SupportManageTagsButton, SupportTagPicker } from './SupportTagPicker';
 import { CustomerProfileDrawer } from './CustomerProfileDrawer';
 import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useUpdateConversationCustomerName, useUpdateConversationEmailRecipients } from '@/hooks/queries/useSupport';
+import { onSupportShortcut, supportShortcutLabel } from '@/lib/supportShortcuts';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -320,6 +321,8 @@ export function ConversationDetailSidebar({
   const [ccAdding, setCcAdding] = useState(false);
   const [ccDraft, setCcDraft] = useState('');
   const [ccError, setCcError] = useState('');
+  const [assigneeMenuOpen, setAssigneeMenuOpen] = useState(false);
+  const assigneeRowRef = useRef<HTMLDivElement>(null);
   const { data: conversation, isLoading: conversationLoading } = useConversation(workspaceId, conversationId);
   const { data: visitorContext } = useVisitorContext(workspaceId, conversationId);
   const {
@@ -342,7 +345,17 @@ export function ConversationDetailSidebar({
     setCcAdding(false);
     setCcDraft('');
     setCcError('');
+    setAssigneeMenuOpen(false);
   }, [conversationId]);
+
+  // A opens the assignee menu while the details are visible.
+  const assigneeLocked = !conversation || !!conversation.merged_into_id || assigneesLoading || assigneesError;
+  useEffect(() => onSupportShortcut((detail) => {
+    if (detail.action !== 'assign' || detail.conversationId !== conversationId) return;
+    if (!assigneeRowRef.current?.offsetParent) return;
+    detail.handled = true;
+    if (!assigneeLocked) setAssigneeMenuOpen(true);
+  }), [assigneeLocked, conversationId]);
 
   if (detailSidebarCollapsed && !isMobileSheet) {
     return (
@@ -604,9 +617,12 @@ export function ConversationDetailSidebar({
             )}
           </div>
 
-          <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border/50 py-1.5 pl-4 pr-[11px]">
+          <div ref={assigneeRowRef} className="flex min-h-11 items-center justify-between gap-3 border-b border-border/50 py-1.5 pl-4 pr-[11px]">
             <span className="text-sm font-semibold text-foreground">Assignee</span>
             <MemberPickerPopover
+              open={assigneeMenuOpen}
+              onOpenChange={setAssigneeMenuOpen}
+              triggerTitle={`Assign (${supportShortcutLabel('assign')})`}
               value={conversation.assigned_user_id ?? ''}
               members={assignableUsers}
               getDisabledReason={(member) => member.assignment_disabled_reason}
