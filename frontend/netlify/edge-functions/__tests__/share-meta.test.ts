@@ -15,6 +15,7 @@ const defaultHtml = `<!doctype html><html><head>
 describe('app link edge metadata', () => {
   it('uses public APIs only for known app hosts', () => {
     expect(resolvePublicApiBase('app.helpin.ai')).toBe('https://api.helpin.ai/api')
+    expect(resolvePublicApiBase('stage.helpin.ai')).toBe('https://api.stage.helpin.ai/api')
     expect(resolvePublicApiBase('app.stage.helpin.ai')).toBe('https://api.stage.helpin.ai/api')
     expect(resolvePublicApiBase('localhost')).toBe('http://localhost:8080/api')
     expect(resolvePublicApiBase('deploy-preview-42--helpin.netlify.app')).toBeNull()

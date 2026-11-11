@@ -1,3 +1,3 @@
 [build]
-  publish = "dist"
-  edge_functions = "netlify/edge-functions"
+  publish = "frontend/dist"
+  edge_functions = "frontend/netlify/edge-functions"
