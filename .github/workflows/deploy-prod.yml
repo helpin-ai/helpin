@@ -76,7 +76,7 @@ jobs:
           if echo "$CHANGED" | grep -qE '^frontend/(src/|portal\.html$|vite\.portal\.config\.ts$|package\.json$)|^packages/(shared|support-core)/'; then
             HELPCENTER=true
           fi
-          if echo "$CHANGED" | grep -qE '^(frontend/|packages/)'; then
+          if echo "$CHANGED" | grep -qE '^(frontend/|packages/|netlify\.toml$)'; then
             FRONTEND=true
           fi
           if echo "$CHANGED" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|\.node-version)$'; then
@@ -276,7 +276,7 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_PROD }}
-        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --site "$NETLIFY_SITE_ID" --filter frontend --dir frontend/dist --no-build --prod
+        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --config netlify.toml --site "$NETLIFY_SITE_ID" --filter frontend --dir frontend/dist --no-build --prod
 
       - name: Check deployed link previews
         working-directory: build-prod-netlify
