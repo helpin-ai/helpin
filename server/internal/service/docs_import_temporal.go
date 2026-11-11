@@ -70,6 +70,10 @@ func (s *DocsImportService) executeStoredHelpScoutImport(ctx context.Context, im
 		return nil
 	}
 	heartbeat := func(processed int) { activity.RecordHeartbeat(ctx, processed) }
+	if job.Source == docsImportSourceIntercomPublic {
+		// A public import stores no secret, so its payload is kept for retries.
+		return s.runPublicIntercomImport(ctx, job.ID, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat)
+	}
 	if job.Source == docsImportSourceIntercom {
 		if err := s.runIntercomImport(ctx, job.ID, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat); err != nil {
 			return err

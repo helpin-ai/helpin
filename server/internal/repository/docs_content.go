@@ -168,6 +168,34 @@ func (r *DocsContentRepository) ListImportSourceObjectIDs(
 	return sourceIDs, nil
 }
 
+// ImportedSourceDocument links a source object to the document it became.
+type ImportedSourceDocument struct {
+	SourceObjectID string
+	DocumentID     string
+	// CollectionID is the document's collection, or "" when it has none.
+	CollectionID string
+}
+
+// ListImportSourceDocuments returns, for each source object imported into a
+// space from one source system, the live document that holds it.
+func (r *DocsContentRepository) ListImportSourceDocuments(
+	ctx context.Context,
+	spaceID string,
+	sourceSystem string,
+) ([]ImportedSourceDocument, error) {
+	var rows []ImportedSourceDocument
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsContent{}).
+		Select("docs_contents.import_source_object_id AS source_object_id, docs_contents.document_id AS document_id, COALESCE(CAST(dd.collection_id AS TEXT), '') AS collection_id").
+		Joins("JOIN docs_documents dd ON dd.id = docs_contents.document_id").
+		Where("dd.space_id = ? AND dd.deleted_at IS NULL AND docs_contents.import_source_system = ?", spaceID, sourceSystem).
+		Where("docs_contents.import_source_object_id IS NOT NULL").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list imported source documents: %w", err)
+	}
+	return rows, nil
+}
+
 // UpdateImportProvenance sets the import source fields on a content record.
 func (r *DocsContentRepository) UpdateImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) error {
 	if err := r.db.WithContext(ctx).Model(&model.DocsContent{}).Where("id = ?", contentID).Updates(map[string]interface{}{

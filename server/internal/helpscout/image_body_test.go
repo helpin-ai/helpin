@@ -34,6 +34,11 @@ func TestImageBody(t *testing.T) {
 		{name: "generic type sniffed", contentType: "application/octet-stream", body: _pngHeader, want: "image/png"},
 		{name: "missing type from name", body: []byte("<svg/>"), filename: "logo.svg", want: "image/svg+xml"},
 		{name: "html page", contentType: "text/html", body: []byte("<html>"), wantErr: ErrNotImage},
+		{name: "image mislabeled as text", contentType: "text/plain; charset=utf-8", body: _pngHeader, want: "image/png"},
+		{name: "image mislabeled as html", contentType: "text/html", body: _pngHeader, want: "image/png"},
+		{name: "image mislabeled as json", contentType: "application/json", body: []byte("GIF89a\x01\x00\x01\x00"), want: "image/gif"},
+		{name: "text with an image file name", contentType: "text/plain", body: []byte("not an image"), filename: "banner.png", wantErr: ErrNotImage},
+		{name: "html error page with an image file name", contentType: "text/html", body: []byte("<html>denied</html>"), filename: "banner.png", wantErr: ErrNotImage},
 		{name: "generic non-image", contentType: "application/octet-stream", body: []byte("plain"), filename: "notes.txt", wantErr: ErrNotImage},
 	}
 	for _, tt := range tests {

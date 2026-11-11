@@ -156,7 +156,9 @@ func (s *DocsImportService) StartIntercom(ctx context.Context, req model.Interco
 	if err != nil {
 		return "", fmt.Errorf("encrypt import payload: %w", err)
 	}
-	config, err := json.Marshal(docsImportJobConfig{ImportStatus: normalizeDocsImportStatus(req.ImportStatus)})
+	config, err := json.Marshal(docsImportJobConfig{
+		ImportStatus: normalizeDocsImportStatus(req.ImportStatus), IntercomRegion: strings.ToLower(strings.TrimSpace(req.Region)),
+	})
 	if err != nil {
 		return "", fmt.Errorf("marshal import config: %w", err)
 	}

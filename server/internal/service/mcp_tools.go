@@ -221,6 +221,9 @@ func (s *MCPService) executeAuthorizedMCPTool(
 		}
 		return &MCPToolResult{Summary: tool.Title + " completed.", Data: data}, nil
 	}
+	if result, handled, err := s.executeMCPToolExtension(ctx, principal, tool.Name, arguments); handled {
+		return result, err
+	}
 	return s.executeSpecialMCPTool(ctx, principal, actor, tool.Name, arguments)
 }
 

@@ -240,9 +240,9 @@ var ErrNotImage = errors.New("remote URL is not an image")
 var ErrImageTooLarge = errors.New("the image is larger than 25 MB")
 
 // ImageBody checks that resp carries an image and returns its body, which
-// fails once it passes MaxImageBytes, with the image's content type. A
-// generic or missing type is resolved from the content, then from the file
-// name.
+// fails once it passes MaxImageBytes, with the image's content type. Any
+// non-image type is resolved from the content; only a generic or missing type
+// may then fall back to the file name.
 func ImageBody(resp *http.Response, filename string) (io.Reader, string, error) {
 	if resp.ContentLength > MaxImageBytes {
 		return nil, "", ErrImageTooLarge
@@ -251,16 +251,18 @@ func ImageBody(resp *http.Response, filename string) (io.Reader, string, error) 
 	if idx := strings.Index(contentType, ";"); idx >= 0 {
 		contentType = strings.TrimSpace(contentType[:idx])
 	}
-	// Some export CDNs label real images as downloads; require a byte signature for those.
+	// Help center CDNs mislabel real images (as downloads, as text/plain, even
+	// as text/html), so a non-image label is settled by the byte signature and
+	// never trusted on its own.
 	reader := bufio.NewReaderSize(resp.Body, 512)
 	if !strings.HasPrefix(contentType, "image/") {
-		if contentType != "" && contentType != "application/octet-stream" && contentType != "binary/octet-stream" && contentType != "application/force-download" {
-			return nil, "", ErrNotImage
-		}
 		head, _ := reader.Peek(512)
+		generic := contentType == "" || contentType == "application/octet-stream" || contentType == "binary/octet-stream"
 		if sniffed := http.DetectContentType(head); strings.HasPrefix(sniffed, "image/") {
 			contentType = sniffed
-		} else if byName := mime.TypeByExtension(strings.ToLower(path.Ext(filename))); contentType != "application/force-download" && strings.HasPrefix(byName, "image/") {
+		} else if byName := mime.TypeByExtension(strings.ToLower(path.Ext(filename))); generic && strings.HasPrefix(byName, "image/") {
+			// Only an unlabeled body may fall back to its file name; a body the
+			// server called text or a forced download must prove itself.
 			contentType = byName
 		} else {
 			return nil, "", ErrNotImage
