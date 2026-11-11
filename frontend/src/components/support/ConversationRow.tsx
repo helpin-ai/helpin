@@ -403,22 +403,23 @@ export const ConversationRow = memo(function ConversationRow({
       data-transitioning-out={isTransitioningOut ? 'true' : undefined}
       data-conversation-id={conversation.id}
       data-bulk-selected={isBulkSelected ? 'true' : undefined}
-      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${isBulkSelected ? 'hover:bg-primary/8 dark:hover:bg-primary/10' : 'hover:bg-muted/75 dark:hover:bg-muted/40'} ${
+      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${isBulkSelected ? 'hover:bg-primary/8 dark:hover:bg-primary/10' : isSelected ? '' : 'hover:bg-quiet-row-hover dark:hover:bg-muted/40'} ${
         isTransitioningOut
           ? 'pointer-events-none bg-emerald-50/70 opacity-60 dark:bg-emerald-950/20'
           : isBulkSelected
           ? 'bg-primary/5 dark:bg-primary/8'
           : isSelected
-          ? 'bg-muted/80 dark:bg-muted/45'
+          ? 'bg-quiet-row-selected'
           : ''
       }`}
     >
-      {/* Active indicator bar (Crisp-style ::before) */}
+      {/* Active indicator bar (Crisp-style ::before), full row height so the open conversation stands out. */}
       <span
-        className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200 ${
+        data-selection-bar={isSelected ? 'true' : undefined}
+        className={`absolute inset-y-0 left-0 w-[3px] transition-transform duration-200 ${
           isSelected
-            ? 'h-11 bg-primary/90'
-            : 'h-0 bg-transparent'
+            ? 'scale-y-100 bg-quiet-row-selected-bar'
+            : 'scale-y-0 bg-transparent'
         }`}
       />
 

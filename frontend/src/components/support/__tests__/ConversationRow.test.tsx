@@ -325,6 +325,24 @@ describe('ConversationRow', () => {
     cleanup()
   })
 
+  it('gives the open conversation its own shade and bar, and only other rows a hover shade', () => {
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-1', drafts: {} })
+    const selected = renderRow(conversation())
+    const selectedRow = selected.container.querySelector('[data-conversation-id="conv-1"]')
+    expect(selectedRow?.className).toContain('bg-quiet-row-selected')
+    expect(selectedRow?.className).not.toContain('hover:bg-quiet-row-hover')
+    expect(selected.container.querySelector('[data-selection-bar="true"]')?.className).toContain('bg-quiet-row-selected-bar')
+    selected.cleanup()
+
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-2', drafts: {} })
+    const other = renderRow(conversation())
+    const otherRow = other.container.querySelector('[data-conversation-id="conv-1"]')
+    expect(otherRow?.className).not.toContain('bg-quiet-row-selected')
+    expect(otherRow?.className).toContain('hover:bg-quiet-row-hover')
+    expect(other.container.querySelector('[data-selection-bar="true"]')).toBeNull()
+    other.cleanup()
+  })
+
   it('renders the channel icon before the customer name so its tooltip is not hidden by row actions', () => {
     const { container, cleanup } = renderRow(conversation({ source: 'email' }))
     const channelIcon = container.querySelector('[aria-label="Email"]')
