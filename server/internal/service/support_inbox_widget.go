@@ -1175,6 +1175,8 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 		return nil, err
 	}
 
+	s.applyHelpCenterWidgetBranding(ctx, inst.WorkspaceID, &settings)
+
 	now := time.Now()
 	customerTeammates := s.customerTeammates(ctx, inst.WorkspaceID, settings.BusinessHoursTimezone, now)
 
@@ -1211,6 +1213,41 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 		AvailableTeammates: s.listWidgetTeammates(ctx, inst.WorkspaceID, customerTeammates, 5),
 		HelpSpaces:         helpSpaces,
 	}, nil
+}
+
+// applyHelpCenterWidgetBranding fills an unset widget name, logo, and avatar
+// from the workspace's published help center, so a widget nobody has styled
+// yet carries the brand instead of the generic "Support" label. Values an
+// admin saved always win, and nothing is written back.
+func (s *SupportInboxService) applyHelpCenterWidgetBranding(ctx context.Context, workspaceID string, settings *model.SupportInboxSettings) {
+	if s.docsHelpcenterRepo == nil || settings == nil {
+		return
+	}
+	if settings.WidgetName != "" && settings.LogoURL != "" && settings.WidgetAvatarURL != "" {
+		return
+	}
+	cfg, err := s.docsHelpcenterRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		slog.WarnContext(ctx, "read help center branding for widget", "error", err, "workspace_id", workspaceID)
+		return
+	}
+	if cfg == nil || !cfg.IsPublished {
+		return
+	}
+	if settings.WidgetName == "" {
+		settings.WidgetName = strings.TrimSpace(cfg.BrandName)
+	}
+	// The favicon is the square mark; a wordmark logo is the fallback.
+	mark := stringPtrTrimmed(cfg.FaviconURL)
+	if mark == "" {
+		mark = stringPtrTrimmed(cfg.BrandLogoURL)
+	}
+	if settings.LogoURL == "" {
+		settings.LogoURL = mark
+	}
+	if settings.WidgetAvatarURL == "" {
+		settings.WidgetAvatarURL = mark
+	}
 }
 
 func (s *SupportInboxService) resolveWidgetHelpSpaces(ctx context.Context, workspaceID string, configuredIDs []string) ([]model.WidgetHelpSpace, error) {

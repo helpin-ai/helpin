@@ -1637,6 +1637,13 @@ func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// A JSON body names an image to copy from a public address instead of
+	// carrying the file.
+	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+		h.uploadHelpcenterAssetFromURL(w, r, wsID, assetType)
+		return
+	}
+
 	maxSize := int64(2 << 20) // 2 MB
 	if err := r.ParseMultipartForm(maxSize); err != nil {
 		writeError(w, http.StatusBadRequest, "file too large (max 2MB)")
@@ -1667,6 +1674,59 @@ func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"url": publicURL})
+}
+
+func (h *DocsHandler) uploadHelpcenterAssetFromURL(w http.ResponseWriter, r *http.Request, workspaceID, assetType string) {
+	var req struct {
+		SourceURL string `json:"source_url"`
+	}
+	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.SourceURL) == "" {
+		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+	publicURL, err := h.helpcenterSvc.UploadAssetFromURL(r.Context(), workspaceID, assetType, req.SourceURL)
+	if err != nil {
+		writeHelpcenterBrandError(w, r, err, "The image could not be saved. Try again in a moment.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": publicURL})
+}
+
+// writeHelpcenterBrandError shows a problem the caller can fix as written
+// and reports anything else without internals.
+func writeHelpcenterBrandError(w http.ResponseWriter, r *http.Request, err error, fallback string) {
+	if errors.Is(err, service.ErrHelpcenterBrandInvalid) {
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrHelpcenterBrandInvalid.Error()+": "))
+		return
+	}
+	slog.ErrorContext(r.Context(), "help center brand import", "error", err, "workspace_id", middleware.GetWorkspaceID(r.Context()))
+	writeError(w, http.StatusBadGateway, fallback)
+}
+
+// ImportHelpcenterBrand handles POST /docs/helpcenter/brand-import. It reads
+// the branding of a public help center or website and returns it as a
+// proposal; nothing is saved.
+func (h *DocsHandler) ImportHelpcenterBrand(w http.ResponseWriter, r *http.Request) {
+	var req model.HelpcenterBrandImportRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	proposal, err := h.helpcenterSvc.ProposeBrand(r.Context(), req.URL)
+	if err != nil {
+		writeHelpcenterBrandError(w, r, err, "The site could not be read. Try again in a moment.")
+		return
+	}
+	if proposal.HeaderLinks == nil {
+		proposal.HeaderLinks = []model.HelpcenterHeaderLink{}
+	}
+	if proposal.SocialLinks == nil {
+		proposal.SocialLinks = []model.HelpcenterSocialLink{}
+	}
+	if proposal.Notes == nil {
+		proposal.Notes = []string{}
+	}
+	writeJSON(w, http.StatusOK, proposal)
 }
 
 // ImportExternalImage handles POST /docs/images/import.

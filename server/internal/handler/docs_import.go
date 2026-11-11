@@ -28,7 +28,7 @@ func (h *DocsHandler) ImportListJobs(w http.ResponseWriter, r *http.Request) {
 // ImportReconvert handles POST /api/docs/import/{jobId}/reconvert.
 func (h *DocsHandler) ImportReconvert(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "jobId")
-	result, err := h.importService.Reconvert(r.Context(), jobID)
+	result, err := h.importService.Reconvert(r.Context(), jobID, getWorkspaceID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -59,8 +59,7 @@ func (h *DocsHandler) ImportStartHelpscout(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	userID := middleware.GetUserID(r.Context())
-	// Get workspace_id from query param (standard pattern in this codebase).
-	workspaceID := r.URL.Query().Get("workspace_id")
+	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
@@ -112,10 +111,54 @@ func (h *DocsHandler) ImportStartIntercom(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
 }
 
+// writePublicImportError reports a public help center import problem. A
+// problem the caller can fix is shown as written; anything else is logged
+// and reported without internals.
+func writePublicImportError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, service.ErrPublicImportInvalid) {
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrPublicImportInvalid.Error()+": "))
+		return
+	}
+	slog.ErrorContext(r.Context(), "public help center import", "error", err, "workspace_id", getWorkspaceID(r))
+	writeError(w, http.StatusBadGateway, "The help center could not be read. Try again in a moment.")
+}
+
+// ImportPreviewPublicHelpCenter handles POST
+// /api/docs/import/public-help-center/preview.
+func (h *DocsHandler) ImportPreviewPublicHelpCenter(w http.ResponseWriter, r *http.Request) {
+	var req model.PublicHelpCenterImportRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	preview, err := h.importService.PreviewPublicHelpCenter(r.Context(), req)
+	if err != nil {
+		writePublicImportError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+// ImportStartPublicHelpCenter handles POST
+// /api/docs/import/public-help-center/start.
+func (h *DocsHandler) ImportStartPublicHelpCenter(w http.ResponseWriter, r *http.Request) {
+	var req model.PublicHelpCenterImportRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	jobID, err := h.importService.StartPublicHelpCenter(r.Context(), req, getWorkspaceID(r), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writePublicImportError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
+}
+
 // ImportGetStatus handles GET /api/docs/import/{jobId}/status.
 func (h *DocsHandler) ImportGetStatus(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "jobId")
-	job, err := h.importService.GetStatus(r.Context(), jobID)
+	job, err := h.importService.GetStatus(r.Context(), jobID, getWorkspaceID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -137,7 +180,7 @@ func (h *DocsHandler) ImportRetry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.importService.Retry(r.Context(), jobID, req.APIKey); err != nil {
+	if err := h.importService.Retry(r.Context(), jobID, getWorkspaceID(r), req.APIKey); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -158,7 +201,7 @@ func (h *DocsHandler) ImportCancel(w http.ResponseWriter, r *http.Request) {
 // ImportGetRedirectMap handles GET /api/docs/import/{jobId}/redirect-map.
 func (h *DocsHandler) ImportGetRedirectMap(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "jobId")
-	data, err := h.importService.GetRedirectMap(r.Context(), jobID)
+	data, err := h.importService.GetRedirectMap(r.Context(), jobID, getWorkspaceID(r))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

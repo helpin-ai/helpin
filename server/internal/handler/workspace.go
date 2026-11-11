@@ -52,6 +52,10 @@ func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	ws, err := h.workspaceService.Create(r.Context(), req, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrWorkspaceOrganizationForbidden) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

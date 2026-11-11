@@ -16,6 +16,24 @@ type BillingMetadata interface {
 	GetByWorkspaceID(context.Context, string) (*model.WorkspaceBilling, error)
 }
 
+// Extension hands an edition the product services that are built after the
+// edition itself, so it can add features on top of them.
+type Extension struct {
+	DB                     *gorm.DB
+	HelpcenterHostedDomain string
+	MCP                    *service.MCPService
+	Users                  *repository.UserRepository
+	Organizations          *service.OrganizationService
+	Workspaces             *service.WorkspaceService
+	Helpcenter             *service.DocsHelpcenterService
+	DocsImport             *service.DocsImportService
+	DocsSpaces             *service.DocsSpaceService
+	DocsCollections        *service.DocsCollectionService
+	SupportInbox           *service.SupportInboxService
+	CRMCompanies           *repository.CRMCompanyRepository
+	CRMActivities          *service.CRMActivityService
+}
+
 type Services struct {
 	InitializeAIProfiles       func(context.Context) error
 	Usage                      service.AIUsageLifecycle
@@ -30,6 +48,18 @@ type Services struct {
 	ValidateCompletionRoute    func(service.AICompletionRoute) error
 	AttachIdentity             func(*service.CustomerIOIdentityService)
 	RunWorkers                 func(context.Context)
+	// Extend, when set, is called once after the product services exist and
+	// before workers start. Community leaves it nil.
+	Extend func(Extension) error
+}
+
+// ExtendWith passes the product services to the edition. It does nothing in
+// an edition that adds no features on top of them.
+func (s *Services) ExtendWith(ext Extension) error {
+	if s == nil || s.Extend == nil {
+		return nil
+	}
+	return s.Extend(ext)
 }
 
 func Community(db *gorm.DB) *Services {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -38,7 +39,18 @@ type WorkspaceService struct {
 	contextProfiles     workspaceContextProfiles
 	customerIOIdentity  *CustomerIOIdentityService
 	setupInitializer    WorkspaceSetupInitializer
+	organizationRoles   WorkspaceOrganizationRoles
 	logger              *slog.Logger
+}
+
+// ErrWorkspaceOrganizationForbidden means the caller may not create a
+// workspace in the requested organization.
+var ErrWorkspaceOrganizationForbidden = errors.New("you do not have permission to create a workspace in this organization")
+
+// WorkspaceOrganizationRoles reports a user's role in an organization; an
+// empty role means the user is not a member.
+type WorkspaceOrganizationRoles interface {
+	GetMemberRole(ctx context.Context, orgID, userID string) (string, error)
 }
 
 // WorkspaceDefaultsInitializer seeds default workspace-scoped data after creation.
@@ -91,6 +103,12 @@ func (s *WorkspaceService) SetSetupInitializer(initializer WorkspaceSetupInitial
 	s.setupInitializer = initializer
 }
 
+// SetOrganizationRoles injects the lookup that authorizes creating a
+// workspace inside an organization.
+func (s *WorkspaceService) SetOrganizationRoles(roles WorkspaceOrganizationRoles) {
+	s.organizationRoles = roles
+}
+
 // SetWebsiteDefaultsApplier injects the hook run after a website is saved.
 func (s *WorkspaceService) SetWebsiteDefaultsApplier(applier WorkspaceWebsiteDefaultsApplier) {
 	s.websiteDefaults = applier
@@ -102,12 +120,36 @@ func (s *WorkspaceService) SetContextGeneratorDependencies(llm workspaceContextL
 	return s
 }
 
+// authorizeOrganizationWorkspace requires the creator to be an owner, admin,
+// or member of the organization the new workspace is attached to. Without it
+// any signed-in user could attach a workspace to an organization they do not
+// belong to.
+func (s *WorkspaceService) authorizeOrganizationWorkspace(ctx context.Context, orgID, userID string) error {
+	if orgID == "" || s.organizationRoles == nil {
+		return nil
+	}
+	role, err := s.organizationRoles.GetMemberRole(ctx, orgID, userID)
+	if err != nil {
+		return fmt.Errorf("check organization membership: %w", err)
+	}
+	switch role {
+	case model.RoleOwner, model.RoleAdmin, model.RoleMember:
+		return nil
+	default:
+		s.logger.WarnContext(ctx, "workspace creation denied for organization", "organization_id", orgID, "user_id", userID)
+		return ErrWorkspaceOrganizationForbidden
+	}
+}
+
 // Create creates a workspace and adds the creator as the owner member.
 func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspaceRequest, ownerID string) (*model.WorkspaceWithRole, error) {
 	if req.Name == "" || req.Slug == "" {
 		return nil, fmt.Errorf("name and slug are required")
 	}
 	if _, err := NormalizeSetupGoals(req.SetupGoals); err != nil {
+		return nil, err
+	}
+	if err := s.authorizeOrganizationWorkspace(ctx, req.OrganizationID, ownerID); err != nil {
 		return nil, err
 	}
 
