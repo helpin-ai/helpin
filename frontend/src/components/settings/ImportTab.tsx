@@ -3,13 +3,14 @@ import { ShortcutImportWizard } from '@/components/pm/ShortcutImportWizard';
 import { HelpCenterImportSection } from '@/components/settings/HelpCenterImportSection';
 import { NextraImportWizard } from '@/components/settings/NextraImportWizard';
 import { IntercomImportWizard } from '@/components/settings/IntercomImportWizard';
+import { PublicHelpCenterImportWizard } from '@/components/settings/PublicHelpCenterImportWizard';
 import { workspacesService } from '@/lib/services/workspacesService';
 import type { MemberWithUser } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ArrowRight01Icon, Loading01Icon } from '@/lib/icons';
-import { docsImportService, type ImportStatusResponse } from '@/lib/services/docsImportService';
+import { ArrowRight01Icon, Globe02Icon, Loading01Icon } from '@/lib/icons';
+import { docsImportService, PUBLIC_HELP_CENTER_IMPORT_SOURCE, type ImportStatusResponse } from '@/lib/services/docsImportService';
 import { pmImportService } from '@/lib/services/pmImportService';
 import shortcutIcon from '@/assets/import/shortcut.svg';
 import jiraIcon from '@/assets/import/jira.svg';
@@ -83,6 +84,7 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
 
   const helpScoutActiveImport = activeDocsImports.find((job) => job.source === 'helpscout');
   const nextraActiveImport = activeDocsImports.find((job) => job.source === 'nextra');
+  const publicActiveImport = activeDocsImports.find((job) => job.source === PUBLIC_HELP_CENTER_IMPORT_SOURCE);
 
   if (selected === 'shortcut') {
     return (
@@ -116,6 +118,18 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
           Back to sources
         </Button>
         <IntercomImportWizard workspaceId={workspaceId} />
+      </div>
+    );
+  }
+
+  if (selected === 'public-help-center') {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setSelected(null)}>
+          <ArrowRight01Icon className="h-4 w-4 rotate-180" />
+          Back to sources
+        </Button>
+        <PublicHelpCenterImportWizard workspaceId={workspaceId} activeJobId={publicActiveImport?.id} />
       </div>
     );
   }
@@ -199,6 +213,30 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
       <div className="space-y-4">
         <h3 className="text-sm font-semibold">Help Center</h3>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <button
+            type="button"
+            disabled={!editable}
+            onClick={() => setSelected('public-help-center')}
+            className="flex w-full items-center gap-4 border-b border-border px-4 py-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Globe02Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Public help center</p>
+              <p className="text-sm text-muted-foreground">Copy an Intercom help center by its address. No access token needed.</p>
+            </div>
+            {publicActiveImport ? (
+              <Badge className="gap-1.5 bg-blue-100 text-blue-700 hover:bg-blue-100">
+                <Loading01Icon className="h-3 w-3 animate-spin" />
+                Running
+                {publicActiveImport.total > 0 &&
+                  ` · ${publicActiveImport.completed + publicActiveImport.failed}/${publicActiveImport.total}`}
+              </Badge>
+            ) : (
+              <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
+          </button>
           <button
             type="button"
             disabled={!editable}

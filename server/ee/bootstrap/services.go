@@ -63,6 +63,7 @@ func New(opts Options) (*edition.Services, error) {
 	if err != nil {
 		return nil, fmt.Errorf("configure managed AI profiles: %w", err)
 	}
+	demos := &demoProvisioning{}
 	result := &edition.Services{
 		InitializeAIProfiles:       profiles.EnsureAll,
 		Usage:                      eeservice.NewAIUsageService(catalog, usageRepo, nil),
@@ -78,7 +79,8 @@ func New(opts Options) (*edition.Services, error) {
 			return err
 		},
 		AttachIdentity: func(identity *service.CustomerIOIdentityService) { billing.SetCustomerIOIdentityService(identity) },
-		RunWorkers:     workers(usageRepo, billing, gateway),
+		RunWorkers:     workers(usageRepo, billing, gateway, demos),
+		Extend:         demos.extend,
 	}
 	if opts.Authorization != nil {
 		scenarios := eeservice.NewBillingTestScenarioService(opts.DB, billing, time.Now)
@@ -92,5 +94,5 @@ func New(opts Options) (*edition.Services, error) {
 // Historical SQL remains in the shared immutable ledger. Only EE startup asks
 // GORM to evolve commercial models.
 func AutoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(&model.WorkspaceBilling{}, &model.StripeWebhookEvent{}, &model.OrganizationBilling{}, &model.BillingPaymentMethod{})
+	return db.AutoMigrate(&model.WorkspaceBilling{}, &model.StripeWebhookEvent{}, &model.OrganizationBilling{}, &model.BillingPaymentMethod{}, &eerepository.DemoWorkspace{})
 }

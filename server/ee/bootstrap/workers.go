@@ -13,7 +13,7 @@ import (
 	"github.com/helpin-ai/helpin/server/ee/service"
 )
 
-func workers(usage *repository.AIUsageRepository, billing *service.BillingService, gateway *billingstripe.Gateway) func(context.Context) {
+func workers(usage *repository.AIUsageRepository, billing *service.BillingService, gateway *billingstripe.Gateway, demos *demoProvisioning) func(context.Context) {
 	return func(ctx context.Context) {
 		var group sync.WaitGroup
 		start := func(run func()) { group.Add(1); go func() { defer group.Done(); run() }() }
@@ -23,6 +23,7 @@ func workers(usage *repository.AIUsageRepository, billing *service.BillingServic
 		start(func() { service.NewAIUsagePeriodWorker(usage, billing.NextAIUsagePeriodSchedule).Run(ctx, time.Minute) })
 		start(func() { service.NewAIUsageReservationSweeper(usage).Run(ctx, time.Minute, 15*time.Minute) })
 		start(func() { expireTrials(ctx, billing) })
+		start(func() { demos.run(ctx) })
 		group.Wait()
 	}
 }

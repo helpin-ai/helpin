@@ -9,8 +9,22 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import {
   docsImportService,
+  PUBLIC_HELP_CENTER_IMPORT_SOURCE,
   type ImportStatusResponse,
 } from '@/lib/services/docsImportService';
+
+const SOURCE_LABELS: Record<string, string> = {
+  helpscout: 'HelpScout',
+  intercom: 'Intercom',
+  nextra: 'Nextra',
+  [PUBLIC_HELP_CENTER_IMPORT_SOURCE]: 'Public help center',
+};
+
+// Sources whose articles keep their original HTML and can be converted again.
+// A public help center is converted from structured blocks, not HTML.
+function canReconvert(job: ImportStatusResponse): boolean {
+  return job.status === 'done' && job.source !== PUBLIC_HELP_CENTER_IMPORT_SOURCE;
+}
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Tick01Icon; className: string }> = {
   pending: { label: 'Pending', icon: Clock01Icon, className: 'bg-muted text-muted-foreground' },
@@ -81,7 +95,7 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
           <TableHeader>
             <TableRow>
               <TableHead className="w-[160px]">Date</TableHead>
-              <TableHead className="w-[80px]">Source</TableHead>
+              <TableHead className="w-[140px]">Source</TableHead>
               <TableHead className="w-[140px]">Articles</TableHead>
               <TableHead className="w-[110px]">Status</TableHead>
               <TableHead className="w-[90px]"></TableHead>
@@ -101,7 +115,7 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
                     </span>
                   </TableCell>
                   <TableCell>
-                    <span className="text-sm capitalize">{job.source || 'HelpScout'}</span>
+                    <span className="text-sm">{SOURCE_LABELS[job.source || 'helpscout'] ?? job.source}</span>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">
@@ -130,7 +144,7 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
                         {cancelingId === job.id ? 'Canceling...' : 'Cancel'}
                       </Button>
                     )}
-                    {job.status === 'done' && (
+                    {canReconvert(job) && (
                       <QuickTooltip label="Re-run conversion with latest logic. Overwrites imported doc content.">
                         <Button
                           variant="ghost"

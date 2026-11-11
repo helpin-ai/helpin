@@ -85,9 +85,14 @@ func (h *CRMCompanyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
+	// The company always lands in the workspace the caller was authorized
+	// for; a different workspace in the body is refused, never honored.
+	workspaceID := getWorkspaceID(r)
+	if req.WorkspaceID != "" && req.WorkspaceID != workspaceID {
+		writeError(w, http.StatusForbidden, "workspace_id does not match the current workspace")
+		return
 	}
+	req.WorkspaceID = workspaceID
 	company, err := h.companyService.Create(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -99,6 +104,10 @@ func (h *CRMCompanyHandler) Create(w http.ResponseWriter, r *http.Request) {
 // Get handles GET /api/crm/companies/{id}.
 func (h *CRMCompanyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if err := h.companyService.RequireWorkspace(r.Context(), getWorkspaceID(r), id); err != nil {
+		writeError(w, http.StatusNotFound, "company not found")
+		return
+	}
 	company, err := h.companyService.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -166,6 +175,10 @@ func (h *CRMCompanyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if err := h.companyService.RequireWorkspace(r.Context(), getWorkspaceID(r), id); err != nil {
+		writeError(w, http.StatusNotFound, "company not found")
+		return
+	}
 	company, err := h.companyService.Update(r.Context(), id, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -192,6 +205,10 @@ func (h *CRMCompanyHandler) SetCustomFields(w http.ResponseWriter, r *http.Reque
 // Delete handles DELETE /api/crm/companies/{id}.
 func (h *CRMCompanyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if err := h.companyService.RequireWorkspace(r.Context(), getWorkspaceID(r), id); err != nil {
+		writeError(w, http.StatusNotFound, "company not found")
+		return
+	}
 	if err := h.companyService.Delete(r.Context(), id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

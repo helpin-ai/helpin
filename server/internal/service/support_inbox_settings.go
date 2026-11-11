@@ -704,6 +704,7 @@ func (s *SupportInboxService) GetInstallation(ctx context.Context, workspaceID s
 		}
 
 		defaults := model.DefaultSupportInboxSettings()
+		defaults.AIAgentID = s.defaultSupportAgentID(ctx, workspaceID)
 		raw, err := json.Marshal(defaults)
 		if err != nil {
 			return nil, nil, fmt.Errorf("marshal default settings: %w", err)
@@ -1026,6 +1027,7 @@ func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspa
 			}
 
 			defaults := model.DefaultSupportInboxSettings()
+			defaults.AIAgentID = s.defaultSupportAgentID(ctx, workspaceID)
 			raw, err := json.Marshal(defaults)
 			if err != nil {
 				return fmt.Errorf("marshal default settings: %w", err)
@@ -1050,6 +1052,59 @@ func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspa
 	if err := s.seedDefaultCannedResponses(ctx, workspaceID, actorID); err != nil {
 		return fmt.Errorf("seed default shortcuts: %w", err)
 	}
+	return nil
+}
+
+// defaultSupportAgentID returns the workspace's built-in Support Agent, or nil
+// when it has not been seeded yet.
+func (s *SupportInboxService) defaultSupportAgentID(ctx context.Context, workspaceID string) *string {
+	if s.agentRepo == nil {
+		return nil
+	}
+	agent, err := s.agentRepo.GetSystemByPreset(ctx, workspaceID, model.AgentPresetSupportAgent)
+	if err != nil {
+		slog.WarnContext(ctx, "look up default support agent", "error", err, "workspace_id", workspaceID)
+		return nil
+	}
+	if agent == nil {
+		return nil
+	}
+	return &agent.ID
+}
+
+// BindDefaultSupportAgent points a new installation at the built-in Support
+// Agent when no agent has been chosen. AI replies stay off until an admin
+// turns them on; this only removes the "pick an agent" step in front of
+// that switch. It never replaces an agent that is already set.
+func (s *SupportInboxService) BindDefaultSupportAgent(ctx context.Context, workspaceID string) error {
+	if s.installationRepo == nil {
+		return nil
+	}
+	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("get widget installation: %w", err)
+	}
+	if inst == nil {
+		return nil
+	}
+	settings := parseSettings(inst.Settings)
+	if strings.TrimSpace(derefString(settings.AIAgentID)) != "" {
+		return nil
+	}
+	agentID := s.defaultSupportAgentID(ctx, workspaceID)
+	if agentID == nil {
+		return nil
+	}
+	settings.AIAgentID = agentID
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal support settings: %w", err)
+	}
+	inst.Settings = string(raw)
+	if err := s.installationRepo.Update(ctx, inst); err != nil {
+		return fmt.Errorf("bind default support agent: %w", err)
+	}
+	slog.InfoContext(ctx, "bound default support agent", "workspace_id", workspaceID, "agent_id", *agentID)
 	return nil
 }
 
