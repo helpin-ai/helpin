@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { onSupportShortcut } from '@/lib/supportShortcuts';
+import { onSupportShortcut, supportShortcutLabel } from '@/lib/supportShortcuts';
 import { ArrowLeft02Icon, Cancel01Icon, Delete01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, Tag01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -555,6 +555,7 @@ export function SupportTagPicker({
             ref={shortcutTriggerRef}
             type="button"
             disabled={readOnly}
+            title={openOnShortcut ? `Tags (${supportShortcutLabel('tags')})` : undefined}
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
           >
             <Tag01Icon className="h-3 w-3" />

@@ -1,3 +1,5 @@
+import { isMacPlatform } from '@/lib/keyboardShortcuts'
+
 /** Inbox keyboard shortcuts, dispatched to the components that own each action. */
 export type SupportShortcutAction =
   | 'next'
@@ -5,7 +7,7 @@ export type SupportShortcutAction =
   | 'resolve'
   | 'snooze'
   | 'priority'
-  | 'assign_me'
+  | 'assign'
   | 'tags'
   | 'reply'
   | 'note'
@@ -20,20 +22,35 @@ export interface SupportShortcutDetail {
   handled: boolean
 }
 
-export const SUPPORT_SHORTCUTS: { key: string; action: SupportShortcutAction; label: string }[] = [
+/**
+ * A single key only moves or opens something, so a stray key while typing
+ * changes nothing. Resolve acts at once, so it also needs the Command key
+ * (Ctrl outside Apple devices).
+ */
+export const SUPPORT_SHORTCUTS: { key: string; withCommand?: boolean; action: SupportShortcutAction; label: string }[] = [
   { key: 'j', action: 'next', label: 'Next conversation' },
   { key: 'k', action: 'previous', label: 'Previous conversation' },
   { key: 'r', action: 'reply', label: 'Reply' },
   { key: 'n', action: 'note', label: 'Write an internal note' },
-  { key: 'e', action: 'resolve', label: 'Resolve' },
+  { key: 'e', withCommand: true, action: 'resolve', label: 'Resolve' },
   { key: 'z', action: 'snooze', label: 'Snooze' },
-  { key: 'a', action: 'assign_me', label: 'Assign to me' },
+  { key: 'a', action: 'assign', label: 'Assign' },
   { key: 'p', action: 'priority', label: 'Set priority' },
   { key: 't', action: 'tags', label: 'Add or remove tags' },
   { key: '?', action: 'cheatsheet', label: 'Show keyboard shortcuts' },
 ]
 
-const ACTIONS_BY_KEY = new Map(SUPPORT_SHORTCUTS.map((shortcut) => [shortcut.key, shortcut.action]))
+const ACTIONS_BY_KEY = new Map(SUPPORT_SHORTCUTS.filter((shortcut) => !shortcut.withCommand).map((shortcut) => [shortcut.key, shortcut.action]))
+const COMMAND_ACTIONS_BY_KEY = new Map(SUPPORT_SHORTCUTS.filter((shortcut) => shortcut.withCommand).map((shortcut) => [shortcut.key, shortcut.action]))
+
+/** The keys of a shortcut as this computer names them: "⌘E" on Apple devices, "Ctrl+E" elsewhere. */
+export function supportShortcutLabel(action: SupportShortcutAction, isMac = isMacPlatform()): string {
+  const shortcut = SUPPORT_SHORTCUTS.find((item) => item.action === action)
+  if (!shortcut) return ''
+  const key = shortcut.key.toUpperCase()
+  if (!shortcut.withCommand) return key
+  return isMac ? `⌘${key}` : `Ctrl+${key}`
+}
 
 /** Whether focus is somewhere keys type text or drive a widget. */
 export function isShortcutBlockedTarget(target: EventTarget | null): boolean {
@@ -44,11 +61,19 @@ export function isShortcutBlockedTarget(target: EventTarget | null): boolean {
 }
 
 /** The shortcut a key press triggers, or null when it should type or do nothing. */
-export function supportShortcutForEvent(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target' | 'defaultPrevented' | 'isComposing' | 'repeat'>): SupportShortcutAction | null {
-  if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return null
+export function supportShortcutForEvent(
+  event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'target' | 'defaultPrevented' | 'isComposing' | 'repeat'>,
+  isMac = isMacPlatform(),
+): SupportShortcutAction | null {
+  if (event.defaultPrevented || event.isComposing || event.altKey) return null
+  // Ctrl on Apple devices and the Windows key elsewhere belong to the system.
+  if (isMac ? event.ctrlKey : event.metaKey) return null
   if (isShortcutBlockedTarget(event.target)) return null
+  const withCommand = isMac ? event.metaKey : event.ctrlKey
   // Shifted letters are left alone; "?" is Shift+/ on most layouts.
-  const action = ACTIONS_BY_KEY.get(event.key)
+  const action = withCommand
+    ? (event.shiftKey ? undefined : COMMAND_ACTIONS_BY_KEY.get(event.key.toLowerCase()))
+    : ACTIONS_BY_KEY.get(event.key)
   if (!action) return null
   // Holding a key repeats list movement only.
   if (event.repeat && action !== 'next' && action !== 'previous') return null

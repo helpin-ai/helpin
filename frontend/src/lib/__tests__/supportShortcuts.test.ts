@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { adjacentConversationId, dispatchSupportShortcut, onSupportShortcut, supportShortcutForEvent } from '../supportShortcuts'
+import { adjacentConversationId, dispatchSupportShortcut, onSupportShortcut, supportShortcutForEvent, supportShortcutLabel } from '../supportShortcuts'
 
-function press(key: string, target: EventTarget | null = document.body, extra: Partial<KeyboardEvent> = {}) {
-  return supportShortcutForEvent({ key, metaKey: false, ctrlKey: false, altKey: false, defaultPrevented: false, isComposing: false, repeat: false, target, ...extra })
+function press(key: string, target: EventTarget | null = document.body, extra: Partial<KeyboardEvent> = {}, isMac = false) {
+  return supportShortcutForEvent({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, defaultPrevented: false, isComposing: false, repeat: false, target, ...extra }, isMac)
 }
 
 describe('supportShortcutForEvent', () => {
@@ -12,29 +12,53 @@ describe('supportShortcutForEvent', () => {
   it('maps single keys to inbox actions', () => {
     expect(press('j')).toBe('next')
     expect(press('k')).toBe('previous')
-    expect(press('e')).toBe('resolve')
+    expect(press('a')).toBe('assign')
     expect(press('z')).toBe('snooze')
     expect(press('?')).toBe('cheatsheet')
     expect(press('x')).toBeNull()
     expect(press('J')).toBeNull()
   })
 
+  it('resolves only with Command on Apple devices and Ctrl elsewhere', () => {
+    expect(press('e')).toBeNull()
+    expect(press('e', document.body, { ctrlKey: true })).toBe('resolve')
+    expect(press('e', document.body, { metaKey: true }, true)).toBe('resolve')
+    expect(press('e', document.body, { metaKey: true })).toBeNull()
+    expect(press('e', document.body, { ctrlKey: true }, true)).toBeNull()
+    expect(press('e', document.body, { ctrlKey: true, shiftKey: true })).toBeNull()
+    expect(press('a', document.body, { ctrlKey: true })).toBeNull()
+  })
+
   it('never fires while typing or inside menus and dialogs', () => {
     document.body.innerHTML = '<input id="i"><textarea id="t"></textarea><div contenteditable="true"><p id="p">x</p></div><div role="dialog"><button id="b">x</button></div><div role="menu"><div id="m">x</div></div>'
-    for (const id of ['i', 't', 'p', 'b', 'm']) expect(press('e', document.getElementById(id))).toBeNull()
+    for (const id of ['i', 't', 'p', 'b', 'm']) {
+      expect(press('a', document.getElementById(id))).toBeNull()
+      expect(press('e', document.getElementById(id), { ctrlKey: true })).toBeNull()
+    }
   })
 
   it('ignores modified, composed and already handled keys', () => {
-    expect(press('e', document.body, { metaKey: true })).toBeNull()
-    expect(press('e', document.body, { ctrlKey: true })).toBeNull()
-    expect(press('e', document.body, { altKey: true })).toBeNull()
-    expect(press('e', document.body, { isComposing: true })).toBeNull()
-    expect(press('e', document.body, { defaultPrevented: true })).toBeNull()
+    expect(press('a', document.body, { metaKey: true })).toBeNull()
+    expect(press('a', document.body, { ctrlKey: true })).toBeNull()
+    expect(press('a', document.body, { altKey: true })).toBeNull()
+    expect(press('e', document.body, { ctrlKey: true, altKey: true })).toBeNull()
+    expect(press('a', document.body, { isComposing: true })).toBeNull()
+    expect(press('e', document.body, { ctrlKey: true, defaultPrevented: true })).toBeNull()
   })
 
   it('repeats only list movement', () => {
     expect(press('j', document.body, { repeat: true })).toBe('next')
-    expect(press('e', document.body, { repeat: true })).toBeNull()
+    expect(press('a', document.body, { repeat: true })).toBeNull()
+    expect(press('e', document.body, { ctrlKey: true, repeat: true })).toBeNull()
+  })
+})
+
+describe('supportShortcutLabel', () => {
+  it('names keys the way the computer does', () => {
+    expect(supportShortcutLabel('resolve', true)).toBe('⌘E')
+    expect(supportShortcutLabel('resolve', false)).toBe('Ctrl+E')
+    expect(supportShortcutLabel('assign', true)).toBe('A')
+    expect(supportShortcutLabel('cheatsheet', false)).toBe('?')
   })
 })
 

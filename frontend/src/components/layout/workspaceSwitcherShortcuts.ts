@@ -1,11 +1,5 @@
 import type { Workspace } from '@/lib/types';
-export { isEditableShortcutTarget } from '@/lib/keyboardShortcuts';
-
-export function isMacPlatform(): boolean {
-  if (typeof navigator === 'undefined') return false;
-
-  return /Mac|iPhone|iPad|iPod/.test(navigator.platform) || /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
-}
+export { isEditableShortcutTarget, isMacPlatform } from '@/lib/keyboardShortcuts';
 
 export function workspaceShortcutLabel(index: number, isMac: boolean): string | null {
   if (index < 0 || index > 8) return null;
