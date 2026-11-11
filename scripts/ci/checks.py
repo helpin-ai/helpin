@@ -23,7 +23,7 @@ def select(paths, all_checks=False):
         if path.endswith('.md') and path.startswith(('docs/', 'community/')):
             continue
         server = path.startswith(('server/', 'scripts/check-task-canonical.sh', 'scripts/check-community-backend.sh'))
-        frontend = path.startswith(('frontend/', 'packages/shared/', 'packages/widget-core/', 'scripts/check-community-frontend.sh'))
+        frontend = path == 'netlify.toml' or path.startswith(('frontend/', 'packages/shared/', 'packages/widget-core/', 'scripts/check-community-frontend.sh'))
         matches = {
             'server': server,
             'frontend': frontend,

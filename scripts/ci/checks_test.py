@@ -12,13 +12,28 @@ from checks import GROUPS, JOBS, failures, select
 
 
 class ChecksTest(unittest.TestCase):
+    def test_netlify_config_changes_trigger_frontend_checks_and_releases(self):
+        self.assertTrue(select(['netlify.toml'])['frontend'])
+        root = Path(__file__).resolve().parents[2]
+        for name in ('deploy-staging.yml', 'deploy-prod.yml'):
+            workflow = (root / '.github/workflows' / name).read_text()
+            patterns = re.findall(r"if echo \"\$CHANGED\" \| grep -qE '([^']+)'; then\n            FRONTEND=true", workflow)
+            self.assertTrue(any(re.search(pattern, 'netlify.toml') for pattern in patterns), name)
+
     def test_netlify_frontend_paths_resolve_from_repository_root(self):
         root = Path(__file__).resolve().parents[2]
-        config = tomllib.loads((root / 'frontend/netlify.toml').read_text())['build']
+        config_path = root / 'netlify.toml'
+        self.assertTrue(config_path.is_file(), 'Root Netlify config must pin the shared deployment base')
+        config = tomllib.loads(config_path.read_text())['build']
         base = root / config.get('base', '')
+        self.assertEqual(base.resolve(), root.resolve())
         edge_function = base / config['edge_functions'] / 'share-meta.ts'
         self.assertTrue(edge_function.is_file(), f'Preview edge function is missing at {edge_function}')
         self.assertEqual((base / config['publish']).resolve(), (root / 'frontend/dist').resolve())
+        for name in ('deploy-staging.yml', 'deploy-prod.yml'):
+            workflow = (root / '.github/workflows' / name).read_text()
+            deploy_command = next(line for line in workflow.splitlines() if 'dlx netlify deploy' in line)
+            self.assertIn('--config netlify.toml', deploy_command)
 
     def test_node_is_ready_before_pnpm_bootstrap(self):
         root = Path(__file__).resolve().parents[2]
