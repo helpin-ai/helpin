@@ -6,7 +6,7 @@ const META_END = '<!-- helpin-meta:end -->'
 
 export function resolvePublicApiBase(hostname: string): string | null {
   if (hostname === 'app.helpin.ai') return 'https://api.helpin.ai/api'
-  if (hostname === 'app.stage.helpin.ai') return 'https://api.stage.helpin.ai/api'
+  if (hostname === 'stage.helpin.ai' || hostname === 'app.stage.helpin.ai') return 'https://api.stage.helpin.ai/api'
   if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:8080/api'
   return null
 }

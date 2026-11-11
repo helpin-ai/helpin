@@ -6,11 +6,20 @@ import os
 import tempfile
 import textwrap
 import subprocess
+import tomllib
 from unittest.mock import patch
 from checks import GROUPS, JOBS, failures, select
 
 
 class ChecksTest(unittest.TestCase):
+    def test_netlify_frontend_paths_resolve_from_repository_root(self):
+        root = Path(__file__).resolve().parents[2]
+        config = tomllib.loads((root / 'frontend/netlify.toml').read_text())['build']
+        base = root / config.get('base', '')
+        edge_function = base / config['edge_functions'] / 'share-meta.ts'
+        self.assertTrue(edge_function.is_file(), f'Preview edge function is missing at {edge_function}')
+        self.assertEqual((base / config['publish']).resolve(), (root / 'frontend/dist').resolve())
+
     def test_node_is_ready_before_pnpm_bootstrap(self):
         root = Path(__file__).resolve().parents[2]
         for workflow in (root / '.github/workflows').glob('*.yml'):
