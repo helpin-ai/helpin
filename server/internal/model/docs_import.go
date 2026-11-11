@@ -63,6 +63,50 @@ type ImportSummary struct {
 	UnsupportedComponents          int    `json:"unsupported_components,omitempty"`
 	BrokenLinks                    int    `json:"broken_links,omitempty"`
 	AssetRewriteFailures           int    `json:"asset_rewrite_failures,omitempty"`
+
+	// Fields below are filled by imports that read a public help center.
+
+	// SourceURL is the help center home the import read.
+	SourceURL string `json:"source_url,omitempty"`
+	// SourceName is the help center's own name, such as "Acme Help Center".
+	SourceName string `json:"source_name,omitempty"`
+	// CollectionsMerged counts source collections nested deeper than Helpin
+	// allows, whose articles went into the nearest collection above them.
+	CollectionsMerged int `json:"collections_merged,omitempty"`
+	// ArticlesOutsideCollections counts public articles that sit in no source
+	// collection and were found through links.
+	ArticlesOutsideCollections int `json:"articles_outside_collections,omitempty"`
+	ImagesCopied               int `json:"images_copied,omitempty"`
+	// LinksRewritten counts links between imported articles and collections
+	// that now point at their Helpin addresses.
+	LinksRewritten int `json:"links_rewritten,omitempty"`
+	// UnresolvedLinksTotal and FailedImagesTotal are the full counts; the
+	// lists below hold at most ImportReportListLimit entries each.
+	UnresolvedLinksTotal int                    `json:"unresolved_links_total,omitempty"`
+	FailedImagesTotal    int                    `json:"failed_images_total,omitempty"`
+	UnresolvedLinks      []ImportUnresolvedLink `json:"unresolved_links,omitempty"`
+	FailedImages         []ImportFailedImage    `json:"failed_images,omitempty"`
+}
+
+// ImportReportListLimit caps each per-item list in an import summary so a
+// large help center cannot produce an unbounded job row.
+const ImportReportListLimit = 200
+
+// ImportUnresolvedLink is a link to the source help center that could not be
+// pointed at an imported article or collection.
+type ImportUnresolvedLink struct {
+	DocumentID   string `json:"document_id"`
+	ArticleTitle string `json:"article_title"`
+	URL          string `json:"url"`
+}
+
+// ImportFailedImage is an image that could not be copied; the article still
+// shows it from its original address.
+type ImportFailedImage struct {
+	DocumentID   string `json:"document_id,omitempty"`
+	ArticleTitle string `json:"article_title"`
+	URL          string `json:"url"`
+	Reason       string `json:"reason,omitempty"`
 }
 
 // DocsImportPreviewRequest is the payload for previewing available collections from an external source.
@@ -80,6 +124,43 @@ type DocsImportStartRequest struct {
 	// IntercomRegion selects the Intercom data center (us, eu or au) for
 	// Intercom imports, where APIKey is the access token.
 	IntercomRegion string `json:"intercom_region,omitempty"`
+	// SourceURL is the help center home for imports that read a public site.
+	SourceURL string `json:"source_url,omitempty"`
+}
+
+// Platforms a public help center import can read.
+const (
+	PublicHelpCenterPlatformIntercom = "intercom"
+)
+
+// PublicHelpCenterImportRequest previews or starts an import that reads a
+// public help center by its address, without any access token.
+type PublicHelpCenterImportRequest struct {
+	URL           string  `json:"url"`
+	TargetSpaceID *string `json:"target_space_id"`
+	NewSpaceName  *string `json:"new_space_name"`
+	ImportStatus  string  `json:"import_status"`
+}
+
+// PublicHelpCenterImportPreview summarizes a public help center before import.
+type PublicHelpCenterImportPreview struct {
+	Platform string `json:"platform"`
+	// URL is the help center home the import will read, after redirects.
+	URL         string `json:"url"`
+	Name        string `json:"name"`
+	Locale      string `json:"locale,omitempty"`
+	Collections int    `json:"collections"`
+	Articles    int    `json:"articles"`
+	// CollectionsMerged counts collections nested deeper than Helpin allows.
+	CollectionsMerged int                               `json:"collections_merged"`
+	TopCollections    []PublicHelpCenterCollectionCount `json:"top_collections"`
+}
+
+// PublicHelpCenterCollectionCount is one top-level collection in a preview,
+// counting the articles in it and in its subcollections.
+type PublicHelpCenterCollectionCount struct {
+	Name     string `json:"name"`
+	Articles int    `json:"articles"`
 }
 
 // IntercomDocsImportRequest previews or starts an Intercom Help Center import.

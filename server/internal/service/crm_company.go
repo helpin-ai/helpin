@@ -192,6 +192,13 @@ func (s *CRMCompanyService) ListDeals(ctx context.Context, workspaceID, companyI
 	return s.companyRepo.ListDeals(ctx, workspaceID, companyID, search, pagination)
 }
 
+// RequireWorkspace reports "company not found" unless the company belongs to
+// the workspace the caller is authorized for. Handlers call it before any
+// lookup, update, or delete by company ID.
+func (s *CRMCompanyService) RequireWorkspace(ctx context.Context, workspaceID, companyID string) error {
+	return s.requireCompanyWorkspace(ctx, workspaceID, companyID)
+}
+
 func (s *CRMCompanyService) requireCompanyWorkspace(ctx context.Context, workspaceID, companyID string) error {
 	if workspaceID == "" || companyID == "" {
 		return fmt.Errorf("workspace_id and company_id are required")

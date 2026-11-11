@@ -62,6 +62,7 @@ type SupportInboxService struct {
 	docsSpaceRepo           *repository.DocsSpaceRepository
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
+	helpcenterHostedDomain  string
 	docsSearchRepo          *repository.DocsSearchRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
 	supportAIService        *SupportAIService

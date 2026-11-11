@@ -42,6 +42,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/dbschema"
 	"github.com/helpin-ai/helpin/server/internal/decision"
+	"github.com/helpin-ai/helpin/server/internal/edition"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -761,6 +762,7 @@ func main() {
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
 	supportInboxService.SetRouteDomain(cfg.SupportEmailRouteDomain)
+	supportInboxService.SetHelpcenterHostedDomain(cfg.HelpcenterHostedDomain)
 	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
 	supportInboxService.SetEmailSenderRepository(supportEmailSenderRepo)
 	supportInboxService.SetEmailSenderDomainRepository(supportEmailSenderDomainRepo)
@@ -1673,10 +1675,11 @@ func main() {
 	}
 
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
-	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
+	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService, service.NewSupportAgentDefaults(supportInboxService))
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	workspaceService.SetWebsiteDefaultsApplier(supportInboxService)
+	workspaceService.SetOrganizationRoles(orgRepo)
 	setupService := service.NewSetupService(setupRepo)
 	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {
@@ -1840,6 +1843,27 @@ func main() {
 		crmCompanyRepo, crmContactRepo, crmCompanyService, crmContactService, crmActivityService,
 	))
 	supportInboxService.SetAuthzService(authzService)
+
+	// The edition may add features on top of the product services, such as
+	// extra MCP tools. It must do so before the MCP and REST handlers are built.
+	if err := editionServices.ExtendWith(edition.Extension{
+		DB:                     db,
+		HelpcenterHostedDomain: cfg.HelpcenterHostedDomain,
+		MCP:                    mcpService,
+		Users:                  userRepo,
+		Organizations:          orgService,
+		Workspaces:             workspaceService,
+		Helpcenter:             docsHelpcenterService,
+		DocsImport:             docsImportService,
+		DocsSpaces:             docsSpaceService,
+		DocsCollections:        docsCollectionService,
+		SupportInbox:           supportInboxService,
+		CRMCompanies:           crmCompanyRepo,
+		CRMActivities:          crmActivityService,
+	}); err != nil {
+		slog.Error("startup: edition extension failed", "error", err)
+		os.Exit(1)
+	}
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)

@@ -42,6 +42,8 @@ type DocsHelpcenterService struct {
 	hcCache         cache.Cache
 	// domainVerification, when set, verifies custom domains before they serve.
 	domainVerification *helpcenterDomainVerification
+	// brandImporter reads branding from public sites; created on first use.
+	brandImporter *HelpcenterBrandImporter
 }
 
 // NewDocsHelpcenterService creates a new DocsHelpcenterService.
