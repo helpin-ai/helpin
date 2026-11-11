@@ -33,7 +33,8 @@ class ChecksTest(unittest.TestCase):
         for name in ('deploy-staging.yml', 'deploy-prod.yml'):
             workflow = (root / '.github/workflows' / name).read_text()
             deploy_command = next(line for line in workflow.splitlines() if 'dlx netlify deploy' in line)
-            self.assertIn('--config netlify.toml', deploy_command)
+            # netlify-cli 24.2.0 discovers the root config; deploy has no --config flag.
+            self.assertNotIn('--config', deploy_command)
 
     def test_node_is_ready_before_pnpm_bootstrap(self):
         root = Path(__file__).resolve().parents[2]
