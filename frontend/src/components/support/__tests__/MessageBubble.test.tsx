@@ -763,6 +763,38 @@ describe('MessageBubble', () => {
     rendered.forEach((entry) => entry.cleanup())
   })
 
+  it('strikes through removed tags and Cc addresses but not added ones', () => {
+    const base = {
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_display_name: 'Sarah Khan',
+      message_type: 'system',
+      is_internal: true,
+      created_at: '2026-06-12T09:00:00.000Z',
+      updated_at: '2026-06-12T09:00:00.000Z',
+    } as const
+    const tagAdded = renderBubble({ ...base, id: 'msg-tag-added', content: 'Sarah added tag Billing.', system_event_type: 'tag_added' })
+    const tagRemoved = renderBubble({ ...base, id: 'msg-tag-removed', content: 'Sarah removed tag Billing.', system_event_type: 'tag_removed' })
+    const recipients = renderBubble({
+      ...base,
+      id: 'msg-cc',
+      content: 'Sarah added new@example.com to Cc. Sarah removed old@example.com from Cc.',
+      system_event_type: 'email_recipients_updated',
+    })
+
+    expect(tagAdded.container.querySelector('strong')?.className).not.toContain('line-through')
+    const removedTag = tagRemoved.container.querySelector('strong')
+    expect(removedTag?.textContent).toBe('Billing')
+    expect(removedTag?.className).toContain('line-through')
+    const [added, removed] = recipients.container.querySelectorAll('strong')
+    expect(added?.textContent).toBe('new@example.com')
+    expect(added?.className).not.toContain('line-through')
+    expect(removed?.textContent).toBe('old@example.com')
+    expect(removed?.className).toContain('line-through')
+    ;[tagAdded, tagRemoved, recipients].forEach((entry) => entry.cleanup())
+  })
+
   it('links linked and unlinked task events to their own task and names the agent', () => {
     const base = {
       workspace_id: 'ws-1',
