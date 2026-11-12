@@ -26,7 +26,12 @@ export function DocsSelectionCheckbox({ doc, selection }: { doc: DocsDocument; s
   />
 }
 
-export function DocsBulkToolbar({ wsId, selection }: { wsId: string; selection: DocsSelection }) {
+/**
+ * Bulk actions for the selected documents. Pass `showSelectAll={false}`
+ * when the list renders its own select-all checkbox (e.g. in a column
+ * header); the bar then only shows the count and actions.
+ */
+export function DocsBulkToolbar({ wsId, selection, showSelectAll = true }: { wsId: string; selection: DocsSelection; showSelectAll?: boolean }) {
   const queryClient = useQueryClient()
   const running = useRef(false)
   const [dialog, setDialog] = useState<{ action: DocsBulkAction; docs: DocsDocument[] } | null>(null)
@@ -73,13 +78,13 @@ export function DocsBulkToolbar({ wsId, selection }: { wsId: string; selection: 
   }
 
   return <>
-    <div className="flex min-h-9 flex-wrap items-center gap-3 px-3" aria-label="Document selection">
-      <Checkbox
+    {(showSelectAll || selection.ids.length > 0) && <div className="flex min-h-9 flex-wrap items-center gap-3 px-3" aria-label="Document selection">
+      {showSelectAll && <Checkbox
         aria-label="Select all visible documents"
         checked={selection.allChecked ? true : selection.ids.length ? 'indeterminate' : false}
         disabled={selection.busy || !selection.hasSelectable}
         onCheckedChange={selection.toggleAll}
-      />
+      />}
       {selection.ids.length ? <>
         <span className="text-sm text-muted-foreground" role="status">{selection.busy ? 'Updating…' : `${selection.ids.length} selected`}</span>
         <DropdownMenu>
@@ -100,7 +105,7 @@ export function DocsBulkToolbar({ wsId, selection }: { wsId: string; selection: 
         </DropdownMenu>
         <Button variant="ghost" size="sm" disabled={selection.busy} onClick={selection.clear}>Clear</Button>
       </> : <span className="text-xs text-muted-foreground">Select all visible</span>}
-    </div>
+    </div>}
     {dialog?.action === 'move' && <MoveDocumentDialog
       wsId={wsId}
       open

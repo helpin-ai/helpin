@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -16,9 +17,13 @@ import {
   useDeleteDocsDocument,
   useDuplicateDocsDocument,
   usePublishDocsDocument,
+  useMoveDocsDocument,
+  useReorderDocsChildren,
+  useAssignableMembers,
   useWorkspaceAccess,
   usePermissions,
 } from '@/hooks/queries'
+import { queryKeys } from '@/lib/queryKeys'
 import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
@@ -26,21 +31,30 @@ import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog
 import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
-import { DocumentsTable, type DocumentsTableSortField } from '@/pages/docs/spaceDetail/DocumentsTable'
+import {
+  DocumentsTable,
+  type DocsOrderChange,
+  type DocumentsTableOrder,
+  type DocumentsTablePathColumn,
+  type DocumentsTableSortField,
+} from '@/pages/docs/spaceDetail/DocumentsTable'
+import { buildOrderGroups, buildReorderItems, type DocsOrderGroup } from '@/pages/docs/spaceDetail/docsOrder'
 import { SpaceNodeHeader } from '@/pages/docs/spaceDetail/SpaceNodeHeader'
 import { CollectionCardGrid } from '@/pages/docs/spaceDetail/CollectionCardGrid'
 import { EmptyNodeState } from '@/pages/docs/spaceDetail/EmptyNodeState'
-import { UncategorizedSection } from '@/pages/docs/spaceDetail/UncategorizedSection'
 import { NodeSkeleton } from '@/pages/docs/spaceDetail/NodeSkeleton'
 import { APIReferenceSection } from '@/components/docs/APIReferenceSection'
 import {
-  countDirectDocs,
+  ALL_STATUSES,
   directChildrenOfView,
   resolveView,
   scopedDocuments,
   type StatusFilter,
 } from '@/pages/docs/spaceDetail/nodeSelection'
 import { QuietPageViewport } from '@/components/design-system/quiet'
+
+// Archived documents stay out of the list until the status filter asks for them.
+const DEFAULT_STATUSES: DocStatus[] = ['draft', 'published']
 
 export function DocsSpaceDetail() {
   const navigate = useNavigate()
@@ -57,14 +71,21 @@ export function DocsSpaceDetail() {
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs } = usePermissions(access)
 
-  const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
+  const [statuses, setStatuses] = useState<DocStatus[]>(DEFAULT_STATUSES)
   const [sortField, setSortField] = useState<DocumentsTableSortField>('updated_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [orderView, setOrderView] = useState(false)
 
+  const queryClient = useQueryClient()
   const { data: space, isLoading: spaceLoading } = useDocsSpace(wsId, spaceId)
   const { data: collections } = useDocsCollections(wsId, spaceId)
-  const docFilters = { space_id: spaceId, include_archived: 'true', ...(filterStatus ? { status: filterStatus } : {}) }
+  // Every status is fetched; the status filter applies client-side so
+  // the table can count hidden archived documents.
+  const docFilters = { space_id: spaceId, include_archived: 'true' }
   const { data: documents } = useDocsDocuments(wsId, docFilters)
+  const { data: members = [] } = useAssignableMembers(wsId)
+  const moveDoc = useMoveDocsDocument(wsId)
+  const reorderChildren = useReorderDocsChildren(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
   const deleteDoc = useDeleteDocsDocument(wsId)
@@ -94,8 +115,8 @@ export function DocsSpaceDetail() {
   }, [spaceId, collections, documents])
 
   // Status filter is the shared predicate across the table and the
-  // header/card counts — see §5.3 of the plan.
-  const filter = useMemo<StatusFilter>(() => ({ status: filterStatus }), [filterStatus])
+  // collection card counts.
+  const filter = useMemo<StatusFilter>(() => ({ statuses }), [statuses])
 
   const view = useMemo(
     () => resolveView(activeCollectionParam ?? null, tree),
@@ -103,14 +124,35 @@ export function DocsSpaceDetail() {
   )
 
   const childNodes = useMemo(() => directChildrenOfView(view, tree), [view, tree])
+  // The table filters by status itself so it can count hidden archived docs.
   const scopedDocs = useMemo(
-    () => scopedDocuments(view, tree, filter),
-    [view, tree, filter],
+    () => scopedDocuments(view, tree, ALL_STATUSES),
+    [view, tree],
   )
-  const uncategorizedCount = useMemo(
-    () => countDirectDocs(null, tree, filter),
-    [tree, filter],
+
+  const orderGroups = useMemo(
+    () => (view.kind === 'collection' ? buildOrderGroups(view.node) : null),
+    [view],
   )
+
+  const pathColumn = useMemo<DocumentsTablePathColumn | null>(() => {
+    if (view.kind === 'space_root') {
+      return {
+        label: 'Collection',
+        emptyLabel: 'Uncategorized',
+        pathFor: (doc) => (doc.collection_id ? collectionPaths.get(doc.collection_id) ?? null : null),
+      }
+    }
+    if (view.kind === 'collection' && orderGroups && orderGroups.length > 1) {
+      const labels = new Map(orderGroups.map((group) => [group.collection.id, group.label]))
+      return {
+        label: 'Sub-collection',
+        emptyLabel: '—',
+        pathFor: (doc) => (doc.collection_id ? labels.get(doc.collection_id) ?? null : null),
+      }
+    }
+    return null
+  }, [view, orderGroups, collectionPaths])
 
   // Deep-link fallback: if the URL points at a collection id that no
   // longer exists (user deleted it in another tab, or a stale link),
@@ -191,6 +233,64 @@ export function DocsSpaceDetail() {
       toast.error(err instanceof Error ? err.message : 'Failed to delete')
     }
   }
+
+  const saveGroupOrder = (group: DocsOrderGroup, docIds: string[]) =>
+    reorderChildren.mutateAsync({
+      spaceId,
+      data: { parent_collection_id: group.collection.id, items: buildReorderItems(group, docIds) },
+    })
+
+  const refreshDocuments = () => queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+
+  const undoOrderMove = async (doc: DocsDocument, from: DocsOrderGroup, fromOrder: string[]) => {
+    try {
+      await moveDoc.mutateAsync({ id: doc.id, space_id: spaceId, collection_id: from.collection.id })
+      await saveGroupOrder(from, fromOrder)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to undo the move')
+    }
+    await refreshDocuments()
+  }
+
+  // Drops in the saved-order view: a reorder within one collection, or a
+  // move into another collection followed by a reorder there. The move
+  // goes through the regular document move, so help-center redirects and
+  // lock checks apply exactly as with "Move to…".
+  const handleOrderChange = async ({ doc, from, to, toOrder, fromOrderBefore }: DocsOrderChange) => {
+    const moved = from.collection.id !== to.collection.id
+    if (moved && doc.is_locked) {
+      toast.error('Unlock this document to move it')
+      return
+    }
+    try {
+      if (moved) await moveDoc.mutateAsync({ id: doc.id, space_id: spaceId, collection_id: to.collection.id })
+      await saveGroupOrder(to, toOrder)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : moved ? 'Failed to move document' : 'Failed to save the order')
+      await refreshDocuments()
+      return
+    }
+    await refreshDocuments()
+    if (moved) {
+      toast.success(`Moved to ${to.collection.name}`, {
+        description: `“${doc.title || 'Untitled'}” was in ${from.collection.name}.`,
+        action: { label: 'Undo', onClick: () => void undoOrderMove(doc, from, fromOrderBefore) },
+      })
+    }
+  }
+
+  const order: DocumentsTableOrder | null = orderGroups && space
+    ? {
+        label: space.type === 'external_capable' ? 'Help center order' : 'Sidebar order',
+        description: space.type === 'external_capable'
+          ? 'The order customers see in the help center and your team sees in the sidebar'
+          : 'The order documents appear in the sidebar',
+        groups: orderGroups,
+        active: orderView,
+        onActiveChange: setOrderView,
+        onChange: handleOrderChange,
+      }
+    : null
 
   if (!workspace) {
     return <QuietPageViewport><p className="text-sm text-muted-foreground">Workspace not found.</p></QuietPageViewport>
@@ -286,12 +386,12 @@ export function DocsSpaceDetail() {
               wsId={wsId}
               selectionScope={`${spaceId}:${view.kind}:${view.kind === 'collection' ? view.node.collection.id : ''}`}
               documents={scopedDocs}
-              collectionPaths={collectionPaths}
-              showCollectionPath={view.kind === 'space_root'}
-              hasCollections={(collections ?? []).length > 0}
+              members={members}
+              pathColumn={pathColumn}
+              order={order}
               wsSlug={wsSlug}
-              filterStatus={filterStatus}
-              onFilterStatus={setFilterStatus}
+              statuses={statuses}
+              onStatusesChange={setStatuses}
               sortField={sortField}
               sortDir={sortDir}
               onSort={(field, dir) => { setSortField(field); setSortDir(dir) }}
@@ -311,16 +411,6 @@ export function DocsSpaceDetail() {
               onPublish={(doc) => publishDoc.mutate({ id: doc.id }, {
                 onSuccess: () => toast.success('Document published'),
                 onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish'),
-              })}
-              onCreateDocument={() => openCreate('docs_document', {
-                spaceId,
-                collectionId:
-                  view.kind === 'collection' ? view.node.collection.id : undefined,
-              })}
-              onCreateCollection={() => openCreate('docs_collection', {
-                spaceId,
-                parentCollectionId:
-                  view.kind === 'collection' ? view.node.collection.id : undefined,
               })}
             />
           ) : childNodes.length === 0 ? (
@@ -344,12 +434,6 @@ export function DocsSpaceDetail() {
             />
           ) : null}
 
-          {view.kind === 'space_root' && uncategorizedCount > 0 && (
-            <UncategorizedSection
-              count={uncategorizedCount}
-              onOpen={() => navigateToCollection('__uncollected__')}
-            />
-          )}
         </>
           )}
         </div>

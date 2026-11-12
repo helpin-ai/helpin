@@ -1067,6 +1067,16 @@
   border-radius: 4px;
 }
 
+/* Brief positive tint on a document row that was just dropped in the
+   space list's saved-order view. */
+@keyframes docs-row-moved-pulse {
+  0% { background-color: color-mix(in oklab, var(--quiet-positive) 14%, transparent); }
+  100% { background-color: transparent; }
+}
+.docs-row-moved {
+  animation: docs-row-moved-pulse 1.6s ease-out;
+}
+
 /* Docs article rhythm: used by the docs editor and shared read-only documents. */
 .docs-editor-prose {
   color: var(--rich-text-soft-foreground);

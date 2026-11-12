@@ -26,14 +26,17 @@ export type NodeView =
   | { kind: 'uncategorized' }
 
 /**
- * StatusFilter mirrors the table's filter state. `null` means "no
- * filter" — every status (including archived) is visible. The
- * space-detail page fetches with include_archived=true so archived
- * docs are always in scope until the user filters them out.
+ * StatusFilter mirrors the table's status filter. An empty list means
+ * "no filter" — every status (including archived) is visible. The
+ * space-detail page fetches with include_archived=true and defaults
+ * the filter to draft + published, so archived docs stay in scope but
+ * hidden until the user asks for them.
  */
 export interface StatusFilter {
-  status: DocStatus | null
+  statuses: readonly DocStatus[]
 }
+
+export const ALL_STATUSES: StatusFilter = { statuses: [] }
 
 /**
  * resolveView turns the `?collection=` URL param plus the loaded
@@ -79,8 +82,8 @@ export function directChildrenOfView(
 }
 
 function passesFilter(doc: DocsDocument, filter: StatusFilter): boolean {
-  if (!filter.status) return true
-  return doc.status === filter.status
+  if (filter.statuses.length === 0) return true
+  return filter.statuses.includes(doc.status)
 }
 
 /**

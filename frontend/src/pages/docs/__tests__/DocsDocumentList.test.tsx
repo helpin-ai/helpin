@@ -90,7 +90,9 @@ describe('DocsDocumentList', () => {
       expect(source).not.toContain('className="text-xs text-muted-foreground"')
     }
     expect(documentListSource).toContain('<FilterHorizontalIcon className="h-4 w-4" />')
-    expect(documentsTableSource).toContain('<FilterHorizontalIcon className="h-4 w-4" />')
+    // The space list filters status with the shared Quiet filter dropdown
+    // and sorts from its column headers.
+    expect(documentsTableSource).toContain('<QuietFilterDropdown')
     expect(libraryListSource).toContain('<ArrowUpDownIcon className="h-4 w-4" />')
   })
 })
