@@ -38,7 +38,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams'
 import { useAuthStore } from '@/stores/authStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useWSStore } from '@/hooks/useWebSocket'
+import { useDocsPresence } from '@/hooks/useDocsPresence'
 import {
   useDocsDocument,
   useDocsContent,
@@ -100,7 +100,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DocsEditor, SaveIndicator, type DocsCommentAnchor, type DocsCommentAnchorDecoration, type DocsEditingPresenceSignal, type SaveStatus } from '@/components/docs/DocsEditor'
+import { DocsEditor, SaveIndicator, type DocsCommentAnchor, type DocsCommentAnchorDecoration, type SaveStatus } from '@/components/docs/DocsEditor'
 import { DocsSharePopover } from '@/components/docs/DocsSharePopover'
 import { DocsDocumentLayout } from '@/components/docs/DocsDocumentLayout'
 import { SlugDisplay } from '@/components/docs/SlugDisplay'
@@ -527,7 +527,7 @@ export function DocsDocumentDetail({
   })
   const remoteViewers = useDocsPresenceStore((s) => s.viewingUsers[docId] ?? EMPTY_DOC_VIEWERS)
   const remoteEditors = useDocsPresenceStore((s) => s.editingUsers[docId] ?? EMPTY_DOC_EDITORS)
-  const wsSendRaw = useWSStore((s) => s.send)
+  const handleEditingPresenceChange = useDocsPresence(doc ? docId : '')
   const { data: collections = [] } = useDocsCollections(wsId, doc?.space_id ?? '')
   const { data: spaceTranslations = [] } = useDocsHelpcenterSpaceTranslations(wsId, doc?.space_id ?? '')
   const { data: collectionTranslations = [] } = useDocsHelpcenterCollectionTranslations(wsId, doc?.collection_id ?? '')
@@ -869,38 +869,6 @@ export function DocsDocumentDetail({
       if (sourceOGImageInputRef.current) sourceOGImageInputRef.current.value = ''
     }
   }, [wsId])
-
-  useEffect(() => {
-    if (!docId || !wsSendRaw) return
-
-    wsSendRaw({ type: 'docs:presence:sync', data: { document_ids: [docId] } })
-    wsSendRaw({ type: 'docs:viewing:start', data: { document_id: docId } })
-
-    return () => {
-      wsSendRaw({ type: 'docs:viewing:stop', data: { document_id: docId } })
-    }
-  }, [docId, wsSendRaw])
-
-  const handleEditingPresenceChange = useCallback((presence: DocsEditingPresenceSignal | null) => {
-    if (!docId || !wsSendRaw) return
-    if (presence) {
-      wsSendRaw({
-        type: 'docs:editing:update',
-        data: {
-          document_id: docId,
-          area: presence.area,
-          section: presence.section,
-        },
-      })
-      return
-    }
-    wsSendRaw({
-      type: 'docs:editing:stop',
-      data: {
-        document_id: docId,
-      },
-    })
-  }, [docId, wsSendRaw])
 
   const handleCreateCommentAnchor = useCallback((anchor: DocsCommentAnchor) => {
     setCommentAnchor(anchor)
@@ -1511,21 +1479,21 @@ export function DocsDocumentDetail({
                 <span className={cn('hidden text-[11.5px] font-medium sm:inline', activeDocEditors.length > 0 ? 'text-quiet-accent' : 'text-quiet-muted')}>
                   {activeDocEditors.length > 0 ? 'Editing now' : 'Viewing now'}
                 </span>
-                <div className="flex items-end gap-1.5">
+                <div className="flex items-center gap-1.5">
                   {headerPresencePeople.slice(0, 4).map((person) => (
                     <QuickTooltip key={person.userId} label={person.tooltip}>
-                      <div className="relative pb-1">
+                      <div className="relative flex size-7 shrink-0 items-center justify-center">
                         <UserAvatar
                           name={person.name}
                           avatarUrl={person.avatarUrl}
-                          className={person.isEditing ? 'h-6 w-6 ring-1 ring-quiet-accent/30' : 'h-6 w-6 opacity-75'}
+                          className={person.isEditing ? 'size-7 ring-1 ring-quiet-accent/30' : 'size-7 opacity-75'}
                           fallbackClassName="text-[8px]"
                         />
                         {person.isEditing && <EditingIndicator />}
                       </div>
                     </QuickTooltip>
                   ))}
-                  {headerPresencePeople.length > 4 ? <AvatarGroupCount className="size-6 text-[10px]">+{headerPresencePeople.length - 4}</AvatarGroupCount> : null}
+                  {headerPresencePeople.length > 4 ? <AvatarGroupCount className="size-7 text-[10px]">+{headerPresencePeople.length - 4}</AvatarGroupCount> : null}
                 </div>
               </div>
             ) : null}
