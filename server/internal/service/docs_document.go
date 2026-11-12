@@ -171,13 +171,23 @@ func (s *DocsDocumentService) ListWithOwner(ctx context.Context, workspaceID str
 }
 
 func (s *DocsDocumentService) list(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
-	// Admins/owners can see all drafts; others only see their own.
-	isAdminOrOwner := role == "admin" || role == "owner"
-	var draftViewerID string
-	if !isAdminOrOwner {
-		draftViewerID = userID
+	return s.docRepo.ListWithOwner(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, draftViewerFor(userID, role), includeArchived)
+}
+
+// ListMine returns documents the caller owns (memberID) or created
+// (userID), with the same filters and draft visibility as ListWithOwner.
+func (s *DocsDocumentService) ListMine(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, memberID, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
+	mine := repository.DocsDocumentMineFilter{MemberID: memberID, UserID: userID}
+	return s.docRepo.ListMine(ctx, workspaceID, spaceID, collectionID, status, teamID, mine, draftViewerFor(userID, role), includeArchived)
+}
+
+// draftViewerFor returns the user whose drafts a list may include: admins
+// and owners see every draft (empty), everyone else only their own.
+func draftViewerFor(userID, role string) string {
+	if role == "admin" || role == "owner" {
+		return ""
 	}
-	return s.docRepo.ListWithOwner(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, draftViewerID, includeArchived)
+	return userID
 }
 
 // Update updates a document's metadata.

@@ -5,7 +5,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/docs/my')({
   component: () => (
     <DocsDocumentList
       title="My Documents"
-      description="All documents you own."
+      description="Documents you own or created across all spaces."
       filterMode="my"
     />
   ),

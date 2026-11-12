@@ -56,7 +56,7 @@ describe('DocsDocumentList', () => {
     document.body.innerHTML = ''
   })
 
-  it('loads every document owned by the current workspace member', () => {
+  it('loads the documents the current person owns or created', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -65,7 +65,7 @@ describe('DocsDocumentList', () => {
       root.render(
         <DocsDocumentList
           title="My Documents"
-          description="All documents you own."
+          description="Documents you own or created across all spaces."
           filterMode="my"
         />,
       )
@@ -73,26 +73,22 @@ describe('DocsDocumentList', () => {
 
     expect(useDocsDocuments).toHaveBeenCalledWith(
       'ws-1',
-      { owner_id: 'member-1', include_archived: 'true' },
-      { enabled: true },
+      { mine: 'true', include_archived: 'true' },
     )
     expect(container.querySelector('header')?.className).toContain('border-b')
 
     act(() => root.unmount())
   })
 
-  it('keeps Docs Status and Sort controls on the standard small-button typography', () => {
+  it('renders the shared documents table instead of its own list', () => {
     const documentListSource = readFileSync(resolve(__dirname, '../DocsDocumentList.tsx'), 'utf8')
     const documentsTableSource = readFileSync(resolve(__dirname, '../spaceDetail/DocumentsTable.tsx'), 'utf8')
-    const libraryListSource = readFileSync(resolve(__dirname, '../../../components/docs/DocsLibraryList.tsx'), 'utf8')
 
-    for (const source of [documentListSource, documentsTableSource, libraryListSource]) {
-      expect(source).not.toContain('className="text-xs text-muted-foreground"')
-    }
-    expect(documentListSource).toContain('<FilterHorizontalIcon className="h-4 w-4" />')
-    // The space list filters status with the shared Quiet filter dropdown
-    // and sorts from its column headers.
+    // My documents, Recent docs and Drafts use the space pages' table: one
+    // status filter (shared Quiet dropdown) and sorting from column headers.
+    expect(documentListSource).toContain('<DocumentsTable')
+    expect(documentListSource).not.toContain('DocsLibraryRow')
     expect(documentsTableSource).toContain('<QuietFilterDropdown')
-    expect(libraryListSource).toContain('<ArrowUpDownIcon className="h-4 w-4" />')
+    expect(documentsTableSource).not.toContain('className="text-xs text-muted-foreground"')
   })
 })

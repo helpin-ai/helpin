@@ -65,10 +65,12 @@ function Harness({
   documents,
   pathColumn = null,
   order = null,
+  showStatusFilter,
 }: {
   documents: DocsDocument[]
   pathColumn?: DocumentsTablePathColumn | null
   order?: DocumentsTableOrder | null
+  showStatusFilter?: boolean
 }) {
   const [statuses, setStatuses] = useState<DocStatus[]>(['draft', 'published'])
   const [sort, setSort] = useState<{ field: DocumentsTableSortField; dir: DocumentsTableSortDir }>({ field: 'updated_at', dir: 'desc' })
@@ -78,6 +80,7 @@ function Harness({
         documents={documents}
         members={members}
         pathColumn={pathColumn}
+        showStatusFilter={showStatusFilter}
         order={order}
         wsSlug="acme"
         wsId="ws"
@@ -168,6 +171,15 @@ describe('DocumentsTable', () => {
     // Documents without a collection sort last, in both directions.
     click(container.querySelector('button[aria-label="Sort by Collection"]'))
     expect(rowTitles(container)).toEqual(['Beta', 'Alpha'])
+  })
+
+  it('drops the status filter when a list is one status', () => {
+    const container = render(
+      <Harness documents={[makeDoc({ id: 'Draft one', status: 'draft' })]} showStatusFilter={false} />,
+    )
+
+    expect(container.querySelector('button[aria-label^="Status:"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="Sort by Updated"]')).not.toBeNull()
   })
 
   it('lists the saved order by group and leaves it when a column is sorted', () => {
