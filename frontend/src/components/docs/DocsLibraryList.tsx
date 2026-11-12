@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export type DocsLibrarySortField = 'position' | 'updated_at' | 'title'
+export type DocsLibrarySortField = 'updated_at' | 'title'
 export type DocsLibrarySortDirection = 'asc' | 'desc'
 
 export interface DocsLibrarySortValue {
@@ -23,7 +23,6 @@ const SORT_OPTIONS: Array<DocsLibrarySortValue & { label: string }> = [
   { field: 'updated_at', direction: 'asc', label: 'Oldest updated' },
   { field: 'title', direction: 'asc', label: 'Title A–Z' },
   { field: 'title', direction: 'desc', label: 'Title Z–A' },
-  { field: 'position', direction: 'asc', label: 'Manual order' },
 ]
 
 function sortOptionKey(value: DocsLibrarySortValue) {
@@ -33,15 +32,11 @@ function sortOptionKey(value: DocsLibrarySortValue) {
 export function DocsLibrarySortMenu({
   value,
   onChange,
-  includeManualOrder = false,
 }: {
   value: DocsLibrarySortValue
   onChange: (value: DocsLibrarySortValue) => void
-  includeManualOrder?: boolean
 }) {
-  const options = includeManualOrder
-    ? SORT_OPTIONS
-    : SORT_OPTIONS.filter((option) => option.field !== 'position')
+  const options = SORT_OPTIONS
   const selected = options.find((option) => sortOptionKey(option) === sortOptionKey(value)) ?? options[0]
 
   return (
@@ -78,7 +73,8 @@ export function DocsLibrarySortMenu({
   )
 }
 
-function ExceptionalStatus({ status }: { status: DocStatus }) {
+/** Marks drafts and archived documents next to a title; published shows nothing. */
+export function DocsExceptionalStatus({ status }: { status: DocStatus }) {
   if (status === 'published') return null
 
   return (
@@ -162,7 +158,7 @@ export function DocsLibraryRow({
             <span className={cn('truncate font-medium text-foreground', compact ? 'text-[13px]' : 'text-sm')}>
               {title || 'Untitled'}
             </span>
-            <ExceptionalStatus status={status} />
+            <DocsExceptionalStatus status={status} />
             {proposalBadge}
           </span>
           {(location || updatedLabel) && (

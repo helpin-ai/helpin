@@ -641,7 +641,6 @@
   --color-quiet-hover: var(--quiet-hover);
   --color-quiet-row-hover: var(--quiet-row-hover);
   --color-quiet-row-selected: var(--quiet-row-selected);
-  --color-quiet-row-selected-bar: var(--quiet-row-selected-bar);
   --color-quiet-icon-well: var(--quiet-icon-well);
   --color-quiet-divider-strong: var(--quiet-divider-strong);
   --color-quiet-divider-light: var(--quiet-divider-light);
@@ -706,8 +705,7 @@
   --quiet-hover: #f5f4f2;
   --quiet-row-hover: #faf9f7;
   /* The open item in a list: clearly darker than hover, cool so it doesn't read as a status colour. */
-  --quiet-row-selected: #e8ecf1;
-  --quiet-row-selected-bar: #334155;
+  --quiet-row-selected: #ecf0f5;
   --quiet-icon-well: #f0efec;
   --quiet-divider-strong: #ecebe8;
   --quiet-divider-light: #f2f1ee;
@@ -1067,6 +1065,16 @@
 .docs-block-anchor-highlight {
   animation: docs-block-anchor-pulse 1.6s ease-out;
   border-radius: 4px;
+}
+
+/* Brief positive tint on a document row that was just dropped in the
+   space list's saved-order view. */
+@keyframes docs-row-moved-pulse {
+  0% { background-color: color-mix(in oklab, var(--quiet-positive) 14%, transparent); }
+  100% { background-color: transparent; }
+}
+.docs-row-moved {
+  animation: docs-row-moved-pulse 1.6s ease-out;
 }
 
 /* Docs article rhythm: used by the docs editor and shared read-only documents. */
@@ -1598,8 +1606,7 @@
   --quiet-backdrop: oklch(0.11 0 0);
   --quiet-hover: var(--muted);
   --quiet-row-hover: color-mix(in oklab, var(--muted) 72%, transparent);
-  --quiet-row-selected: #252d3a;
-  --quiet-row-selected-bar: #cbd5e1;
+  --quiet-row-selected: #222935;
   --quiet-icon-well: var(--muted);
   --quiet-divider-strong: var(--border);
   --quiet-divider-light: color-mix(in oklab, var(--border) 66%, transparent);

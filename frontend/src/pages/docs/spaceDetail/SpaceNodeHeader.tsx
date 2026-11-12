@@ -37,7 +37,6 @@ export interface SpaceNodeHeaderProps {
   // Navigation
   /** Passed the target collection id, or null to reset to space root. */
   onNavigateToCollection: (collectionId: string | null) => void
-  onNavigateToSpaces: () => void
 
   // Create actions
   onCreateDocument: () => void
@@ -70,7 +69,6 @@ export function SpaceNodeHeader({
   view,
   canEdit,
   onNavigateToCollection,
-  onNavigateToSpaces,
   onCreateDocument,
   onCreateChildCollection,
   onEditSpace,
@@ -142,20 +140,23 @@ export function SpaceNodeHeader({
     ((view.kind === 'space_root') ||
       (view.kind === 'collection' && (onEditCollection || onDeleteCollection)))
 
-  const breadcrumbItems = [
-    { id: 'all-docs', label: 'All Docs', onClick: onNavigateToSpaces },
-    ...ancestors,
-  ]
+  // The space is the top of this page's hierarchy: its root shows no
+  // breadcrumb, and drilled views start the trail at the space. Other
+  // spaces are reached from the sidebar's space switcher ("All spaces").
+  const parent = ancestors[ancestors.length - 1]
 
   return (
     <QuietDetailHeader
-      breadcrumbs={(
+      // Without a breadcrumb row, keep the drilled-in header's height and
+      // centre the title so content does not jump between space and collection.
+      className={parent ? undefined : 'flex min-h-[4.5rem] flex-col justify-center'}
+      breadcrumbs={parent ? (
         <QuietBreadcrumbs
-          items={breadcrumbItems}
-          onBack={breadcrumbItems[breadcrumbItems.length - 1].onClick}
-          backLabel={breadcrumbItems.length === 1 ? 'Back to All Docs' : `Back to ${breadcrumbItems[breadcrumbItems.length - 1].label}`}
+          items={ancestors}
+          onBack={parent.onClick}
+          backLabel={`Back to ${parent.label}`}
         />
-      )}
+      ) : undefined}
       title={(
         <span className="flex min-w-0 items-center gap-2">
           {titleIcon}

@@ -248,8 +248,8 @@ function ArrangeBucketItems({
           const prefixedId = `${item.type}:${item.id}`
 
           // At the space root, show "Uncategorized" divider before the
-          // first doc that follows a collection (visual parity with the
-          // non-arrange mode's UncategorizedSection).
+          // first doc that follows a collection, so documents without a
+          // collection read as their own group.
           const showUncategorizedLabel =
             parentCollectionId === null &&
             item.type === 'doc' &&

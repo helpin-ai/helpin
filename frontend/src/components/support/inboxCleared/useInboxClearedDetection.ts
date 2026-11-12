@@ -9,7 +9,9 @@ import { loadInboxClearedMemory, saveInboxClearedMemory } from './inboxClearedMe
 import { composeInboxClearedMessage, shouldThrowConfetti } from './inboxClearedMessages';
 import { inboxClearScopeFor, isOwnInboxClear, type InboxClearScope } from './inboxClearedScope';
 
-const STATS_TIMEOUT_MS = 2000;
+// The celebration waits this long at most for the server's numbers, then goes
+// ahead without them.
+const STATS_TIMEOUT_MS = 1000;
 
 interface CelebrateInboxClearInput {
   workspaceId: string;

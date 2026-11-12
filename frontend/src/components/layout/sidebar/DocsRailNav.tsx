@@ -8,6 +8,7 @@ import {
   File01Icon,
   FolderOpenIcon,
   InboxIcon,
+  LayoutGridIcon,
   MoreVerticalIcon,
   PencilEdit01Icon,
   PlusSignIcon,
@@ -40,6 +41,7 @@ import {
   useDocsDocument,
   useDocsDocuments,
   useDocsSpaces,
+  useWorkspaceAccess,
 } from '@/hooks/queries'
 import type { DocsCollection, DocsDocument, DocsSpace } from '@/lib/docsTypes'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
@@ -74,6 +76,12 @@ type DocsRailNavProps = {
   openCreate: OpenDocsCreate
   onNavigate: (target: SidebarNavigateTarget) => void
 }
+
+// Counts, the collection "⋯" menu and the "In this space" + share one
+// trailing slot: 24px wide, 8px from the row's right edge, content
+// centred. Every row in the rail uses px-2, so they line up on one axis.
+const TRAILING_SLOT = 'flex h-6 w-6 shrink-0 items-center justify-center'
+const COUNT_CLASS = 'ml-auto w-6 shrink-0 text-center text-[11px] tabular-nums text-muted-foreground'
 
 function SpaceMark({ space, size = 'md' }: { space: DocsSpace; size?: 'sm' | 'md' }) {
   return (
@@ -275,7 +283,15 @@ function CollectionBranch({
             fallback={<FolderOpenIcon className="h-3.5 w-3.5 shrink-0" />}
           />
           <span className="truncate text-sm font-medium">{node.collection.name}</span>
-          <span className="ml-auto w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{directCount}</span>
+          <span
+            data-slot="docs-sidebar-count"
+            className={cn(
+              COUNT_CLASS,
+              canEditDocs && 'transition-opacity group-hover/collection:opacity-0 group-has-[:focus-visible]/collection:opacity-0 group-has-[[data-state=open]]/collection:opacity-0',
+            )}
+          >
+            {directCount}
+          </span>
         </button>
         {canEditDocs && (
           <DropdownMenu>
@@ -283,7 +299,11 @@ function CollectionBranch({
               <button
                 type="button"
                 aria-label={`Manage ${node.collection.name}`}
-                className="absolute inset-y-0 right-0 flex w-8 items-center justify-center rounded-md bg-gradient-to-l from-sidebar from-65% to-transparent opacity-0 transition-opacity group-hover/collection:opacity-100 data-[state=open]:opacity-100"
+                data-slot="docs-tree-row-menu"
+                className={cn(
+                  TRAILING_SLOT,
+                  'absolute inset-y-0 right-2 my-auto rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-sidebar-accent-foreground focus-visible:opacity-100 group-hover/collection:opacity-100 data-[state=open]:opacity-100',
+                )}
                 onClick={(event) => event.stopPropagation()}
               >
                 <MoreVerticalIcon className="h-3.5 w-3.5" />
@@ -372,6 +392,15 @@ export function DocsRailNav({
   const [deletingCollection, setDeletingCollection] = useState<DocsCollection | null>(null)
   const deleteSpace = useDeleteDocsSpace(wsId)
   const deleteCollection = useDeleteDocsCollection(wsId)
+  const { data: access } = useWorkspaceAccess(wsId)
+  const membershipId = access?.membership.id
+  // Same query as the My documents page, so the count matches its list.
+  const { data: myDocuments } = useDocsDocuments(
+    wsId,
+    { owner_id: membershipId ?? '', include_archived: 'true' },
+    { enabled: !!membershipId },
+  )
+  const onAllSpaces = location.pathname.replace(/\/$/, '') === `/w/${wsSlug}/docs`
 
   const activeSpaceId = resolveDocsSidebarSpaceId({
     spaces,
@@ -596,7 +625,7 @@ export function DocsRailNav({
                         key={space.id}
                         space={space}
                         wsId={wsId}
-                        active={space.id === activeSpaceId}
+                        active={!onAllSpaces && space.id === activeSpaceId}
                         highlighted={orderedFilteredSpaces[highlightedSpaceIndex]?.id === space.id}
                         canEditDocs={canEditDocs}
                         onSelect={() => navigateToSpace(space.id)}
@@ -611,18 +640,36 @@ export function DocsRailNav({
                 <p className="px-2 py-6 text-center text-sm text-muted-foreground">No spaces found.</p>
               )}
             </div>
+            <div className="mx-1 my-1 h-px bg-border/70" />
+            <button
+              type="button"
+              aria-current={onAllSpaces ? 'page' : undefined}
+              className={cn(
+                'flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors hover:bg-muted',
+                onAllSpaces && 'bg-muted',
+              )}
+              onClick={() => {
+                setSwitcherOpen(false)
+                onNavigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })
+              }}
+            >
+              <span className="flex h-6 w-6 items-center justify-center"><LayoutGridIcon className="h-3.5 w-3.5" /></span>
+              All spaces
+              {onAllSpaces && (
+                <span className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center">
+                  <Tick01Icon className="h-3.5 w-3.5" />
+                </span>
+              )}
+            </button>
             {canEditDocs && (
-              <>
-                <div className="mx-1 my-1 h-px bg-border/70" />
-                <button
-                  type="button"
-                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors hover:bg-muted"
-                  onClick={() => { setSwitcherOpen(false); openCreate('docs_space') }}
-                >
-                  <span className="flex h-6 w-6 items-center justify-center"><PlusSignIcon className="h-3.5 w-3.5" /></span>
-                  New space
-                </button>
-              </>
+              <button
+                type="button"
+                className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors hover:bg-muted"
+                onClick={() => { setSwitcherOpen(false); openCreate('docs_space') }}
+              >
+                <span className="flex h-6 w-6 items-center justify-center"><PlusSignIcon className="h-3.5 w-3.5" /></span>
+                New space
+              </button>
             )}
           </PopoverContent>
         </Popover>
@@ -658,8 +705,8 @@ export function DocsRailNav({
 
       <nav data-slot="docs-quick-links" aria-label="Docs views" className="space-y-0.5 px-2 pb-2">
         {[
-          { label: 'Recent docs', icon: Clock01Icon, link: `/w/${wsSlug}/docs/recent` },
-          { label: 'My documents', icon: UserIcon, link: `/w/${wsSlug}/docs/my` },
+          { label: 'Recent docs', icon: Clock01Icon, link: `/w/${wsSlug}/docs/recent`, count: undefined },
+          { label: 'My documents', icon: UserIcon, link: `/w/${wsSlug}/docs/my`, count: myDocuments?.length },
         ].map((item) => (
           <button
             key={item.link}
@@ -672,6 +719,9 @@ export function DocsRailNav({
           >
             <item.icon className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="truncate">{item.label}</span>
+            {item.count !== undefined && (
+              <span data-slot="docs-sidebar-count" className={COUNT_CLASS}>{item.count}</span>
+            )}
           </button>
         ))}
         <button
@@ -684,7 +734,7 @@ export function DocsRailNav({
         >
           <File01Icon className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="truncate">All docs in space</span>
-          <span className="ml-auto w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{documents.length}</span>
+          <span data-slot="docs-sidebar-count" className={COUNT_CLASS}>{documents.length}</span>
         </button>
       </nav>
 
@@ -697,7 +747,8 @@ export function DocsRailNav({
             <button
               type="button"
               aria-label="New collection"
-              className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              data-slot="docs-tree-header-add"
+              className={cn(TRAILING_SLOT, 'rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')}
               onClick={() => openCreate('docs_collection', { spaceId: activeSpaceId })}
             >
               <PlusSignIcon className="h-3.5 w-3.5" />
@@ -771,7 +822,7 @@ export function DocsRailNav({
                   >
                     <InboxIcon className="h-3.5 w-3.5" />
                     <span className="truncate text-sm font-medium">Uncategorized</span>
-                    <span className="ml-auto w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{uncollectedDocuments.length}</span>
+                    <span data-slot="docs-sidebar-count" className={COUNT_CLASS}>{uncollectedDocuments.length}</span>
                   </button>
                 </div>
                 {uncategorizedExpanded && (
