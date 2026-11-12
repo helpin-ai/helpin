@@ -413,16 +413,6 @@ export const ConversationRow = memo(function ConversationRow({
           : ''
       }`}
     >
-      {/* Active indicator bar (Crisp-style ::before), full row height so the open conversation stands out. */}
-      <span
-        data-selection-bar={isSelected ? 'true' : undefined}
-        className={`absolute inset-y-0 left-0 w-[3px] transition-transform duration-200 ${
-          isSelected
-            ? 'scale-y-100 bg-quiet-row-selected-bar'
-            : 'scale-y-0 bg-transparent'
-        }`}
-      />
-
       {/* Inset bottom separator (Crisp-style ::after) */}
       <span className="absolute bottom-0 left-4 right-4 h-px bg-border/60 group-last:hidden" />
 
