@@ -149,17 +149,31 @@ func (r *DocsDocumentRepository) ListPublishedBySpace(ctx context.Context, works
 	return docs, nil
 }
 
+// DocsDocumentMineFilter matches documents that belong to one person: those
+// they own or those they created. owner_id holds a workspace member ID and
+// created_by holds a user ID, so both are needed.
+type DocsDocumentMineFilter struct {
+	MemberID string
+	UserID   string
+}
+
 // List returns documents for a workspace with optional filters.
 func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
-	return r.list(ctx, workspaceID, spaceID, collectionID, status, teamID, nil, draftViewerID, includeArchived)
+	return r.list(ctx, workspaceID, spaceID, collectionID, status, teamID, nil, nil, draftViewerID, includeArchived)
 }
 
 // ListWithOwner returns documents for a workspace with an optional owner filter.
 func (r *DocsDocumentRepository) ListWithOwner(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
-	return r.list(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, draftViewerID, includeArchived)
+	return r.list(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, nil, draftViewerID, includeArchived)
 }
 
-func (r *DocsDocumentRepository) list(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
+// ListMine returns documents the person owns or created, with the same
+// optional filters as List.
+func (r *DocsDocumentRepository) ListMine(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, mine DocsDocumentMineFilter, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
+	return r.list(ctx, workspaceID, spaceID, collectionID, status, teamID, nil, &mine, draftViewerID, includeArchived)
+}
+
+func (r *DocsDocumentRepository) list(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, mine *DocsDocumentMineFilter, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
 	query := r.db.WithContext(ctx).
 		Model(&model.DocsDocument{}).
 		Select(`docs_documents.*, COALESCE(pending_proposals.pending_change_proposal_count, 0) AS pending_change_proposal_count`).
@@ -189,6 +203,9 @@ func (r *DocsDocumentRepository) list(ctx context.Context, workspaceID string, s
 	}
 	if ownerID != nil && *ownerID != "" {
 		query = query.Where("docs_documents.owner_id = ?", *ownerID)
+	}
+	if mine != nil {
+		query = applyMineFilter(query, *mine)
 	}
 
 	// If draftViewerID is set, hide other users' drafts (admins/owners pass empty to see all).
@@ -436,4 +453,20 @@ func normalizeDocumentBucketTx(tx *gorm.DB, spaceID string, collectionID *string
 	}
 
 	return nil
+}
+
+// applyMineFilter keeps documents owned by mine.MemberID or created by
+// mine.UserID. Empty IDs are skipped (both columns are UUIDs); with neither
+// set, nothing matches.
+func applyMineFilter(query *gorm.DB, mine DocsDocumentMineFilter) *gorm.DB {
+	switch {
+	case mine.MemberID != "" && mine.UserID != "":
+		return query.Where("(docs_documents.owner_id = ? OR docs_documents.created_by = ?)", mine.MemberID, mine.UserID)
+	case mine.MemberID != "":
+		return query.Where("docs_documents.owner_id = ?", mine.MemberID)
+	case mine.UserID != "":
+		return query.Where("docs_documents.created_by = ?", mine.UserID)
+	default:
+		return query.Where("1 = 0")
+	}
 }

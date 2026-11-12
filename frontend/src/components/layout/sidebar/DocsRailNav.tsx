@@ -41,7 +41,6 @@ import {
   useDocsDocument,
   useDocsDocuments,
   useDocsSpaces,
-  useWorkspaceAccess,
 } from '@/hooks/queries'
 import type { DocsCollection, DocsDocument, DocsSpace } from '@/lib/docsTypes'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
@@ -392,15 +391,9 @@ export function DocsRailNav({
   const [deletingCollection, setDeletingCollection] = useState<DocsCollection | null>(null)
   const deleteSpace = useDeleteDocsSpace(wsId)
   const deleteCollection = useDeleteDocsCollection(wsId)
-  const { data: access } = useWorkspaceAccess(wsId)
-  const membershipId = access?.membership.id
   // Same query as the My documents page; the count leaves out archived
   // documents because that page hides them by default.
-  const { data: myDocuments } = useDocsDocuments(
-    wsId,
-    { owner_id: membershipId ?? '', include_archived: 'true' },
-    { enabled: !!membershipId },
-  )
+  const { data: myDocuments } = useDocsDocuments(wsId, { mine: 'true', include_archived: 'true' })
   const onAllSpaces = location.pathname.replace(/\/$/, '') === `/w/${wsSlug}/docs`
 
   const activeSpaceId = resolveDocsSidebarSpaceId({

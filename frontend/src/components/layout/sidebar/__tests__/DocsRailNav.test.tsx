@@ -79,7 +79,6 @@ vi.mock('@/hooks/queries', () => ({
   useDocsDocuments: () => ({ data: documents, isLoading: false }),
   useDeleteDocsCollection: () => ({ mutateAsync: vi.fn() }),
   useDeleteDocsSpace: () => ({ mutateAsync: vi.fn() }),
-  useWorkspaceAccess: () => ({ data: { membership: { id: 'member-1' } } }),
 }))
 
 vi.mock('@/components/docs/SpaceDialog', () => ({ SpaceDialog: () => null }))

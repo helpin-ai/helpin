@@ -65,13 +65,11 @@ function Harness({
   documents,
   pathColumn = null,
   order = null,
-  showOwner,
   showStatusFilter,
 }: {
   documents: DocsDocument[]
   pathColumn?: DocumentsTablePathColumn | null
   order?: DocumentsTableOrder | null
-  showOwner?: boolean
   showStatusFilter?: boolean
 }) {
   const [statuses, setStatuses] = useState<DocStatus[]>(['draft', 'published'])
@@ -82,7 +80,6 @@ function Harness({
         documents={documents}
         members={members}
         pathColumn={pathColumn}
-        showOwner={showOwner}
         showStatusFilter={showStatusFilter}
         order={order}
         wsSlug="acme"
@@ -176,13 +173,11 @@ describe('DocumentsTable', () => {
     expect(rowTitles(container)).toEqual(['Beta', 'Alpha'])
   })
 
-  it('drops the Owner column and status filter when a list does not need them', () => {
+  it('drops the status filter when a list is one status', () => {
     const container = render(
-      <Harness documents={[makeDoc({ id: 'Mine', owner_id: 'member-2' })]} showOwner={false} showStatusFilter={false} />,
+      <Harness documents={[makeDoc({ id: 'Draft one', status: 'draft' })]} showStatusFilter={false} />,
     )
 
-    expect(container.querySelector('button[aria-label="Sort by Owner"]')).toBeNull()
-    expect(container.textContent).not.toContain('Omar Ali')
     expect(container.querySelector('button[aria-label^="Status:"]')).toBeNull()
     expect(container.querySelector('button[aria-label="Sort by Updated"]')).not.toBeNull()
   })

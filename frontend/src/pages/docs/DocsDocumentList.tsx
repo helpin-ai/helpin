@@ -57,15 +57,12 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
 
   const filters = useMemo(() => {
     if (filterMode === 'drafts') return { status: 'draft' }
-    if (filterMode === 'my' && membershipId) {
-      return { owner_id: membershipId, include_archived: 'true' }
-    }
+    // Owned or created by the caller; the server resolves who that is.
+    if (filterMode === 'my') return { mine: 'true', include_archived: 'true' }
     return {}
-  }, [filterMode, membershipId])
+  }, [filterMode])
 
-  const { data: rawDocuments, isLoading } = useDocsDocuments(wsId, filters, {
-    enabled: filterMode !== 'my' || !!membershipId,
-  })
+  const { data: rawDocuments, isLoading } = useDocsDocuments(wsId, filters)
   const { data: spaces = [] } = useDocsSpaces(wsId)
   const { data: collections = [] } = useAllDocsCollections(wsId)
   const { data: members = [] } = useAssignableMembers(wsId)
@@ -167,7 +164,6 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
             documents={documents}
             members={members}
             pathColumn={pathColumn}
-            showOwner={filterMode !== 'my'}
             showStatusFilter={filterMode !== 'drafts'}
             listLabel={title}
             searchLabel={`Search ${title.toLowerCase()}`}

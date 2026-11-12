@@ -105,8 +105,6 @@ export interface DocumentsTableProps {
   members: AssignableMember[]
   /** Collection / sub-collection / location column; null hides it. */
   pathColumn: DocumentsTablePathColumn | null
-  /** Hide the Owner column where it would repeat one person (My documents). */
-  showOwner?: boolean
   /** Hide the status filter where the list is one status (Drafts). */
   showStatusFilter?: boolean
   /** Accessible names for the list and its search field. */
@@ -167,7 +165,6 @@ export function DocumentsTable({
   documents,
   members,
   pathColumn,
-  showOwner = true,
   showStatusFilter = true,
   listLabel = 'Documents in this space',
   searchLabel = 'Search documents in this space',
@@ -406,7 +403,7 @@ export function DocumentsTable({
           <div className="flex min-w-0 flex-1 items-center gap-4 px-3">
             {sortHeader('title', 'Title', 'min-w-0 flex-1')}
             {pathColumn && sortHeader('path', pathColumn.label, 'hidden w-48 @3xl:flex')}
-            {showOwner && sortHeader('owner', 'Owner', 'hidden w-40 @4xl:flex')}
+            {sortHeader('owner', 'Owner', 'hidden w-40 @4xl:flex')}
             <span className="hidden w-40 shrink-0 items-center @5xl:flex">Created by</span>
             {sortHeader('updated_at', 'Updated', 'hidden w-24 justify-end @3xl:flex')}
           </div>
@@ -434,7 +431,6 @@ export function DocumentsTable({
                     moved={movedDocId === row.doc.id}
                     path={pathColumn ? (pathColumn.pathFor(row.doc) ?? null) : undefined}
                     pathEmptyLabel={pathColumn?.emptyLabel}
-                    showOwner={showOwner}
                     owner={row.doc.owner_id ? memberById.get(row.doc.owner_id) : undefined}
                     createdBy={memberById.get(row.doc.created_by)}
                     selection={canEdit ? <DocsSelectionCheckbox doc={row.doc} selection={selection} /> : undefined}
@@ -488,7 +484,6 @@ function DocumentsTableRow({
   moved,
   path,
   pathEmptyLabel,
-  showOwner,
   owner,
   createdBy,
   selection,
@@ -506,7 +501,6 @@ function DocumentsTableRow({
   /** undefined hides the column; null renders `pathEmptyLabel`. */
   path: string | null | undefined
   pathEmptyLabel?: string
-  showOwner: boolean
   owner?: AssignableMember
   createdBy?: AssignableMember
   selection?: ReactNode
@@ -576,7 +570,7 @@ function DocumentsTableRow({
             {path ?? pathEmptyLabel}
           </span>
         )}
-        {showOwner && <PersonCell member={owner} className="hidden w-40 @4xl:flex" />}
+        <PersonCell member={owner} className="hidden w-40 @4xl:flex" />
         <PersonCell member={createdBy} className="hidden w-40 @5xl:flex" />
         <span className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground @3xl:block" title={new Date(doc.updated_at).toLocaleString()}>
           {updatedLabel}

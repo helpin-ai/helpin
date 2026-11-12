@@ -432,6 +432,8 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	teamID := ptrIfSet(q.Get("team_id"))
 	ownerID := ptrIfSet(q.Get("owner_id"))
 	includeArchived := q.Get("include_archived") == "true"
+	// mine=true: documents the caller owns or created (My documents).
+	mine := q.Get("mine") == "true"
 
 	role := ""
 	if actor != nil {
@@ -450,7 +452,19 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 		"raw_query", r.URL.RawQuery,
 	)
 
-	docs, err := h.documentSvc.ListWithOwner(r.Context(), wsID, spaceID, collectionID, status, teamID, ownerID, userID, role, includeArchived)
+	var (
+		docs []model.DocsDocument
+		err  error
+	)
+	if mine {
+		memberID := ""
+		if actor != nil {
+			memberID = actor.WorkspaceMemberID
+		}
+		docs, err = h.documentSvc.ListMine(r.Context(), wsID, spaceID, collectionID, status, teamID, memberID, userID, role, includeArchived)
+	} else {
+		docs, err = h.documentSvc.ListWithOwner(r.Context(), wsID, spaceID, collectionID, status, teamID, ownerID, userID, role, includeArchived)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

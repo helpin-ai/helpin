@@ -56,7 +56,7 @@ describe('DocsDocumentList', () => {
     document.body.innerHTML = ''
   })
 
-  it('loads every document owned by the current workspace member', () => {
+  it('loads the documents the current person owns or created', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -65,7 +65,7 @@ describe('DocsDocumentList', () => {
       root.render(
         <DocsDocumentList
           title="My Documents"
-          description="All documents you own."
+          description="Documents you own or created across all spaces."
           filterMode="my"
         />,
       )
@@ -73,8 +73,7 @@ describe('DocsDocumentList', () => {
 
     expect(useDocsDocuments).toHaveBeenCalledWith(
       'ws-1',
-      { owner_id: 'member-1', include_archived: 'true' },
-      { enabled: true },
+      { mine: 'true', include_archived: 'true' },
     )
     expect(container.querySelector('header')?.className).toContain('border-b')
 
