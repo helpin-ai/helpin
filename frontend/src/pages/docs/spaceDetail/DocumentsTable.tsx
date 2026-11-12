@@ -103,8 +103,15 @@ export interface DocumentsTableProps {
   /** Every document in the current scope, all statuses, unsorted. */
   documents: DocsDocument[]
   members: AssignableMember[]
-  /** Collection / sub-collection column; null hides it. */
+  /** Collection / sub-collection / location column; null hides it. */
   pathColumn: DocumentsTablePathColumn | null
+  /** Hide the Owner column where it would repeat one person (My documents). */
+  showOwner?: boolean
+  /** Hide the status filter where the list is one status (Drafts). */
+  showStatusFilter?: boolean
+  /** Accessible names for the list and its search field. */
+  listLabel?: string
+  searchLabel?: string
   /** Saved-order view (collection pages only); null hides the toggle. */
   order: DocumentsTableOrder | null
   wsSlug: string
@@ -146,7 +153,8 @@ interface OrderLayoutEntry {
 }
 
 /**
- * DocumentsTable renders the space detail document list: search,
+ * DocumentsTable renders the docs document lists (space pages, My
+ * documents, Recent docs, Drafts): search,
  * status filter, sortable column headers (Title, Collection, Owner,
  * Created by, Updated), bulk selection, row actions, and, inside a
  * collection, the saved-order view where rows can be dragged to
@@ -159,6 +167,10 @@ export function DocumentsTable({
   documents,
   members,
   pathColumn,
+  showOwner = true,
+  showStatusFilter = true,
+  listLabel = 'Documents in this space',
+  searchLabel = 'Search documents in this space',
   order,
   wsSlug,
   wsId,
@@ -341,7 +353,7 @@ export function DocumentsTable({
         <QuietSearchInput
           containerClassName="min-w-0 flex-1 sm:max-w-64"
           placeholder="Search..."
-          aria-label="Search documents in this space"
+          aria-label={searchLabel}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -359,7 +371,7 @@ export function DocumentsTable({
               </QuietTextAction>
             </QuickTooltip>
           )}
-          <QuietFilterDropdown
+          {showStatusFilter && <QuietFilterDropdown
             label="Status"
             showLabel="inline"
             bordered
@@ -369,7 +381,7 @@ export function DocumentsTable({
             options={STATUS_OPTIONS}
             selected={statuses}
             onChange={(next) => onStatusesChange(next as DocStatus[])}
-          />
+          />}
         </div>
       </div>
 
@@ -394,9 +406,9 @@ export function DocumentsTable({
           <div className="flex min-w-0 flex-1 items-center gap-4 px-3">
             {sortHeader('title', 'Title', 'min-w-0 flex-1')}
             {pathColumn && sortHeader('path', pathColumn.label, 'hidden w-48 @3xl:flex')}
-            {sortHeader('owner', 'Owner', 'hidden w-40 @4xl:flex')}
+            {showOwner && sortHeader('owner', 'Owner', 'hidden w-40 @4xl:flex')}
             <span className="hidden w-40 shrink-0 items-center @5xl:flex">Created by</span>
-            {sortHeader('updated_at', 'Updated', 'hidden w-28 @3xl:flex')}
+            {sortHeader('updated_at', 'Updated', 'hidden w-24 justify-end @3xl:flex')}
           </div>
           {canEdit && <div className="w-9 shrink-0" aria-hidden="true" />}
         </div>
@@ -408,7 +420,7 @@ export function DocumentsTable({
             <SortableContext items={rows.map((row) => row.doc.id)} strategy={verticalListSortingStrategy}>
               <div
                 role="list"
-                aria-label="Documents in this space"
+                aria-label={listLabel}
                 className="[&>[data-slot=docs-table-row]:last-child]:border-b-0"
               >
                 {rows.map((row) => (
@@ -422,6 +434,7 @@ export function DocumentsTable({
                     moved={movedDocId === row.doc.id}
                     path={pathColumn ? (pathColumn.pathFor(row.doc) ?? null) : undefined}
                     pathEmptyLabel={pathColumn?.emptyLabel}
+                    showOwner={showOwner}
                     owner={row.doc.owner_id ? memberById.get(row.doc.owner_id) : undefined}
                     createdBy={memberById.get(row.doc.created_by)}
                     selection={canEdit ? <DocsSelectionCheckbox doc={row.doc} selection={selection} /> : undefined}
@@ -475,6 +488,7 @@ function DocumentsTableRow({
   moved,
   path,
   pathEmptyLabel,
+  showOwner,
   owner,
   createdBy,
   selection,
@@ -492,6 +506,7 @@ function DocumentsTableRow({
   /** undefined hides the column; null renders `pathEmptyLabel`. */
   path: string | null | undefined
   pathEmptyLabel?: string
+  showOwner: boolean
   owner?: AssignableMember
   createdBy?: AssignableMember
   selection?: ReactNode
@@ -561,9 +576,9 @@ function DocumentsTableRow({
             {path ?? pathEmptyLabel}
           </span>
         )}
-        <PersonCell member={owner} className="hidden w-40 @4xl:flex" />
+        {showOwner && <PersonCell member={owner} className="hidden w-40 @4xl:flex" />}
         <PersonCell member={createdBy} className="hidden w-40 @5xl:flex" />
-        <span className="hidden w-28 shrink-0 text-xs text-muted-foreground @3xl:block" title={new Date(doc.updated_at).toLocaleString()}>
+        <span className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground @3xl:block" title={new Date(doc.updated_at).toLocaleString()}>
           {updatedLabel}
         </span>
       </button>

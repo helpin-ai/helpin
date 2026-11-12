@@ -65,10 +65,14 @@ function Harness({
   documents,
   pathColumn = null,
   order = null,
+  showOwner,
+  showStatusFilter,
 }: {
   documents: DocsDocument[]
   pathColumn?: DocumentsTablePathColumn | null
   order?: DocumentsTableOrder | null
+  showOwner?: boolean
+  showStatusFilter?: boolean
 }) {
   const [statuses, setStatuses] = useState<DocStatus[]>(['draft', 'published'])
   const [sort, setSort] = useState<{ field: DocumentsTableSortField; dir: DocumentsTableSortDir }>({ field: 'updated_at', dir: 'desc' })
@@ -78,6 +82,8 @@ function Harness({
         documents={documents}
         members={members}
         pathColumn={pathColumn}
+        showOwner={showOwner}
+        showStatusFilter={showStatusFilter}
         order={order}
         wsSlug="acme"
         wsId="ws"
@@ -168,6 +174,17 @@ describe('DocumentsTable', () => {
     // Documents without a collection sort last, in both directions.
     click(container.querySelector('button[aria-label="Sort by Collection"]'))
     expect(rowTitles(container)).toEqual(['Beta', 'Alpha'])
+  })
+
+  it('drops the Owner column and status filter when a list does not need them', () => {
+    const container = render(
+      <Harness documents={[makeDoc({ id: 'Mine', owner_id: 'member-2' })]} showOwner={false} showStatusFilter={false} />,
+    )
+
+    expect(container.querySelector('button[aria-label="Sort by Owner"]')).toBeNull()
+    expect(container.textContent).not.toContain('Omar Ali')
+    expect(container.querySelector('button[aria-label^="Status:"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="Sort by Updated"]')).not.toBeNull()
   })
 
   it('lists the saved order by group and leaves it when a column is sorted', () => {
