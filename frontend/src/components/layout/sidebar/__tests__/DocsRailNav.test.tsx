@@ -79,6 +79,7 @@ vi.mock('@/hooks/queries', () => ({
   useDocsDocuments: () => ({ data: documents, isLoading: false }),
   useDeleteDocsCollection: () => ({ mutateAsync: vi.fn() }),
   useDeleteDocsSpace: () => ({ mutateAsync: vi.fn() }),
+  useWorkspaceAccess: () => ({ data: { membership: { id: 'member-1' } } }),
 }))
 
 vi.mock('@/components/docs/SpaceDialog', () => ({ SpaceDialog: () => null }))
@@ -169,8 +170,16 @@ describe('DocsRailNav', () => {
     const documentRows = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-slot="docs-document-row"]'))
     const treeDocumentRow = documentRows.find((row) => !row.dataset.pinned)
     expect(treeDocumentRow?.querySelector('svg')).toBeNull()
-    const countColumns = container.querySelectorAll('.w-6.text-right.tabular-nums')
-    expect(countColumns).toHaveLength(2)
+    // My documents, All docs in space, and the collection share one centred count slot.
+    const countColumns = Array.from(container.querySelectorAll('[data-slot="docs-sidebar-count"]'))
+    expect(countColumns).toHaveLength(3)
+    for (const count of countColumns) {
+      expect(count.className).toContain('w-6')
+      expect(count.className).toContain('text-center')
+    }
+    const myDocuments = Array.from(container.querySelectorAll('[data-slot="docs-quick-links"] button'))
+      .find((button) => button.textContent?.startsWith('My documents'))
+    expect(myDocuments?.querySelector('[data-slot="docs-sidebar-count"]')?.textContent).toBe('1')
     const disclosure = container.querySelector<HTMLButtonElement>('[aria-label="Collapse Getting started"]')
     const collectionRow = Array.from(container.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Getting started'),
@@ -191,6 +200,62 @@ describe('DocsRailNav', () => {
 
     act(() => root.unmount())
     container.remove()
+  })
+
+  it('puts the collection menu and the "In this space" + in the count slot', () => {
+    location.pathname = '/w/acme/docs/spaces/space-1'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => root.render(
+      <TooltipProvider>
+        <DocsRailNav wsId="ws-1" wsSlug="acme" canEditDocs isActive={() => false}
+          openCreate={vi.fn()} onNavigate={vi.fn()} />
+      </TooltipProvider>,
+    ))
+    try {
+      const menu = container.querySelector('[data-slot="docs-tree-row-menu"]')!
+      const add = container.querySelector('[data-slot="docs-tree-header-add"]')!
+      // Same 24px slot, 8px from the right edge, as the counts (w-6 inside px-2 rows).
+      expect(menu.className).toContain('w-6')
+      expect(menu.className).toContain('right-2')
+      expect(menu.className).not.toContain('right-0')
+      expect(add.className).toContain('w-6')
+      expect(add.parentElement?.className).toContain('px-2')
+      const count = menu.parentElement?.querySelector('[data-slot="docs-sidebar-count"]')
+      expect(count?.className).toContain('group-hover/collection:opacity-0')
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+
+  it('opens All spaces from the space switcher and marks it current there', () => {
+    location.pathname = '/w/acme/docs'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const onNavigate = vi.fn()
+
+    act(() => root.render(
+      <TooltipProvider>
+        <DocsRailNav wsId="ws-1" wsSlug="acme" canEditDocs={false} isActive={() => false}
+          openCreate={vi.fn()} onNavigate={onNavigate} />
+      </TooltipProvider>,
+    ))
+    try {
+      act(() => container.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!.click())
+      const allSpaces = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.trim() === 'All spaces')
+      expect(allSpaces?.getAttribute('aria-current')).toBe('page')
+      expect(document.querySelector('[role="option"][aria-selected="true"]')).toBeNull()
+      act(() => allSpaces!.click())
+      expect(onNavigate).toHaveBeenCalledWith({ to: '/w/$slug/docs', params: { slug: 'acme' } })
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
   })
 
   it('expands a collection from its separate disclosure control', () => {

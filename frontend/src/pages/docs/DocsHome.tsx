@@ -569,7 +569,7 @@ export function DocsHome() {
   if (!workspace) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <QuietPageHeader variant="shell" title="All Docs" />
+        <QuietPageHeader variant="shell" title="All spaces" />
         <QuietPageViewport className="min-h-0 flex-1">
           <p className="text-sm text-muted-foreground">Workspace not found.</p>
         </QuietPageViewport>
@@ -581,7 +581,7 @@ export function DocsHome() {
     <div className="flex h-full min-h-0 flex-col">
       <QuietPageHeader
         variant="shell"
-        title="All Docs"
+        title="All spaces"
         description="All spaces, collections, and articles in one place."
       />
 

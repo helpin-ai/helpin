@@ -319,7 +319,6 @@ export function DocsSpaceDetail() {
         view={view}
         canEdit={canEditDocs}
         onNavigateToCollection={navigateToCollection}
-        onNavigateToSpaces={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
         onCreateDocument={() => openCreate('docs_document', {
           spaceId,
           collectionId:
@@ -377,7 +376,7 @@ export function DocsSpaceDetail() {
             })}
           />
 
-          {(collections ?? []).length > 0 && scopedDocs.length > 0 && (
+          {childNodes.length > 0 && scopedDocs.length > 0 && (
             <hr className="border-border/40" />
           )}
 

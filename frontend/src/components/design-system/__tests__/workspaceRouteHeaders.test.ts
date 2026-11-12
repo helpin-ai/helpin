@@ -12,14 +12,14 @@ describe('workspace route header contract', () => {
     ['Organization', '../../../pages/AccountSettings.tsx'],
     ['Notifications', '../../../pages/NotificationSettings.tsx'],
     ['Git Connections', '../../settings/OrgGitConnectionsTab.tsx'],
-    ['All Docs', '../../../pages/docs/DocsHome.tsx'],
+    ['All spaces', '../../../pages/docs/DocsHome.tsx'],
     ['document lists', '../../../pages/docs/DocsDocumentList.tsx'],
   ])('uses QuietPageHeader for %s', (_label, path) => {
     expect(source(path)).toContain('<QuietPageHeader');
   });
 
   it.each([
-    ['All Docs', '../../../pages/docs/DocsHome.tsx'],
+    ['All spaces', '../../../pages/docs/DocsHome.tsx'],
     ['Docs document lists', '../../../pages/docs/DocsDocumentList.tsx'],
     ['CRM Overview', '../../../pages/crm/Overview.tsx'],
     ['CRM Signal inbox', '../../../pages/crm/Insights.tsx'],
