@@ -342,6 +342,36 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
+  it('shows no loader when the open inbox empties and refetches', () => {
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-last', activePanel: 'thread' })
+    const listState = (data: unknown[], isFetching: boolean) => ({
+      data: { pages: [{ data }] },
+      isLoading: false,
+      isFetching,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      error: null,
+    })
+    mockUseInfiniteConversations.mockReturnValue(listState([{ id: 'conv-last', status: 'open', list_last_message_at: '2026-03-27T20:02:00Z' }], false))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    // The viewer resolved the last conversation: the row left, the list refetches.
+    mockUseInfiniteConversations.mockReturnValue(listState([], true))
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(container.querySelectorAll('.animate-pulse')).toHaveLength(0)
+
+    act(() => root.unmount())
+  })
+
   it('keeps an existing selected conversation instead of replacing it with the first row', () => {
     useSupportInboxStore.setState({ selectedConversationId: 'conv-2', activePanel: 'thread' })
 

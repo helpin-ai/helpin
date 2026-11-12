@@ -344,7 +344,14 @@ export function ConversationList({
   const activeFilterCount = activeCustomViewId ? (customViewDirty ? Math.max(1, customFilterChangeCount) : 0) : builtinFilterChangeCount;
   const canSaveCurrentView = activeCustomViewId ? customViewDirty : builtinFilterChangeCount > 0;
   const canUpdateCurrentView = activeCustomViewId ? customViewDirty : builtinFilterChangeCount > 0;
-  const isSwitchingEmptyList = !!isFetching && !isFetchingNextPage && filteredConversations.length === 0;
+  // The skeleton covers a view whose list hasn't loaded since switching to it,
+  // so an old empty list doesn't flash "empty". A view that empties while
+  // open (the viewer resolved the last conversation) shows its empty state
+  // straight away, even while the list refetches.
+  const listViewKey = JSON.stringify([workspaceId, filters]);
+  const [loadedListViewKey, setLoadedListViewKey] = useState<string | null>(null);
+  if (!isFetching && !isLoading && loadedListViewKey !== listViewKey) setLoadedListViewKey(listViewKey);
+  const isSwitchingEmptyList = loadedListViewKey !== listViewKey && !!isFetching && !isFetchingNextPage && filteredConversations.length === 0;
   const shouldShowListSkeleton = isLoading || isSwitchingEmptyList;
   const shouldShowEmptyState = !shouldShowListSkeleton && filteredConversations.length === 0 && !error && !hasNextPage;
   const isDefaultInboxEmpty =
