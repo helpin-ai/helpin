@@ -178,7 +178,7 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
       </label>
       {canEdit && <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant={reopen ? 'ghost' : 'default'} size="icon" className={cn('h-7 w-7 shrink-0', !reopen && 'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700')} aria-label={primaryLabel} disabled={disabled} onClick={() => void apply({ type: 'status', status: reopen ? 'open' : 'resolved' }, reopen ? 'Reopened' : 'Resolved')}>
+          <Button variant="ghost" size="icon" className={cn('h-7 w-7 shrink-0', !reopen && 'text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300')} aria-label={primaryLabel} disabled={disabled} onClick={() => void apply({ type: 'status', status: reopen ? 'open' : 'resolved' }, reopen ? 'Reopened' : 'Resolved')}>
             <PrimaryIcon className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
