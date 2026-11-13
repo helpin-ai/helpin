@@ -1,6 +1,7 @@
 # Telegram channel (combined inbox phase 1)
 
-Date: 2026-11-03. Branch: `feat/telegram-channel`. Status: plan, not started.
+Date: 2026-11-03, revised 2026-11-13. Branch: `feat/telegram-channel`. Status:
+plan, not started.
 
 This is the implementation plan for phase 1 of the
 [combined inbox plan](2026-11-02-combined-inbox-plan.md): the shared provider
@@ -33,6 +34,18 @@ Settled with the owner on 2026-11-03:
 | Setup evidence | Resolved Telegram conversations count toward activation |
 | CRM contact | Linked by hand only; never matched automatically |
 
+Added on 2026-11-13 after comparing with Intercom, whose Telegram channel is
+native: bot token, private chats only, one conversation per user, several bots
+per workspace.
+
+| Question | Decision |
+|---|---|
+| AI per bot | The chat setting stays the master switch. Each bot also has an "AI replies" switch, on by default, so a team can run AI on the widget but not on Telegram (Intercom deploys its AI per channel). |
+| Routing | A triage rule wins, then the bot's default mailbox, then the workspace default inbox. Intercom has no per-account default (its users have asked for one); Chatwoot makes each account its own inbox. |
+| Reopen or new | A message within 5 days of resolving reopens the conversation; after that it starts a new one. Intercom uses 5 days for Facebook, Instagram and SMS. |
+| Formatting | Bold, italic, code, quotes and links are sent and received, as Intercom does. Plain text is the fallback. |
+| Message types | Customers can send text, photos, videos, documents, audio, voice notes, video notes and animations. Stickers and other unsupported types show as a note instead of being dropped. |
+
 Made in this plan, from reading the code:
 
 1. **Outbound rows are written by a database trigger on `support_messages`,
@@ -60,16 +73,35 @@ Made in this plan, from reading the code:
    undelivered row per identity, the same idea as the pending-send claim
    (`support_pending_send.go:214`). Telegram also limits bots to about one
    message per second per chat.
-6. **Text is sent as plain text.** Markdown is converted to plain text with
-   links kept. MarkdownV2 escaping is fragile, and a bad escape fails the whole
-   send.
-7. **Out of scope for v1:**
-   - group chats and channels (only private chats);
+6. **Formatting uses Telegram's HTML mode**, not MarkdownV2. Only `<`, `>` and
+   `&` need escaping, where MarkdownV2 needs about 18 characters escaped
+   depending on context, and a bad escape fails the whole send. Markdown is
+   converted to the supported HTML subset: `b`, `i`, `u`, `s`, `code`, `pre`,
+   `blockquote`, `a`. Anything else becomes plain text. If Telegram still
+   answers "can't parse entities", the same message is resent once as plain
+   text. Inbound, Telegram's entities (bold, links and so on) are converted to
+   markdown, so the inbox renders them.
+7. **The AI switch per bot rides on the existing mailbox AI policy.**
+   `LoadSupportMailboxAIPolicy` (`repository/support_mailbox_ai.go`) already
+   sets `conversation.MailboxAIRepliesDisabled`, and every AI gate reads it:
+   `SupportAIReplyAllowed`, `SupportAIConversationBlocked`, follow-up
+   eligibility, and the recheck before delayed replies. The loader also sets the
+   flag when the conversation's bot has AI replies off. There are no new
+   checks.
+8. **Out of scope for v1:**
+   - group chats and channels (only private chats). Groups are thread-based,
+     like Slack and Discord; see the combined plan's notes on thread-based
+     channels;
    - edited and deleted customer messages;
    - reactions;
    - CSAT on Telegram;
    - Telegram Business connections;
-   - outbound-first messages.
+   - outbound-first messages (Intercom doesn't offer them on Telegram either);
+   - quick replies and CSAT as inline keyboards;
+   - a per-bot reopen window setting (5 days for everyone in v1);
+   - triage-rule conditions on a specific bot, and inbox views filtered by bot.
+     The bot's default mailbox covers per-bot routing until a workspace runs
+     several bots that need finer rules.
 
 ## Slices
 
@@ -87,7 +119,8 @@ precedent:
   - `id`, `workspace_id`;
   - `provider` (CHECK `telegram`);
   - `external_account_id` (the bot's user id), `display_name`, `handle`;
-  - `mailbox_id`;
+  - `mailbox_id` (the default mailbox; see Routing);
+  - `ai_replies_disabled boolean NOT NULL DEFAULT false`;
   - `token_encrypted`, `webhook_secret_hash`;
   - `status` (`active`, `reauthorization_required`, `disabled`);
   - `auth_error_count`, `last_error_code`, `last_error_message`,
@@ -171,9 +204,15 @@ Tests:
 - **Parse:**
   - only private-chat `message` updates;
   - message key `chat_id:message_id`, event key `update_id`;
-  - text, captions, the largest photo size, documents;
+  - text and captions, with entities converted to markdown;
+  - the largest photo size, documents, videos, audio, voice notes, video notes
+    and animations, each as a file to download;
+  - stickers, locations, contacts, polls and anything else become an
+    `unsupported` event carrying the type name;
   - anything else becomes an ignored event, logged once.
-- **Capabilities:** text up to 4096 characters (captions 1024), no markdown,
+- **Render:** markdown to Telegram HTML (decision 6), with a plain-text
+  fallback.
+- **Capabilities:** text up to 4096 characters (captions 1024), HTML subset,
   attachments up to 20 MB for downloads (the Bot API limit), image and file
   types, no read receipts.
 - **Error classification:**
@@ -246,7 +285,7 @@ Frontend:
   support-webhooks files.
 - The page lists connected bots with handle, status, last event, mailbox, and
   failed and not-confirmed counts. Actions: connect (paste token), reconnect,
-  change mailbox, disconnect with confirmation.
+  change mailbox, turn "AI replies" on or off, disconnect with confirmation.
 
 Tests:
 - **Handler:**
@@ -282,7 +321,8 @@ to the existing ones.
    username) outside the lock; it falls back to "Telegram user". A known
    identity gets its name refreshed if it changed.
 3. Find the latest conversation for the identity that isn't `closed` or
-   `spam`.
+   `spam`. A resolved conversation counts only if it was resolved within the
+   last 5 days (`telegramReopenWindow`); otherwise a new conversation starts.
    - **A resolved or waiting conversation reopens** through `createWidgetReply`
      (`support_widget_reply.go:14`), which is already channel-agnostic.
    - **Otherwise, create a conversation:**
@@ -302,12 +342,19 @@ to the existing ones.
 6. Set `identity.last_inbound_at` and back-fill the job's `conversation_id` and
    `message_id`, so the existing privacy trigger covers it.
 
+An `unsupported` event inserts a customer message with the note "Sent a
+<type> on Telegram, which Helpin can't display", so the teammate knows
+something arrived. It doesn't trigger AI.
+
 After commit, run the side effects in the widget's order:
 1. websocket publish (conversation created, or message);
 2. `enrichSupportMessageLinksAsync`;
 3. `recordSupportEvent` (`Channel: "telegram"`);
 4. `ProcessSupportCustomerReplyNotification`;
 5. post-message automation.
+
+`LoadSupportMailboxAIPolicy` also sets `MailboxAIRepliesDisabled` when the
+conversation's bot has `ai_replies_disabled` (decision 7).
 
 `runWidgetPostMessageAutomation` hard-codes the "chat" AI mode. It becomes
 `runPostMessageAutomation(ctx, conv, msg)`, which reads the AI mode from the
@@ -323,6 +370,11 @@ pins it. There is no wider refactor of the email path in this phase.
 
 Tests, in the service and on the Postgres fixture:
 - first message creates identity, conversation and message;
+- a message 3 days after resolving reopens the conversation; one 6 days after
+  starts a new one;
+- a sticker becomes a visible note and requests no AI;
+- a bot with AI replies off gets no AI request, even with the chat setting on;
+- a message with bold and a link arrives as markdown;
 - a second message reuses the open conversation;
 - a resolved conversation reopens;
 - a duplicate update gives one message;
@@ -368,7 +420,8 @@ worker (SKIP LOCKED, no leader):
   - the conversation isn't anonymized or deleted.
 
   If any check fails, the row is cancelled with a reason.
-- **Render:** markdown to plain text with links kept. Text over 4096 characters
+- **Render:** markdown to Telegram HTML, with the plain-text fallback on a
+  parse error. Text over 4096 characters
   is split at paragraph boundaries into ordered parts with keys
   `message:<id>:<n>`. Attachments go as `sendPhoto` or `sendDocument`, with the
   first 1024 characters as caption and the rest as a following text message.
@@ -390,6 +443,8 @@ worker (SKIP LOCKED, no leader):
   a `rejected` or `uncertain` row back to `pending` (requires `PermSupportEdit`).
 
 **Frontend:**
+- **Sidebar:** the conversation shows which bot it came from (its handle), next
+  to the channel.
 - **Composer:** a `provider` conversation shows a single fixed delivery option
   ("Telegram") instead of `ReplyDeliverySelector`, and sends `chat_only`. It
   shows no "chat unavailable" message.
@@ -410,6 +465,8 @@ Tests:
     conversation create none;
   - an undo inside the window cancels the row.
 - **Worker:**
+  - bold, code and a link arrive as Telegram HTML; a parse error resends once
+    as plain text;
   - 429 retries after `retry_after`;
   - 403 is rejected;
   - a timeout after the request is written becomes uncertain and is not resent;
@@ -472,15 +529,16 @@ Tests:
 | 1 Schema, models, registry | 2 days |
 | 2 Adapter and Telegram client | 2 days |
 | 3 Connect, webhook, settings | 2–3 days |
-| 4 Inbound processing | 2–3 days |
-| 5 Outbound delivery | 3 days |
+| 4 Inbound processing | 3 days |
+| 5 Outbound delivery | 3–4 days |
 | 6 Linking and privacy | 1–2 days |
 | 7 Docs and E2E | 1 day |
-| **Total** | **13–16 days** |
+| **Total** | **14–18 days** |
 
 That is up from 10–14 days in the combined plan. The difference is the
 explicit privacy path for unlinked identities, attachments in both directions,
-and splitting long messages.
+splitting long messages, and the changes from the Intercom comparison
+(formatting, more message types, the reopen window, the AI switch per bot).
 
 ## Verification for every slice
 
