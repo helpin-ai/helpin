@@ -417,13 +417,19 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
                 />
               )}
             </div>
-          ) : identityAvatar ? (
+          ) : avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={aiFirst && !showHumanHandoffState ? aiDisplayName : workspaceName}
+              className="helpin-conversation-logo helpin-agent-avatar"
+            />
+          ) : logoUrl ? (
             <div
               className="helpin-conversation-logo helpin-conversation-logo--brand"
               style={{ backgroundColor: brandColor }}
             >
               <img
-                src={identityAvatar}
+                src={logoUrl}
                 alt={aiFirst && !showHumanHandoffState ? aiDisplayName : workspaceName}
                 className="helpin-conversation-brand-logo"
               />
