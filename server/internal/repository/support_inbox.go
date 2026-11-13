@@ -2632,6 +2632,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		 AND personal_state.workspace_id = sc.workspace_id
 		 AND personal_state.user_id = ?
 		WHERE sc.workspace_id = ?
+		  AND sc.merged_into_id IS NULL
 		  AND sc.status NOT IN ('resolved', 'spam')
 		  AND sc.snoozed_until IS NULL
 	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, supportUnreadScopeCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition, humanInboxCondition, mineCondition, aiActiveCondition)
@@ -2701,7 +2702,8 @@ func (r *SupportConversationRepository) getLegacyUnreadStats(ctx context.Context
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting_needs_human_reply,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS ai_active_needs_human_reply
 		FROM support_conversations sc
-		WHERE sc.workspace_id = ? AND sc.status NOT IN ('resolved', 'spam') AND sc.snoozed_until IS NULL
+		WHERE sc.workspace_id = ? AND sc.merged_into_id IS NULL
+		  AND sc.status NOT IN ('resolved', 'spam') AND sc.snoozed_until IS NULL
 	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition,
 		unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, supportUnreadScopeCondition,
 		unreadCondition, mineCondition, unreadCondition, humanInboxCondition,
