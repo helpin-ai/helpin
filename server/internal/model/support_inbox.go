@@ -12,14 +12,19 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
-	MailboxAIRepliesDisabled bool       `json:"-" gorm:"-"`
-	MergeEmailRecipients     []string   `json:"merge_email_recipients,omitempty" gorm:"-"`
-	MergeHasWidget           bool       `json:"merge_has_widget,omitempty" gorm:"-"`
-	MergeContinuationID      *string    `json:"merge_continuation_id,omitempty" gorm:"-"`
-	MergeParticipants        []string   `json:"merge_participants,omitempty" gorm:"-"`
-	MergedIntoID             *string    `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
-	MergeRevision            int64      `json:"merge_revision" gorm:"not null;default:0"`
-	AnonymizedAt             *time.Time `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
+	MailboxAIRepliesDisabled bool     `json:"-" gorm:"-"`
+	MergeEmailRecipients     []string `json:"merge_email_recipients,omitempty" gorm:"-"`
+	MergeHasWidget           bool     `json:"merge_has_widget,omitempty" gorm:"-"`
+	MergeContinuationID      *string  `json:"merge_continuation_id,omitempty" gorm:"-"`
+	MergeParticipants        []string `json:"merge_participants,omitempty" gorm:"-"`
+	MergedIntoID             *string  `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
+	// ChannelAccountID and ChannelIdentityID link a provider-channel
+	// conversation (Telegram) to its bot and customer. The default tag keeps
+	// them out of inserts when unset.
+	ChannelAccountID  *string    `json:"channel_account_id,omitempty" gorm:"type:uuid;default:null"`
+	ChannelIdentityID *string    `json:"channel_identity_id,omitempty" gorm:"type:uuid;default:null"`
+	MergeRevision     int64      `json:"merge_revision" gorm:"not null;default:0"`
+	AnonymizedAt      *time.Time `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
 	// RequestTypeID and CustomFields are read-only here: their own endpoints
 	// validate and write them, and inserts leave the column defaults.
 	RequestTypeID                  *string         `json:"request_type_id,omitempty" gorm:"type:uuid;->"`
@@ -388,11 +393,15 @@ type SupportMessage struct {
 	IsInternal        bool                  `json:"is_internal" gorm:"not null;default:false"`
 	Metadata          string                `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
 	ViaChannel        *string               `json:"via_channel,omitempty" gorm:"size:20"`
-	EmailNotifiedAt   *time.Time            `json:"email_notified_at,omitempty"`
-	WidgetReadAt      *time.Time            `json:"widget_read_at,omitempty" gorm:"-"`
-	EmailReadAt       *time.Time            `json:"email_read_at,omitempty"`
-	CreatedAt         time.Time             `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time             `json:"updated_at" gorm:"autoUpdateTime"`
+	// ChannelAccountID and ExternalMessageKey dedupe provider messages; the
+	// default tags keep them out of inserts when unset.
+	ChannelAccountID   *string    `json:"-" gorm:"type:uuid;default:null"`
+	ExternalMessageKey *string    `json:"-" gorm:"default:null"`
+	EmailNotifiedAt    *time.Time `json:"email_notified_at,omitempty"`
+	WidgetReadAt       *time.Time `json:"widget_read_at,omitempty" gorm:"-"`
+	EmailReadAt        *time.Time `json:"email_read_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 	// CancellableUntil is the moment the email-fallback timer fires for an
 	// outbound agent reply. Until this passes, the agent can soft-delete the
 	// message and the queued email is removed from the per-conversation Redis

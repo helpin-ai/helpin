@@ -1,4 +1,4 @@
-import { GlobeIcon, Mail01Icon, Message01Icon } from '@/lib/icons'
+import { GlobeIcon, Mail01Icon, Message01Icon, TelegramIcon } from '@/lib/icons'
 import type { TicketSource } from '@/lib/pm-types/support'
 
 /**
@@ -6,7 +6,7 @@ import type { TicketSource } from '@/lib/pm-types/support'
  * every surface that enumerates channels reads it, so adding a channel is one
  * entry here plus the TicketSource union.
  */
-type SupportChannelTransport = 'chat' | 'portal' | 'email' | 'none'
+type SupportChannelTransport = 'chat' | 'portal' | 'email' | 'provider' | 'none'
 
 export interface SupportChannelSpec {
   key: TicketSource
@@ -29,6 +29,7 @@ const SUPPORT_CHANNEL_SPECS: Record<TicketSource, SupportChannelSpec> = {
   portal: { key: 'portal', label: 'Portal', inbox: { icon: GlobeIcon, label: 'Customer portal' }, messageLabel: 'Portal', transport: 'portal', aiMode: 'portal', slaChannel: true },
   api: { key: 'api', label: 'API', messageLabel: 'API', transport: 'none', aiMode: null, slaChannel: true },
   internal: { key: 'internal', label: 'Started by team', messageLabel: 'Internal', transport: 'none', aiMode: null, slaChannel: true },
+  telegram: { key: 'telegram', label: 'Telegram', inbox: { icon: TelegramIcon, label: 'Telegram' }, messageLabel: 'Telegram', transport: 'provider', aiMode: 'chat', slaChannel: true },
 }
 
 /** Registered channels in display order. */

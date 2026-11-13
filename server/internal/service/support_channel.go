@@ -55,6 +55,7 @@ type SupportChannelService struct {
 	accounts *repository.SupportChannelAccountRepository
 	jobs     *repository.SupportInboundJobRepository
 	adapters *channels.Registry
+	inbox    *SupportInboxService
 	cfg      SupportChannelConfig
 	now      func() time.Time
 	logger   *slog.Logger

@@ -720,6 +720,13 @@ func (s *SupportInboxService) GetInstallation(ctx context.Context, workspaceID s
 			Active:                   true,
 		}
 		if err := s.installationRepo.Create(ctx, inst); err != nil {
+			// A concurrent first request created it; use that one.
+			if isUniqueConstraintViolation(err) {
+				if existing, getErr := s.installationRepo.GetByWorkspace(ctx, workspaceID); getErr == nil && existing != nil {
+					settings := parseSettings(existing.Settings)
+					return existing, &settings, nil
+				}
+			}
 			return nil, nil, fmt.Errorf("create widget installation: %w", err)
 		}
 

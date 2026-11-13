@@ -2,7 +2,7 @@
 
 export type ConversationStatus = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketSource = 'widget' | 'internal' | 'email' | 'api' | 'portal';
+export type TicketSource = 'widget' | 'internal' | 'email' | 'api' | 'portal' | 'telegram';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 export type SupportConversationTriageStatus = 'not_run' | 'suggested' | 'auto_moved' | 'dismissed' | 'overridden';
 export type SupportConversationTriageSource = 'rule' | 'ai';
@@ -822,7 +822,7 @@ export interface SupportMessage {
   system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
-  via_channel?: 'email' | 'widget' | 'portal' | null;
+  via_channel?: 'email' | 'widget' | 'portal' | 'telegram' | null;
   email_notified_at?: string;
   widget_read_at?: string | null;
   email_read_at?: string;

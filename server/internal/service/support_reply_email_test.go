@@ -64,7 +64,7 @@ func TestSupportReplyHistoryExcludesSystemAndQuotedEmail(t *testing.T) {
 
 func TestSupportReplyHistoryIsAnchoredToTriggeringMessage(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
-	if err := db.Exec(`CREATE TABLE support_messages (
+	if err := db.Exec(`CREATE TABLE support_messages (channel_account_id TEXT, external_message_key TEXT, 
             origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, sender_type TEXT, sender_display_name TEXT, message_type TEXT, content TEXT, is_internal BOOLEAN, via_channel TEXT, created_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
 		t.Fatal(err)
 	}

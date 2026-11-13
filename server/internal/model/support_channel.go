@@ -61,3 +61,21 @@ type UpdateSupportChannelRequest struct {
 type ReconnectSupportChannelRequest struct {
 	Token string `json:"token"`
 }
+
+// SupportChannelIdentity is a customer of a connected account (a Telegram
+// user). Owned by versioned SQL only (202611130001).
+type SupportChannelIdentity struct {
+	ID               string     `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID      string     `json:"workspace_id" gorm:"type:uuid;not null"`
+	ChannelAccountID string     `json:"channel_account_id" gorm:"type:uuid;not null"`
+	ExternalUserID   string     `json:"external_user_id" gorm:"not null"`
+	DisplayName      string     `json:"display_name" gorm:"not null;default:''"`
+	Username         string     `json:"username" gorm:"not null;default:''"`
+	AvatarURL        string     `json:"avatar_url" gorm:"not null;default:''"`
+	CRMContactID     *string    `json:"crm_contact_id" gorm:"type:uuid"`
+	LastInboundAt    *time.Time `json:"last_inbound_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+func (SupportChannelIdentity) TableName() string { return "support_channel_identities" }

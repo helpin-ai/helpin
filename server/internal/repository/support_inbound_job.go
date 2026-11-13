@@ -110,3 +110,10 @@ func (r *SupportInboundJobRepository) WaitingSummary(ctx context.Context, kind s
 	summary.OldestSince = &since
 	return summary, nil
 }
+
+// SetConversation links a claimed job to the conversation it produced, so the
+// privacy triggers that clear payloads by conversation cover it.
+func (r *SupportInboundJobRepository) SetConversation(ctx context.Context, job *model.SupportInboundJob, conversationID, messageID string) error {
+	return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).Where("id = ? AND lease_token = ?", job.ID, job.LeaseToken).
+		Updates(map[string]any{"conversation_id": conversationID, "message_id": messageID}).Error
+}

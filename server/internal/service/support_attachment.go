@@ -193,6 +193,17 @@ func (s *SupportAttachmentService) LinkToMessage(ctx context.Context, attachment
 // StoreInboundEmailAttachment decodes a Postmark inbound attachment, uploads it,
 // and creates a message-linked support attachment record.
 func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Context, req supportInboundEmailAttachmentRequest) (*model.SupportAttachmentPayload, error) {
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Base64Content))
+	if err != nil {
+		return nil, fmt.Errorf("decode inbound attachment: %w", err)
+	}
+	return s.StoreInboundAttachmentBytes(ctx, req, data)
+}
+
+// StoreInboundAttachmentBytes stores a customer file that was received from a
+// provider (an email attachment, a Telegram download) with the same type,
+// size and content checks.
+func (s *SupportAttachmentService) StoreInboundAttachmentBytes(ctx context.Context, req supportInboundEmailAttachmentRequest, data []byte) (*model.SupportAttachmentPayload, error) {
 	if s == nil || s.s3Client == nil {
 		return nil, fmt.Errorf("file storage is not configured")
 	}
@@ -209,10 +220,6 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 			return nil, rejectSupportAttachment("%s was not saved because SVG files from customers aren't accepted", fileName)
 		}
 		return nil, rejectSupportAttachment("%s was not saved because this file type isn't accepted", fileName)
-	}
-	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Base64Content))
-	if err != nil {
-		return nil, fmt.Errorf("decode inbound attachment: %w", err)
 	}
 	if len(data) == 0 {
 		return nil, fmt.Errorf("attachment content is empty")
