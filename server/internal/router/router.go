@@ -128,6 +128,7 @@ type Handlers struct {
 	RequestTypes        *handler.SupportRequestTypeHandler
 	CRMFieldDefinitions *handler.CustomFieldHandler
 	SupportWebhooks     *handler.SupportWebhookHandler
+	SupportChannels     *handler.SupportChannelHandler
 	SupportImports      *handler.SupportImportHandler
 	SupportActions      *handler.SupportConversationActionsHandler
 	SupportInboxClear   *handler.SupportInboxClearHandler
@@ -466,6 +467,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 		if h.CRMMeeting != nil {
 			r.Post("/webhooks/meeting-capture/{provider}", h.CRMMeeting.Webhook)
+		}
+		if h.SupportChannels != nil {
+			r.Post("/webhooks/channels/{provider}/{accountId}", h.SupportChannels.Webhook)
 		}
 		// ---- External agent file uploads (per-run bearer upload token, no JWT) ----
 		if h.ExternalA2A != nil {
@@ -1382,6 +1386,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/test", h.SupportWebhooks.Test)
 						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks/{webhookId}/deliveries", h.SupportWebhooks.Deliveries)
 						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver", h.SupportWebhooks.Redeliver)
+					}
+					if h.SupportChannels != nil {
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/channels", h.SupportChannels.List)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/channels", h.SupportChannels.Create)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Patch("/channels/{channelId}", h.SupportChannels.Update)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/channels/{channelId}/reconnect", h.SupportChannels.Reconnect)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/channels/{channelId}", h.SupportChannels.Disconnect)
 					}
 				}
 				if h.SupportReports != nil {

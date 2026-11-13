@@ -41,6 +41,7 @@ import {
   Timer01Icon,
   LeftToRightListBulletIcon,
   WebhookIcon,
+  TelegramIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -82,6 +83,7 @@ const CustomerPortal = hi(Globe02Icon);
 const SLAPolicies = hi(Timer01Icon);
 const Fields = hi(LeftToRightListBulletIcon);
 const Webhooks = hi(WebhookIcon);
+const Channels = hi(TelegramIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(PlugSocketIcon);
@@ -127,6 +129,7 @@ export type SettingsSection =
   | 'support-sla'
   | 'support-conversation-fields'
   | 'support-webhooks'
+  | 'support-channels'
   | 'inboxes-routing';
 
 export type SettingsRouteSection = SettingsSection | 'ai-connections' | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
@@ -409,6 +412,15 @@ const allSettingsSections: SettingsSectionMeta[] = [
     keywords: ['custom fields', 'fields', 'attributes', 'ticket fields', 'form fields', 'request types', 'ticket forms', 'forms'],
     icon: Fields,
     group: 'Support',
+  },
+  {
+    id: 'support-channels',
+    label: 'Channels',
+    description: 'Connect messaging apps such as Telegram so customers can write in from them.',
+    keywords: ['telegram', 'bot', 'messaging', 'channels', 'omnichannel', 'social'],
+    icon: Channels,
+    group: 'Support',
+    requiredPermission: 'support.admin',
   },
   {
     id: 'support-webhooks',

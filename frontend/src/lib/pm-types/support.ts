@@ -1679,6 +1679,25 @@ export type WebhookEventType =
   | 'sla.breached'
   | 'csat.submitted';
 
+/** A connected messaging account (a Telegram bot) that feeds an inbox. */
+export interface SupportChannelAccount {
+  id: string
+  workspace_id: string
+  provider: 'telegram'
+  external_account_id: string
+  display_name: string
+  handle: string
+  mailbox_id: string | null
+  ai_replies_disabled: boolean
+  status: 'active' | 'reauthorization_required' | 'disabled'
+  last_error_code: string | null
+  last_error_message: string | null
+  last_event_at: string | null
+  created_at: string
+  failed_deliveries: number
+  unconfirmed_deliveries: number
+}
+
 export interface WebhookEndpoint {
   id: string;
   workspace_id: string;

@@ -63,6 +63,9 @@ func (a *Adapter) ValidateToken(ctx context.Context, token string) (channels.Acc
 // RegisterWebhook implements channels.Adapter.
 func (a *Adapter) RegisterWebhook(ctx context.Context, token, webhookURL, secret string) error {
 	if err := a.api.setWebhook(ctx, token, webhookURL, secret); err != nil {
+		if classify(err).Code == channels.CodeAuth {
+			return channels.ErrAuth
+		}
 		return fmt.Errorf("register telegram webhook: %w", err)
 	}
 	return nil
