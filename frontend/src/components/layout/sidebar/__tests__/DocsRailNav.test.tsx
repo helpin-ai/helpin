@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { DocsRailNav } from '../DocsRailNav'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -81,7 +82,7 @@ vi.mock('@/hooks/queries', () => ({
   useDeleteDocsSpace: () => ({ mutateAsync: vi.fn() }),
 }))
 
-vi.mock('@/components/docs/SpaceDialog', () => ({ SpaceDialog: () => null }))
+vi.mock('@/components/docs/SpaceDialog', () => ({ SpaceDialog: vi.fn(() => null) }))
 vi.mock('@/components/docs/CreateCollectionDialog', () => ({ CreateCollectionDialog: () => null }))
 vi.mock('@/components/docs/DeleteCollectionDialog', () => ({ DeleteCollectionDialog: () => null }))
 vi.mock('@/components/docs/DeleteSpaceDialog', () => ({ DeleteSpaceDialog: () => null }))
@@ -92,6 +93,7 @@ describe('DocsRailNav', () => {
     location.search = {}
     spaces.splice(1)
     localStorage.clear()
+    vi.mocked(SpaceDialog).mockClear()
   })
 
   afterEach(() => {
@@ -244,13 +246,104 @@ describe('DocsRailNav', () => {
       </TooltipProvider>,
     ))
     try {
+      expect(container.querySelector('[data-slot="docs-space-list"]')).not.toBeNull()
+      expect(container.querySelector('[aria-label^="Manage "]')).toBeNull()
+      expect(container.querySelector('[aria-label="New team space"]')).toBeNull()
+      expect(container.querySelector('[aria-label="New external space"]')).toBeNull()
       act(() => container.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!.click())
       const allSpaces = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
         .find((button) => button.textContent?.trim() === 'All spaces')
       expect(allSpaces?.getAttribute('aria-current')).toBe('page')
       expect(document.querySelector('[role="option"][aria-selected="true"]')).toBeNull()
+      expect(document.querySelector('[aria-label^="Manage "]')).toBeNull()
       act(() => allSpaces!.click())
       expect(onNavigate).toHaveBeenCalledWith({ to: '/w/$slug/docs', params: { slug: 'acme' } })
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+
+  it('lists the spaces instead of the last space on All spaces', () => {
+    spaces.push({ ...spaces[0], id: 'space-2', name: 'Help Center', type: 'external_capable' })
+    location.pathname = '/w/acme/docs'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const onNavigate = vi.fn()
+
+    act(() => root.render(
+      <TooltipProvider>
+        <DocsRailNav wsId="ws-1" wsSlug="acme" canEditDocs isActive={() => false}
+          openCreate={vi.fn()} onNavigate={onNavigate} />
+      </TooltipProvider>,
+    ))
+    try {
+      const trigger = container.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!
+      expect(trigger.textContent).toContain('All spaces')
+      expect(trigger.textContent).toContain('2 spaces · 1 doc')
+      expect(container.textContent).not.toContain('All docs in space')
+      expect(container.textContent).not.toContain('In this space')
+      expect(container.textContent).toContain('Team spaces')
+      expect(container.textContent).toContain('External spaces')
+
+      const rows = Array.from(container.querySelectorAll('[data-slot="docs-space-row"]'))
+      expect(rows.map((row) => row.querySelector('button > .truncate')?.textContent))
+        .toEqual(['Product docs', 'Help Center'])
+      expect(rows.map((row) => row.querySelector('[data-slot="docs-sidebar-count"]')?.textContent))
+        .toEqual(['1', '0'])
+      // Counts and the row "⋯" share the slot, like collection rows.
+      expect(rows[0].querySelector('[data-slot="docs-sidebar-count"]')?.className).toContain('group-hover/space:opacity-0')
+      expect(rows[0].querySelector('[aria-label="Manage Product docs"]')).not.toBeNull()
+      expect(container.querySelector('[aria-label="New team space"]')).not.toBeNull()
+      expect(container.querySelector('[aria-label="New external space"]')).not.toBeNull()
+
+      act(() => container.querySelector<HTMLButtonElement>('[aria-label="New team space"]')!.click())
+      expect(vi.mocked(SpaceDialog).mock.calls.at(-1)?.[0]).toMatchObject({ open: true, defaultType: 'internal' })
+      act(() => vi.mocked(SpaceDialog).mock.calls.at(-1)![0].onOpenChange(false))
+      act(() => container.querySelector<HTMLButtonElement>('[aria-label="New external space"]')!.click())
+      expect(vi.mocked(SpaceDialog).mock.calls.at(-1)?.[0]).toMatchObject({ open: true, defaultType: 'external_capable' })
+      act(() => vi.mocked(SpaceDialog).mock.calls.at(-1)![0].onOpenChange(false))
+
+      act(() => rows[1].querySelector('button')!.click())
+      expect(onNavigate).toHaveBeenCalledWith({
+        to: '/w/$slug/docs/spaces/$spaceId',
+        params: { slug: 'acme', spaceId: 'space-2' },
+      })
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+
+  it('restores the selected space tree after leaving All spaces', () => {
+    spaces.push({ ...spaces[0], id: 'space-2', name: 'Help Center', type: 'external_capable' })
+    location.pathname = '/w/acme/docs'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const render = () => act(() => root.render(
+      <TooltipProvider>
+        <DocsRailNav wsId="ws-1" wsSlug="acme" canEditDocs isActive={() => false}
+          openCreate={vi.fn()} onNavigate={vi.fn()} />
+      </TooltipProvider>,
+    ))
+    render()
+    try {
+      const rows = container.querySelectorAll('[data-slot="docs-space-row"]')
+      act(() => rows[1].querySelector('button')!.click())
+      for (const pathname of ['/w/acme/docs/spaces/space-2', '/w/acme/docs/my', '/w/acme/docs/recent']) {
+        location.pathname = pathname
+        render()
+        expect(container.querySelector('[aria-haspopup="listbox"]')?.textContent).toContain('Help Center')
+        expect(container.querySelector('[data-slot="docs-space-list"]')).toBeNull()
+        expect(container.querySelector('[data-slot="docs-tree-scroll"]')).not.toBeNull()
+      }
+      location.pathname = '/w/acme/docs'
+      render()
+      expect(container.querySelector('[aria-haspopup="listbox"]')?.textContent).toContain('All spaces')
+      expect(container.querySelector('[data-slot="docs-space-list"]')).not.toBeNull()
+      expect(container.querySelector('[data-slot="docs-tree-scroll"]')).toBeNull()
     } finally {
       act(() => root.unmount())
       container.remove()

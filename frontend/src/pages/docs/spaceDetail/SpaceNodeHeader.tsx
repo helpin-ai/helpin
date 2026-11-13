@@ -37,6 +37,8 @@ export interface SpaceNodeHeaderProps {
   // Navigation
   /** Passed the target collection id, or null to reset to space root. */
   onNavigateToCollection: (collectionId: string | null) => void
+  /** Opens the All spaces page, the level above every space. */
+  onNavigateToAllSpaces: () => void
 
   // Create actions
   onCreateDocument: () => void
@@ -69,6 +71,7 @@ export function SpaceNodeHeader({
   view,
   canEdit,
   onNavigateToCollection,
+  onNavigateToAllSpaces,
   onCreateDocument,
   onCreateChildCollection,
   onEditSpace,
@@ -79,16 +82,19 @@ export function SpaceNodeHeader({
   // ── Ancestors (rendered inline, left of the title) ─────────────────
   // The current node is NOT in this list — it's the big title to the
   // right of the last arrow. That keeps the "you are here" signal
-  // compact and keeps the page hierarchy visible.
+  // compact and keeps the page hierarchy visible. Every space sits
+  // under All spaces, so the trail starts there, even at the space root.
   const ancestors: AncestorLink[] = (() => {
-    if (view.kind === 'space_root' || view.kind === 'loading') return []
+    if (view.kind === 'loading') return []
     const items: AncestorLink[] = [
-      {
-        id: 'space',
-        label: space.name,
-        onClick: () => onNavigateToCollection(null),
-      },
+      { id: 'all-spaces', label: 'All spaces', onClick: onNavigateToAllSpaces },
     ]
+    if (view.kind === 'space_root') return items
+    items.push({
+      id: 'space',
+      label: space.name,
+      onClick: () => onNavigateToCollection(null),
+    })
     if (view.kind === 'collection') {
       for (const ancestor of view.ancestors) {
         items.push({
@@ -140,15 +146,12 @@ export function SpaceNodeHeader({
     ((view.kind === 'space_root') ||
       (view.kind === 'collection' && (onEditCollection || onDeleteCollection)))
 
-  // The space is the top of this page's hierarchy: its root shows no
-  // breadcrumb, and drilled views start the trail at the space. Other
-  // spaces are reached from the sidebar's space switcher ("All spaces").
   const parent = ancestors[ancestors.length - 1]
 
   return (
     <QuietDetailHeader
-      // Without a breadcrumb row, keep the drilled-in header's height and
-      // centre the title so content does not jump between space and collection.
+      // While loading there is no breadcrumb row: keep the loaded header's
+      // height and centre the title so content does not jump.
       className={parent ? undefined : 'flex min-h-[4.5rem] flex-col justify-center'}
       breadcrumbs={parent ? (
         <QuietBreadcrumbs
