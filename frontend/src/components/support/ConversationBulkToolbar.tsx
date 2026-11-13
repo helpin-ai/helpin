@@ -11,9 +11,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { useSupportTags } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { PriorityIcon } from '@/lib/pmConstants';
-import { SnoozeMenu } from './SnoozeMenu';
+import { SnoozeDateTimeDialog, SnoozeSubmenu } from './SnoozeMenu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ArrowTurnBackwardIcon, Cancel01Icon, CheckmarkCircle02Icon, Clock01Icon, Delete01Icon, FolderInputIcon, MailOpenIcon, Mail01Icon, MinusSignIcon, MoreHorizontalIcon, OctagonXIcon, Tag01Icon, UserAdd01Icon, UserRemove01Icon } from '@/lib/icons';
+import { ArrowTurnBackwardIcon, Cancel01Icon, CheckmarkCircle02Icon, Delete01Icon, FolderInputIcon, MailOpenIcon, Mail01Icon, MinusSignIcon, MoreHorizontalIcon, OctagonXIcon, Tag01Icon, UserAdd01Icon, UserRemove01Icon } from '@/lib/icons';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { queryKeys } from '@/lib/queryKeys';
 import { bulkActionRemovesFromList, runConversationBulkAction, type ConversationBulkAction } from '@/lib/supportBulkActions';
@@ -45,6 +45,7 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
   const queryClient = useQueryClient();
   const [mergeOpen, setMergeOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const confirm = useConfirm();
   const running = useRef(false);
@@ -145,9 +146,15 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
     }
   }
 
+  function handleSnooze(until: Date) {
+    const minutes = Math.max(1, Math.round((until.getTime() - Date.now()) / 60_000));
+    void apply({ type: 'operations', actions: { snooze_minutes: minutes } }, 'Snoozed');
+  }
+
   return (
     <>
       {mergeOpen && <ConversationMergeDialog workspaceId={workspaceId} conversations={conversations} open={mergeOpen} onOpenChange={setMergeOpen} onMerged={onCompleted} />}
+      {canEdit && snoozable && customSnoozeOpen && <SnoozeDateTimeDialog onSnooze={handleSnooze} onClose={() => setCustomSnoozeOpen(false)} />}
       <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 pl-1.5">
         <Checkbox
           className="border-neutral-400 bg-white data-[state=checked]:border-neutral-400 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white"
@@ -177,14 +184,6 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
         </TooltipTrigger>
         <TooltipContent side="bottom">{primaryLabel}</TooltipContent>
       </Tooltip>}
-      {canEdit && snoozable && <SnoozeMenu
-        disabled={disabled}
-        onSnooze={(until) => {
-          const minutes = Math.max(1, Math.round((until.getTime() - Date.now()) / 60_000));
-          void apply({ type: 'operations', actions: { snooze_minutes: minutes } }, 'Snoozed');
-        }}
-        trigger={<Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Snooze conversations" title="Snooze" disabled={disabled}><Clock01Icon className="h-3.5 w-3.5" /></Button>}
-      />}
       <DropdownMenu open={actionsOpen} onOpenChange={setActionsOpen}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -213,6 +212,7 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
                 <DropdownMenuItem onSelect={() => void apply({ type: 'operations', actions: { assign_user_id: '' } }, 'Unassigned')}><UserRemove01Icon className="h-3.5 w-3.5" />Unassign</DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            {snoozable && <SnoozeSubmenu disabled={disabled} onSnooze={handleSnooze} onCustomSelect={() => setCustomSnoozeOpen(true)} />}
             {moveOptions.length > 0 && <QuietDropdown
               options={moveOptions.map((option) => ({ value: option.id, label: option.name }))}
               onSelect={(value) => {
