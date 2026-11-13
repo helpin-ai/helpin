@@ -11,9 +11,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { useSupportTags } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { PriorityIcon } from '@/lib/pmConstants';
-import { SnoozeMenu } from './SnoozeMenu';
+import { SnoozeDateTimeDialog, SnoozeSubmenu } from './SnoozeMenu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ArrowTurnBackwardIcon, Cancel01Icon, CheckmarkCircle02Icon, Clock01Icon, Delete01Icon, FolderInputIcon, MailOpenIcon, Mail01Icon, MinusSignIcon, MoreHorizontalIcon, OctagonXIcon, Tag01Icon, UserAdd01Icon, UserRemove01Icon } from '@/lib/icons';
+import { ArrowTurnBackwardIcon, Cancel01Icon, CheckmarkCircle02Icon, Delete01Icon, FolderInputIcon, MailOpenIcon, Mail01Icon, MinusSignIcon, MoreHorizontalIcon, OctagonXIcon, Tag01Icon, UserAdd01Icon, UserRemove01Icon } from '@/lib/icons';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { queryKeys } from '@/lib/queryKeys';
 import { bulkActionRemovesFromList, runConversationBulkAction, type ConversationBulkAction } from '@/lib/supportBulkActions';
@@ -21,6 +21,7 @@ import { isSupportConversationListQueryKey, patchConversationDetailStatus, patch
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebrationStore';
 import { QuietDropdown } from '@/components/design-system/quiet';
+import { cn } from '@/lib/utils';
 import type { ConversationActionMoveOption } from './ConversationActionsMenu';
 
 interface Props {
@@ -43,6 +44,8 @@ interface Props {
 export function ConversationBulkToolbar({ workspaceId, userId, conversations, loadedCount, allLoadedSelected, hasMore, loadingSelection, canEdit, moveOptions, onSelectLoaded, onClear, onBusyChange, onCompleted }: Props) {
   const queryClient = useQueryClient();
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const confirm = useConfirm();
   const running = useRef(false);
@@ -143,9 +146,15 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
     }
   }
 
+  function handleSnooze(until: Date) {
+    const minutes = Math.max(1, Math.round((until.getTime() - Date.now()) / 60_000));
+    void apply({ type: 'operations', actions: { snooze_minutes: minutes } }, 'Snoozed');
+  }
+
   return (
     <>
       {mergeOpen && <ConversationMergeDialog workspaceId={workspaceId} conversations={conversations} open={mergeOpen} onOpenChange={setMergeOpen} onMerged={onCompleted} />}
+      {canEdit && snoozable && customSnoozeOpen && <SnoozeDateTimeDialog onSnooze={handleSnooze} onClose={() => setCustomSnoozeOpen(false)} />}
       <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 pl-1.5">
         <Checkbox
           className="border-neutral-400 bg-white data-[state=checked]:border-neutral-400 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white"
@@ -169,53 +178,13 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
       </label>
       {canEdit && <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label={primaryLabel} disabled={disabled} onClick={() => void apply({ type: 'status', status: reopen ? 'open' : 'resolved' }, reopen ? 'Reopened' : 'Resolved')}>
+          <Button variant={reopen ? 'ghost' : 'default'} size="icon" className={cn('h-7 w-7 shrink-0', !reopen && 'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700')} aria-label={primaryLabel} disabled={disabled} onClick={() => void apply({ type: 'status', status: reopen ? 'open' : 'resolved' }, reopen ? 'Reopened' : 'Resolved')}>
             <PrimaryIcon className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">{primaryLabel}</TooltipContent>
       </Tooltip>}
-      {canEdit && <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Assign conversations" disabled={disabled}><UserAdd01Icon className="h-3.5 w-3.5" /></Button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Assign</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
-          {userId && <DropdownMenuItem onSelect={() => void apply({ type: 'operations', actions: { assign_user_id: userId } }, 'Assigned')}>Assign to me</DropdownMenuItem>}
-          {assignees.length > 0 && <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Assign to</DropdownMenuLabel>
-            {assignees.map((member) => (
-              <DropdownMenuItem key={member.user_id} onSelect={() => void apply({ type: 'operations', actions: { assign_user_id: member.user_id! } }, 'Assigned')}>
-                <span className="truncate">{member.full_name || member.email || 'Teammate'}</span>
-              </DropdownMenuItem>
-            ))}
-          </>}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => void apply({ type: 'operations', actions: { assign_user_id: '' } }, 'Unassigned')}><UserRemove01Icon className="h-3.5 w-3.5" />Unassign</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>}
-      {canEdit && snoozable && <SnoozeMenu
-        disabled={disabled}
-        onSnooze={(until) => {
-          const minutes = Math.max(1, Math.round((until.getTime() - Date.now()) / 60_000));
-          void apply({ type: 'operations', actions: { snooze_minutes: minutes } }, 'Snoozed');
-        }}
-        trigger={<Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Snooze conversations" title="Snooze" disabled={disabled}><Clock01Icon className="h-3.5 w-3.5" /></Button>}
-      />}
-      {canEdit && moveOptions.length > 0 && <QuietDropdown
-        options={moveOptions.map((option) => ({ value: option.id, label: option.name }))}
-        onSelect={(value) => { void apply({ type: 'move', mailboxId: value === 'shared' ? null : value }, 'Moved'); }}
-        label="Move to inbox"
-        disabled={disabled}
-        triggerWrapper={(trigger) => <Tooltip><TooltipTrigger asChild>{trigger}</TooltipTrigger><TooltipContent side="bottom">Move to inbox</TooltipContent></Tooltip>}
-        trigger={<Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Move conversations to inbox" disabled={disabled}><FolderInputIcon className="h-3.5 w-3.5" /></Button>}
-      />}
-      <DropdownMenu>
+      <DropdownMenu open={actionsOpen} onOpenChange={setActionsOpen}>
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
@@ -225,6 +194,37 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
           <TooltipContent side="bottom">More actions</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end">
+          {canEdit && <>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger><UserAdd01Icon className="h-3.5 w-3.5" />Assign</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
+                {userId && <DropdownMenuItem onSelect={() => void apply({ type: 'operations', actions: { assign_user_id: userId } }, 'Assigned')}>Assign to me</DropdownMenuItem>}
+                {assignees.length > 0 && <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">Assign to</DropdownMenuLabel>
+                  {assignees.map((member) => (
+                    <DropdownMenuItem key={member.user_id} onSelect={() => void apply({ type: 'operations', actions: { assign_user_id: member.user_id! } }, 'Assigned')}>
+                      <span className="truncate">{member.full_name || member.email || 'Teammate'}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </>}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void apply({ type: 'operations', actions: { assign_user_id: '' } }, 'Unassigned')}><UserRemove01Icon className="h-3.5 w-3.5" />Unassign</DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {snoozable && <SnoozeSubmenu disabled={disabled} onSnooze={handleSnooze} onCustomSelect={() => setCustomSnoozeOpen(true)} />}
+            {moveOptions.length > 0 && <QuietDropdown
+              options={moveOptions.map((option) => ({ value: option.id, label: option.name }))}
+              onSelect={(value) => {
+                setActionsOpen(false);
+                void apply({ type: 'move', mailboxId: value === 'shared' ? null : value }, 'Moved');
+              }}
+              label="Move to inbox"
+              disabled={disabled}
+              trigger={<DropdownMenuItem onSelect={(event) => event.preventDefault()}><FolderInputIcon className="h-3.5 w-3.5" />Move to inbox…</DropdownMenuItem>}
+            />}
+            <DropdownMenuSeparator />
+          </>}
           {access?.permissions.includes('support.merge') && <DropdownMenuItem disabled={!canMergeSelection(conversations)} onSelect={() => setMergeOpen(true)}>Merge…</DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => void apply({ type: 'read' }, 'Marked as read:')}><MailOpenIcon className="h-3.5 w-3.5" />Mark as read</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void apply({ type: 'unread' }, 'Marked as unread:')}><Mail01Icon className="h-3.5 w-3.5" />Mark as unread</DropdownMenuItem>

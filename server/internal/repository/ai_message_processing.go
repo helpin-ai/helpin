@@ -388,3 +388,12 @@ func (r *AIMessageProcessingRepository) ClaimValidationRepair(ctx context.Contex
 		Update("validation_repair_used", true)
 	return result.RowsAffected == 1, result.Error
 }
+
+// ClaimActionValidationRepair reserves one action-honesty correction per customer
+// turn without forcing a conversational correction through factual-answer rules.
+func (r *AIMessageProcessingRepository) ClaimActionValidationRepair(ctx context.Context, workspaceID, id string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
+		Where("id = ? AND workspace_id = ? AND status IN ? AND reply_message_id IS NULL AND action_validation_repair_used = ?", id, workspaceID, []string{"processing", "waiting_for_result"}, false).
+		Update("action_validation_repair_used", true)
+	return result.RowsAffected == 1, result.Error
+}
