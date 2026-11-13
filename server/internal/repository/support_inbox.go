@@ -2513,6 +2513,22 @@ func (r *SupportConversationRepository) Delete(ctx context.Context, workspaceID,
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Find(&conversation).Error; err != nil {
 			return err
 		}
+		// A provider customer known only from this conversation is forgotten
+		// with it; one linked to a contact or with other conversations stays.
+		var identityIDs []string
+		if conversation.ChannelIdentityID != nil {
+			if err := tx.Model(&model.SupportChannelIdentity{}).
+				Where("workspace_id = ? AND id = ? AND crm_contact_id IS NULL", workspaceID, *conversation.ChannelIdentityID).
+				Where("NOT EXISTS (SELECT 1 FROM support_conversations c WHERE c.channel_identity_id = support_channel_identities.id AND c.id <> ?)", conversationID).
+				Pluck("id", &identityIDs).Error; err != nil {
+				return err
+			}
+		}
+		if conversation.ChannelAccountID != nil {
+			if err := eraseChannelPersonTx(tx, workspaceID, []string{conversationID}, identityIDs); err != nil {
+				return err
+			}
+		}
 		if conversation.AnonymizedAt != nil {
 			if err := tx.Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Delete(&model.SupportConversation{}).Error; err != nil {
 				return fmt.Errorf("delete anonymized conversation: %w", err)

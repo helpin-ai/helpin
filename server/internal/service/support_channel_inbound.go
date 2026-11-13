@@ -59,7 +59,7 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 	receipt := &channelReceipt{}
 	err = s.conversationRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// One customer's concurrent first messages must open one conversation.
-		if err := lockChannelSubject(tx, ChannelSubjectKey(account.ID, event.ExternalUserID)); err != nil {
+		if err := lockChannelSubject(tx, model.SupportChannelSubjectKey(account.ID, event.ExternalUserID)); err != nil {
 			return err
 		}
 		if err := repository.LockContactAnonymization(tx, account.WorkspaceID); err != nil {
@@ -100,6 +100,13 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 			}
 			if err := s.conversationRepo.WithTx(tx).Create(ctx, conv); err != nil {
 				return err
+			}
+			if identity.CRMContactID != nil {
+				// Shows the conversation on the contact, as linking by hand does.
+				if err := tx.Create(&model.CRMAssociation{WorkspaceID: account.WorkspaceID, FromObjectType: model.CRMObjectSupportConversation,
+					FromObjectID: conv.ID, ToObjectType: model.CRMObjectContact, ToObjectID: *identity.CRMContactID}).Error; err != nil {
+					return err
+				}
 			}
 			msg.ConversationID = conv.ID
 			if err := s.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {

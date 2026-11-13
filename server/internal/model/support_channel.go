@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"time"
+)
 
 // Support channel account statuses.
 const (
@@ -113,4 +117,11 @@ type SupportChannelDelivery struct {
 	Status    string `json:"status"`
 	ErrorCode string `json:"error_code,omitempty"`
 	Retryable bool   `json:"retryable"`
+}
+
+// SupportChannelSubjectKey identifies a customer of a connected account
+// without storing their provider id in clear on every job.
+func SupportChannelSubjectKey(accountID, externalUserID string) string {
+	sum := sha256.Sum256([]byte(accountID + ":" + externalUserID))
+	return hex.EncodeToString(sum[:])
 }

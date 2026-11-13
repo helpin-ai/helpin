@@ -4646,6 +4646,14 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return nil, err
 	}
+	// The provider customer's later conversations start linked to the contact.
+	if ticket.ChannelIdentityID != nil {
+		if err := s.conversationRepo.DB().WithContext(ctx).Model(&model.SupportChannelIdentity{}).
+			Where("workspace_id = ? AND id = ?", workspaceID, *ticket.ChannelIdentityID).
+			Updates(map[string]any{"crm_contact_id": normalizedContactID, "updated_at": time.Now().UTC()}).Error; err != nil {
+			return nil, err
+		}
+	}
 	ticket.CRMContactID = normalizedContactID
 	ticket.UpdatedAt = time.Now().UTC()
 

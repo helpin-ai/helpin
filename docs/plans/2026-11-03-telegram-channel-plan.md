@@ -533,6 +533,19 @@ Tests:
 - conversation deletion removes an unlinked identity;
 - a replayed update after deletion creates nothing.
 
+**Built 2026-11-13.** Deviations from the steps above:
+- Outbox rows of erased people are deleted, not cancelled: they reference the
+  identity, which is deleted in the same transaction.
+- Stored message keys (`chat_id:message_id`) carry the Telegram user id, so
+  erasure rewrites them to `deleted:<message id>`. Replays stay no-ops through
+  the job ids.
+- Attachment jobs carry no subject key; they are cleared by conversation.
+- Contact deletion also erases a person reached only through a linked
+  conversation (a link made before identities carried it), with all of that
+  identity's conversations.
+- A conversation that inherits a link also gets the contact association, so it
+  shows on the contact as a hand-linked one does.
+
 ### Slice 7: docs and end-to-end check (1 day)
 
 - `docs/support-channels.md`: an engineering guide covering tables, the

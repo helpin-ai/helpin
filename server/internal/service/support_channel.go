@@ -271,7 +271,7 @@ func (s *SupportChannelService) AcceptWebhook(ctx context.Context, provider, acc
 		if err != nil {
 			return err
 		}
-		subject := ChannelSubjectKey(account.ID, event.ExternalUserID)
+		subject := model.SupportChannelSubjectKey(account.ID, event.ExternalUserID)
 		job := &model.SupportInboundJob{
 			ID:               inboundStableID(provider + ":" + account.ID + ":" + event.EventKey),
 			Kind:             SupportInboundKindChannelEvent,
@@ -292,12 +292,6 @@ func (s *SupportChannelService) AcceptWebhook(ctx context.Context, provider, acc
 	return nil
 }
 
-// ChannelSubjectKey identifies a customer of a connected account without
-// storing their provider id in clear on every job.
-func ChannelSubjectKey(accountID, externalUserID string) string {
-	sum := sha256.Sum256([]byte(accountID + ":" + externalUserID))
-	return hex.EncodeToString(sum[:])
-}
 
 // liveAccount loads a connected account with its adapter and decrypted token.
 func (s *SupportChannelService) liveAccount(ctx context.Context, workspaceID, id string) (*model.SupportChannelAccount, channels.Adapter, string, error) {

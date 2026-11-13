@@ -262,7 +262,7 @@ func TestAcceptWebhookStoresEachUpdateOnce(t *testing.T) {
 	if job.Kind != SupportInboundKindChannelEvent || job.Status != "pending" || *job.WorkspaceID != f.workspace || *job.ChannelAccountID != account.ID {
 		t.Errorf("job = %+v", job)
 	}
-	if *job.SubjectKey != ChannelSubjectKey(account.ID, "9001") || strings.Contains(*job.SubjectKey, "9001") {
+	if *job.SubjectKey != model.SupportChannelSubjectKey(account.ID, "9001") || strings.Contains(*job.SubjectKey, "9001") {
 		t.Errorf("subject key = %q", *job.SubjectKey)
 	}
 	var payload channelEventPayload

@@ -65,9 +65,43 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 				linked = linked.Or("crm_contact_id IS NULL AND LOWER(TRIM(customer_email)) = ?", normalizedEmail)
 			}
 		}
+		// The contact's provider identities (Telegram) bring all their conversations.
+		var identityIDs []string
+		if err := tx.Model(&model.SupportChannelIdentity{}).Where("workspace_id = ? AND crm_contact_id = ?", workspaceID, contactID).Pluck("id", &identityIDs).Error; err != nil {
+			return err
+		}
+		if len(identityIDs) > 0 {
+			linked = linked.Or("channel_identity_id IN ?", identityIDs)
+		}
 		var conversations []model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ?", workspaceID).Where(linked).Order("id").Find(&conversations).Error; err != nil {
 			return err
+		}
+		// A linked conversation's identity is the same person, so their other
+		// provider conversations go too.
+		known := make(map[string]bool, len(identityIDs))
+		for _, id := range identityIDs {
+			known[id] = true
+		}
+		var extraIdentities []string
+		for _, conv := range conversations {
+			if conv.ChannelIdentityID != nil && !known[*conv.ChannelIdentityID] {
+				known[*conv.ChannelIdentityID] = true
+				extraIdentities = append(extraIdentities, *conv.ChannelIdentityID)
+			}
+		}
+		if len(extraIdentities) > 0 {
+			identityIDs = append(identityIDs, extraIdentities...)
+			found := make([]string, 0, len(conversations))
+			for _, conv := range conversations {
+				found = append(found, conv.ID)
+			}
+			var more []model.SupportConversation
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND channel_identity_id IN ? AND id NOT IN ?", workspaceID, extraIdentities, nonEmpty(found)).
+				Order("id").Find(&more).Error; err != nil {
+				return err
+			}
+			conversations = append(conversations, more...)
 		}
 		for _, conv := range conversations {
 			conversationIDs = append(conversationIDs, conv.ID)
@@ -167,10 +201,13 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 		if err := jobs.Where(scope).Updates(map[string]any{"status": "completed", "payload": "", "lease_token": "", "last_error": ""}).Error; err != nil {
 			return err
 		}
+		if err := eraseChannelPersonTx(tx, workspaceID, conversationIDs, identityIDs); err != nil {
+			return err
+		}
 		// Set the marker last: PostgreSQL guards reject future writes to this timeline.
 		if len(conversationIDs) > 0 {
 			if err := tx.Table("support_conversations").Where("workspace_id = ? AND id IN ?", workspaceID, conversationIDs).Updates(map[string]any{
-				"anonymized_at": now, "crm_contact_id": nil, "crm_company_id": nil, "customer_name": "Deleted customer", "customer_email": nil, "customer_phone": nil,
+				"anonymized_at": now, "crm_contact_id": nil, "channel_identity_id": nil, "crm_company_id": nil, "customer_name": "Deleted customer", "customer_email": nil, "customer_phone": nil,
 				"anonymous_id": nil, "email_cc": nil, "email_thread_participants": nil, "suggested_primary_recipient_email": nil, "suggested_primary_recipient_name": nil,
 				"last_public_sender_display_name": gorm.Expr("CASE WHEN last_public_sender_type = 'customer' THEN NULL ELSE last_public_sender_display_name END"),
 				"visitor_country_code":            nil, "country_code": nil, "country_name": nil, "last_message_sender_display_name": nil, "visitor_country_name": nil, "view_search_document": gorm.Expr("LOWER(CONCAT_WS(' ', subject, 'Deleted customer'))"), "human_takeover": true, "email_unsubscribed": true,
