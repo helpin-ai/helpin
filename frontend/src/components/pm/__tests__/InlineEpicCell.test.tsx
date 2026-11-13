@@ -26,7 +26,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function openPicker(epicId = 'epic-a', options = epicMap) {
+async function openPicker(epicId = 'epic-a', options = epicMap, teamId?: string) {
   const onUpdate = vi.fn().mockResolvedValue(undefined);
   const onOpenTask = vi.fn();
   const container = document.createElement('div');
@@ -34,7 +34,7 @@ async function openPicker(epicId = 'epic-a', options = epicMap) {
   root = createRoot(container);
   await act(async () => root.render(
     <div onClick={onOpenTask}>
-      <InlineEpicCell task={{ id: 'task-1', epic_id: epicId } as Task} epicMap={options} onUpdate={onUpdate} />
+      <InlineEpicCell task={{ id: 'task-1', epic_id: epicId, team_id: teamId } as Task} epicMap={options} onUpdate={onUpdate} />
     </div>,
   ));
   await act(async () => container.querySelector('button')!.click());
@@ -44,6 +44,20 @@ async function openPicker(epicId = 'epic-a', options = epicMap) {
 const option = (id: string) => document.querySelector<HTMLElement>(`[role="option"][data-value="${id}"]`)!;
 
 describe('task board and list epic dropdown', () => {
+  it('keeps an existing teamless link visible but offers only epics from the task’s team', async () => {
+    const scopedEpics = new Map(epicMap);
+    scopedEpics.set('epic-b', { ...scopedEpics.get('epic-b')!, team_id: 'team-a' });
+    scopedEpics.set('epic-c', { ...scopedEpics.get('epic-c')!, team_id: 'team-b' });
+    const { onUpdate } = await openPicker('epic-a', scopedEpics, 'team-a');
+    expect(document.querySelector('button')?.textContent).toBe('Shared initiative');
+    expect(option('epic-a')).toBeNull();
+    expect(option('epic-b')).not.toBeNull();
+    expect(option('epic-c')).toBeNull();
+    expect(onUpdate).not.toHaveBeenCalled();
+    await act(async () => option('epic-b').click());
+    expect(onUpdate).toHaveBeenCalledWith('task-1', { epic_id: 'epic-b' });
+  });
+
   it('groups epics by lifecycle in the same order as the detail rail', async () => {
     await openPicker('epic-a', new Map([...epicMap].reverse()));
     const groups = Array.from(document.querySelectorAll('[cmdk-group]')).slice(1);

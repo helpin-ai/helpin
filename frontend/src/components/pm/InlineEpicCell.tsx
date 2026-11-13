@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { EpicBadge } from './EpicBadge';
 import { EpicColorSwatch } from './EpicColorSwatch';
 import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from './epicPickerGroups';
+import { isEpicSelectableForTaskTeam } from './task-detail/taskPlanningScope';
 
 export function InlineEpicCell({
   task,
@@ -64,7 +65,9 @@ export function InlineEpicCell({
       }}
       groups={[
         { id: 'none', options: [{ value: '__none__', label: 'None' }] },
-        ...groupEpicsByLifecycle(epicMap.values()).map((group) => ({
+        ...groupEpicsByLifecycle(
+          Array.from(epicMap.values()).filter((epic) => isEpicSelectableForTaskTeam(epic.team_id, task.team_id)),
+        ).map((group) => ({
           id: group.label,
           label: group.label,
           options: group.epics.map((epic) => ({

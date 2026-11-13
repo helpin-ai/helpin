@@ -78,9 +78,11 @@ const sprints: SprintWithStats[] = [
 ];
 
 describe('task planning scope', () => {
-  it('allows shared epics for any task team', () => {
-    expect(isEpicSelectableForTaskTeam(null, 'team-a')).toBe(true);
+  it('only offers teamless epics when the task has no team', () => {
+    expect(isEpicSelectableForTaskTeam(null, 'team-a')).toBe(false);
+    expect(isEpicSelectableForTaskTeam('', 'team-a')).toBe(false);
     expect(isEpicSelectableForTaskTeam(undefined, '')).toBe(true);
+    expect(isEpicSelectableForTaskTeam(null, null)).toBe(true);
   });
 
   it('allows only same-team epics when the epic is team-scoped', () => {
