@@ -34,7 +34,7 @@ func previewFixture(t *testing.T) (*gorm.DB, *SupportPreviewService, *InternalCo
 	runtime := &fakeAgentRuntimeSignalClient{}
 	agents := newDelegatedSupportRunService(t, db, runtime)
 	agents.artifactRepo = repository.NewAgentRunArtifactRepository(db)
-	ai := &SupportAIService{agentRepo: agents.agentRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), conversationRepo: repository.NewSupportConversationRepository(db), messageRepo: repository.NewSupportMessageRepository(db)}
+	ai := &SupportAIService{llmProvider: &greetingProvider{}, agentRepo: agents.agentRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), conversationRepo: repository.NewSupportConversationRepository(db), messageRepo: repository.NewSupportMessageRepository(db)}
 	evidence := repository.NewSupportRunEvidenceRepository(db)
 	preview := NewSupportPreviewService(agents, ai, evidence)
 	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)

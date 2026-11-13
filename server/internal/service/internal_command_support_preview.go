@@ -125,6 +125,18 @@ func (s *InternalCommandService) captureSupportPreviewReply(ctx context.Context,
 		return nil, err
 	}
 	gate := evaluateSupportReplyGate(supportReplyGateInput{Kind: kind, Contract: contract, Evidence: supportEvidenceFromRows(rows), Threshold: snapshot.ConfidenceThreshold})
+	if gate.OK {
+		// Preview has no side effects, so it cannot claim that an action happened.
+		actions, reviewErr := s.supportAIService.reviewSupportReplyActions(ctx, meta.WorkspaceID, run.ID, contract.Content, nil)
+		if reviewErr != nil || !*actions.Allowed {
+			gate.OK = false
+			gate.ValidationOutcome = "unsupported_action"
+			gate.EscalationReason = "unsupported_action"
+			if reviewErr != nil {
+				gate.EscalationReason = "action_review_unavailable"
+			}
+		}
+	}
 	response := supportPreviewResponse(run, snapshot)
 	response.FinalDecision = "answer"
 	response.FinalReason = "validated_reply"

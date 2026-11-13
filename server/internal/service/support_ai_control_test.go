@@ -200,7 +200,7 @@ func TestSupportAIControlConcurrentTeammates(t *testing.T) {
 func TestSupportAIControlRejectsLateReplyAfterReturn(t *testing.T) {
 	svc, db, conv, settings := setupAIControlTest(t)
 	ctx := context.Background()
-	mustExec(t, db, `CREATE TABLE ai_message_processing(validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing(action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
 	req := model.SupportAIControlRequest{Action: "pause"}
 	if err := svc.changeConversationAIControl(ctx, conv, "human", &req, settings, nil, "pause"); err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func TestSupportAIControlDropsDeferredMessagesBeforeReturn(t *testing.T) {
 	ctx := context.Background()
 	raw, _ := json.Marshal(settings)
 	mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('install','ws','key','secret',?,true)`, string(raw))
-	mustExec(t, db, `CREATE TABLE ai_message_processing(validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing(action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,updated_at DATETIME)`)
 	before := time.Now().UTC().Add(-time.Minute)
 	for _, id := range []string{"old", "fresh"} {
 		if err := svc.messageRepo.Create(ctx, &model.SupportMessage{ID: id, WorkspaceID: "ws", ConversationID: "conv", SenderType: "customer", MessageType: "reply", Content: id, CreatedAt: before}); err != nil {

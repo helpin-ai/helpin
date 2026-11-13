@@ -231,7 +231,7 @@ func setupJevChat(t *testing.T, p *lifecycleJev) (*SupportChatService, *gorm.DB,
 		t.Fatal(err)
 	}
 	mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('inst','ws','key','secret',?,true)`, string(raw))
-	mustExec(t, db, `CREATE TABLE ai_message_processing(validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,attempts INTEGER,created_at DATETIME,updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing(action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,attempts INTEGER,created_at DATETIME,updated_at DATETIME)`)
 	ai := &SupportAIService{conversationRepo: inbox.conversationRepo, messageRepo: inbox.messageRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), handoffRepo: repository.NewAgentHandoffRepository(db)}
 	chat := &SupportChatService{conversationRepo: inbox.conversationRepo, messageRepo: inbox.messageRepo, supportAIService: ai, processingRepo: repository.NewAIMessageProcessingRepository(db)}
 	msg := &model.SupportMessage{ID: "source", WorkspaceID: "ws", ConversationID: conv.ID, SenderType: "customer", MessageType: "reply", Content: "I followed those steps twice and nothing changed", CreatedAt: time.Now()}
