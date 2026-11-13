@@ -321,6 +321,35 @@ first webhook arrives; and `ready` afterwards. Until the provider is configured,
 **Meetings** and each meeting explain that capture isn't set up and **Start
 capture** is disabled; the capture API answers `409` with the same explanation.
 
+## Telegram
+
+Customers can message your support team through a Telegram bot. Their messages
+arrive as conversations in the inbox, and replies from teammates or the AI
+agent go back to them in Telegram.
+
+Telegram delivers messages by calling Helpin, so the server must be reachable
+from the internet over HTTPS with a certificate Telegram trusts. Helpin builds
+the webhook address from `PUBLIC_API_BASE_URL`, or `APP_BASE_URL` when it is
+empty; the Community dashboard serves `/api` on the same origin, so an `https`
+`APP_BASE_URL` is enough. A server reached only on a private network or over
+plain `http` cannot connect a bot.
+
+1. In Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, and
+   follow the prompts. Copy the token it gives you.
+2. In Helpin, open **Settings → Channels** (workspace admins), choose
+   **Connect Telegram bot**, paste the token, and pick the inbox new
+   conversations land in.
+3. Send your bot a message from Telegram. It appears in that inbox.
+
+Each bot connects to one workspace. Only private chats are supported; the bot
+ignores groups. Tokens are encrypted with `CHANNEL_ENCRYPTION_KEY`, or with
+`CRM_ENCRYPTION_KEY` when it is unset, so keep the key stable: a changed key
+means reconnecting every bot. When Telegram rejects the token, for example
+after you revoke it in @BotFather, the bot shows that Telegram rejected its
+token, and replies are not delivered until you choose **Replace bot token**
+in the bot's actions menu. Retry the replies that failed from their
+conversations.
+
 ## Google (Gmail and Calendar)
 
 Members connect their Google account in **Settings → Email & calendar** or from

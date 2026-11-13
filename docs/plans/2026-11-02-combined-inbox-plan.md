@@ -663,6 +663,15 @@ transport.
 
 Implementation plan: [Telegram channel](2026-11-03-telegram-channel-plan.md).
 
+**As built (2026-11-13, branch `feat/telegram-channel`).** Phase 1 shipped as
+the seven slices of the Telegram plan; its "Built" notes record the
+deviations. The main ones: replies are queued by a database trigger rather
+than `EnqueueTx` calls in each producer, so every producer is covered without
+code changes; there is no window service, because Telegram has no reply
+window; and contact linking stays manual, because Telegram gives no email or
+phone to match on. The engineering guide is
+[Support messaging channels](../support-channels.md).
+
 Telegram goes first because it needs no app review, no business verification
 and no OAuth. Connecting it means pasting a bot token. That lets one provider
 prove the shared delivery architecture end to end, and it works for self-hosters
