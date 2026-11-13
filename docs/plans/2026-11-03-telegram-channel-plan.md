@@ -111,6 +111,33 @@ users.
 
 ### Slice 1: schema, models and registry (2 days)
 
+**Built 2026-11-13.** Migration `202611130001_support_channels.sql`, the
+`telegram` registry entry with the `provider` transport, and setup evidence
+driven by the registry. Deviations from the outline below:
+
+- **Go models and repositories wait for the slice that uses them.** About 20
+  SQLite test files create `support_conversations` and `support_messages` by
+  hand, and GORM inserts every struct field. Adding fields now would break
+  those fixtures for no benefit, and models with no callers would fail the
+  unused-code check. Slice 3 adds the account model; slice 4 adds the
+  conversation, message and identity fields along with their fixtures.
+- **The frontend registry entry moves to slice 4.** Added now, "Telegram"
+  would appear in the SLA channel picker before any bot can connect.
+- **No foreign keys on the columns added to existing tables**
+  (`support_conversations`, `support_messages`, `support_inbound_jobs`). That
+  keeps the ALTERs metadata-only on large tables. The new tables do use
+  foreign keys.
+
+**Ordering risk for later slices.** Slice 4 creates Telegram conversations,
+and AI can reply to them, but delivery only arrives in slice 5. To avoid a
+connected bot whose replies never leave Helpin, the Settings → Channels entry
+stays hidden until slice 5 ships. The route can exist from slice 3.
+
+Tests added: Telegram rows in the phase 0 behaviour matrix, setup-evidence
+channels, a Postgres test of the schema constraints (one live bot, reconnect
+after disconnect, provider and status checks, message dedupe across chats),
+and the workspace-delete test now seeds a bot, an identity and an outbox row.
+
 Migration `2026110300NN_support_channels.sql`. It is idempotent and SQL-only,
 with no AutoMigrate registration, following the `customer_io_outbox`
 precedent:

@@ -15,6 +15,7 @@ const (
 	SupportChannelPortal   = "portal"
 	SupportChannelAPI      = "api"
 	SupportChannelInternal = "internal"
+	SupportChannelTelegram = "telegram"
 )
 
 // SupportChannelTransport is how replies reach the customer.
@@ -25,6 +26,9 @@ const (
 	SupportTransportPortal SupportChannelTransport = "portal" // customer portal, with email notices
 	SupportTransportEmail  SupportChannelTransport = "email"  // outbound email
 	SupportTransportNone   SupportChannelTransport = "none"   // no channel-specific delivery
+	// SupportTransportProvider delivers through a connected account's provider
+	// adapter and the channel outbox.
+	SupportTransportProvider SupportChannelTransport = "provider"
 )
 
 // SupportAIMode names the AI reply setting that governs a channel.
@@ -59,14 +63,17 @@ type SupportChannelSpec struct {
 	// SkipsDefaultMailbox leaves new conversations unrouted instead of placing
 	// them in the workspace default inbox.
 	SkipsDefaultMailbox bool
+	// SetupEvidence counts resolved conversations toward workspace activation.
+	SetupEvidence bool
 }
 
 var supportChannels = []SupportChannelSpec{
-	{Key: SupportChannelWidget, Transport: SupportTransportChat, AIMode: SupportAIModeChat, Triage: SupportTriageSettingWidget, TriageRuleChannel: true, SLAChannel: true, SkipsDefaultMailbox: true},
-	{Key: SupportChannelEmail, Transport: SupportTransportEmail, AIMode: SupportAIModeEmail, Triage: SupportTriageSettingEmail, TriageRuleChannel: true, SLAChannel: true},
+	{Key: SupportChannelWidget, Transport: SupportTransportChat, AIMode: SupportAIModeChat, Triage: SupportTriageSettingWidget, TriageRuleChannel: true, SLAChannel: true, SkipsDefaultMailbox: true, SetupEvidence: true},
+	{Key: SupportChannelEmail, Transport: SupportTransportEmail, AIMode: SupportAIModeEmail, Triage: SupportTriageSettingEmail, TriageRuleChannel: true, SLAChannel: true, SetupEvidence: true},
 	{Key: SupportChannelPortal, Transport: SupportTransportPortal, AIMode: SupportAIModePortal, Triage: SupportTriageSettingWidget, SLAChannel: true},
-	{Key: SupportChannelAPI, Transport: SupportTransportNone, Triage: SupportTriageSettingInternal, TriageRuleChannel: true, SLAChannel: true},
+	{Key: SupportChannelAPI, Transport: SupportTransportNone, Triage: SupportTriageSettingInternal, TriageRuleChannel: true, SLAChannel: true, SetupEvidence: true},
 	{Key: SupportChannelInternal, Transport: SupportTransportNone, Triage: SupportTriageSettingInternal, TriageRuleChannel: true, SLAChannel: true},
+	{Key: SupportChannelTelegram, Transport: SupportTransportProvider, AIMode: SupportAIModeChat, Triage: SupportTriageSettingWidget, TriageRuleChannel: true, SLAChannel: true, SetupEvidence: true},
 }
 
 // LookupSupportChannel matches key exactly.
@@ -95,6 +102,18 @@ func SupportAIModeChannels(mode SupportAIMode) []string {
 	channels := []string{}
 	for _, spec := range supportChannels {
 		if spec.AIMode == mode {
+			channels = append(channels, spec.Key)
+		}
+	}
+	return channels
+}
+
+// SupportSetupEvidenceChannels lists the channels whose resolved
+// conversations count toward workspace activation, in registry order.
+func SupportSetupEvidenceChannels() []string {
+	var channels []string
+	for _, spec := range supportChannels {
+		if spec.SetupEvidence {
 			channels = append(channels, spec.Key)
 		}
 	}
