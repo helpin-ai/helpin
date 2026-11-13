@@ -194,7 +194,6 @@ const ALL_HEALTH_OPTIONS: EpicHealth[] = ['no_health', 'on_track', 'at_risk', 'o
 const EPIC_GROUP_BY_OPTIONS = [
   { value: 'state', label: 'State' },
   { value: 'health', label: 'Health' },
-  { value: 'team', label: 'Team' },
   { value: 'owner', label: 'Owner' },
   { value: 'objective', label: 'Objective' },
   { value: 'target_date', label: 'Target date' },
@@ -404,7 +403,6 @@ function buildEpicGroups(
   filters: EpicFilterState,
   epicStates: EpicWorkflowState[],
   ownerNameMap: Map<string, string>,
-  teamMap: Map<string, string>,
   objectiveNameMap: Map<string, string>,
   preserveEntryOrder = false): EpicGroup[] {
   if (groupBy === 'none') {
@@ -430,9 +428,6 @@ function buildEpicGroups(
       }
       case 'health':
         addToGroup(entry.epic.health, healthConfig[entry.epic.health]?.label ?? 'No health', entry);
-        break;
-      case 'team':
-        addToGroup(entry.epic.team_id ?? '__none__', entry.epic.team_id ? (teamMap.get(entry.epic.team_id) ?? 'Unknown team') : 'No team', entry);
         break;
       case 'owner':
         addToGroup(entry.epic.owner_member_id ?? '__none__', entry.epic.owner_member_id ? (ownerNameMap.get(entry.epic.owner_member_id) ?? 'Unknown owner') : 'Unassigned', entry);
@@ -1541,7 +1536,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const sortedEpics = useMemo(() => sortEntriesForTable(filteredEpics, tableSorting, epicStates, ownerNameMap, teamMap), [epicStates, filteredEpics, ownerNameMap, tableSorting, teamMap]);
 
-  const groupedEpics = useMemo(() => buildEpicGroups(sortedEpics, groupBy, filters, epicStates, ownerNameMap, teamMap, objectiveNameMap, tableSorting.length > 0), [epicStates, filters, groupBy, objectiveNameMap, ownerNameMap, sortedEpics, tableSorting.length, teamMap]);
+  const groupedEpics = useMemo(() => buildEpicGroups(sortedEpics, groupBy, filters, epicStates, ownerNameMap, objectiveNameMap, tableSorting.length > 0), [epicStates, filters, groupBy, objectiveNameMap, ownerNameMap, sortedEpics, tableSorting.length]);
   useEffect(() => {
     setCollapsedGroupKeys((current) => {
       const validKeys = new Set(groupedEpics.map((group) => group.key));
