@@ -21,6 +21,10 @@ type CommandBarPlanInput struct {
 	Prompt      string
 	PageContext model.CommandBarPageContext
 	Steps       []model.CommandBarPlanStep
+	// SettledRun, when set, is a child run whose terminal transition is
+	// being applied but may not be persisted yet; the scheduler uses it in
+	// place of the stored row so the plan advances now, not on the next sweep.
+	SettledRun *model.AgentRun
 }
 
 // CommandBarPlanProgress summarizes scheduler state after a scheduling pass.

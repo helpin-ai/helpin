@@ -126,6 +126,9 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE docs_helpcenter_configs (
+ demo_mode BOOLEAN NOT NULL DEFAULT 0,
+ search_indexing_enabled BOOLEAN NOT NULL DEFAULT 1,
+ official_docs_url TEXT NOT NULL DEFAULT '',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL UNIQUE,
 			subdomain TEXT NOT NULL,

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 const save = vi.fn().mockResolvedValue({})
+const { preview } = vi.hoisted(() => ({ preview: vi.fn<(props: Record<string, unknown>) => null>(() => null) }))
 let chatSettings: { data: unknown; isLoading: boolean; refetch: () => void }
 
 vi.mock('@/hooks/queries', () => ({
@@ -26,7 +27,7 @@ vi.mock('@edition', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useWorkspaceBilling: () => ({ data: undefined, isLoading: false }),
 }))
-vi.mock('../WidgetPreview', () => ({ WidgetPreview: () => null }))
+vi.mock('../WidgetPreview', () => ({ WidgetPreview: preview }))
 vi.mock('../SupportAIPreview', () => ({ SupportAIPreview: () => null }))
 vi.mock('../SettingsAutosaveGuard', () => ({ SettingsAutosaveGuard: () => null }))
 
@@ -81,6 +82,7 @@ describe('ChatGeneralTab', () => {
     })
     HTMLElement.prototype.scrollIntoView = vi.fn()
     save.mockClear()
+    preview.mockClear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -125,6 +127,24 @@ describe('ChatGeneralTab', () => {
       email_handoff_message: 'Our team will reply here.',
       email_handoff_message_after_hours: 'Our team will reply when we reopen.',
     })
+  })
+
+  it('passes the saved assistant identity and live name edits to the preview', async () => {
+    chatSettings.data = {
+      settings: { ...savedSettings(), ai_enabled: true, ai_display_name: 'Demo assistant', widget_name: 'Demo support', widget_avatar_url: 'https://example.com/avatar.png' },
+      allowed_origins: [], widget_key: 'key',
+    }
+    await renderTab()
+    expect(preview.mock.lastCall?.[0]).toMatchObject({
+      aiDisplayName: 'Demo assistant', avatarUrl: 'https://example.com/avatar.png', workspaceName: 'Demo support',
+    })
+    const input = container.querySelector<HTMLInputElement>('#ai-display-name')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Updated assistant')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(preview.mock.lastCall?.[0]).toMatchObject({ aiDisplayName: 'Updated assistant' })
+    expect(save).not.toHaveBeenCalled()
   })
 
   it('searches and autosaves a timezone outside the old support shortlist', async () => {

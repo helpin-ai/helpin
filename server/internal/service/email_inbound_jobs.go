@@ -89,6 +89,9 @@ func (s *EmailFallbackService) AcceptInboundEmail(ctx context.Context, p model.P
 			}
 		}
 	}
+	if s.isSharedSenderCopy(p) {
+		job.AvailableAt = job.AvailableAt.Add(sharedSenderCopyDelay)
+	}
 	return repository.NewSupportInboundJobRepository(s.convRepo.DB()).Create(ctx, job)
 }
 
@@ -152,7 +155,10 @@ func (s *EmailFallbackService) processNextInboundJob(ctx context.Context, kind s
 			}
 		}
 	}
-	if err != nil {
+	var undeliverable *repository.InboundUndeliverableError
+	if errors.As(err, &undeliverable) {
+		s.logger.WarnContext(ctx, "inbound email not delivered", "job_id", job.ID, "reason", undeliverable.Reason)
+	} else if err != nil {
 		s.logger.ErrorContext(ctx, "inbound processing failed", "job_id", job.ID, "kind", kind, "attempt", job.Attempts, "exhausted", job.Attempts >= 10 || job.RecoveryRequestedAt != nil, "error", err)
 	}
 	// Shutdown/cancellation leaves a recoverable lease, never a false completion.

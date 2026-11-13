@@ -6,7 +6,7 @@ import { Clock01Icon } from '@/lib/icons'
 import type { SupportConversation } from '@/lib/pmTypes'
 import { isSnoozedConversation } from '@/lib/supportInboxFilters'
 import { formatSnoozeUntil } from '@/lib/supportSnooze'
-import { onSupportShortcut } from '@/lib/supportShortcuts'
+import { onSupportShortcut, supportShortcutLabel } from '@/lib/supportShortcuts'
 import { SnoozeMenu } from './SnoozeMenu'
 
 /** Snooze button, or the snooze time with a wake button when snoozed. */
@@ -64,7 +64,7 @@ export function ConversationSnoozeControl({
       disabled={disabled || snooze.isPending}
       onSnooze={(until) => snooze.mutate({ conversationId: conversation.id, until })}
       trigger={(
-        <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={disabled || snooze.isPending} aria-label="Snooze conversation" title="Snooze (Z)">
+        <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={disabled || snooze.isPending} aria-label="Snooze conversation" title={`Snooze (${supportShortcutLabel('snooze')})`}>
           <Clock01Icon className="h-3.5 w-3.5" />
         </Button>
       )}

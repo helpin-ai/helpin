@@ -4,6 +4,7 @@
 
 Investigations, comparative research, and assessments. Findings reflect the branch and date reviewed.
 
+- [Link preview content and route audit](2026-11-10-link-preview-route-audit.md)
 - [Coverage gaps: screenshot research and conversational UX](2026-09-30-coverage-gaps-ux.md)
 - [Plan Review: HelpScout Docs Import](2026-03-18-helpscout-docs-import-plan-review.md)
 - [agent-runtime audit](2026-09-10-agent-runtime-audit.md)

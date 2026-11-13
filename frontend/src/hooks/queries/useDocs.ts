@@ -268,6 +268,8 @@ interface DocFilters {
   owner_id?: string
   team_id?: string
   include_archived?: string
+  /** 'true': documents the caller owns or created (resolved on the server). */
+  mine?: string
 }
 
 export function useDocsDocuments(wsId: string, filters?: DocFilters, options?: { enabled?: boolean }) {

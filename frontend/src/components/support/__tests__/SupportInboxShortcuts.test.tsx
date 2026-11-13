@@ -67,14 +67,21 @@ describe('useSupportInboxShortcuts', () => {
     const onCheatsheet = vi.fn()
     const unmount = mount(<ShortcutHost onCheatsheet={onCheatsheet} />)
 
-    const resolve = new KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true })
+    // jsdom is not an Apple device, so resolve takes Ctrl.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }))
+    expect(received).toEqual([])
+    const resolve = new KeyboardEvent('keydown', { key: 'e', ctrlKey: true, bubbles: true, cancelable: true })
     document.body.dispatchEvent(resolve)
     expect(received).toEqual(['resolve:c9'])
     expect(resolve.defaultPrevented).toBe(true)
 
-    document.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }))
+    document.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', ctrlKey: true, bubbles: true }))
+    document.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', metaKey: true, bubbles: true }))
     expect(received).toEqual(['resolve:c9'])
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    expect(received).toEqual(['resolve:c9', 'assign:c9'])
 
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
     expect(onCheatsheet).toHaveBeenCalledTimes(1)

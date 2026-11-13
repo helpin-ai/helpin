@@ -1,3 +1,5 @@
+import { useRunSteering } from './useRunSteering';
+import { RunSteeringReceipt } from './RunSteeringReceipt';
 import { useNotificationView } from '@/hooks/useNotificationView';
 import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
 import activityStyles from './DockActivityTimeline.module.css';
@@ -76,6 +78,8 @@ export function DockRunView({
     && hasAuthoritativeDockRuntimeTimeline(streamState)
   );
   const completedRun = effectiveRun.status === 'completed';
+  const { canSteer, receipt: steering, send: steer } = useRunSteering(workspaceId, effectiveRun, active);
+
   const liveProgress = useMemo(() => completedRun ? null : resolveAgentLiveProgress({
     run: effectiveRun,
     stream: streamState,
@@ -145,11 +149,14 @@ export function DockRunView({
 
   const submit = async () => {
     const content = draft.trim();
-    if (!content || sending) return;
+    if (!content || sending || !composerEnabled || cancellationPending || pausePending || resumePending) return;
     setSending(true);
     setSendError(null);
     try {
-      if (effectiveRun.status === 'failed' || effectiveRun.status === 'cancelled') {
+      if (canSteer) {
+        await steer(content);
+        onDraftChange('');
+      } else if (effectiveRun.status === 'failed' || effectiveRun.status === 'cancelled') {
         const result = await dockChatService.continueRun(workspaceId, run.id, content);
         if (result.error || !result.data) throw new Error(result.error ?? 'Failed to continue agent run');
         onDraftChange('');
@@ -216,7 +223,7 @@ export function DockRunView({
     }
   };
 
-  const composerEnabled = effectiveRun.status === 'failed'
+  const composerEnabled = canSteer || effectiveRun.status === 'failed'
     || effectiveRun.status === 'cancelled'
     || (effectiveRun.status === 'paused' && (effectiveRun.pause_reason === 'human_input' || effectiveRun.pause_reason === 'awaiting_user_message') && !interaction);
   const canPause = effectiveRun.status === 'queued' || effectiveRun.status === 'running';
@@ -292,6 +299,7 @@ export function DockRunView({
       {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !streamState || !dockWorkPlans(streamState).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Current work plan" defaultOpen={false} /></div>}
       {(composerEnabled || canStop || effectiveRun.status === 'paused' || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
+          <RunSteeringReceipt command={steering} />
           <DockInput
             workspaceId={workspaceId}
             voiceIdentity={run.id}
@@ -309,7 +317,7 @@ export function DockRunView({
             pausing={pausePending}
             onResume={canResume && !cancellationPending ? () => void resume() : undefined}
             resuming={resumePending}
-            placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : canResume ? 'Agent paused — resume to continue' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
+            placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : canResume ? 'Agent paused — resume to continue' : canSteer ? 'Send instructions to this run…' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
           />
         </div>
       ) : null}

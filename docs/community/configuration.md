@@ -22,6 +22,7 @@ retains conservative authentication defaults.
 | `SMTP_TLS_MODE` | `starttls` by default; `tls` for implicit TLS; explicit `none` only for an unauthenticated trusted local relay. Credentials require TLS and AUTH PLAIN; LOGIN-only SMTP servers are unsupported. TLS certificates are verified. |
 | `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional alternative application-mail provider. |
 | `HELPIN_ADMIN_EMAILS` | Optional comma-separated addresses of [server admins](#server-administration). Matching accounts with a verified email are made server admins at startup; an account whose email isn't verified yet becomes one once it verifies. Unverified accounts never qualify, so someone who registered a listed address before you set it can't gain admin. |
+| `OPS_ALERT_EMAILS` | Optional comma-separated addresses that get operational alerts by email, such as incoming support email that has waited more than 10 minutes. Sent with the application mail settings above, at most once an hour while the problem lasts, plus one email when it clears. |
 
 `helpin install` and `helpin configure` can write the SMTP settings for you
 (see the [CLI guide](cli.md)). Server admins can instead enter them in

@@ -51,6 +51,63 @@ it resumes after a restart. Running it again imports only articles that are
 not in the space yet. An article that fails part way is removed, so the next
 run imports it cleanly.
 
+## Help Center by address
+
+**Settings → Import & export → Public help center** copies an Intercom help
+center without an access token. It reads what any visitor can: the pages of
+the help center and the article data Intercom publishes with them. Use it
+when you have no access to the Intercom workspace, or only want the articles.
+It needs the `docs.import` permission.
+
+Enter the home address of the help center, or the address of any article in
+it. Helpin follows a redirect to the main language, shows the number of
+collections and articles it found, and then imports them:
+
+- Collections keep their order and nesting. Docs collections nest one level,
+  so the articles of a collection nested deeper move into the collection
+  above it.
+- Articles are converted from Intercom's own block data, not from the page
+  HTML: headings keep their anchors, and callouts, tables, collapsible
+  sections, code and videos become the matching Docs blocks. Each article
+  keeps its description as the excerpt.
+- Images are copied into file storage. The same image used in several
+  articles is copied once.
+- Links between articles and collections are pointed at their new addresses
+  and keep their `#section` anchors. Links on the help center's other host
+  names, such as its `intercom.help` address, are recognized too.
+- A public article that sits in no collection is reachable only through
+  links. The import follows links to find such articles and puts them in an
+  **Other articles** collection.
+- Every collection and article address redirects to its new page.
+- Articles are published, or kept as drafts when you choose that.
+
+When the import finishes, the screen lists what needs a look:
+
+- articles that could not be imported, and why;
+- links that still point at the original help center because their target
+  was not found;
+- images that could not be copied, which still load from the original site.
+
+Limits:
+
+- only Intercom help centers are read; other platforms are refused;
+- only public articles in the main language are imported;
+- a help center that asks visitors to sign in cannot be read by address.
+
+Like the token import, this one runs as a durable workflow with a checkpoint
+per article. **Stop import** keeps what was imported, and continuing or
+running it again imports only what is missing. It stores no secret, so it can
+be continued at any time.
+
+Helpin fetches the address from the server, so it only connects to public
+internet addresses, including after a redirect.
+
+The code is in:
+- `server/internal/intercom/public.go` (reading the public site, with a fake
+  site for tests in `intercomtest`);
+- `server/internal/docsimport/intercom_blocks.go` (block conversion);
+- `server/internal/service/docs_import_public*.go` (the import).
+
 ## Conversations
 
 Conversations created on or after the chosen date are imported, oldest first:

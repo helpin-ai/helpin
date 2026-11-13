@@ -2671,9 +2671,18 @@
     },
     "/crm/fields": {
       "get": {
-        "description": "Describe the fields list_contacts and list_crm_companies can filter on: native fields with their types, operators, and allowed values, and every custom property key in use with its value type, record count, most common values, and numeric range. Pass key to list one custom property's values, and value_query to search them. Call this before filtering on or writing custom properties, and reuse existing keys instead of inventing near-duplicates.\n\n**Required scope:** `helpin.crm.read`.",
+        "description": "Describe the fields list_contacts and list_crm_companies can filter on: native fields with their types, operators, and allowed values, and every custom property key in use with its value type, record count, most common values, and numeric range. Pass key to list one custom property's values, and value_query to search them. Call this before filtering on or writing custom properties, and reuse existing keys instead of inventing near-duplicates. Use compact=true for a reusable field map without record samples.\n\n**Required scope:** `helpin.crm.read`.",
         "operationId": "describeCrmFields",
         "parameters": [
+          {
+            "description": "Return field definitions without record samples. Reuse in this workspace and connection; refresh after field changes.",
+            "in": "query",
+            "name": "compact",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
           {
             "description": "Optional custom property key (with or without the custom_properties. prefix). Returns that key's values instead of the field catalog.",
             "in": "query",
@@ -2706,6 +2715,15 @@
                 "company"
               ],
               "type": "string"
+            }
+          },
+          {
+            "description": "Refresh a cached compact field map after schema changes or unknown-field errors.",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           },
           {

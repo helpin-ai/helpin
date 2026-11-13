@@ -24,6 +24,7 @@ export interface WidgetConfig {
   workspaceId: string;
   privacyNotice?: { enabled: boolean; policyUrl: string; text: string };
   workspaceName?: string;
+  aiDisplayName?: string;
   visitorName?: string;
   availableTeammates?: Array<{
     userId: string;
@@ -34,6 +35,7 @@ export interface WidgetConfig {
   branding: {
     primaryColor: string;
     logoUrl?: string;
+    avatarUrl?: string;
     welcomeMessage: string;
     widgetPosition: 'bottom-right' | 'bottom-left';
     showBranding: boolean;

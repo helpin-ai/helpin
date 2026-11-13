@@ -58,11 +58,17 @@ test('selects unloaded matching conversations and keeps only failed actions sele
   await page.setViewportSize({ width: 1440, height: 900 });
   await setup(page, true);
   const updated: string[] = [];
-  await page.route((url) => /\/api\/support\/inbox\/conversations\/[^/]+\/status$/.test(url.pathname), async (route) => {
-    const id = new URL(route.request().url()).pathname.split('/').at(-2)!;
-    updated.push(id);
-    if (id === 'conv-2') return route.fulfill({ status: 403, json: { error: 'No longer accessible' } });
-    return route.fulfill({ json: { ...buildConversation(), id, status: 'resolved' } });
+  await page.route((url) => url.pathname === '/api/support/inbox/conversations/bulk', async (route) => {
+    const { conversation_ids: ids, actions } = route.request().postDataJSON() as { conversation_ids: string[]; actions: { status?: string } };
+    expect(actions).toEqual({ status: 'resolved' });
+    updated.push(...ids);
+    return route.fulfill({ json: {
+      results: ids.map((id) => id === 'conv-2'
+        ? { conversation_id: id, applied: [], error: 'No longer accessible' }
+        : { conversation_id: id, applied: ['status'] }),
+      succeeded: ids.length - 1,
+      failed: 1,
+    } });
   });
   await page.locator('[data-conversation-id="conv-2"]').hover();
   await page.locator('[data-conversation-id="conv-2"]').getByRole('checkbox').click();

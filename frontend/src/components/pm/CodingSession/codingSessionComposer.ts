@@ -1,6 +1,6 @@
 import type { CodingSession, CodingSessionInteraction } from '@/lib/pmTypes';
 
-export type CodingSessionComposerMode = 'answer' | 'continue' | 'waiting';
+export type CodingSessionComposerMode = 'answer' | 'continue' | 'waiting' | 'steer';
 
 export type CodingSessionComposerState = {
   visible: boolean;
@@ -29,6 +29,7 @@ export function resolveCodingSessionComposerState(
   session: CodingSession | null,
   activeInteraction?: CodingSessionInteraction | null,
   loading = false,
+  canSteer = false,
 ): CodingSessionComposerState {
   if (loading) {
     return {
@@ -58,6 +59,10 @@ export function resolveCodingSessionComposerState(
       mode: 'continue',
       placeholder: 'Add instructions to continue this run...',
     };
+  }
+
+  if (canSteer && (session.status === 'queued' || session.status === 'running')) {
+    return { visible: true, enabled: true, mode: 'steer', placeholder: 'Send instructions to this run…' };
   }
 
   if (session.status === 'queued') {

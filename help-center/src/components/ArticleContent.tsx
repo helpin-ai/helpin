@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useMemo } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { prefixBasepath } from '@/lib/pathUtils'
 import { slugifyHeading, uniqueSlug } from '@/lib/toc'
@@ -10,6 +10,13 @@ interface ArticleContentProps {
 export function ArticleContent({ html }: ArticleContentProps) {
   const { basepath } = useDocsContext()
   const contentRef = useRef<HTMLDivElement>(null)
+  // Keep scroll-spy updates from replacing image nodes and resetting reader state.
+  const renderedContent = useMemo(
+    () => ({
+      __html: addImageLoadingHints(rewriteInternalHelpCenterLinks(html ?? '', basepath)),
+    }),
+    [html, basepath],
+  )
 
   const enhanceContent = useCallback(() => {
     const container = contentRef.current
@@ -52,7 +59,7 @@ export function ArticleContent({ html }: ArticleContentProps) {
 
   useEffect(() => {
     enhanceContent()
-  }, [html, enhanceContent])
+  }, [renderedContent, enhanceContent])
 
   if (!html) {
     return (
@@ -62,15 +69,11 @@ export function ArticleContent({ html }: ArticleContentProps) {
     )
   }
 
-  const renderedHtml = addImageLoadingHints(
-    rewriteInternalHelpCenterLinks(html, basepath),
-  )
-
   return (
     <div
       ref={contentRef}
       className="hc-prose"
-      dangerouslySetInnerHTML={{ __html: renderedHtml }}
+      dangerouslySetInnerHTML={renderedContent}
     />
   )
 }

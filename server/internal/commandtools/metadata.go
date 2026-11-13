@@ -681,9 +681,11 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		Description: "Describe the fields list_contacts and list_crm_companies can filter on: native fields with their types, operators, and allowed values, " +
 			"and every custom property key in use with its value type, record count, most common values, and numeric range. " +
 			"Pass key to list one custom property's values, and value_query to search them. " +
-			"Call this before filtering on or writing custom properties, and reuse existing keys instead of inventing near-duplicates.",
+			"Call this before filtering on or writing custom properties, and reuse existing keys instead of inventing near-duplicates. Use compact=true for a reusable field map without record samples.",
 		InputSchema: closedObjectSchema(map[string]any{
 			"object_type": map[string]any{"type": "string", "enum": []string{"contact", "company"}, "description": "Which records to describe."},
+			"compact":     map[string]any{"type": "boolean", "description": "Return field definitions without record samples. Reuse in this workspace and connection; refresh after field changes."},
+			"refresh":     map[string]any{"type": "boolean", "description": "Refresh a cached compact field map after schema changes or unknown-field errors."},
 			"key": map[string]any{
 				"type": "string", "maxLength": 100,
 				"description": "Optional custom property key (with or without the custom_properties. prefix). Returns that key's values instead of the field catalog.",

@@ -45,6 +45,8 @@ interface BaseMemberPickerProps {
 
 interface MemberPickerPopoverProps extends BaseMemberPickerProps {
   getDisabledReason?: (member: AssignableMember) => string | null | undefined;
+  /** Native hover hint on the trigger, such as its keyboard shortcut. */
+  triggerTitle?: string;
   value: string;
   onChange: (memberId: string) => void;
   noneLabel?: string;
@@ -196,6 +198,7 @@ export function MemberPickerPopover({
   onOpenChange,
   getMemberValue = defaultGetMemberValue,
   getDisabledReason,
+  triggerTitle,
   disabled = false,
   lazyMount = false,
 }: MemberPickerPopoverProps) {
@@ -220,6 +223,7 @@ export function MemberPickerPopover({
       type="button"
       disabled={disabled}
       aria-label={triggerLabel}
+      title={triggerTitle}
       className={cn(
         DEFAULT_TRIGGER_CLASSNAME,
         disabled && 'cursor-default hover:bg-transparent',

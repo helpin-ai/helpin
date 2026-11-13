@@ -136,6 +136,12 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	}
 
 	cfg := &model.DocsHelpcenterConfig{WorkspaceID: workspaceID}
+	if v, ok := updates["demo_mode"].(bool); ok {
+		cfg.DemoMode = v
+	}
+	if v, ok := updates["official_docs_url"].(string); ok {
+		cfg.OfficialDocsURL = v
+	}
 	if v, ok := updates["subdomain"].(string); ok {
 		cfg.Subdomain = v
 	}
@@ -246,7 +252,16 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	if _, ok := updates["fallback_to_default_locale"]; !ok {
 		cfg.FallbackToDefaultLocale = true
 	}
-	if err := r.db.WithContext(ctx).Create(cfg).Error; err != nil {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(cfg).Error; err != nil {
+			return err
+		}
+		if enabled, ok := updates["search_indexing_enabled"].(bool); ok {
+			cfg.SearchIndexingEnabled = enabled
+			return tx.Model(cfg).Update("search_indexing_enabled", enabled).Error
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("create helpcenter config: %w", err)
 	}
 	return cfg, nil

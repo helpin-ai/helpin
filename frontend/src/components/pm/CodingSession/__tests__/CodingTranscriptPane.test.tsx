@@ -715,3 +715,26 @@ describe('CodingTranscriptPane', () => {
     expect(expandButton?.textContent).toBe('Show less');
   });
 });
+
+it('lets the running sheet type steering and keeps the draft when delivery fails', async () => {
+  const send = vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValue(undefined);
+  await act(async () => root.render(<CodingTranscriptPane
+    transcriptMessages={[]} liveAssistantMessage={null} liveReasoningMessage={null} liveTurnSegments={[]}
+    session={buildSession({ status: 'running', pause_reason: 'none', runtime_kind: 'native_sdk' })}
+    messageComposer={{ visible: true, enabled: true, mode: 'steer', placeholder: 'Send instructions to this run…' }}
+    onSendMessage={send}
+  />));
+  const textarea = container.querySelector('textarea')!;
+  expect(textarea.disabled).toBe(false);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Research only');
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const button = container.querySelector<HTMLButtonElement>('[data-coding-session-message-submit]')!;
+  expect(button.disabled).toBe(false);
+  await act(async () => button.click());
+  expect(textarea.value).toBe('Research only');
+  await act(async () => button.click());
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(textarea.value).toBe('');
+});

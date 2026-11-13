@@ -457,6 +457,9 @@ jobs:
       - name: Build
         working-directory: help-center
         run: pnpm run build
+      - name: Verify demo isolation and rendered indexing policy
+        working-directory: help-center
+        run: node scripts/check-demo-serving.mjs
 
   # -------------------------- Admin -------------------------
   admin:

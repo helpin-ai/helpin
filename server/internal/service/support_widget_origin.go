@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -112,8 +114,71 @@ func (s *SupportInboxService) AuthorizeWidgetOrigin(ctx context.Context, origin 
 	if installation == nil {
 		return denied
 	}
-	if !widgetorigin.Allowed(origin, installation.AllowedOrigins) {
-		return &widgetorigin.DeniedError{InstallationID: installation.ID}
+	if widgetorigin.Allowed(origin, installation.AllowedOrigins) {
+		return nil
 	}
-	return nil
+	if s.isOwnHelpCenterOrigin(ctx, installation.WorkspaceID, origin) {
+		return nil
+	}
+	return &widgetorigin.DeniedError{InstallationID: installation.ID}
+}
+
+// SetHelpcenterHostedDomain names the root that hosted help centers live under
+// (such as helpin.center), so a workspace's hosted help center counts as one
+// of its own widget origins. Empty leaves only custom and proxied hosts.
+func (s *SupportInboxService) SetHelpcenterHostedDomain(domain string) {
+	s.helpcenterHostedDomain = strings.ToLower(strings.TrimSpace(domain))
+}
+
+// HelpCenterWidgetOrigins lists the origins that serve the workspace's own
+// help center. The widget is always allowed there: the help center embeds it
+// itself, so asking an admin to allowlist it only produces a widget that
+// silently fails to load.
+func (s *SupportInboxService) HelpCenterWidgetOrigins(ctx context.Context, workspaceID string) []string {
+	if s.docsHelpcenterRepo == nil || workspaceID == "" {
+		return nil
+	}
+	cfg, err := s.docsHelpcenterRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		slog.WarnContext(ctx, "read help center for widget origins", "error", err, "workspace_id", workspaceID)
+		return nil
+	}
+	return helpCenterWidgetOrigins(cfg, s.helpcenterHostedDomain)
+}
+
+func (s *SupportInboxService) isOwnHelpCenterOrigin(ctx context.Context, workspaceID, origin string) bool {
+	normalized, err := widgetorigin.Normalize(origin)
+	if err != nil {
+		return false
+	}
+	return slices.Contains(s.HelpCenterWidgetOrigins(ctx, workspaceID), normalized)
+}
+
+// helpCenterWidgetOrigins returns the HTTPS origins a help center is served
+// on: its hosted subdomain, its custom domain once that domain is live, and
+// its reverse-proxy host while that mode is selected.
+func helpCenterWidgetOrigins(cfg *model.DocsHelpcenterConfig, hostedDomain string) []string {
+	if cfg == nil {
+		return nil
+	}
+	var hosts []string
+	if subdomain := strings.TrimSpace(cfg.Subdomain); subdomain != "" && hostedDomain != "" {
+		hosts = append(hosts, subdomain+"."+hostedDomain)
+	}
+	if cfg.CustomDomainLive() {
+		hosts = append(hosts, stringPtrTrimmed(cfg.CustomDomain))
+	}
+	if cfg.PublicURLMode == model.HelpcenterPublicURLModeReverseProxy {
+		hosts = append(hosts, stringPtrTrimmed(cfg.ReverseProxyHost))
+	}
+	var origins []string
+	for _, host := range hosts {
+		host = strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+		origin, err := widgetorigin.Normalize("https://" + host)
+		if err != nil || slices.Contains(origins, origin) {
+			continue
+		}
+		origins = append(origins, origin)
+	}
+	return origins
 }

@@ -304,7 +304,10 @@ var setupTestSchema = []string{
 	`CREATE TABLE docs_helpcenter_articles (
 			customer_published_at DATETIME,
 			id TEXT PRIMARY KEY, document_id TEXT NOT NULL, public_published_at DATETIME)`,
-	`CREATE TABLE docs_helpcenter_configs (workspace_id TEXT PRIMARY KEY, is_published BOOLEAN NOT NULL DEFAULT 0)`,
+	`CREATE TABLE docs_helpcenter_configs (
+ demo_mode BOOLEAN NOT NULL DEFAULT 0,
+ search_indexing_enabled BOOLEAN NOT NULL DEFAULT 1,
+ official_docs_url TEXT NOT NULL DEFAULT '',workspace_id TEXT PRIMARY KEY, is_published BOOLEAN NOT NULL DEFAULT 0)`,
 	`CREATE TABLE support_mailboxes (ai_replies_disabled BOOLEAN NOT NULL DEFAULT false, id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, triage_eligible BOOLEAN NOT NULL DEFAULT 1, routing_prompt TEXT, description TEXT)`,
 	`CREATE TABLE support_triage_rules (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, target_mailbox_id TEXT NOT NULL)`,
 	`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,

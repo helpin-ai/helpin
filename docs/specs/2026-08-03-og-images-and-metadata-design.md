@@ -23,7 +23,7 @@
   and `127.0.0.1`; other hosts keep generic metadata. The upstream deadline is two
   seconds, and failures preserve the original response. Successfully transformed
   HTML receives `private, no-store` and `X-Robots-Tag` headers.
-- [Netlify configuration](../../frontend/netlify.toml) registers the edge-functions
+- [Netlify configuration](../../netlify.toml) registers the edge-functions
   directory and the function declares `/share/*` with bypass-on-error. A generic
   static server or Community container does not execute this Netlify middleware
   merely because the source file exists. No deployed preview/cache behavior was

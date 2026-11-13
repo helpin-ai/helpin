@@ -86,6 +86,9 @@ func (s *EmailFallbackService) GetAdminInboundEmail(ctx context.Context, id stri
 	for i, attachment := range payload.Attachments {
 		result.Attachments = append(result.Attachments, model.AdminInboundAttachment{ID: inboundStableID(fmt.Sprintf("attachment:%s:%d", payload.MessageID, i)), Name: attachment.Name, ContentType: attachment.ContentType, Size: attachment.ContentLength})
 	}
+	if job.Status == "failed" && job.RecoveryRequestedAt == nil && job.LastError != "" && job.LastError != repository.InboundRetryLastError {
+		result.NotDeliveredReason = job.LastError
+	}
 	if job.ConversationID != nil {
 		result.Destination, err = repo.AdminConversation(ctx, *job.ConversationID)
 	}

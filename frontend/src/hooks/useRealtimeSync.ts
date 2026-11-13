@@ -39,6 +39,14 @@ const DEBOUNCE_MS = 200
 /** Trailing-window (ms) for coalescing bursty agent_run invalidations into a single flush. */
 const AGENT_RUN_INVALIDATE_MS = 400
 const SUPPORT_COUNTER_INVALIDATE_MS = 250
+/**
+ * Live support events patch the cache as they arrive, so the refetches that
+ * check the lists, the changed conversations and the counts wait for the
+ * events to pause (but no longer than the max wait). A bulk resolve then
+ * refetches each list once instead of once per event.
+ */
+const SUPPORT_REFRESH_QUIET_MS = 300
+const SUPPORT_REFRESH_MAX_WAIT_MS = 1_500
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
 const AI_THINKING_TIMEOUT_MS = 3 * 60_000
@@ -240,6 +248,11 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const agentRunInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supportCounterInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supportWorkspaceUnreadPending = useRef(false)
+  const supportCounterStartedAt = useRef(0)
+  const supportRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const supportRefreshStartedAt = useRef(0)
+  /** Conversations waiting for a refetch, and whether their messages refetch too. */
+  const pendingSupportConversations = useRef<Map<string, boolean>>(new Map())
   const pendingAgentRunInvalidations = useRef<Map<string, readonly unknown[]>>(new Map())
   const selfId = useAuthStore((state) => state.user?.id)
   const selfIdRef = useRef<string | undefined>(selfId)
@@ -269,9 +282,14 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }, AGENT_RUN_INVALIDATE_MS)
   }, [queryClient])
 
+  // Counts refresh once events pause, and at least once per max wait while
+  // they keep coming.
   const scheduleSupportCounterInvalidation = useCallback((refreshWorkspaceUnread = false) => {
     supportWorkspaceUnreadPending.current ||= refreshWorkspaceUnread
-    if (supportCounterInvalidateTimer.current) return
+    const now = Date.now()
+    if (supportCounterInvalidateTimer.current) clearTimeout(supportCounterInvalidateTimer.current)
+    else supportCounterStartedAt.current = now
+    const maxWaitLeft = supportCounterStartedAt.current + SUPPORT_REFRESH_MAX_WAIT_MS - now
     supportCounterInvalidateTimer.current = setTimeout(() => {
       supportCounterInvalidateTimer.current = null
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
@@ -281,7 +299,40 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         supportWorkspaceUnreadPending.current = false
         queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() })
       }
-    }, SUPPORT_COUNTER_INVALIDATE_MS)
+    }, Math.max(0, Math.min(SUPPORT_COUNTER_INVALIDATE_MS, maxWaitLeft)))
+  }, [queryClient, workspaceId])
+
+  // Refetches every conversation list, plus the conversations named by the
+  // events, once the events pause.
+  const scheduleSupportConversationRefresh = useCallback((conversationId?: string, refreshMessages = true) => {
+    const pending = pendingSupportConversations.current
+    if (conversationId) pending.set(conversationId, refreshMessages || pending.get(conversationId) === true)
+    const now = Date.now()
+    if (supportRefreshTimer.current) clearTimeout(supportRefreshTimer.current)
+    else supportRefreshStartedAt.current = now
+    const flush = () => {
+      supportRefreshTimer.current = null
+      // Let a list fetch that is already running finish and refetch after it:
+      // restarting it would cost the server another request.
+      if (queryClient.isFetching({ predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId) }) > 0) {
+        supportRefreshTimer.current = setTimeout(flush, SUPPORT_REFRESH_QUIET_MS)
+        return
+      }
+      const conversations = pendingSupportConversations.current
+      pendingSupportConversations.current = new Map()
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey
+          if (isSupportConversationListQueryKey(key, workspaceId)) return true
+          // A conversation's own queries: ['support', wsId, 'conversations', id, ...]
+          if (key[0] !== 'support' || key[1] !== workspaceId || key[2] !== 'conversations' || typeof key[3] !== 'string') return false
+          const withMessages = conversations.get(key[3])
+          return withMessages !== undefined && (withMessages || key[4] !== 'messages')
+        },
+      })
+    }
+    const maxWaitLeft = supportRefreshStartedAt.current + SUPPORT_REFRESH_MAX_WAIT_MS - now
+    supportRefreshTimer.current = setTimeout(flush, Math.max(0, Math.min(SUPPORT_REFRESH_QUIET_MS, maxWaitLeft)))
   }, [queryClient, workspaceId])
 
   const onEvent = useCallback((event: WSEvent) => {
@@ -652,14 +703,11 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           ) {
             inboxStore.showReopenedConversationInInbox(event.entity_id, statusPatch.mailboxId)
           }
-          queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() })
         }
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
-        // Invalidate unread stats on any non-presence conversation update (includes reason=read)
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
+        scheduleSupportConversationRefresh(event.entity_id)
+        // Counters change on any non-presence conversation update (includes
+        // reason=read); a status change also moves the workspace unread count.
+        scheduleSupportCounterInvalidation(!!statusPatch)
       }
     } else if (event.entity === 'support_visitor') {
       const store = useSupportPresenceStore.getState()
@@ -683,7 +731,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
       if (event.action === 'updated' && event.parent_id) {
         // Note edits and metadata updates are quiet refetches, not new replies.
-        if (!event.data) queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+        if (!event.data) scheduleSupportConversationRefresh(event.parent_id, false)
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messageInfo(workspaceId, event.parent_id, event.entity_id) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
         return
@@ -707,8 +755,6 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           playNotificationSound()
         }
 
-        // Batch-invalidate all support conversation queries in a single call:
-        // matches conversations list, conversation detail, and messages
         const parentId = event.parent_id
         queryClient.setQueriesData<SupportConversationListCache>(
           {
@@ -752,17 +798,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             (current) => current ? appendMessageToNewestPage(current, realtimeMessage) : current,
           )
         }
-        queryClient.invalidateQueries({
-          predicate: (query) => {
-            const key = query.queryKey
-            return key[0] === 'support' && key[1] === workspaceId && (
-              // Include filtered and infinite lists so newly matching threads can enter a view.
-              isSupportConversationListQueryKey(key, workspaceId) ||
-              // conversation detail or messages: ['support', wsId, 'conversations', parentId, ...]
-              (key[3] === parentId && !(hasHydratedMessage && key[4] === 'messages'))
-            )
-          },
-        })
+        // Every list refetches, filtered and infinite ones included, so newly
+        // matching threads can enter a view. Messages already appended above
+        // don't refetch.
+        scheduleSupportConversationRefresh(parentId, !hasHydratedMessage)
         // Coalesce message bursts into one counter refresh. Core counts are
         // materialized; custom views remain exact and converge after the same
         // short trailing window.
@@ -809,7 +848,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         })
       )
     }
-  }, [deliverDesktop, scheduleRefresh, scheduleAgentRunInvalidation, scheduleSupportCounterInvalidation, workspaceId, queryClient])
+  }, [deliverDesktop, scheduleRefresh, scheduleAgentRunInvalidation, scheduleSupportConversationRefresh, scheduleSupportCounterInvalidation, workspaceId, queryClient])
 
   const onPresenceSnapshot = useCallback((snapshot: PresenceSnapshot) => {
     const convId = snapshot.conversation_id
@@ -893,10 +932,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       clearTimeout(debounceTimer.current ?? undefined)
       clearTimeout(agentRunInvalidateTimer.current ?? undefined)
       clearTimeout(supportCounterInvalidateTimer.current ?? undefined)
+      clearTimeout(supportRefreshTimer.current ?? undefined)
       debounceTimer.current = null
       agentRunInvalidateTimer.current = null
       supportCounterInvalidateTimer.current = null
+      supportRefreshTimer.current = null
       supportWorkspaceUnreadPending.current = false
+      pendingSupportConversations.current.clear()
       pendingAgentRunInvalidations.current.clear()
       timers.forEach((t) => clearTimeout(t))
       timers.clear()

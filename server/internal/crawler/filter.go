@@ -19,7 +19,7 @@ type URLFilter struct {
 // NewURLFilter creates a filter from the given content source settings.
 func NewURLFilter(source model.SupportContentSource) *URLFilter {
 	return &URLFilter{
-		baseDomain:        extractDomain(source.StartURL),
+		baseDomain:        strings.TrimPrefix(extractDomain(source.StartURL), "www."),
 		includeSubdomains: source.IncludeSubdomains,
 		includePatterns:   []string(source.IncludePatterns),
 		excludePatterns:   []string(source.ExcludePatterns),
@@ -39,7 +39,8 @@ func (f *URLFilter) Allowed(rawURL string) bool {
 	}
 
 	// Domain check.
-	host := strings.ToLower(parsed.Hostname())
+	// The conventional www alias is the same website, not an arbitrary subdomain.
+	host := strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www.")
 	if host != f.baseDomain {
 		if !f.includeSubdomains || !strings.HasSuffix(host, "."+f.baseDomain) {
 			return false

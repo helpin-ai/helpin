@@ -107,6 +107,10 @@ func crmUpsertMCPSchema() map[string]any {
 	}
 	return map[string]any{
 		"type": "object",
+		"x-runtime-work-item-targets": []map[string]any{
+			{"when": map[string]string{"object_type": "company"}, "records": "records/*", "targets": map[string][]string{"id": {"company_id", "id"}, "fields/domain": {"domain"}, "fields/external_id": {"external_id"}}},
+			{"when": map[string]string{"object_type": "contact"}, "records": "records/*", "targets": map[string][]string{"id": {"contact_id", "id"}, "fields/email": {"email"}}},
+		},
 		"properties": map[string]any{
 			"object_type": map[string]any{"type": "string", "enum": []string{model.CRMUpsertObjectCompany, model.CRMUpsertObjectContact}},
 			"match_on": map[string]any{

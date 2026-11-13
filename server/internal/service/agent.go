@@ -836,6 +836,10 @@ type AgentService struct {
 	workspacePresetVersionRepo *repository.WorkspaceAgentPresetVersionRepository
 	runRepo                    *repository.AgentRunRepository
 	commandBarPlanRepo         *repository.CommandBarPlanRepository
+	// commandBarRunGroupRepo and commandBarRunGroupsEnabled put new pipeline
+	// and DAG plans on Agent Runtime run groups (command_bar_run_groups.go).
+	commandBarRunGroupRepo     *repository.CommandBarPlanRunGroupRepository
+	commandBarRunGroupsEnabled bool
 	triggerExecutionRepo       *repository.AgentTriggerExecutionRepository
 	runMessageRepo             *repository.AgentRunMessageRepository
 	artifactRepo               *repository.AgentRunArtifactRepository
@@ -6756,6 +6760,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if err != nil {
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
+	}
+	// A command-bar plan step joins its plan's run group (top-level field;
+	// metadata.parent_run_id keeps its existing meaning).
+	if groupID := commandBarRunGroupFromContext(ctx); groupID != "" {
+		startReq.GroupID = groupID
 	}
 	startReq.Model = selectedModel
 	startReq.ModelCredential = credential

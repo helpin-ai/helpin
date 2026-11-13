@@ -147,7 +147,9 @@ function renderBoldedSupportMatches(content: string, pattern: RegExp): ReactNode
     if (valueIndex > lastIndex) {
       parts.push(content.slice(lastIndex, valueIndex));
     }
-    parts.push(<strong key={key++} className="font-semibold text-foreground">{value}</strong>);
+    // A removed tag or Cc address is struck through so it reads apart from an added one.
+    const removed = prefix.startsWith('removed');
+    parts.push(<strong key={key++} data-removed-value={removed || undefined} className={removed ? 'font-semibold text-foreground line-through' : 'font-semibold text-foreground'}>{value}</strong>);
     lastIndex = match.index + fullMatch.length - suffix.length;
   }
   if (lastIndex < content.length) {

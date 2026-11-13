@@ -563,6 +563,47 @@ type HelpcenterHomepageConfig struct {
 	FeaturedCards []HomepageFeaturedCard `json:"featured_cards"`
 }
 
+// Sources a brand proposal can be read from.
+const (
+	HelpcenterBrandPlatformIntercom = "intercom"
+	HelpcenterBrandPlatformWebsite  = "website"
+)
+
+// HelpcenterBrandImportRequest asks for the branding found at a public
+// help center or website address.
+type HelpcenterBrandImportRequest struct {
+	URL string `json:"url"`
+}
+
+// HelpcenterBrandProposal is the branding read from a public help center or
+// website. It is a suggestion to review: nothing in it has been saved, and
+// its image addresses still point at the source site.
+type HelpcenterBrandProposal struct {
+	Platform  string `json:"platform"`
+	SourceURL string `json:"source_url"`
+	// HelpCenterName is the source help center's full name, such as "Acme
+	// Help Center"; BrandName is the company name taken from it.
+	HelpCenterName string `json:"help_center_name,omitempty"`
+	BrandName      string `json:"brand_name"`
+	// BrandColor is "#rrggbb", or "" when none was found.
+	BrandColor   string `json:"brand_color"`
+	HeroTitle    string `json:"hero_title,omitempty"`
+	HeroSubtitle string `json:"hero_subtitle,omitempty"`
+	// LogoURL is the logo for light backgrounds and LogoDarkURL the one for
+	// dark backgrounds. Either may be "".
+	LogoURL     string `json:"logo_url"`
+	LogoDarkURL string `json:"logo_dark_url"`
+	FaviconURL  string `json:"favicon_url"`
+	// ThemeMode is set only when the logos found suit one theme.
+	ThemeMode       string                 `json:"theme_mode,omitempty"`
+	HeaderLinks     []HelpcenterHeaderLink `json:"header_links"`
+	SocialLinks     []HelpcenterSocialLink `json:"social_links"`
+	OfficialDocsURL string                 `json:"official_docs_url,omitempty"`
+	WebsiteURL      string                 `json:"website_url,omitempty"`
+	// Notes say, in plain words, what could not be found.
+	Notes []string `json:"notes"`
+}
+
 // HelpcenterSpaceNavConfig stores client-side space ordering and hiding.
 type HelpcenterSpaceNavConfig struct {
 	Order  []string `json:"order"`
@@ -571,10 +612,13 @@ type HelpcenterSpaceNavConfig struct {
 
 // DocsHelpcenterConfig stores workspace-level help center configuration.
 type DocsHelpcenterConfig struct {
-	ID           string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID  string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
-	Subdomain    string  `json:"subdomain" gorm:"not null"`
-	CustomDomain *string `json:"custom_domain"`
+	ID                    string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
+	DemoMode              bool    `json:"demo_mode" gorm:"not null;default:false"`
+	SearchIndexingEnabled bool    `json:"search_indexing_enabled" gorm:"not null;default:true"`
+	OfficialDocsURL       string  `json:"official_docs_url" gorm:"not null;default:''"`
+	Subdomain             string  `json:"subdomain" gorm:"not null"`
+	CustomDomain          *string `json:"custom_domain"`
 	// Custom domain verification. The domain serves the help center only while
 	// CustomDomainLive; admins see the rest in settings, never the public.
 	CustomDomainStatus        *string         `json:"custom_domain_status,omitempty"`
@@ -985,6 +1029,9 @@ type CreateDocsLinkRequest struct {
 
 // UpdateDocsHelpcenterConfigRequest is the payload for updating help center config.
 type UpdateDocsHelpcenterConfigRequest struct {
+	DemoMode                *bool           `json:"demo_mode"`
+	SearchIndexingEnabled   *bool           `json:"search_indexing_enabled"`
+	OfficialDocsURL         *string         `json:"official_docs_url"`
 	Subdomain               *string         `json:"subdomain"`
 	CustomDomain            *string         `json:"custom_domain"`
 	PublicURLMode           *string         `json:"public_url_mode"`

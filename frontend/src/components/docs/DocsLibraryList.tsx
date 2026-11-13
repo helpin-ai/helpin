@@ -1,84 +1,9 @@
 import type { ReactNode } from 'react'
-import { ArrowUpDownIcon, Tick01Icon } from '@/lib/icons'
 import { cn, timeAgo } from '@/lib/utils'
 import type { DocStatus } from '@/lib/docsTypes'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
-export type DocsLibrarySortField = 'position' | 'updated_at' | 'title'
-export type DocsLibrarySortDirection = 'asc' | 'desc'
-
-export interface DocsLibrarySortValue {
-  field: DocsLibrarySortField
-  direction: DocsLibrarySortDirection
-}
-
-const SORT_OPTIONS: Array<DocsLibrarySortValue & { label: string }> = [
-  { field: 'updated_at', direction: 'desc', label: 'Recently updated' },
-  { field: 'updated_at', direction: 'asc', label: 'Oldest updated' },
-  { field: 'title', direction: 'asc', label: 'Title A–Z' },
-  { field: 'title', direction: 'desc', label: 'Title Z–A' },
-  { field: 'position', direction: 'asc', label: 'Manual order' },
-]
-
-function sortOptionKey(value: DocsLibrarySortValue) {
-  return `${value.field}:${value.direction}`
-}
-
-export function DocsLibrarySortMenu({
-  value,
-  onChange,
-  includeManualOrder = false,
-}: {
-  value: DocsLibrarySortValue
-  onChange: (value: DocsLibrarySortValue) => void
-  includeManualOrder?: boolean
-}) {
-  const options = includeManualOrder
-    ? SORT_OPTIONS
-    : SORT_OPTIONS.filter((option) => option.field !== 'position')
-  const selected = options.find((option) => sortOptionKey(option) === sortOptionKey(value)) ?? options[0]
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="text-muted-foreground"
-          aria-label={`Sort documents: ${selected.label}`}
-        >
-          <ArrowUpDownIcon className="h-4 w-4" />
-          <span className="hidden sm:inline">{selected.label}</span>
-          <span className="sm:hidden">Sort</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
-        {options.map((option) => {
-          const active = sortOptionKey(option) === sortOptionKey(selected)
-          return (
-            <DropdownMenuItem
-              key={sortOptionKey(option)}
-              onClick={() => onChange({ field: option.field, direction: option.direction })}
-              className={active ? 'font-medium' : ''}
-            >
-              {option.label}
-              {active && <Tick01Icon className="ml-auto h-3.5 w-3.5" />}
-            </DropdownMenuItem>
-          )
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-function ExceptionalStatus({ status }: { status: DocStatus }) {
+/** Marks drafts and archived documents next to a title; published shows nothing. */
+export function DocsExceptionalStatus({ status }: { status: DocStatus }) {
   if (status === 'published') return null
 
   return (
@@ -162,7 +87,7 @@ export function DocsLibraryRow({
             <span className={cn('truncate font-medium text-foreground', compact ? 'text-[13px]' : 'text-sm')}>
               {title || 'Untitled'}
             </span>
-            <ExceptionalStatus status={status} />
+            <DocsExceptionalStatus status={status} />
             {proposalBadge}
           </span>
           {(location || updatedLabel) && (

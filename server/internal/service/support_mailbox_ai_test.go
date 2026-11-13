@@ -136,7 +136,7 @@ func TestMailboxDisabledRejectsAlreadyRunningReply(t *testing.T) {
 	if err := svc.conversationRepo.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"mailbox_id": box.ID}); err != nil {
 		t.Fatal(err)
 	}
-	mustExec(t, db, `CREATE TABLE ai_message_processing(id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing(validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
 	mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,conversation_id,source_message_id,status) VALUES ('turn','ws','conv','customer','processing')`)
 	reply := &model.SupportMessage{ID: "late", WorkspaceID: "ws", ConversationID: "conv", SenderType: "ai", MessageType: "reply", Content: "Should never publish"}
 	if created, err := repository.NewAIMessageProcessingRepository(db).CreateReply(ctx, "turn", reply, "old-run"); err != nil || created {

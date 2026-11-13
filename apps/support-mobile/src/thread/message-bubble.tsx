@@ -154,7 +154,7 @@ function SystemEventBubble({
         <span className="min-w-0 max-w-full">
           {segments.map((segment, index) =>
             segment.bold ? (
-              <strong key={index} className="font-semibold text-current">{segment.text}</strong>
+              <strong key={index} className={segment.removed ? 'font-semibold text-current line-through' : 'font-semibold text-current'}>{segment.text}</strong>
             ) : (
               <span key={index}>{segment.text}</span>
             ),

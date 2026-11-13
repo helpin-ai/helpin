@@ -76,7 +76,7 @@ func TestEmailFallbackUsesVerifiedSenderWithoutTryingReceivingAddress(t *testing
 			if len(attempts) != 1 {
 				t.Fatalf("expected one send using the verified sender, got %d", len(attempts))
 			}
-			if attempts[0].From != "Alex - Acme Support <noreply@example.com>" {
+			if attempts[0].From != "Alex - Acme Support <noreply+conv-"+conv.ID+"@example.com>" {
 				t.Fatalf("attempted unverified receiving address as sender: %q", attempts[0].From)
 			}
 			if attempts[0].ReplyTo != wantReplyTo {
@@ -86,7 +86,7 @@ func TestEmailFallbackUsesVerifiedSenderWithoutTryingReceivingAddress(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(logs) != 1 || logs[0].FromEmail != "noreply@example.com" || logs[0].FromSource != "verified_fallback_sender" || logs[0].FromFallbackReason != "" {
+			if len(logs) != 1 || logs[0].FromEmail != "noreply+conv-"+conv.ID+"@example.com" || logs[0].FromSource != "verified_fallback_sender" || logs[0].FromFallbackReason != "" {
 				t.Fatalf("unexpected sender log: %+v", logs)
 			}
 		})

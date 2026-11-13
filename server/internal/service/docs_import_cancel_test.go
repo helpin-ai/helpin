@@ -98,3 +98,47 @@ func TestDocsImportCancelRejectsAnotherWorkspace(t *testing.T) {
 		t.Fatalf("status = %q, want %q", got.Status, model.DocsImportStatusRunning)
 	}
 }
+
+func TestDocsImportJobEndpointsHideOtherWorkspaces(t *testing.T) {
+	svc, repo := newDocsImportCancelTestService(t)
+	ctx := context.Background()
+	spaceID := "space-1"
+	job := &model.DocsImportJob{
+		ID:          "import-1",
+		WorkspaceID: "workspace-1",
+		SpaceID:     &spaceID,
+		Status:      model.DocsImportStatusDone,
+		Failures:    []byte(`[{"article_id":"a1","title":"A","error":"boom"}]`),
+		Config:      []byte("{}"),
+		RedirectMap: []byte(`[{"old":"/a","new":"/b"}]`),
+		StartedBy:   "user-1",
+	}
+	if err := repo.Create(ctx, job); err != nil {
+		t.Fatalf("create import job: %v", err)
+	}
+
+	for _, workspaceID := range []string{"workspace-2", ""} {
+		got, err := svc.GetStatus(ctx, job.ID, workspaceID)
+		if err != nil || got != nil {
+			t.Fatalf("GetStatus(%q) = %v, %v; want nil, nil", workspaceID, got, err)
+		}
+		if data, err := svc.GetRedirectMap(ctx, job.ID, workspaceID); err == nil {
+			t.Fatalf("GetRedirectMap(%q) = %s, want not found", workspaceID, data)
+		}
+		if err := svc.Retry(ctx, job.ID, workspaceID, "key"); err == nil || err.Error() != "import job not found" {
+			t.Fatalf("Retry(%q) error = %v, want import job not found", workspaceID, err)
+		}
+		if _, err := svc.Reconvert(ctx, job.ID, workspaceID); err == nil || err.Error() != "import job not found" {
+			t.Fatalf("Reconvert(%q) error = %v, want import job not found", workspaceID, err)
+		}
+	}
+
+	got, err := svc.GetStatus(ctx, job.ID, "workspace-1")
+	if err != nil || got == nil || got.ID != job.ID {
+		t.Fatalf("GetStatus(owner workspace) = %v, %v", got, err)
+	}
+	data, err := svc.GetRedirectMap(ctx, job.ID, "workspace-1")
+	if err != nil || len(data) == 0 {
+		t.Fatalf("GetRedirectMap(owner workspace) = %s, %v", data, err)
+	}
+}

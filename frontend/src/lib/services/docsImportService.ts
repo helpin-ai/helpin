@@ -30,6 +30,55 @@ export interface ImportSummary {
   html_block_fallbacks: number;
   image_rewrite_failures: number;
   normalized_note_blocks: number;
+  // Filled by imports that read a public help center by its address.
+  source_url?: string;
+  source_name?: string;
+  collections_merged?: number;
+  articles_outside_collections?: number;
+  images_copied?: number;
+  links_rewritten?: number;
+  unresolved_links_total?: number;
+  failed_images_total?: number;
+  unresolved_links?: ImportUnresolvedLink[];
+  failed_images?: ImportFailedImage[];
+}
+
+/** A link to the source help center that matched nothing imported. */
+interface ImportUnresolvedLink {
+  document_id: string;
+  article_title: string;
+  url: string;
+}
+
+/** An image that could not be copied; the article still loads it from the source. */
+interface ImportFailedImage {
+  document_id?: string;
+  article_title: string;
+  url: string;
+  reason?: string;
+}
+
+/** Job source of an import that read a public help center by its address. */
+export const PUBLIC_HELP_CENTER_IMPORT_SOURCE = 'intercom_public';
+
+export interface PublicHelpCenterPreview {
+  platform: string;
+  /** The help center home the import reads, after redirects. */
+  url: string;
+  name: string;
+  locale?: string;
+  collections: number;
+  articles: number;
+  /** Collections nested deeper than Helpin allows; their articles move up a level. */
+  collections_merged: number;
+  top_collections: { name: string; articles: number }[];
+}
+
+export interface PublicHelpCenterStartRequest {
+  url: string;
+  target_space_id?: string;
+  new_space_name?: string;
+  import_status: 'draft' | 'published';
 }
 
 export interface ImportStatusResponse {
@@ -43,6 +92,10 @@ export interface ImportStatusResponse {
   failures: ImportFailure[];
   redirect_map: unknown;
   summary: ImportSummary | null;
+  /** Settings the import was started with. A public help center import keeps its address here. */
+  config?: { source_url?: string; import_status?: string } | null;
+  /** Why the whole import failed or stopped, in words for the person who started it. */
+  error?: string | null;
   started_by: string;
   started_at: string;
   completed_at: string | null;
@@ -118,6 +171,16 @@ export const docsImportService = {
 
   retry: (workspaceId: string, jobId: string, apiKey: string) =>
     api.post(`/docs/import/${jobId}/retry${qs(workspaceId)}`, { api_key: apiKey }),
+
+  /** Continues a public help center import; it needs no key and skips what is already imported. */
+  resumePublicHelpCenter: (workspaceId: string, jobId: string) =>
+    api.post(`/docs/import/${jobId}/retry${qs(workspaceId)}`, {}),
+
+  previewPublicHelpCenter: (workspaceId: string, url: string) =>
+    api.post<PublicHelpCenterPreview>(`/docs/import/public-help-center/preview${qs(workspaceId)}`, { url }),
+
+  startPublicHelpCenter: (workspaceId: string, data: PublicHelpCenterStartRequest) =>
+    api.post<{ job_id: string }>(`/docs/import/public-help-center/start${qs(workspaceId)}`, data),
 
   cancel: (workspaceId: string, jobId: string) =>
     api.post(`/docs/import/${jobId}/cancel${qs(workspaceId)}`, {}),

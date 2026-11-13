@@ -63,6 +63,9 @@ type Config struct {
 	AgentRuntimeAppID         string
 	AgentRuntimeEventProtocol string
 	AgentRuntimeLaunchEnabled bool
+	// CommandBarRunGroupsEnabled puts new pipeline and DAG command-bar plans
+	// on Agent Runtime run groups when the runtime offers them to the app.
+	CommandBarRunGroupsEnabled bool
 
 	// S3 / object storage (optional — attachments disabled if not set)
 	AWSAccessKeyID        string
@@ -155,6 +158,9 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	// AppIndexURL is the fixed SPA shell used by the Community metadata proxy.
+	// Empty uses APP_BASE_URL/index.html; it must not point to a rewritten app route.
+	AppIndexURL string
 	// HelpcenterHostedDomain is the hosted help center root, such as
 	// helpin.center. When set, customer portals are served on each workspace's
 	// help center at /requests. Empty keeps them at {AppBaseURL}/portal/{slug}.
@@ -208,6 +214,9 @@ type Config struct {
 	// ServerAdminEmails (HELPIN_ADMIN_EMAILS) designates self-hosted server
 	// admins by email (Community only).
 	ServerAdminEmails []string
+	// OpsAlertEmails (OPS_ALERT_EMAILS) receive operational alerts by email,
+	// such as incoming support email stuck in processing. Empty sends none.
+	OpsAlertEmails []string
 
 	// Google account sign-in (optional — Google button disabled if unset)
 	GoogleAuthClientID     string
@@ -455,6 +464,7 @@ func Load() (*Config, error) {
 		AgentRuntimeAppID:                      strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_APP_ID"), "helpin")),
 		AgentRuntimeEventProtocol:              strings.ToLower(strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_EVENT_PROTOCOL"), "v1"))),
 		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
+		CommandBarRunGroupsEnabled:             parseBoolEnv(os.Getenv("COMMAND_BAR_RUN_GROUPS_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		AWSPresignEndpointURL:                  strings.TrimSpace(os.Getenv("AWS_S3_PRESIGN_ENDPOINT_URL")),
@@ -534,6 +544,7 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultRouteDomain)),
 		AppBaseURL:                             appBaseURL,
+		AppIndexURL:                            strings.TrimSpace(os.Getenv("APP_INDEX_URL")),
 		HelpcenterHostedDomain:                 normalizeHostedDomain(os.Getenv("HELPCENTER_HOSTED_DOMAIN")),
 		HelpcenterCustomDomainTarget:           normalizeHostedDomain(firstNonEmpty(os.Getenv("HELPCENTER_CUSTOM_DOMAIN_TARGET"), os.Getenv("HELPCENTER_HOSTED_DOMAIN"))),
 		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),
@@ -571,6 +582,7 @@ func Load() (*Config, error) {
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 		ServerAdminEmails:                      parseCSV(os.Getenv("HELPIN_ADMIN_EMAILS")),
+		OpsAlertEmails:                         parseCSV(os.Getenv("OPS_ALERT_EMAILS")),
 		GoogleAuthClientID:                     strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_ID")),
 		GoogleAuthClientSecret:                 strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_SECRET")),
 		GoogleAuthRedirectURL:                  strings.TrimSpace(os.Getenv("GOOGLE_AUTH_REDIRECT_URL")),

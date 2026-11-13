@@ -83,6 +83,7 @@ export interface Workspace {
   name: string;
   slug: string;
   workspace_key: string;
+  link_previews_enabled?: boolean;
   owner_id: string;
   organization_id?: string;
   role?: string;

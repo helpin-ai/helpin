@@ -1,3 +1,4 @@
+import type { RunSteeringCommand } from './dockChatService';
 import { api } from '../api';
 import type {
   ApproveAgentRunRequest,
@@ -30,6 +31,8 @@ export const codingSessionService = {
     api.get<AgentRunArtifact[]>(`/pm/agent-runs/${sessionId}/artifacts${qs(workspaceId)}`),
   resolveInteraction: (workspaceId: string, sessionId: string, interactionId: string, payload: ResolveCodingSessionInteractionRequest) =>
     api.post<CodingSessionInteraction>(`/pm/coding-sessions/${sessionId}/interactions/${interactionId}/resolve${qs(workspaceId)}`, payload),
+  runSteering: (workspaceId: string, runId: string) => api.get<RunSteeringCommand[]>(`/pm/agent-runs/${encodeURIComponent(runId)}/steering${qs(workspaceId)}`),
+  steerRun: (workspaceId: string, runId: string, command: { command_id: string; expected_revision: number; content: string }) => api.post<RunSteeringCommand>(`/pm/agent-runs/${encodeURIComponent(runId)}/steering${qs(workspaceId)}`, command),
   sendMessage: (workspaceId: string, sessionId: string, payload: SendAgentRunMessageRequest) =>
     api.post(`/pm/coding-sessions/${sessionId}/message${qs(workspaceId)}`, payload),
   continue: (workspaceId: string, sessionId: string, payload?: ContinueAgentRunRequest) =>

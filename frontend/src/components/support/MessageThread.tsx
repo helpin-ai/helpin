@@ -1,6 +1,6 @@
 import { AppLoadBoundary } from '@/components/layout/AppLoadError';
 import { ConversationSnoozeControl } from './ConversationSnoozeControl';
-import { onSupportShortcut } from '@/lib/supportShortcuts';
+import { onSupportShortcut, supportShortcutLabel } from '@/lib/supportShortcuts';
 import { SupportSLABadge } from './SupportSLABadge';
 import { MergedConversationContinuation } from './ConversationMergeHistory';
 import { DaySeparator } from './SupportDaySeparator';
@@ -24,7 +24,6 @@ import {
   useInboxScopes,
   useSupportTeammatePresence,
   useUpdateConversationStatus,
-  useAssignConversationUser,
   useMoveConversation,
   useDismissConversationTriage,
   useDeleteSupportMessage,
@@ -319,7 +318,6 @@ export function MessageThread({
   useSupportTeammatePresence(workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
-  const assignToMe = useAssignConversationUser(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
   const deleteMessage = useDeleteSupportMessage(workspaceId, conversationId);
@@ -507,20 +505,15 @@ export function MessageThread({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [conversationId, currentUser?.id, deleteMessage, messages]);
 
-  // E resolves and A assigns the open conversation to the viewer.
+  // Command+E (Ctrl+E outside Apple devices) resolves the open conversation.
   useEffect(() => onSupportShortcut((detail) => {
     if (presentation !== 'panel' || !conversation || detail.conversationId !== conversation.id) return;
-    if (detail.action !== 'resolve' && detail.action !== 'assign_me') return;
+    if (detail.action !== 'resolve') return;
     detail.handled = true;
     if (conversation.merged_into_id || !access?.permissions?.includes('support.edit')) return;
-    if (detail.action === 'resolve') {
-      if (conversation.status === 'resolved' || conversation.status === 'spam' || updateStatus.isPending) return;
-      updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus }, { onSuccess: () => toast.success('Conversation resolved') });
-      return;
-    }
-    if (!currentUser?.id || conversation.assigned_user_id === currentUser.id || assignToMe.isPending) return;
-    assignToMe.mutate({ conversationId: conversation.id, userId: currentUser.id }, { onSuccess: () => toast.success('Assigned to you') });
-  }), [access?.permissions, assignToMe, conversation, currentUser?.id, presentation, updateStatus]);
+    if (conversation.status === 'resolved' || conversation.status === 'spam' || updateStatus.isPending) return;
+    updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus }, { onSuccess: () => toast.success('Conversation resolved') });
+  }), [access?.permissions, conversation, presentation, updateStatus]);
 
   useEffect(() => {
     // MessageThread mounts with Support, even before a conversation is selected.
@@ -952,6 +945,7 @@ export function MessageThread({
                 variant="default"
                 className="h-7 gap-1 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
                 onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}
+                title={`Resolve (${supportShortcutLabel('resolve')})`}
               >
                 <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
                 Resolve

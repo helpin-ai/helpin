@@ -336,3 +336,29 @@ func TestSupportReplyGateRejectsUnreviewedMCPResult(t *testing.T) {
 		t.Fatal("an MCP tool's successful execution must not prove an unsupported answer")
 	}
 }
+
+func TestEvidenceRepairDoesNotRelaxSourceGate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		outcome string
+		reasons []string
+		allowed bool
+	}{
+		{"numeric", supportValidationNumeric, []string{"unsupported_numeric:20"}, true},
+		{"citations and numeric", supportValidationNumeric, []string{"unsupported_numeric:20", "unsupported_claim"}, true},
+		{"citations only", supportValidationUngrounded, []string{"unsupported_claim"}, true},
+		{"missing claim map", supportValidationNumeric, []string{"unsupported_numeric:20", "answer_without_claim_map"}, false},
+		{"unsupported free plan", supportValidationUngrounded, []string{"unsupported_free_plan_claim"}, false},
+		{"mixed nonrepairable failure", supportValidationUngrounded, []string{"unsupported_claim", "unsupported_free_plan_claim"}, false},
+		{"no response", supportValidationUngrounded, []string{"missing_response"}, false},
+		{"source policy", "unapproved_source", []string{"unsupported_claim"}, false},
+		{"no reasons", supportValidationNumeric, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := supportReplyCanRepairEvidence(supportReplyGateResult{ValidationOutcome: tc.outcome, ValidationReasons: tc.reasons})
+			if got != tc.allowed {
+				t.Fatalf("repair=%v want %v", got, tc.allowed)
+			}
+		})
+	}
+}

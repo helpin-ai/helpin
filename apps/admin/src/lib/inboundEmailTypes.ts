@@ -45,6 +45,8 @@ export interface InboundEmailDetail extends InboundEmail {
   provider_id: string
   in_reply_to?: string
   last_error?: string
+  /** Why no retry can deliver this email, e.g. it reached the shared sender. */
+  not_delivered_reason?: string
   attachments: { id: string; name: string; content_type: string; size: number }[]
   destination?: InboundConversation
 }

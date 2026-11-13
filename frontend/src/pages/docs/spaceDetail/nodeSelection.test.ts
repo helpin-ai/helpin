@@ -77,10 +77,10 @@ function buildStandardFixture() {
   return { collections, documents, tree: buildCollectionTree(SPACE_ID, collections, documents) }
 }
 
-const NO_FILTER = { status: null }
-const DRAFT = { status: 'draft' as DocStatus }
-const PUBLISHED = { status: 'published' as DocStatus }
-const ARCHIVED = { status: 'archived' as DocStatus }
+const NO_FILTER = { statuses: [] as DocStatus[] }
+const DRAFT = { statuses: ['draft'] as DocStatus[] }
+const PUBLISHED = { statuses: ['published'] as DocStatus[] }
+const ARCHIVED = { statuses: ['archived'] as DocStatus[] }
 
 // ── resolveView ──────────────────────────────────────────────────────
 

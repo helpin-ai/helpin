@@ -42,10 +42,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/dbschema"
 	"github.com/helpin-ai/helpin/server/internal/decision"
+	"github.com/helpin-ai/helpin/server/internal/edition"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
+	"github.com/helpin-ai/helpin/server/internal/linkpreview"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
@@ -760,6 +762,7 @@ func main() {
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
 	supportInboxService.SetRouteDomain(cfg.SupportEmailRouteDomain)
+	supportInboxService.SetHelpcenterHostedDomain(cfg.HelpcenterHostedDomain)
 	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
 	supportInboxService.SetEmailSenderRepository(supportEmailSenderRepo)
 	supportInboxService.SetEmailSenderDomainRepository(supportEmailSenderDomainRepo)
@@ -1015,7 +1018,8 @@ func main() {
 	).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
-		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled).
+		SetCommandBarRunGroups(cfg.CommandBarRunGroupsEnabled, repository.NewCommandBarPlanRunGroupRepository(db))
 	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
@@ -1518,6 +1522,11 @@ func main() {
 					}
 					return err
 				})
+				if cfg.CommandBarRunGroupsEnabled {
+					group.Go(func() error {
+						return agentService.StartCommandBarRunGroupConsumer(groupCtx, 2*time.Second)
+					})
+				}
 				group.Go(func() error {
 					return agentRuntimeProjectionService.StartReconciliationSweep(
 						groupCtx,
@@ -1666,10 +1675,11 @@ func main() {
 	}
 
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
-	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
+	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService, service.NewSupportAgentDefaults(supportInboxService))
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	workspaceService.SetWebsiteDefaultsApplier(supportInboxService)
+	workspaceService.SetOrganizationRoles(orgRepo)
 	setupService := service.NewSetupService(setupRepo)
 	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {
@@ -1762,6 +1772,12 @@ func main() {
 	commandService.SetFlowBuilderChat(dockChatService)
 	publicShareSource := service.NewPublicShareSource(dockChatService, agentService, dockChatRepo, agentRunMessageRepo, workspaceRepo)
 	publicShareService := service.NewPublicShareService(publicShareRepo, publicShareSource, cfg.AppBaseURL)
+	previewRenderer, err := linkpreview.NewRenderer()
+	if err != nil {
+		fatalWithSentry("initialize link preview renderer", err)
+	}
+	linkPreviewService := service.NewLinkPreviewService(repository.NewLinkPreviewRepository(db), cfg.EnabledModules)
+	linkPreviewHandler := handler.NewLinkPreviewHandler(linkPreviewService, previewRenderer, cfg.AppBaseURL, cfg.PublicAPIBaseURL, cfg.AppIndexURL)
 	if runFinalizers != nil {
 		// Immediate delivery of settled child-plan results into dock chats;
 		// the sweep below retries chats that were mid-turn at that moment.
@@ -1827,6 +1843,27 @@ func main() {
 		crmCompanyRepo, crmContactRepo, crmCompanyService, crmContactService, crmActivityService,
 	))
 	supportInboxService.SetAuthzService(authzService)
+
+	// The edition may add features on top of the product services, such as
+	// extra MCP tools. It must do so before the MCP and REST handlers are built.
+	if err := editionServices.ExtendWith(edition.Extension{
+		DB:                     db,
+		HelpcenterHostedDomain: cfg.HelpcenterHostedDomain,
+		MCP:                    mcpService,
+		Users:                  userRepo,
+		Organizations:          orgService,
+		Workspaces:             workspaceService,
+		Helpcenter:             docsHelpcenterService,
+		DocsImport:             docsImportService,
+		DocsSpaces:             docsSpaceService,
+		DocsCollections:        docsCollectionService,
+		SupportInbox:           supportInboxService,
+		CRMCompanies:           crmCompanyRepo,
+		CRMActivities:          crmActivityService,
+	}); err != nil {
+		slog.Error("startup: edition extension failed", "error", err)
+		os.Exit(1)
+	}
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
@@ -1957,6 +1994,7 @@ func main() {
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
+		LinkPreview:         linkPreviewHandler,
 		Setup:               setupHandler,
 		SampleData:          handler.NewSampleDataHandler(service.NewSampleDataService(db, cfg.DocsOrderingUseSortKey), authzService),
 		Edition:             editionServices.Routes,
@@ -2385,6 +2423,7 @@ func main() {
 	go emailFallbackService.StartInboundWorker(inboundCtx, "email")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
+	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics, appEmailClient, cfg.OpsAlertEmails)
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {

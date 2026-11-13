@@ -49,6 +49,7 @@ func (r *DocsContentRepository) transformContent(ctx context.Context, documentID
 		if err != nil {
 			return err
 		}
+		content = tiptap.NormalizeImageNodes(content)
 		if r.blockRepo != nil {
 			normalized, blocks, err := r.blockRepo.NormalizeDocumentContentTx(ctx, tx, documentID, content, actorID)
 			if err != nil {

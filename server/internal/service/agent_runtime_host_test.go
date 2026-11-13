@@ -336,6 +336,7 @@ func TestAgentRuntimeHostResolveSupportCoverageGapTarget(t *testing.T) {
 		id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, workspace_key TEXT,
 		owner_id TEXT NOT NULL, organization_id TEXT, description TEXT,
 		company_product_context TEXT, website_url TEXT, logo_url TEXT,
+		link_previews_enabled BOOLEAN NOT NULL DEFAULT true,
 		timezone TEXT NOT NULL DEFAULT 'UTC', created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create workspace target table: %v", err)

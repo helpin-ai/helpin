@@ -21,16 +21,17 @@ export interface CollectionTree {
   uncategorizedDocuments: DocsDocument[]
 }
 
-/**
- * sortByKey sorts items by sort_key (fractional ordering) when
- * available, falling back to position + created_at for pre-backfill
- * rows (sort_key is empty or the sentinel '~').
- */
 function hasSortKey(item: { sort_key?: string }): boolean {
   return !!item.sort_key && item.sort_key !== '~'
 }
 
-function sortItems<T extends { sort_key?: string; position: number; created_at: string; id: string }>(items: T[]): T[] {
+/**
+ * sortTreeItems sorts siblings by sort_key (fractional ordering) when
+ * available, falling back to position + created_at for pre-backfill
+ * rows (sort_key is empty or the sentinel '~'). Collections and
+ * documents that share a parent can be sorted together.
+ */
+export function sortTreeItems<T extends { sort_key?: string; position: number; created_at: string; id: string }>(items: T[]): T[] {
   return items.slice().sort((a, b) => {
     if (hasSortKey(a) && hasSortKey(b)) {
       return a.sort_key!.localeCompare(b.sort_key!) || a.id.localeCompare(b.id)
@@ -55,7 +56,7 @@ export function buildCollectionTree(
   collections: DocsCollection[],
   documents: DocsDocument[],
 ): CollectionTree {
-  const inSpace = sortItems(
+  const inSpace = sortTreeItems(
     collections.filter((c) => c.space_id === spaceId && !c.deleted_at),
   )
 
@@ -79,7 +80,7 @@ export function buildCollectionTree(
     }
   }
   for (const node of nodesById.values()) {
-    node.documents = sortItems(docsByCollection.get(node.collection.id) ?? [])
+    node.documents = sortTreeItems(docsByCollection.get(node.collection.id) ?? [])
   }
 
   // Link children to parents. Top-level collections are those whose
@@ -97,7 +98,7 @@ export function buildCollectionTree(
 
   return {
     topLevel,
-    uncategorizedDocuments: sortItems(uncategorized),
+    uncategorizedDocuments: sortTreeItems(uncategorized),
   }
 }
 

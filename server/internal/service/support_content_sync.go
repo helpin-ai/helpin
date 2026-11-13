@@ -18,12 +18,14 @@ import (
 	"time"
 
 	"github.com/ledongthuc/pdf"
+	"go.temporal.io/sdk/activity"
 
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 )
 
 // SupportContentSyncWorkflowStarter queues durable crawl+embedding work.
@@ -358,6 +360,9 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		"start_url", source.StartURL,
 	)
 	crawledCount, err := s.crawler.Crawl(ctx, *source, onPage)
+	if err == nil && crawledCount == 0 && len(skippedURLs) == 0 {
+		err = errors.New("no pages could be retrieved; check the website URL and crawler access")
+	}
 	if len(skippedURLs) > 0 {
 		warning := fmt.Sprintf("%d URLs skipped because the site disallows crawling. Check robots.txt and the crawler access instructions before re-syncing.", len(skippedURLs))
 		if warningErr := s.sourceRepo.UpdateSyncWarning(ctx, source.ID, &warning); warningErr != nil {
@@ -718,6 +723,12 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 }
 
 func (s *SupportContentSyncService) markSourceFailed(ctx context.Context, sourceID string, err error, startedAt *time.Time, indexedPages, indexedChunks int) error {
+	if ctx.Err() == nil && activity.IsActivity(ctx) {
+		info := activity.GetInfo(ctx)
+		if info.ActivityType.Name == "ContentSourceSyncActivities.SyncContentSourceActivity" && info.Attempt < temporalapp.ContentSourceSyncMaxAttempts {
+			return s.sourceRepo.UpdateSyncState(ctx, sourceID, model.KnowledgeSourceSyncQueued, 0, indexedPages, indexedChunks, nil, nil, startedAt, nil)
+		}
+	}
 	errMsg := err.Error()
 	completedAt := time.Now()
 	return s.sourceRepo.UpdateSyncState(ctx, sourceID, model.KnowledgeSourceSyncFailed, 0, indexedPages, indexedChunks, &errMsg, nil, startedAt, &completedAt)

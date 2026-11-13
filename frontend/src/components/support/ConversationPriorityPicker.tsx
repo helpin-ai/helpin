@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { onSupportShortcut } from '@/lib/supportShortcuts'
+import { onSupportShortcut, supportShortcutLabel } from '@/lib/supportShortcuts'
 import { PriorityIcon } from '@/lib/pmConstants'
 import type { ConversationPriority } from '@/lib/pmTypes'
 
@@ -34,7 +34,7 @@ export function ConversationPriorityPicker({
 
   return (
     <Select open={open} onOpenChange={setOpen} value={value} onValueChange={(next) => onChange(next as ConversationPriority)} disabled={disabled}>
-      <SelectTrigger ref={triggerRef} aria-label="Priority" className="h-7 w-auto min-w-[110px] gap-1.5 border-none px-1.5 text-xs font-medium shadow-none hover:bg-quiet-hover">
+      <SelectTrigger ref={triggerRef} aria-label="Priority" title={shortcutConversationId ? `Priority (${supportShortcutLabel('priority')})` : undefined} className="h-7 w-auto min-w-[110px] gap-1.5 border-none px-1.5 text-xs font-medium shadow-none hover:bg-quiet-hover">
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="end">

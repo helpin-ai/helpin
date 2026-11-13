@@ -1207,6 +1207,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			company_product_context TEXT,
 			website_url TEXT,
 			logo_url TEXT,
+			link_previews_enabled BOOLEAN NOT NULL DEFAULT true,
 			timezone TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME

@@ -974,12 +974,7 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 				return s.processInboundRoute(ctx, route, payload, rawPayload)
 			}
 		}
-		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
-			"message_id", strings.TrimSpace(payload.MessageID),
-			"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
-			"to", strings.TrimSpace(payload.To),
-		)
-		return fmt.Errorf("missing mailbox hash")
+		return s.processUnaddressedInbound(ctx, payload, rawPayload)
 	}
 
 	if !strings.HasPrefix(mailboxHash, "conv-") {
@@ -1018,6 +1013,22 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 			"status", conv.Status,
 		)
 		return nil
+	}
+	// One email written to two Helpin addresses (say, both the Reply-To and the
+	// From of our email) arrives twice with the same Message-ID. An admin
+	// recovery is an explicit request, so it is never skipped.
+	if recovery == nil {
+		copied, err := s.emailLogRepo.HasInboundCopy(ctx, repository.InboundCopyQuery{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, RFCMessageID: inboundHeaderMessageID(payload)})
+		if err != nil {
+			return err
+		}
+		if copied {
+			s.logger.InfoContext(ctx, "postmark inbound copy already in conversation",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"conversation_id", conv.ID,
+			)
+			return nil
+		}
 	}
 
 	fromEmail := inboundEmailAddress(payload)
@@ -3491,39 +3502,71 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 		return "", fromAddress, "", err
 	}
 
-	fallbackFromAddress := strings.TrimSpace(s.emailClient.FromEmail())
-	if fallbackFromAddress == "" || strings.EqualFold(fallbackFromAddress, strings.TrimSpace(fromAddress)) {
-		return "", fromAddress, "", err
+	// Prefer the conversation-tagged fallback; keep the plain verified sender as
+	// a last resort in case the provider refuses the tagged address.
+	plainFallback := strings.TrimSpace(s.emailClient.FromEmail())
+	tried := strings.TrimSpace(fromAddress)
+	sendErr := err
+	for _, fallbackFromAddress := range []string{supportConversationFallbackAddress(plainFallback, conversationID), plainFallback} {
+		if fallbackFromAddress == "" || strings.EqualFold(fallbackFromAddress, tried) {
+			continue
+		}
+		fallbackFrom := fmt.Sprintf("%s <%s>", fromDisplayName, fallbackFromAddress)
+		s.logger.WarnContext(ctx, "email fallback branded sender rejected, retrying with verified sender",
+			"error", sendErr,
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"branded_from_email", tried,
+			"fallback_from_email", fallbackFromAddress,
+			"reply_to", replyTo,
+		)
+		postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeadersAttachmentsAndOptionsContext(ctx, fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
+		if fallbackErr == nil {
+			s.logger.InfoContext(ctx, "email fallback sent with verified sender fallback",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"branded_from_email", fromAddress,
+				"fallback_from_email", fallbackFromAddress,
+				"reply_to", replyTo,
+			)
+			return postmarkMessageID, fallbackFromAddress, "postmark_sender_signature_rejected", nil
+		}
+		if !email.IsSenderSignatureError(fallbackErr) || strings.EqualFold(fallbackFromAddress, plainFallback) {
+			return "", fallbackFromAddress, "postmark_sender_signature_rejected", fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
+		}
+		tried, sendErr = fallbackFromAddress, fallbackErr
 	}
-	fallbackFrom := fmt.Sprintf("%s <%s>", fromDisplayName, fallbackFromAddress)
-	s.logger.WarnContext(ctx, "email fallback branded sender rejected, retrying with verified sender",
-		"error", err,
-		"workspace_id", workspaceID,
-		"conversation_id", conversationID,
-		"branded_from_email", fromAddress,
-		"fallback_from_email", fallbackFromAddress,
-		"reply_to", replyTo,
-	)
-	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeadersAttachmentsAndOptionsContext(ctx, fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
-	if fallbackErr != nil {
-		return "", fallbackFromAddress, "postmark_sender_signature_rejected", fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
+	return "", fromAddress, "", err
+}
+
+// supportConversationFallbackAddress tags the shared fallback sender with the
+// conversation, e.g. support+conv-<id>@helpin.email. Postmark passes the part
+// after "+" as the mailbox hash, so mail sent to the From address still reaches
+// the conversation instead of an address Helpin cannot route.
+func supportConversationFallbackAddress(base, conversationID string) string {
+	base = strings.TrimSpace(base)
+	local, domain, ok := strings.Cut(base, "@")
+	if !ok || local == "" || domain == "" || strings.Contains(local, "+") {
+		return base
 	}
-	s.logger.InfoContext(ctx, "email fallback sent with verified sender fallback",
-		"workspace_id", workspaceID,
-		"conversation_id", conversationID,
-		"branded_from_email", fromAddress,
-		"fallback_from_email", fallbackFromAddress,
-		"reply_to", replyTo,
-	)
-	return postmarkMessageID, fallbackFromAddress, "postmark_sender_signature_rejected", nil
+	conversationID = strings.TrimSpace(conversationID)
+	if _, err := uuid.Parse(conversationID); err != nil {
+		return base
+	}
+	return local + "+conv-" + conversationID + "@" + domain
 }
 
 // resolveOutboundFromAddress uses a verified custom sender when available.
 // Generated inbox addresses are for receiving; their wildcard MX does not verify
-// them for sending. Use the configured sender while keeping the inbox Reply-To.
+// them for sending. Use the configured sender while keeping the inbox Reply-To,
+// tagged with the conversation so replies sent to From are not lost.
 func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) SupportOutboundFromAddressResult {
 	fallback := SupportOutboundFromAddressResult{Email: s.emailClient.FromEmail(), Source: "verified_fallback_sender"}
-	if s.supportInboxService == nil || conv == nil {
+	if conv == nil {
+		return fallback
+	}
+	fallback.Email = supportConversationFallbackAddress(fallback.Email, conv.ID)
+	if s.supportInboxService == nil {
 		return fallback
 	}
 	result, err := s.supportInboxService.ResolveOutboundFromAddress(ctx, conv.WorkspaceID, conv.MailboxID)
@@ -3739,6 +3782,9 @@ func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Conte
 	return s.findConversationByID(ctx, threadLog.ConversationID)
 }
 
+// createInboundConversationFromRoute opens a conversation for a new email. The
+// route may be unsaved (no ID) when the email reached the shared sender; it
+// then only says which workspace and inbox receive it.
 func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
 	if route == nil {
 		return nil
@@ -3987,10 +4033,14 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		message.EmailProjectionConfidence = projection.ProjectionConfidence
 		message.EmailProjectionVersion = projection.Version
 
+		var emailRouteID *string
+		if route.ID != "" {
+			emailRouteID = &route.ID
+		}
 		logRow := &model.SupportEmailLog{
 			WorkspaceID:               route.WorkspaceID,
 			ConversationID:            conversation.ID,
-			EmailRouteID:              &route.ID,
+			EmailRouteID:              emailRouteID,
 			Direction:                 "inbound",
 			MessageIDs:                model.DocsStringArray{message.ID},
 			FromEmail:                 fromEmail,
@@ -4049,7 +4099,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		}
 		return txErr
 	}
-	if s.supportInboxService.emailRouteRepo != nil {
+	if route.ID != "" && s.supportInboxService.emailRouteRepo != nil {
 		route.LastInboundAt = &now
 		if err := s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, now); err != nil {
 			return err
@@ -4179,6 +4229,11 @@ func mailboxHashFromRecipient(value string) string {
 	if strings.HasPrefix(local, "conv-") || strings.HasPrefix(local, "unsubscribe-") || strings.HasPrefix(local, "route-") || strings.HasPrefix(local, "verify-") {
 		return local
 	}
+	// The tagged fallback sender (support+conv-<id>@…) carries the conversation
+	// after "+"; Postmark usually reports it as MailboxHash already.
+	if _, tag, ok := strings.Cut(local, "+"); ok && strings.HasPrefix(tag, "conv-") {
+		return tag
+	}
 	return ""
 }
 
@@ -4237,10 +4292,15 @@ func (s *EmailFallbackService) inboundSupportAddresses(ctx context.Context, work
 	if route != nil {
 		addresses = append(addresses, route.InboundAddress, derefString(route.SourceAddress))
 	}
-	// Conversation-specific reply addresses are not stored as routes.
+	// Conversation-specific reply addresses, and the shared fallback sender with
+	// its conversation tags, are not stored as routes.
+	fallbackSender := strings.TrimSpace(s.emailClient.FromEmail())
+	_, fallbackDomain, _ := strings.Cut(fallbackSender, "@")
+	addresses = append(addresses, fallbackSender)
 	for _, address := range inboundRecipientAddresses(payload) {
 		_, domain, hasDomain := strings.Cut(address, "@")
-		if hasDomain && strings.HasPrefix(mailboxHashFromRecipient(address), "conv-") && strings.EqualFold(domain, s.InboundDomain()) {
+		ownDomain := strings.EqualFold(domain, s.InboundDomain()) || (fallbackDomain != "" && strings.EqualFold(domain, fallbackDomain))
+		if hasDomain && ownDomain && strings.HasPrefix(mailboxHashFromRecipient(address), "conv-") {
 			addresses = append(addresses, address)
 		}
 	}

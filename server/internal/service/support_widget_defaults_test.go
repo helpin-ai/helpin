@@ -112,7 +112,7 @@ func TestSuggestedAllowedOriginsOnlyForEmptyList(t *testing.T) {
 	if got := svc.SuggestedAllowedOrigins(ctx, inst); got != nil {
 		t.Fatalf("suggested origins without a website = %q", got)
 	}
-	if _, err := svc.workspaceRepo.Update(ctx, "ws-origin-defaults", nil, nil, nil, ptr("customer.example"), nil, nil); err != nil {
+	if _, err := svc.workspaceRepo.Update(ctx, "ws-origin-defaults", nil, nil, nil, ptr("customer.example"), nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := svc.SuggestedAllowedOrigins(ctx, inst)
@@ -152,7 +152,7 @@ func TestApplyWebsiteOriginDefaults(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.website != "" {
-				if _, err := svc.workspaceRepo.Update(ctx, "ws-origin-defaults", nil, nil, nil, ptr(tc.website), nil, nil); err != nil {
+				if _, err := svc.workspaceRepo.Update(ctx, "ws-origin-defaults", nil, nil, nil, ptr(tc.website), nil, nil, nil); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { ReactNode } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { useState, type ReactNode } from 'react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ArticleContent } from '@/components/ArticleContent'
 import { DocsProvider } from '@/contexts/DocsContext'
@@ -124,6 +124,60 @@ describe('ArticleContent', () => {
     expect(screen.getByText('External').closest('a')?.getAttribute('href')).toBe(
       'https://example.com/articles/external',
     )
+  })
+
+  it('preserves article nodes and reader state when the surrounding page updates', async () => {
+    function Page() {
+      const [activeHeading, setActiveHeading] = useState('first')
+      return (
+        <>
+          <button onClick={() => setActiveHeading('second')}>{activeHeading}</button>
+          <ArticleContent html={`
+            <h2>First section</h2>
+            <img src="/example.png" alt="Example">
+            <details><summary>More</summary>Details</details>
+            <pre><code>example()</code></pre>
+          `} />
+        </>
+      )
+    }
+    const { container } = renderWithDocsContext(<Page />)
+    const heading = screen.getByText('First section')
+    const image = screen.getByAltText('Example')
+    const details = container.querySelector('details')!
+    const copy = screen.getByRole('button', { name: 'Copy code' })
+    details.open = true
+
+    fireEvent.click(screen.getByRole('button', { name: 'first' }))
+
+    expect(screen.getByText('First section')).toBe(heading)
+    expect(screen.getByAltText('Example')).toBe(image)
+    expect(container.querySelector('details')).toBe(details)
+    expect(details.open).toBe(true)
+    expect(heading.id).toBe('first-section')
+    expect(screen.getByRole('button', { name: 'Copy code' })).toBe(copy)
+    fireEvent.click(copy)
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('example()'))
+  })
+
+  it('renders and enhances new article content after navigation', () => {
+    function Page() {
+      const [next, setNext] = useState(false)
+      return (
+        <>
+          <button onClick={() => setNext(true)}>Next article</button>
+          <ArticleContent html={next
+            ? '<h2>New section</h2><pre><code>new()</code></pre>'
+            : '<h2>Old section</h2>'}
+          />
+        </>
+      )
+    }
+    renderWithDocsContext(<Page />)
+    fireEvent.click(screen.getByRole('button', { name: 'Next article' }))
+    expect(screen.queryByText('Old section')).toBeNull()
+    expect(screen.getByText('New section').id).toBe('new-section')
+    expect(screen.getByRole('button', { name: 'Copy code' })).not.toBeNull()
   })
 
   it('uses the shared block contract for published toggle sections', () => {

@@ -1217,3 +1217,11 @@ type SkillCatalogEntry struct {
 type SkillCatalogResponse struct {
 	Skills []SkillCatalogEntry `json:"skills"`
 }
+
+// SteerAgentRunRequest changes instructions on the same running execution.
+type SteerAgentRunRequest struct {
+	CommandID        string   `json:"command_id"`
+	ExpectedRevision int64    `json:"expected_revision"`
+	Content          string   `json:"content"`
+	DeniedTools      []string `json:"denied_tools,omitempty"`
+}

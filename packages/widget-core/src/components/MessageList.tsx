@@ -156,8 +156,8 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     if (message.role === 'system' && !message.senderName && !message.senderAvatar) {
       return 'system';
     }
-    if (message.role === 'ai') {
-      return 'incoming:Helpin AI';
+    if (message.role === 'ai' || (message.role === 'system' && message.senderName === 'Helpin AI')) {
+      return `incoming:ai:${config?.aiDisplayName?.trim() || 'Helpin AI'}`;
     }
     return `incoming:${message.senderName || config?.workspaceName || 'Support Agent'}`;
   };

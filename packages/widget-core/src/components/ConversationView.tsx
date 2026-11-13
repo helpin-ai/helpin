@@ -118,7 +118,10 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const autoExpandedConversationRef = useRef<string | null>(null);
 
   const workspaceName = config.workspaceName || 'Support';
+  const aiDisplayName = config.aiDisplayName?.trim() || 'Helpin AI';
   const logoUrl = config.branding?.logoUrl;
+  const avatarUrl = config.branding?.avatarUrl;
+  const identityAvatar = avatarUrl || logoUrl;
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const availability = config.availability;
   const aiFirst = Boolean(config.features?.aiFirst);
@@ -138,10 +141,18 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   );
   const emailTiming = config.features.emailCaptureTiming ?? (config.features.preChatForm ? 'before_handoff' : 'never');
   const needsEmail = !transcriptEmail && !preChatDone;
+  const isFinished = ['resolved', 'closed', 'spam'].includes(conversation?.status || '')
+    || ['resolved_by_human', 'resolved_by_ai'].includes(conversation?.flowState || '');
+  // Explicit current flow takes priority over historical AI escalation state.
+  const hasCurrentHumanHandoff = conversation?.flowState
+    ? ['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human'].includes(conversation.flowState)
+    : conversation?.aiState === 'escalated';
+  const showRequiredHandoffEmailForm = emailTiming === 'before_handoff' && config.features.forceIdentify
+    && needsEmail && hasCurrentHumanHandoff && !isFinished;
   const hasAIReply = messages.some(message => message.role === 'ai' && !message.isInternal && message.aiProgressState !== 'checking');
   const showAIEmailForm = emailTiming === 'after_ai_reply' && needsEmail && hasAIReply && !isAIThinking
     && (config.features.forceIdentify || (!emailDismissed && !contactCaptureCompleted));
-  const showEmailForm = showHumanContactForm || showAIEmailForm;
+  const showEmailForm = showHumanContactForm || showAIEmailForm || showRequiredHandoffEmailForm;
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
   const composeDisabled = connectionStatus === 'connecting';
   const composePlaceholder = connectionStatus === 'failed'
@@ -188,12 +199,6 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       !isAIThinking &&
       !isTyping,
   );
-  const isFinished = ['resolved', 'closed', 'spam'].includes(conversation?.status || '')
-    || ['resolved_by_human', 'resolved_by_ai'].includes(conversation?.flowState || '');
-  // Explicit current flow takes priority over historical AI escalation state.
-  const hasCurrentHumanHandoff = conversation?.flowState
-    ? ['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human'].includes(conversation.flowState)
-    : conversation?.aiState === 'escalated';
   const latestCustomerIndex = messages.reduce((latest, message, index) =>
     !message.isInternal && message.role === 'customer' ? index : latest, -1);
   const latestHumanIndex = messages.reduce((latest, message, index) =>
@@ -229,18 +234,18 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (m.role === 'ai') {
-        return { name: 'Helpin AI', avatar: m.senderAvatar, isAI: true };
+        return { name: aiDisplayName, avatar: avatarUrl || m.senderAvatar, isAI: true };
       }
       if (m.role === 'agent' && m.senderName) {
         return { name: m.senderName, avatar: m.senderAvatar, isAI: false };
       }
     }
     return null;
-  }, [messages]);
+  }, [messages, aiDisplayName, avatarUrl]);
 
   const introRole = aiFirst ? 'ai' as const : 'agent' as const;
-  const introName = aiFirst ? 'Helpin AI' : workspaceName;
-  const introAvatar = aiFirst ? undefined : (logoUrl || undefined);
+  const introName = aiFirst ? aiDisplayName : workspaceName;
+  const introAvatar = aiFirst ? avatarUrl : (identityAvatar || undefined);
   const showActiveAgentHeader = Boolean(activeAgent?.name) && !showHumanHandoffState;
   const teammateStatus = activeTeammate?.status || 'online';
 
@@ -412,14 +417,14 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
                 />
               )}
             </div>
-          ) : logoUrl ? (
+          ) : identityAvatar ? (
             <div
               className="helpin-conversation-logo helpin-conversation-logo--brand"
               style={{ backgroundColor: brandColor }}
             >
               <img
-                src={logoUrl}
-                alt={workspaceName}
+                src={identityAvatar}
+                alt={aiFirst && !showHumanHandoffState ? aiDisplayName : workspaceName}
                 className="helpin-conversation-brand-logo"
               />
             </div>
@@ -440,7 +445,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
             ) : (
               <>
                 <span className="helpin-conversation-title">
-                  {showHumanHandoffState ? workspaceName : (aiFirst ? 'Helpin AI' : workspaceName)}
+                  {showHumanHandoffState ? workspaceName : (aiFirst ? aiDisplayName : workspaceName)}
                 </span>
                 <span className="helpin-conversation-subtitle">
                   {showHumanHandoffState

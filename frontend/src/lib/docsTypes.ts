@@ -408,6 +408,9 @@ export interface HelpcenterSpaceNavConfig {
 }
 
 export interface DocsHelpcenterConfig {
+  demo_mode?: boolean;
+  search_indexing_enabled?: boolean;
+  official_docs_url?: string;
   id: string;
   workspace_id: string;
   subdomain: string;
@@ -788,6 +791,9 @@ export interface CreateDocsLinkRequest {
 }
 
 export interface UpdateDocsHelpcenterConfigRequest {
+  demo_mode?: boolean;
+  search_indexing_enabled?: boolean;
+  official_docs_url?: string;
   subdomain?: string;
   custom_domain?: string;
   public_url_mode?: HelpcenterPublicUrlMode;

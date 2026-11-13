@@ -4,6 +4,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -41,8 +42,11 @@ func NewAdminEmailQueueHandler(
 	}
 	config.ExpectedBrandedFromShape = "{agent_name} - {workspace_name} <sender-address>"
 	config.ExpectedFallbackFromShape = config.VerifiedFallbackFromEmail
+	if local, domain, ok := strings.Cut(config.VerifiedFallbackFromEmail, "@"); ok {
+		config.ExpectedFallbackFromShape = local + "+conv-{conversation_id}@" + domain
+	}
 	config.ExpectedReplyToShape = "conv-{conversation_id}@" + config.SupportEmailReplyDomain
-	config.OutboundFromBehavior = "use verified mailbox default sender, then workspace default sender, then active sender domain, then generated route sender; retry with verified fallback sender on Postmark sender-signature rejection while preserving Reply-To"
+	config.OutboundFromBehavior = "use verified mailbox default sender, then workspace default sender, then active sender domain; otherwise use the verified fallback sender tagged with +conv-{conversation_id} so mail sent to From reaches the conversation; retry with the tagged, then plain, fallback sender on Postmark sender-signature rejection while preserving Reply-To"
 
 	return &AdminEmailQueueHandler{
 		emailFallbackService: emailFallbackService,
@@ -100,6 +104,16 @@ func (h *AdminEmailQueueHandler) Diagnostics(w http.ResponseWriter, r *http.Requ
 		logCounts = counts
 	}
 
+	var inboundBacklog *model.InboundEmailBacklog
+	if h.emailFallbackService != nil {
+		backlog, err := h.emailFallbackService.InboundEmailBacklog(r.Context(), time.Now().UTC())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "inspect incoming email backlog")
+			return
+		}
+		inboundBacklog = backlog
+	}
+
 	var recentWebhooks []model.SupportEmailWebhookEvent
 	if h.webhookRepo != nil {
 		result, err := h.webhookRepo.ListPaginated(r.Context(), 1, 20, "", "")
@@ -113,6 +127,7 @@ func (h *AdminEmailQueueHandler) Diagnostics(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, model.EmailDiagnosticsResponse{
 		Config:         h.config,
 		Queue:          queue,
+		InboundBacklog: inboundBacklog,
 		RecentLogs:     recentLogs,
 		LogCounts:      logCounts,
 		RecentWebhooks: recentWebhooks,

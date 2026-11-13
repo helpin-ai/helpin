@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // EmailDiagnosticsConfig exposes non-secret support email configuration for
 // platform-admin troubleshooting.
 type EmailDiagnosticsConfig struct {
@@ -33,9 +35,23 @@ type EmailLogCount struct {
 type EmailDiagnosticsResponse struct {
 	Config         EmailDiagnosticsConfig     `json:"config"`
 	Queue          *EmailQueueResponse        `json:"queue"`
+	InboundBacklog *InboundEmailBacklog       `json:"inbound_backlog,omitempty"`
 	RecentLogs     []SupportEmailLog          `json:"recent_logs"`
 	LogCounts      []EmailLogCount            `json:"log_counts"`
 	RecentWebhooks []SupportEmailWebhookEvent `json:"recent_webhooks"`
+}
+
+// InboundEmailBacklog describes incoming support email that was accepted from
+// the provider but has not been processed into conversations yet. Delayed is
+// true once the oldest email has waited longer than AlertAfterSeconds.
+type InboundEmailBacklog struct {
+	Waiting int64 `json:"waiting"`
+	// Retrying counts waiting emails whose processing already failed once.
+	Retrying             int64      `json:"retrying"`
+	OldestWaitingSince   *time.Time `json:"oldest_waiting_since,omitempty"`
+	OldestWaitingSeconds int64      `json:"oldest_waiting_seconds"`
+	AlertAfterSeconds    int64      `json:"alert_after_seconds"`
+	Delayed              bool       `json:"delayed"`
 }
 
 // EmailFallbackConversationDiagnosticsResponse explains why outbound replies in

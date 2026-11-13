@@ -22,6 +22,7 @@ type Workspace struct {
 	WebsiteURL            *string   `json:"website_url"`
 	LogoURL               *string   `json:"logo_url"`
 	Timezone              string    `json:"timezone" gorm:"not null;default:'UTC'"`
+	LinkPreviewsEnabled   bool      `json:"link_previews_enabled" gorm:"not null;default:true"`
 	CreatedAt             time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt             time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -165,6 +166,7 @@ type UpdateWorkspaceRequest struct {
 	LogoURL               *string `json:"logo_url"`
 	Timezone              *string `json:"timezone"`
 	WorkspaceKey          *string `json:"workspace_key,omitempty"`
+	LinkPreviewsEnabled   *bool   `json:"link_previews_enabled"`
 }
 
 // WorkspaceKeyHistory tracks workspace key changes for alias resolution.

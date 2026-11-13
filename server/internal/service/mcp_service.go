@@ -145,6 +145,8 @@ type MCPService struct {
 	config           MCPServiceConfig
 	tools            map[string]MCPToolDefinition
 	toolSchemas      map[string]*jsonschema.Resolved
+	// extensions holds tools added by RegisterToolExtensions, by name.
+	extensions map[string]MCPToolExtension
 }
 
 // NewMCPService creates the public MCP service boundary.
@@ -634,7 +636,7 @@ func (s *MCPService) resolveEffectivePrincipal(ctx context.Context, principal *m
 }
 
 func (s *MCPService) canUseTool(ctx context.Context, principal *model.MCPPrincipal, actor *authorization.Actor, tool MCPToolDefinition) bool {
-	if !s.platformToolEnabled(tool) {
+	if !s.platformToolEnabled(tool) || !s.extensionToolAvailable(tool.Name, principal.WorkspaceID) {
 		return false
 	}
 	if !containsMCPValue(principal.Toolsets, tool.Toolset) || !containsMCPValue(principal.Scopes, tool.Scope) {

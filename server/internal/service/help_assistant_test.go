@@ -50,8 +50,11 @@ func helpAssistantLaunchFixture(t *testing.T) (*gorm.DB, *HelpAssistantService, 
 		model.AgentPresetHelpAssistant, []byte(`["search_help","read_help_article","send_help_answer","send_help_progress","offer_contact_support"]`), []byte(`["help_assistant_turn"]`))
 	mustExec(t, db, `CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT, widget_key TEXT, settings TEXT, active BOOLEAN)`)
 	mustExec(t, db, `INSERT INTO support_widget_installations VALUES ('installation','ws-1','wk','{"help_assistant_enabled":true}',true)`)
-	mustExec(t, db, `CREATE TABLE docs_helpcenter_configs (id TEXT PRIMARY KEY, workspace_id TEXT, subdomain TEXT, default_locale TEXT, is_published BOOLEAN)`)
-	mustExec(t, db, `INSERT INTO docs_helpcenter_configs VALUES ('cfg','ws-1','acme','en',true)`)
+	mustExec(t, db, `CREATE TABLE docs_helpcenter_configs (
+ demo_mode BOOLEAN NOT NULL DEFAULT 0,
+ search_indexing_enabled BOOLEAN NOT NULL DEFAULT 1,
+ official_docs_url TEXT NOT NULL DEFAULT '',id TEXT PRIMARY KEY, workspace_id TEXT, subdomain TEXT, default_locale TEXT, is_published BOOLEAN)`)
+	mustExec(t, db, `INSERT INTO docs_helpcenter_configs (id,workspace_id,subdomain,default_locale,is_published) VALUES ('cfg','ws-1','acme','en',true)`)
 	createHelpAssistantTables(t, db)
 	copySupportRunEvidenceSchema(t, db)
 	runtime := &fakeAgentRuntimeSignalClient{}

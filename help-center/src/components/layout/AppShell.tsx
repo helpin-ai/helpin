@@ -119,6 +119,10 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      {config.demo_mode && <aside aria-label="Demo disclosure" className="border-b bg-muted px-4 py-3 text-center text-sm">
+        Demo built by Helpin using {config.brand_name}’s public documentation. Not {config.brand_name}’s official support site.
+        {config.official_docs_url?.startsWith('https://') && <> <a className="underline" href={config.official_docs_url} rel="noopener noreferrer">Official documentation</a></>}
+      </aside>}
       <TopBar onSearchClick={openSearch} onAskAIClick={assistantEnabled ? () => setAskAI((current) => current ?? {}) : undefined} />
       <div className="flex-1">
         <Outlet />

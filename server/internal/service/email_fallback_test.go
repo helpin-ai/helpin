@@ -532,7 +532,7 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	if captured.Subject != "Re: Pricing question (#1)" {
 		t.Fatalf("unexpected subject: %q", captured.Subject)
 	}
-	if !strings.Contains(captured.From, "Alex Agent - Acme Support <noreply@example.com>") {
+	if !strings.Contains(captured.From, "Alex Agent - Acme Support <noreply+conv-"+conversationID+"@example.com>") {
 		t.Fatalf("unexpected from: %q", captured.From)
 	}
 	if !strings.Contains(captured.HtmlBody, "#helpin-conv="+conversationID) {
@@ -864,7 +864,7 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 	if !strings.Contains(attempts[0].From, "Alex Agent - Acme Support <support@acme.example>") {
 		t.Fatalf("unexpected first from: %q", attempts[0].From)
 	}
-	if !strings.Contains(attempts[1].From, "Alex Agent - Acme Support <noreply@example.com>") {
+	if !strings.Contains(attempts[1].From, "Alex Agent - Acme Support <noreply+conv-"+conversationID+"@example.com>") {
 		t.Fatalf("unexpected fallback from: %q", attempts[1].From)
 	}
 	expectedReplyTo := `"Acme Support" <conv-` + conversationID + `@replies.helpin.ai>`
@@ -879,7 +879,7 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 	if len(logs) != 1 {
 		t.Fatalf("expected one outbound log, got %d", len(logs))
 	}
-	if logs[0].FromEmail != "noreply@example.com" {
+	if logs[0].FromEmail != "noreply+conv-"+conversationID+"@example.com" {
 		t.Fatalf("expected fallback from in email log, got %q", logs[0].FromEmail)
 	}
 	if logs[0].FromSource != "verified_fallback_sender" {

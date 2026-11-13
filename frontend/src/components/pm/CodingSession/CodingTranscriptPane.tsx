@@ -1,3 +1,5 @@
+import { RunSteeringReceipt } from '@/components/agents/dock/RunSteeringReceipt';
+import type { RunSteeringCommand } from '@/lib/services/dockChatService';
 import { useVoiceComposer } from '@/hooks/useVoiceComposer';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -59,6 +61,7 @@ export function CodingTranscriptPane({
   sendingMessage = false,
   messagePlaceholder = 'Reply to agent… (⌘↵ to send)',
   messageComposer,
+  steeringReceipt,
   session,
   activeInteraction,
   acting,
@@ -80,6 +83,7 @@ export function CodingTranscriptPane({
   sendingMessage?: boolean;
   messagePlaceholder?: string;
   messageComposer?: CodingSessionComposerState;
+  steeringReceipt?: RunSteeringCommand | null;
   session?: CodingSession | null;
   activeInteraction?: CodingSessionInteraction | null;
   acting?: string | null;
@@ -451,6 +455,7 @@ export function CodingTranscriptPane({
         />
       ) : null}
 
+      <RunSteeringReceipt command={steeringReceipt ?? null} />
       {resolvedMessageComposer.visible ? (
         <MessageInput
           key={sessionScrollKey}
@@ -657,8 +662,10 @@ function MessageInput({
   const handleSubmit = async () => {
     const trimmed = value.trim();
     if (!trimmed || disabled || voice.busy || !onSend) return;
-    await onSend(trimmed);
-    setValue('');
+    try {
+      await onSend(trimmed);
+      setValue('');
+    } catch { /* The parent displays the error; retain the draft for retry. */ }
   };
 
   return (

@@ -39,6 +39,14 @@ test('tag_added bolds the tag name', () => {
   expect(bolds(toSupportSystemEventSegments('tag_added', 'added tag VIP.', { extended: true }))).toEqual(['VIP'])
 })
 
+test('removed tags and Cc addresses are marked removed; added ones are not', () => {
+  expect(toSupportSystemEventSegments('tag_removed', 'removed tag VIP.', { extended: true })).toContainEqual({ text: 'VIP', bold: true, removed: true })
+  expect(toSupportSystemEventSegments('tag_added', 'added tag VIP.', { extended: true })).toContainEqual({ text: 'VIP', bold: true })
+  const cc = toSupportSystemEventSegments('email_recipients_updated', 'Ada added new@example.com to Cc. Ada removed old@example.com from Cc.', { extended: true })
+  expect(cc.filter((s) => s.removed).map((s) => s.text)).toEqual(['old@example.com'])
+  expect(bolds(cc)).toEqual(['new@example.com', 'old@example.com'])
+})
+
 test('task_created bolds the task key and name', () => {
   const segs = toSupportSystemEventSegments('task_created', 'Ada created task #HLP-12: Fix the widget.', { extended: true })
   expect(bolds(segs)).toEqual(['Ada', '#HLP-12', 'Fix the widget'])

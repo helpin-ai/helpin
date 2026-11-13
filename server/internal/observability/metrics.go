@@ -24,6 +24,8 @@ type Metrics struct {
 	decisions       *prometheus.CounterVec
 	decisionLatency *prometheus.HistogramVec
 	logs            *prometheus.CounterVec
+	inboundWaiting  prometheus.Gauge
+	inboundOldest   prometheus.Gauge
 }
 
 // NewMetrics creates a registry independent of global Prometheus state.
@@ -37,8 +39,10 @@ func NewMetrics() *Metrics {
 		decisions:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_ai_decisions_total", Help: "AI decision and tagging outcomes."}, []string{"operation", "outcome"}),
 		decisionLatency: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "helpin_ai_duration_seconds", Help: "AI decision duration.", Buckets: []float64{.05, .1, .25, .5, 1, 2, 5, 15}}, []string{"operation"}),
 		logs:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_background_errors_total", Help: "Known background worker errors."}, []string{"worker"}),
+		inboundWaiting:  prometheus.NewGauge(prometheus.GaugeOpts{Name: "helpin_inbound_email_waiting", Help: "Incoming support emails accepted from the provider but not yet processed."}),
+		inboundOldest:   prometheus.NewGauge(prometheus.GaugeOpts{Name: "helpin_inbound_email_oldest_waiting_seconds", Help: "How long the longest-waiting incoming support email has waited."}),
 	}
-	m.registry.MustRegister(m.requests, m.latency, m.widget, m.widgetLatency, m.decisions, m.decisionLatency, m.logs, collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	m.registry.MustRegister(m.requests, m.latency, m.widget, m.widgetLatency, m.decisions, m.decisionLatency, m.logs, m.inboundWaiting, m.inboundOldest, collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	m.translation = newTranslationMetrics(m.registry)
 	return m
 }
@@ -88,6 +92,15 @@ func (m *Metrics) Decision(operation, outcome string, elapsed time.Duration) {
 	}
 	m.decisions.WithLabelValues(operation, outcome).Inc()
 	m.decisionLatency.WithLabelValues(operation).Observe(elapsed.Seconds())
+}
+
+// InboundEmailBacklog records the incoming support email backlog.
+func (m *Metrics) InboundEmailBacklog(waiting int64, oldestWaitingSeconds float64) {
+	if m == nil {
+		return
+	}
+	m.inboundWaiting.Set(float64(waiting))
+	m.inboundOldest.Set(oldestWaitingSeconds)
 }
 
 // BackgroundHandler counts known worker failures while retaining structured logging.

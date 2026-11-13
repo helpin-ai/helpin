@@ -44,6 +44,7 @@ type Handlers struct {
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
+	LinkPreview         *handler.LinkPreviewHandler
 	Setup               *handler.SetupHandler
 	Capability          *handler.CapabilityHandler
 	SampleData          *handler.SampleDataHandler
@@ -539,6 +540,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/docs/shared/{shareToken}", h.Docs.PublicGetSharedDoc)
 		if h.PublicShare != nil {
 			r.Get("/public/shares/{token}", h.PublicShare.GetPublic)
+		}
+		if h.LinkPreview != nil {
+			r.Route("/link-previews", func(r chi.Router) {
+				r.Use(h.LinkPreview.Limit)
+				r.Get("/metadata", h.LinkPreview.Metadata)
+				r.Get("/image", h.LinkPreview.Image)
+				r.Head("/image", h.LinkPreview.Image)
+				r.Get("/html", h.LinkPreview.HTML)
+				r.Head("/html", h.LinkPreview.HTML)
+			})
 		}
 
 		// ---- Public widget routes (no JWT, open CORS) ----
@@ -1105,6 +1116,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/pause", h.DockChat.PauseChatRun)
+				r.With(requireCommandBarEdit()).Get("/chats/{chatID}/runs/{runID}/steering", h.DockChat.ChatRunSteering)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/runs/{runID}/steering", h.DockChat.ChatRunSteering)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/resume", h.DockChat.ResumeChatRun)
 				r.With(requireCommandBarRead()).Get("/runs", h.DockChat.ListRuns)
 				r.With(requireCommandBarRead()).Get("/runs/{runID}/snapshot", h.DockChat.GetRunSnapshot)
@@ -1120,6 +1133,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/continue", h.DockChat.ContinueRun)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/cancel", h.DockChat.CancelRun)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/pause", h.DockChat.PauseRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/steering", h.DockChat.RunSteering)
+				r.With(requireCommandBarEdit()).Get("/runs/{runID}/steering", h.DockChat.RunSteering)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/resume", h.DockChat.ResumeRun)
 			})
 
@@ -1674,6 +1689,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/resume", h.Agent.ResumeRun)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/steering", h.Agent.RunSteering)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/steering", h.Agent.RunSteering)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/continue", h.Agent.ContinueRun)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
@@ -1861,6 +1878,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/locales", h.Docs.GetHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/locales", h.Docs.UpdateHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/upload", h.Docs.UploadHelpcenterAsset)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/brand-import", h.Docs.ImportHelpcenterBrand)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/images/import", h.Docs.ImportExternalImage)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/helpcenter/translations", h.Docs.ListSpaceTranslations)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/spaces/{spaceId}/helpcenter/translations", h.Docs.UpsertSpaceTranslation)
@@ -1898,6 +1916,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/start", h.Docs.ImportStartHelpscout)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/intercom/preview", h.Docs.ImportPreviewIntercom)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/intercom/start", h.Docs.ImportStartIntercom)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/public-help-center/preview", h.Docs.ImportPreviewPublicHelpCenter)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/public-help-center/start", h.Docs.ImportStartPublicHelpCenter)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/nextra/preview", h.Docs.ImportPreviewNextra)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/nextra/start", h.Docs.ImportStartNextra)
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/status", h.Docs.ImportGetStatus)

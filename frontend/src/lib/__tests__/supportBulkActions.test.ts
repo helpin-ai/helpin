@@ -54,11 +54,37 @@ describe('support bulk actions', () => {
       return { data: conversation(id), error: null } as never;
     });
     const progress = vi.fn();
-    const result = await runConversationBulkAction('ws', ['1', '2', '3', '4', '1'].map(conversation), { type: 'status', status: 'resolved' }, progress);
+    const result = await runConversationBulkAction('ws', ['1', '2', '3', '4', '1'].map(conversation), { type: 'status', status: 'spam' }, progress);
     expect(result.succeeded).toEqual(['1', '4']);
     expect(result.failed.map((item) => item.id)).toEqual(['2', '3']);
     expect(supportService.updateConversationStatus).toHaveBeenCalledTimes(4);
     expect(progress).toHaveBeenLastCalledWith(4);
+  });
+
+  it('resolves and reopens through the bulk endpoint in small batches, a few at a time', async () => {
+    let active = 0;
+    let peak = 0;
+    vi.mocked(supportService.bulkConversationActions).mockImplementation(async (_ws, ids) => {
+      peak = Math.max(peak, ++active);
+      await Promise.resolve();
+      --active;
+      return {
+        data: { results: ids.map((id) => ({ conversation_id: id, applied: ['status'], ...(id === '7' ? { error: 'merged conversations are read-only' } : {}) })), succeeded: 0, failed: 0 },
+        error: null,
+      } as never;
+    });
+    const ids = Array.from({ length: 22 }, (_, index) => String(index));
+    const progress = vi.fn();
+    const resolved = await runConversationBulkAction('ws', ids.map(conversation), { type: 'status', status: 'resolved' }, progress);
+    expect(resolved.succeeded).toHaveLength(21);
+    expect(resolved.failed).toEqual([{ id: '7', error: 'merged conversations are read-only' }]);
+    expect(vi.mocked(supportService.bulkConversationActions).mock.calls.map((call) => call[1].length)).toEqual([5, 5, 5, 5, 2]);
+    expect(vi.mocked(supportService.bulkConversationActions).mock.calls[0][2]).toEqual({ status: 'resolved' });
+    expect(peak).toBe(4);
+    expect(progress).toHaveBeenLastCalledWith(22);
+    await runConversationBulkAction('ws', [conversation('1')], { type: 'status', status: 'open' });
+    expect(vi.mocked(supportService.bulkConversationActions).mock.calls.at(-1)?.[2]).toEqual({ status: 'open' });
+    expect(supportService.updateConversationStatus).not.toHaveBeenCalled();
   });
 
   it('treats a failed delete API response as a failure', async () => {

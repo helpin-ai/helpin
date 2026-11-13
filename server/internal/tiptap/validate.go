@@ -16,7 +16,7 @@ func ValidateDocument(raw json.RawMessage) error {
 		return fmt.Errorf("content is required")
 	}
 	var doc Node
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	if err := json.Unmarshal(NormalizeImageNodes(raw), &doc); err != nil {
 		return fmt.Errorf("content is not valid TipTap document JSON: %w", err)
 	}
 	if doc.Type != "doc" {
@@ -32,7 +32,7 @@ func ValidateBlockNode(raw json.RawMessage) error {
 		return fmt.Errorf("content is required")
 	}
 	var node Node
-	if err := json.Unmarshal(raw, &node); err != nil {
+	if err := json.Unmarshal(NormalizeImageNodes(raw), &node); err != nil {
 		return fmt.Errorf("content is not valid TipTap block JSON: %w", err)
 	}
 	if strings.TrimSpace(node.Type) == "" {
@@ -45,6 +45,12 @@ func ValidateBlockNode(raw json.RawMessage) error {
 }
 
 func validateChildren(nodes []Node, parentType string) error {
+	if parentType == "resizableImage" && len(nodes) != 0 {
+		return fmt.Errorf("resizableImage cannot contain child nodes")
+	}
+	if !supportedNodeType(parentType) {
+		return fmt.Errorf("unsupported document node type %q", parentType)
+	}
 	for index, child := range nodes {
 		if strings.TrimSpace(child.Type) == "" {
 			return fmt.Errorf("every node inside %q must include type", parentType)
@@ -117,4 +123,18 @@ func validateChildPlacement(parentType string, index int, childType string) erro
 		}
 	}
 	return nil
+}
+
+// Keep node names aligned with DocsEditor extensions, including custom blocks.
+func supportedNodeType(name string) bool {
+	switch name {
+	case "doc", "text", "paragraph", "heading", "hardBreak", "horizontalRule",
+		"blockquote", "codeBlock", "bulletList", "orderedList", "listItem", "taskList", "taskItem",
+		"table", "tableRow", "tableCell", "tableHeader", "resizableImage", "callout", "videoEmbed",
+		"artifactVideo", "htmlBlock", "excalidraw", "aiSection", "citationBlock", "entityEmbed",
+		"entityMention", "savedViewEmbed", "toggleSection", "fileAttachment", "tableOfContents", "richEmbed":
+		return true
+	default:
+		return false
+	}
 }

@@ -142,7 +142,7 @@ func TestFollowUpEmailUsesActualWorkspaceDisplayName(t *testing.T) {
 			if attempts != 1 {
 				t.Fatalf("expected one send with the verified sender, got %d", attempts)
 			}
-			if captured.From != tt.want+" <noreply@example.com>" {
+			if captured.From != tt.want+" <noreply+conv-"+conv.ID+"@example.com>" {
 				t.Fatalf("From = %q", captured.From)
 			}
 			if !strings.Contains(captured.ReplyTo, "conv-"+conv.ID+"@replies.helpin.ai") {

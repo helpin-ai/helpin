@@ -115,6 +115,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [buttonColor, setButtonColor] = useState('#000000');
   const [buttonIconColor, setButtonIconColor] = useState('#FFFFFF');
   const [logoUrl, setLogoUrl] = useState('');
+  const [aiDisplayName, setAIDisplayName] = useState('');
   const [widgetName, setWidgetName] = useState('');
   const [widgetAvatarUrl, setWidgetAvatarUrl] = useState('');
   const [widgetHelpSpaceIds, setWidgetHelpSpaceIds] = useState<string[]>([]);
@@ -197,6 +198,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     setButtonIconColor(s.button_icon_color || '#FFFFFF');
     setLogoUrl(s.logo_url || '');
     setWidgetName(s.widget_name || '');
+    setAIDisplayName(s.ai_display_name || '');
     setWidgetAvatarUrl(s.widget_avatar_url || '');
     setWidgetHelpSpaceIds(sortedHelpSpaceIds);
     setAiEnabled(s.ai_enabled && isChatWidgetAIResponseModeActive(s.ai_response_mode));
@@ -260,6 +262,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     privacy_policy_url: privacyPolicyUrl.trim(),
     privacy_notice_text: privacyNoticeText.trim(),
     widget_name: widgetName,
+    ai_display_name: aiDisplayName,
     widget_avatar_url: widgetAvatarUrl,
     widget_help_space_ids: sortHelpSpaceIds(widgetHelpSpaceIds),
     brand_color: brandColor,
@@ -685,6 +688,8 @@ function Dashboard() {
       privacyNotice={{ enabled: privacyNoticeEnabled, policyUrl: privacyPolicyUrl, text: privacyNoticeText }}
       initialView={isExpanded('privacy') ? 'conversation' : previewInitialView}
       workspaceName={widgetName || workspace?.name}
+      aiDisplayName={aiDisplayName}
+      avatarUrl={widgetAvatarUrl}
       workspaceLogoUrl={widgetAvatarUrl || workspace?.logo_url}
       colorScheme={colorScheme}
       buttonColor={buttonColor}
@@ -1246,6 +1251,11 @@ function Dashboard() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="ai-display-name">AI assistant name</Label>
+                <Input id="ai-display-name" value={aiDisplayName} maxLength={80} onChange={(e) => setAIDisplayName(e.target.value)} placeholder="Helpin AI" />
+                <p className="text-xs text-muted-foreground">Visitors will still see that the assistant is AI.</p>
+              </div>
               {/* Logo */}
               <div className="space-y-3">
                 <div>

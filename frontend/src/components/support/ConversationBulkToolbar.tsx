@@ -17,6 +17,7 @@ import { ArrowTurnBackwardIcon, Cancel01Icon, CheckmarkCircle02Icon, Clock01Icon
 import type { SupportConversation } from '@/lib/pmTypes';
 import { queryKeys } from '@/lib/queryKeys';
 import { bulkActionRemovesFromList, runConversationBulkAction, type ConversationBulkAction } from '@/lib/supportBulkActions';
+import { isSupportConversationListQueryKey, patchConversationDetailStatus, patchConversationStatusInCache, type SupportConversationListCache } from '@/lib/supportQueryCache';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebrationStore';
 import { QuietDropdown } from '@/components/design-system/quiet';
@@ -91,8 +92,36 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
       if (mounted.current && inbox.selectedConversationId && result.succeeded.includes(inbox.selectedConversationId) && bulkActionRemovesFromList(action)) {
         inbox.selectConversation(null);
       }
+      if (action.type === 'status') {
+        // Show the new status at once, so the rows leave the list before the refetch.
+        const { status } = action;
+        queryClient.setQueriesData<SupportConversationListCache>(
+          { predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId) },
+          (current) => result.succeeded.reduce((cache, conversationId) => patchConversationStatusInCache(cache, { conversationId, status }), current),
+        );
+        for (const conversationId of result.succeeded) {
+          queryClient.setQueryData(
+            queryKeys.support.conversation(workspaceId, conversationId),
+            (current: SupportConversation | undefined) => patchConversationDetailStatus(current, { conversationId, status }),
+          );
+        }
+      }
+      // Refetch only what a bulk action changes: the lists, the changed
+      // conversations and the counts.
+      const changed = new Set(result.succeeded);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['support', workspaceId] }),
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey;
+            if (isSupportConversationListQueryKey(key, workspaceId)) return true;
+            return key[0] === 'support' && key[1] === workspaceId && key[2] === 'conversations' && typeof key[3] === 'string' && changed.has(key[3]);
+          },
+        }),
+        queryClient.invalidateQueries({ queryKey: ['support', workspaceId, 'search'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxes(workspaceId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() }),
       ]);
       if (mounted.current) onCompleted(result.succeeded);

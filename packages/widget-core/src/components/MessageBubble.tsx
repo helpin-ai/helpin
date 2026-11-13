@@ -216,7 +216,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     return null;
   }
   const isCustomer = message.role === 'customer';
-  const isAI = message.role === 'ai';
+  const isAI = message.role === 'ai' || (message.role === 'system' && message.senderName === 'Helpin AI');
   const isAgent = message.role === 'agent';
   const isSystem = message.role === 'system';
 
@@ -266,13 +266,13 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   };
 
   const agentName = message.senderName;
-  const agentAvatar = message.senderAvatar;
+  const agentAvatar = isAI ? (config?.branding?.avatarUrl || message.senderAvatar) : message.senderAvatar;
   const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
   // Flat pill is reserved for teammate_joined — the one and
   // only widget-visible routing event. Internal routing and escalation
   // events are filtered; their public handoff replies render normally.
   const showSystemPill = isSystem && message.systemEventType === 'teammate_joined';
-  const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
+  const displayName = isCustomer ? '' : (isAI ? (config?.aiDisplayName?.trim() || 'Helpin AI') : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);
 
   if (showSystemPill) {
@@ -314,7 +314,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 >
                   <img src={agentAvatar} alt={displayName} className="helpin-message-brand-logo" />
                 </span>
-              ) : isAI ? (
+              ) : isAI && !config?.branding?.avatarUrl ? (
                 <AskAgentAvatar />
               ) : agentAvatar ? (
                 <img src={agentAvatar} alt={displayName} className="helpin-message-avatar" />
@@ -324,7 +324,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 </span>
               ) : null}
               {displayName && (
-                <span className="helpin-message-agent-name">{displayName}</span>
+                <span className="helpin-message-agent-name">{displayName}{isAI && config?.aiDisplayName?.trim() ? ' · AI' : ''}</span>
               )}
             </div>
           )}

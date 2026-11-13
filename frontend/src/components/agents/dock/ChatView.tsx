@@ -1,3 +1,5 @@
+import { useRunSteering } from './useRunSteering';
+import { RunSteeringReceipt } from './RunSteeringReceipt';
 import { useAppRefreshGuard } from '@/hooks/useAppRefreshGuard';
 import { useNotificationView } from '@/hooks/useNotificationView';
 import { DockContextMessage } from './DockContextMessage';
@@ -635,12 +637,18 @@ export function ChatView({
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
   }, [transformed, currentPlan, visibleSendError]);
 
+  const steering = useRunSteering(workspaceId, run, active && !readOnly, 'dock', chatId);
+  const [steeringError, setSteeringError] = useState<string | null>(null);
+  const steeringBusy = useRef(false);
+  const canSteer = steering.canSteer && !readOnly && !stopping && !pausing && !resuming
+    && !['pausing', 'resuming', 'cancelling'].includes(run?.execution_stage ?? '');
   const effectiveInteraction = readOnly || run?.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
     !!effectiveInteraction,
     detailLoading || sending || agentDefaultUnavailable,
+    canSteer,
   );
 
   const sendContent = useCallback(
@@ -754,7 +762,27 @@ export function ChatView({
   );
 
   const submit = async () => {
-    if (agentDefaultUnavailable) return;
+    if (agentDefaultUnavailable || readOnly || sending || steeringBusy.current) return;
+    if (run?.status === 'running' || run?.status === 'queued') {
+      if (!canSteer || !value.trim()) return;
+      if (mediaAttachments.length || references.length) {
+        setSteeringError('Send steering as text. Remove attachments and references before sending.');
+        return;
+      }
+      steeringBusy.current = true;
+      setSending(true);
+      setSteeringError(null);
+      try {
+        await steering.send(value.trim());
+        setValue('');
+      } catch (error) {
+        setSteeringError(error instanceof Error ? error.message : 'Instruction was not accepted');
+      } finally {
+        steeringBusy.current = false;
+        setSending(false);
+      }
+      return;
+    }
     const readyAttachmentCount = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).length;
     const content = value.trim() || (readyAttachmentCount === 1 ? 'Review the attached file.' : readyAttachmentCount > 1 ? 'Review the attached files.' : '');
     if (!content) return;
@@ -1159,6 +1187,8 @@ export function ChatView({
         <div className="px-3.5 py-2"><AISettingsLink slug={workspaceSlug} className="text-xs underline text-quiet-text-secondary">Review AI access to continue</AISettingsLink></div>
       )}
       {readOnly && readOnlyReason && <p className="border-t border-border/40 px-5 py-3 text-xs text-muted-foreground">{readOnlyReason}</p>}
+      {!readOnly && <RunSteeringReceipt command={steering.receipt} />}
+      {steeringError && <p role="alert" className="px-5 py-2 text-sm text-destructive">{steeringError}</p>}
       {composer.visible && !readOnly && (
         <div data-chat-composer-placement={showIntroComposer ? 'intro' : 'bottom'} className={showIntroComposer ? 'flex shrink-0 flex-col px-5 sm:px-6' : 'border-t border-border/60'}>
           {starterSuggestions.length > 0 && composer.enabled && (
@@ -1213,7 +1243,7 @@ export function ChatView({
                 onClearContext={coverageContext ? undefined : () => setContextCleared(true)}
                 workspaceId={workspaceId}
                 references={references}
-                onAddReference={taskSurface ? undefined : (reference) => {
+                onAddReference={taskSurface || canSteer ? undefined : (reference) => {
                   setReferences((current) => {
                     if (current.length >= 10) {
                       toast.error('You can attach up to 10 references.');
@@ -1231,7 +1261,7 @@ export function ChatView({
                   ));
                 }}
                 mediaAttachments={mediaAttachments}
-                onAddMedia={taskSurface ? undefined : (files) => void addMediaAttachments(files)}
+                onAddMedia={taskSurface || canSteer ? undefined : (files) => void addMediaAttachments(files)}
                 onRemoveMedia={removeMediaAttachment}
                 busy={sending}
                 disabled={!composer.enabled}
@@ -1243,7 +1273,7 @@ export function ChatView({
                 pausing={pausePending}
                 onResume={canResume && !cancellationPending ? () => void handleResume() : undefined}
                 resuming={resumePending}
-                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : taskSurface?.placeholder}
+                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : canSteer ? 'Send instructions to this run…' : taskSurface?.placeholder ?? composer.placeholder}
                 showShortcutHint={showComposerShortcutHint}
               />
           </div>

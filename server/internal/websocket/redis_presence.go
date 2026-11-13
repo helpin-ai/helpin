@@ -513,12 +513,12 @@ func (p *RedisPresence) SetDocViewing(ctx context.Context, workspaceID, document
 	pipe.Set(ctx, connKey, "1", docViewingTTL)
 	pipe.Set(ctx, activeKey, documentID, docViewingTTL)
 	setKey := docViewingSetKey(workspaceID, documentID)
-	pipe.SAdd(ctx, setKey, userID)
+	added := pipe.SAdd(ctx, setKey, userID)
 
 	if _, err := pipe.Exec(ctx); err != nil {
 		return false, fmt.Errorf("redis presence SetDocViewing: %w", err)
 	}
-	return true, nil
+	return added.Val() > 0, nil
 }
 
 func (p *RedisPresence) ClearDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
@@ -552,7 +552,27 @@ func (p *RedisPresence) GetDocViewers(ctx context.Context, workspaceID, document
 	if err != nil {
 		return nil, fmt.Errorf("redis presence GetDocViewers: %w", err)
 	}
-	return members, nil
+	// The aggregate set has no TTL. A crashed connection can expire without
+	// disconnect cleanup, so only include users with a live document connection.
+	viewers := make([]string, 0, len(members))
+	staleMembers := make([]interface{}, 0)
+	for _, userID := range members {
+		keys, err := p.scanKeys(ctx, docViewingConnKey(workspaceID, documentID, userID, "*"), 1)
+		if err != nil {
+			return nil, fmt.Errorf("redis presence GetDocViewers scan conn keys: %w", err)
+		}
+		if len(keys) == 0 {
+			staleMembers = append(staleMembers, userID)
+			continue
+		}
+		viewers = append(viewers, userID)
+	}
+	if len(staleMembers) > 0 {
+		if err := p.rdb.SRem(ctx, setKey, staleMembers...).Err(); err != nil {
+			return nil, fmt.Errorf("redis presence GetDocViewers prune stale members: %w", err)
+		}
+	}
+	return viewers, nil
 }
 
 func (p *RedisPresence) GetActiveDocViewing(ctx context.Context, workspaceID, userID, connID string) (string, error) {

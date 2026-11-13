@@ -20,6 +20,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+var errCrawlRedirectOutOfScope = errors.New("redirect outside configured crawl scope")
+
 // crawlWithColly performs a BFS crawl using Colly for link traversal and
 // go-trafilatura for content extraction.
 func crawlWithColly(
@@ -71,7 +73,10 @@ func crawlWithColly(
 		if err != nil {
 			return 0, fmt.Errorf("crawler proxy setup: %w", err)
 		}
-		transport.Proxy = switcher
+		// Colly's switcher annotates its request; net/http may already be reading it.
+		transport.Proxy = func(req *http.Request) (*url.URL, error) {
+			return switcher(req.Clone(req.Context()))
+		}
 	}
 	skipped := map[string]bool{}
 	guarded := newRobotsTransport(ctx, transport, func(rawURL string, err error) {
@@ -98,7 +103,7 @@ func crawlWithColly(
 			return fmt.Errorf("too many crawl redirects")
 		}
 		if !filter.Allowed(req.URL.String()) {
-			return fmt.Errorf("redirect outside configured crawl scope")
+			return errCrawlRedirectOutOfScope
 		}
 		return nil
 	})
@@ -253,7 +258,19 @@ func crawlWithColly(
 	})
 
 	collector.OnError(func(r *colly.Response, err error) {
+		var visited *colly.AlreadyVisitedError
+		if errors.As(err, &visited) || errors.Is(err, errCrawlRedirectOutOfScope) {
+			return
+		}
 		logger.Warn("crawl request failed", "url", r.Request.URL.String(), "status", r.StatusCode, "error", err)
+		// An incomplete refresh must not prune previously indexed pages.
+		if !errors.Is(err, errRobotsDisallowed) && (r.StatusCode == 0 || r.StatusCode == http.StatusTooManyRequests || r.StatusCode >= 500 || r.Request.Depth == 1) {
+			mu.Lock()
+			if crawlErr == nil {
+				crawlErr = fmt.Errorf("fetch crawl page: %w", err)
+			}
+			mu.Unlock()
+		}
 	})
 
 	// Sitemap fetches use exactly the same robots policy and cache.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,6 +49,8 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 		}
 	}
 	actor := (*string)(nil)
+	// The step's run joins the plan's Agent Runtime run group, if it has one.
+	ctx = s.commandBarPlanStepContext(ctx, workspaceID, planID)
 	ctx, actorID, err = s.commandBarAIContext(ctx, workspaceID, planID, actorID)
 	if err != nil {
 		return nil, err
@@ -112,6 +115,7 @@ func (s *AgentService) advanceCommandBarPlanForRun(ctx context.Context, run *mod
 				Prompt:      payload.Prompt,
 				PageContext: payload.PageContext,
 				Steps:       payload.Steps,
+				SettledRun:  run,
 			}); err != nil {
 				return nil, err
 			}
@@ -178,7 +182,30 @@ func (s *AgentService) advanceCommandBarPlanForRun(ctx context.Context, run *mod
 	return nextRun, nil
 }
 
+// startReadyCommandBarPlanSteps runs one scheduling pass under the plan's
+// advancement lock, shared by dispatch, the run finalizer, the completion
+// consumer and the stalled-plan sweep. When another path holds the lock it
+// returns without scheduling: that path advances the plan.
 func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanInput) (*CommandBarPlanProgress, error) {
+	var progress *CommandBarPlanProgress
+	acquired, err := s.withCommandBarPlanLock(ctx, input.PlanID, func() error {
+		var err error
+		progress, err = s.startReadyCommandBarPlanStepsLocked(ctx, input)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !acquired {
+		slog.InfoContext(ctx, "command bar plan is being advanced elsewhere", "workspace_id", input.WorkspaceID, "plan_id", input.PlanID)
+		return &CommandBarPlanProgress{Status: model.CommandBarPlanStatusRunning}, nil
+	}
+	return progress, nil
+}
+
+// startReadyCommandBarPlanStepsLocked is one scheduling pass; the caller
+// holds the plan's advancement lock.
+func (s *AgentService) startReadyCommandBarPlanStepsLocked(ctx context.Context, input CommandBarPlanInput) (*CommandBarPlanProgress, error) {
 	progress := &CommandBarPlanProgress{Status: model.CommandBarPlanStatusRunning}
 	if s == nil || s.commandBarPlanRepo == nil || s.runRepo == nil {
 		return &CommandBarPlanProgress{Terminal: true, Status: "not_configured"}, nil
@@ -204,6 +231,13 @@ func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input 
 	if err != nil {
 		return nil, err
 	}
+	if settled := input.SettledRun; settled != nil && isTerminalAgentRunStatus(settled.Status) {
+		for i := range runs {
+			if runs[i].ID == settled.ID {
+				runs[i] = *settled
+			}
+		}
+	}
 	runsByID := make(map[string]model.AgentRun, len(runs))
 	activeCount := 0
 	for _, run := range runs {
@@ -223,7 +257,9 @@ func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input 
 		}
 		if run.Status == model.AgentRunStatusFailed || run.Status == model.AgentRunStatusCancelled {
 			payload := commandBarTriggerContextPayload{PlanID: input.PlanID, Steps: steps, StepIndex: commandBarStepIndexForRun(runIDsByStep, run.ID)}
-			_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, commandBarTerminalRunMessage(&run, payload, string(run.Status)))
+			if err := s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, commandBarTerminalRunMessage(&run, payload, string(run.Status))); err != nil {
+				return nil, fmt.Errorf("mark plan %s failed: %w", input.PlanID, err)
+			}
 			return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 		}
 	}
@@ -238,7 +274,9 @@ func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input 
 		}
 	}
 	if allCompleted {
-		_ = s.commandBarPlanRepo.MarkCompleted(ctx, input.WorkspaceID, input.PlanID)
+		if err := s.commandBarPlanRepo.MarkCompleted(ctx, input.WorkspaceID, input.PlanID); err != nil {
+			return nil, fmt.Errorf("mark plan %s completed: %w", input.PlanID, err)
+		}
 		return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusCompleted}, nil
 	}
 
@@ -296,7 +334,9 @@ func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input 
 		}
 	}
 	if started == 0 && activeCount == 0 && !observedConcurrentProgress {
-		_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, "Command-bar plan has no runnable steps; check task dependencies for a cycle or missing completed prerequisite.")
+		if err := s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, "Command-bar plan has no runnable steps; check task dependencies for a cycle or missing completed prerequisite."); err != nil {
+			return nil, fmt.Errorf("mark plan %s failed: %w", input.PlanID, err)
+		}
 		return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 	}
 	return progress, nil

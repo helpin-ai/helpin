@@ -39,8 +39,9 @@ beforeEach(() => {
   vi.mocked(aiProfileService.save).mockResolvedValue({ data: null, error: 'test response' });
 });
 
-afterEach(() => {
+afterEach(async () => {
   act(() => root.unmount());
+  await settlePopoverFocus();
   client.clear();
   document.body.innerHTML = '';
   vi.unstubAllGlobals();
@@ -51,7 +52,14 @@ async function render(node: React.ReactNode) {
   await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>{node}</TooltipProvider></QueryClientProvider>));
 }
 
-function openConnectionPicker(index = 0) {
+// Radix restores focus on a timer after closing a popover. Let it finish before
+// opening another, otherwise the old scope can dismiss the new picker.
+async function settlePopoverFocus() {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+}
+
+async function openConnectionPicker(index = 0) {
+  await settlePopoverFocus();
   const triggers = document.querySelectorAll<HTMLButtonElement>('button[id$="-connection"]');
   return act(async () => triggers[index].click());
 }
@@ -110,6 +118,7 @@ it('names the missing field instead of disabling the submit button', async () =>
       onClose={() => {}}
     />,
   );
+  await settlePopoverFocus();
   const name = document.querySelector<HTMLInputElement>('input[id$="-name"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Daily driver');
@@ -147,6 +156,7 @@ it('saves the resolved route for a catalog model', async () => {
       onClose={() => {}}
     />,
   );
+  await settlePopoverFocus();
   const name = document.querySelector<HTMLInputElement>('input[id$="-name"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Daily driver');
@@ -154,6 +164,7 @@ it('saves the resolved route for a catalog model', async () => {
   });
   await openConnectionPicker(0);
   await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="shared-a"]')!.click());
+  await settlePopoverFocus();
   await act(async () => document.querySelector<HTMLButtonElement>('button[id$="-model"]')!.click());
   const option = document.querySelector<HTMLElement>('[cmdk-item]')!;
   const chosen = option.getAttribute('data-value')!;
@@ -182,9 +193,11 @@ it('shows thinking level outside Advanced settings for a ChatGPT connection', as
   expect(thinking).not.toBeNull();
   expect(thinking?.closest('details')).toBeNull();
   expect(document.querySelector(`label[for="${thinking?.id}"]`)?.textContent).toBe('Thinking level');
+  await settlePopoverFocus();
   await act(async () => thinking!.click());
   await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="high"]')!.click());
   expect(thinking?.textContent).toContain('High');
+  await settlePopoverFocus();
   const name = document.querySelector<HTMLInputElement>('input[id$="-name"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'My Sol');
@@ -194,6 +207,7 @@ it('shows thinking level outside Advanced settings for a ChatGPT connection', as
   expect(Array.from(document.querySelectorAll('[cmdk-item]')).map(item => item.getAttribute('data-value'))).toEqual(['gpt-6-astra', 'gpt-6-sol', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
   await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="gpt-6-sol"]')!.click());
   await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await settlePopoverFocus();
   await act(async () => document.querySelector<HTMLButtonElement>('button[id$="-model"]')!.click());
   expect(document.querySelectorAll('[cmdk-item]').length).toBe(5);
   expect(aiProfileService.save).toHaveBeenCalledWith('ws', expect.objectContaining({
@@ -206,6 +220,7 @@ it.each([
   ['openrouter', 'anthropic/claude-fable-5.1'],
 ])('saves the newer model identifier for %s profiles', async (provider, model) => {
   await render(<AIProfileEditor workspaceId="ws" scope="workspace" connections={[connection({ id: 'new-provider', provider })]} onClose={() => {}} />);
+  await settlePopoverFocus();
   const name = document.querySelector<HTMLInputElement>('input[id$="-name"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'New model');
@@ -213,6 +228,7 @@ it.each([
   });
   await openConnectionPicker(0);
   await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="new-provider"]')!.click());
+  await settlePopoverFocus();
   await act(async () => document.querySelector<HTMLButtonElement>('button[id$="-model"]')!.click());
   await act(async () => document.querySelector<HTMLElement>(`[cmdk-item][data-value="${model}"]`)!.click());
   expect(document.body.textContent).not.toContain('Custom model.');

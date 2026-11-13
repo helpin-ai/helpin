@@ -1,3 +1,4 @@
+export type RunSteeringCommand = { command_id: string; revision: number; state: "accepted" | "applied" | "rejected" | "not_applied"; content: string };
 import { api } from '../api';
 import type {
   DockChat,
@@ -139,6 +140,10 @@ export const dockChatService = {
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/continue${qs(workspaceId)}`, content ? { content } : {}),
   cancelRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/cancel${qs(workspaceId)}`, {}),
+  runSteering: (workspaceId: string, runId: string) => api.get<RunSteeringCommand[]>(`/dock/runs/${encodeURIComponent(runId)}/steering${qs(workspaceId)}`),
+  steerRun: (workspaceId: string, runId: string, command: { command_id: string; expected_revision: number; content: string }) => api.post<RunSteeringCommand>(`/dock/runs/${encodeURIComponent(runId)}/steering${qs(workspaceId)}`, command),
+  chatRunSteering: (workspaceId: string, chatId: string, runId: string) => api.get<RunSteeringCommand[]>(`/dock/chats/${encodeURIComponent(chatId)}/runs/${encodeURIComponent(runId)}/steering${qs(workspaceId)}`),
+  steerChatRun: (workspaceId: string, chatId: string, runId: string, command: { command_id: string; expected_revision: number; content: string }) => api.post<RunSteeringCommand>(`/dock/chats/${encodeURIComponent(chatId)}/runs/${encodeURIComponent(runId)}/steering${qs(workspaceId)}`, command),
   pauseRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/pause${qs(workspaceId)}`, {}),
   resumeRun: (workspaceId: string, runId: string) =>

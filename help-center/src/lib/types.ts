@@ -47,6 +47,9 @@ export interface FooterConfig {
 }
 
 export interface HelpCenterConfig {
+  demo_mode?: boolean;
+  search_indexing_enabled?: boolean;
+  official_docs_url?: string;
   public_widget_url?: string
   public_sdk_url?: string
   id: string

@@ -67,7 +67,7 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 		}
 	}
 
-	content = s.restoreImportedToggleAttrs(ctx, documentID, content)
+	content = tiptap.NormalizeImageNodes(s.restoreImportedToggleAttrs(ctx, documentID, content))
 	if !isMarkdownSourceEnvelope(content) {
 		if err := tiptap.ValidateDocument(content); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrDocsInvalidContent, err)
@@ -87,7 +87,7 @@ func (s *DocsContentService) SaveVersioned(ctx context.Context, documentID strin
 	if version == "" {
 		return s.Save(ctx, documentID, content, actorID)
 	}
-	content = s.restoreImportedToggleAttrs(ctx, documentID, content)
+	content = tiptap.NormalizeImageNodes(s.restoreImportedToggleAttrs(ctx, documentID, content))
 	return s.mutateContent(ctx, documentID, actorID, version, func(json.RawMessage) (json.RawMessage, error) { return content, nil })
 }
 
@@ -97,6 +97,7 @@ func (s *DocsContentService) mutateContent(ctx context.Context, documentID, acto
 		if err != nil {
 			return nil, err
 		}
+		next = tiptap.NormalizeImageNodes(next)
 		if err := tiptap.ValidateDocument(next); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrDocsInvalidContent, err)
 		}
