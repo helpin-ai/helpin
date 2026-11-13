@@ -79,3 +79,38 @@ type SupportChannelIdentity struct {
 }
 
 func (SupportChannelIdentity) TableName() string { return "support_channel_identities" }
+
+// SupportChannelOutbox is one reply queued for provider delivery. Rows are
+// written by the support_channel_outbox_enqueue trigger (202611130002).
+type SupportChannelOutbox struct {
+	ID                 string     `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID        string     `json:"workspace_id" gorm:"type:uuid"`
+	ChannelAccountID   string     `json:"channel_account_id" gorm:"type:uuid"`
+	ChannelIdentityID  string     `json:"channel_identity_id" gorm:"type:uuid"`
+	ConversationID     string     `json:"conversation_id" gorm:"type:uuid"`
+	MessageID          string     `json:"message_id" gorm:"type:uuid"`
+	SemanticKey        string     `json:"-"`
+	DispatchStatus     string     `json:"dispatch_status"`
+	ReceiptStatus      string     `json:"receipt_status"`
+	Attempts           int        `json:"attempts"`
+	PartsSent          int        `json:"parts_sent"`
+	NextAttemptAt      time.Time  `json:"next_attempt_at"`
+	ClaimToken         *string    `json:"-"`
+	LeaseExpiresAt     *time.Time `json:"-"`
+	ExternalMessageKey *string    `json:"-"`
+	LastErrorCode      *string    `json:"last_error_code"`
+	LastError          *string    `json:"-"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+func (SupportChannelOutbox) TableName() string { return "support_channel_outbox" }
+
+// SupportChannelDelivery is a reply's delivery state through a provider
+// channel, for the message bubble.
+type SupportChannelDelivery struct {
+	// Status is sending, sent, failed, unconfirmed or cancelled.
+	Status    string `json:"status"`
+	ErrorCode string `json:"error_code,omitempty"`
+	Retryable bool   `json:"retryable"`
+}

@@ -56,6 +56,7 @@ type SupportChannelService struct {
 	jobs     *repository.SupportInboundJobRepository
 	adapters *channels.Registry
 	inbox    *SupportInboxService
+	outbox   *repository.SupportChannelOutboxRepository
 	cfg      SupportChannelConfig
 	now      func() time.Time
 	logger   *slog.Logger

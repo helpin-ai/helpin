@@ -1709,6 +1709,9 @@ func main() {
 			// Telegram requires HTTPS webhooks; only a local Bot API fake runs without.
 			RequireHTTPS: cfg.TelegramAPIBaseURL == "",
 		}).SetInboxService(supportInboxService)
+	channelOutbox := repository.NewSupportChannelOutboxRepository(db)
+	supportChannelService.SetOutboxRepository(channelOutbox)
+	supportInboxService.SetChannelOutbox(channelOutbox)
 	commandService.SetSupportSLAService(supportSLAService)
 	supportImportService := service.NewSupportImportService(repository.NewSupportImportRepository(db), supportInboxService, resolvePMImportEncryptionKey(cfg)).
 		SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
@@ -2437,6 +2440,7 @@ func main() {
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelEvent)
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
+	go supportChannelService.RunOutbox(inboundCtx, 2*time.Second)
 	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics, appEmailClient, cfg.OpsAlertEmails)
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc

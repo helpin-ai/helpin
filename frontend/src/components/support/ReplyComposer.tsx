@@ -78,7 +78,7 @@ import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
 import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
-import { hasChatTransport } from '@/lib/supportChannels';
+import { hasChatTransport, providerChannelLabel, supportChannel } from '@/lib/supportChannels';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -880,6 +880,10 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 		&& conversation?.channel !== 'internal' && conversation?.source !== 'internal';
 	const hasChatSession = Boolean(conversation?.anonymous_id) || hasChatTransport(conversation?.source) || Boolean(conversation?.merge_has_widget);
 	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
+	// A messaging-app conversation (Telegram), or a merged group holding one,
+	// carries "chat" replies through that app.
+	const providerChannel = providerChannelLabel(conversation);
+	const providerOnly = Boolean(conversation && supportChannel(conversation.channel)?.transport === 'provider');
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
     portal: portalReplySurface,
@@ -888,9 +892,9 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     active: !editingNote && !inactive && replyMode !== 'note',
     hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
-  const deliveryMode = hiddenPortalIntake ? 'email_only' : selectedDeliveryMode;
+  const deliveryMode = hiddenPortalIntake ? 'email_only' : providerOnly ? 'chat_only' : selectedDeliveryMode;
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface
+  const chatUnavailableReason = conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface && !providerChannel
     ? hiddenPortalIntake ? 'This request is hidden from the portal; reply by email' : 'No chat session available' : undefined;
   const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
@@ -2486,6 +2490,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
               portal={portalReplySurface && !hasChatSession}
+              channel={providerChannel}
             />}
             <Button
               size="sm"

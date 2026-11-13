@@ -44,6 +44,14 @@ export function supportChannelLabel(key: string): string {
   return supportChannel(key)?.label ?? key.charAt(0).toUpperCase() + key.slice(1)
 }
 
+/** The messaging app that carries a conversation's "chat" replies, if any. */
+export function providerChannelLabel(conversation: { channel?: string | null; merge_has_channel?: boolean } | null | undefined): string | undefined {
+  const spec = supportChannel(conversation?.channel)
+  if (spec?.transport === 'provider') return spec.label
+  // Telegram is the only messaging app so far; a merged group names it too.
+  return conversation?.merge_has_channel ? 'Telegram' : undefined
+}
+
 /** A conversation source with a live chat session (the widget). */
 export function hasChatTransport(source: string | null | undefined): boolean {
   return supportChannel(source)?.transport === 'chat'

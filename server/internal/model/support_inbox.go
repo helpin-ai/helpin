@@ -15,9 +15,14 @@ type SupportConversation struct {
 	MailboxAIRepliesDisabled bool     `json:"-" gorm:"-"`
 	MergeEmailRecipients     []string `json:"merge_email_recipients,omitempty" gorm:"-"`
 	MergeHasWidget           bool     `json:"merge_has_widget,omitempty" gorm:"-"`
-	MergeContinuationID      *string  `json:"merge_continuation_id,omitempty" gorm:"-"`
-	MergeParticipants        []string `json:"merge_participants,omitempty" gorm:"-"`
-	MergedIntoID             *string  `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
+	// MergeHasChannel: a merged member came from a provider channel (Telegram),
+	// so replies in the group reach that customer there.
+	MergeHasChannel bool `json:"merge_has_channel,omitempty" gorm:"-"`
+	// ChannelHandle is the connected bot's handle (Telegram), for the sidebar.
+	ChannelHandle       string   `json:"channel_handle,omitempty" gorm:"-"`
+	MergeContinuationID *string  `json:"merge_continuation_id,omitempty" gorm:"-"`
+	MergeParticipants   []string `json:"merge_participants,omitempty" gorm:"-"`
+	MergedIntoID        *string  `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
 	// ChannelAccountID and ChannelIdentityID link a provider-channel
 	// conversation (Telegram) to its bot and customer. The default tag keeps
 	// them out of inserts when unset.
@@ -430,6 +435,9 @@ type SupportMessage struct {
 	// ("sent", "delivered", "opened", "bounced", "spam_complaint"). Only set
 	// when an email log exists for the message.
 	EmailDeliveryStatus string `json:"email_delivery_status,omitempty" gorm:"-"`
+	// ChannelDelivery is the reply's delivery through a provider channel
+	// (Telegram), from support_channel_outbox.
+	ChannelDelivery *SupportChannelDelivery `json:"channel_delivery,omitempty" gorm:"-"`
 	// EmailDeliveryError surfaces the bounce/complaint description when the
 	// email's delivery failed. Empty otherwise.
 	EmailDeliveryError string          `json:"email_delivery_error,omitempty" gorm:"-"`

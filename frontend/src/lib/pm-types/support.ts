@@ -41,6 +41,10 @@ export interface SupportConversation {
   merge_revision?: number;
   merge_email_recipients?: string[];
   merge_has_widget?: boolean;
+  /** A merged member came from a messaging app (Telegram); replies reach it there. */
+  merge_has_channel?: boolean;
+  /** The connected bot's handle, for Telegram conversations. */
+  channel_handle?: string;
   merge_continuation_id?: string;
   merge_participants?: string[];
   list_last_message_preview?: string;
@@ -842,6 +846,8 @@ export interface SupportMessage {
   email_projection_version?: number;
   /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
   email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
+  /** Delivery through a messaging app (Telegram). */
+  channel_delivery?: { status: 'sending' | 'sent' | 'failed' | 'unconfirmed' | 'cancelled'; error_code?: string; retryable: boolean } | null;
   /** Human-readable bounce or complaint description. Empty unless delivery failed. */
   email_delivery_error?: string;
   /** Primary outbound email recipient, populated for messages sent via email. */
