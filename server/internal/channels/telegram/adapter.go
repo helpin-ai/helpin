@@ -152,6 +152,10 @@ func (a *Adapter) ParseWebhook(body []byte) ([]channels.Event, error) {
 	case m.From == nil || m.From.IsBot:
 		event.IgnoredReason = "not from a person"
 		return []channels.Event{event}, nil
+	case isStartCommand(m.Text):
+		// The Start button, not a question; the first real message opens the conversation.
+		event.IgnoredReason = "start command"
+		return []channels.Event{event}, nil
 	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &struct {
@@ -187,6 +191,13 @@ func (a *Adapter) ParseWebhook(body []byte) ([]channels.Event, error) {
 	event.Kind = channels.EventUnsupported
 	event.UnsupportedType = "message"
 	return []channels.Event{event}, nil
+}
+
+// isStartCommand reports Telegram's /start, sent by the Start button, with an
+// optional deep-link payload or bot mention.
+func isStartCommand(text string) bool {
+	text = strings.TrimSpace(text)
+	return text == "/start" || strings.HasPrefix(text, "/start ") || strings.HasPrefix(text, "/start@")
 }
 
 // messageFiles lists the downloadable files. Animations also carry a document

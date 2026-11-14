@@ -57,7 +57,8 @@ Bot tokens are encrypted with AES-GCM using `CHANNEL_ENCRYPTION_KEY`, or
    notifications, triage, and the AI agent.
 
 Only new messages in private chats from people are stored. Group messages,
-edits, and bot messages are ignored. Stickers, locations, polls and similar
+edits, bot messages, and the `/start` sent by Telegram's Start button are
+ignored. Stickers, locations, polls and similar
 types become a visible note saying Helpin cannot display them.
 
 ## Sending replies

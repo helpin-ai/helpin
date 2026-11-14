@@ -84,6 +84,16 @@ func TestParseUnsupportedAndIgnoredUpdates(t *testing.T) {
 			t.Errorf("%s = %+v", fixture, e)
 		}
 	}
+	for text, ignored := range map[string]bool{"/start": true, "/start ref-42": true, "/start@helpin_bot": true, "/startup is broken": false, "how do I /start?": false} {
+		body := `{"update_id":9,"message":{"message_id":1,"from":{"id":7,"is_bot":false,"first_name":"Ada"},"chat":{"id":7,"type":"private"},"date":1,"text":"` + text + `"}}`
+		events, err := NewAdapter("").ParseWebhook([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := events[0].Kind == channels.EventIgnored; got != ignored {
+			t.Errorf("%q ignored = %v, want %v", text, got, ignored)
+		}
+	}
 	if _, err := NewAdapter("").ParseWebhook([]byte(`{"message":{}}`)); err == nil {
 		t.Error("an update without update_id must be rejected")
 	}
