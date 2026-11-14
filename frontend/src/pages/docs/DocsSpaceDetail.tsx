@@ -319,6 +319,7 @@ export function DocsSpaceDetail() {
         view={view}
         canEdit={canEditDocs}
         onNavigateToCollection={navigateToCollection}
+        onNavigateToAllSpaces={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
         onCreateDocument={() => openCreate('docs_document', {
           spaceId,
           collectionId:

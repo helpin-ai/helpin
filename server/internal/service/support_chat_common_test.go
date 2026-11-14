@@ -106,6 +106,9 @@ func (p *greetingProvider) ChatCompletion(ctx context.Context, req llm.ChatReque
 	if p.response != nil {
 		return p.response, nil
 	}
+	if req.SystemPrompt == supportReplyActionReviewPrompt {
+		return &llm.ChatResponse{Content: `{"allowed":true,"unsupported_claims":[]}`, FinishReason: "stop"}, nil
+	}
 	return &llm.ChatResponse{Content: `{"content":"Hello! How can I help?"}`, Provider: req.Provider, Model: req.Model, FinishReason: "stop", TokensUsed: llm.TokenUsage{InputTokens: 40, OutputTokens: 12}}, nil
 }
 
@@ -113,7 +116,7 @@ func setupSupportGreetingTest(t *testing.T) (*SupportChatService, *gorm.DB, *mod
 	t.Helper()
 	db := newTestDB(t)
 	mustExec(t, db, `CREATE TABLE ai_message_processing (
- validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, conversation_id TEXT, source_message_id TEXT UNIQUE, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+ action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, conversation_id TEXT, source_message_id TEXT UNIQUE, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	mustExec(t, db, `CREATE TABLE support_attachments (id TEXT PRIMARY KEY, workspace_id TEXT, message_id TEXT)`)
 	settings := model.DefaultSupportInboxSettings()
 	settings.AIEnabled = true

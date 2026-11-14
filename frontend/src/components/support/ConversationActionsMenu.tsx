@@ -8,10 +8,9 @@ function TranslationDialogControls({workspaceId, conversationId}: {workspaceId: 
 import { useSupportAIControl } from './SupportAIControl';
 import { isAIActiveConversation } from './helpers';
 import { type ReactNode, useEffect, useState } from 'react';
-import { format } from 'date-fns';
 import { useSnoozeConversation, useUnsnoozeConversation, useUpdateConversationPriority } from '@/hooks/queries/useSupportOperations';
 import { PriorityIcon } from '@/lib/pmConstants';
-import { snoozePresets } from '@/lib/supportSLA';
+import { SnoozeSubmenu } from './SnoozeMenu';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -308,25 +307,10 @@ export function ConversationActionsMenu({
                 Wake from snooze
               </DropdownMenuItem>
             ) : (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger className={itemClassName}>
-                  <Clock01Icon className={iconClassName} />
-                  Snooze
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-52">
-                  {snoozePresets().map((preset) => (
-                    <DropdownMenuItem
-                      key={preset.key}
-                      className={`${itemClassName} justify-between gap-3`}
-                      disabled={snooze.isPending}
-                      onClick={() => snooze.mutate({ conversationId: conversation.id, until: preset.until })}
-                    >
-                      <span>{preset.label}</span>
-                      <span className="text-xs text-muted-foreground">{format(preset.until, preset.key === 'later' ? 'HH:mm' : 'EEE HH:mm')}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+              <SnoozeSubmenu
+                disabled={snooze.isPending}
+                onSnooze={(until) => snooze.mutate({ conversationId: conversation.id, until })}
+              />
             ))}
             {mergeAccess?.permissions.includes('support.merge') && !conversation.merged_into_id && !conversation.anonymized_at && (
               <DropdownMenuItem onSelect={() => setMergeOpen(true)} className={itemClassName}>

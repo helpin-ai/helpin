@@ -139,8 +139,8 @@ func TestSupportReplyCheckFailureHoldsOnlySafeReplies(t *testing.T) {
 		review   string
 		wantHeld string
 	}{
-		{name: "unsupported but about this customer", review: `{"customer_scoped":true,"supported":false,"safe":true,"confidence":0.96}`, wantHeld: "Hi,\n\nYour import failed because of duplicate headers."},
-		{name: "about someone else", review: `{"customer_scoped":false,"supported":true,"safe":true,"confidence":0.96}`},
+		{name: "unsupported but about this customer", review: `{"allowed":true,"unsupported_claims":[],"customer_scoped":true,"supported":false,"safe":true,"confidence":0.96}`, wantHeld: "Hi,\n\nYour import failed because of duplicate headers."},
+		{name: "about someone else", review: `{"allowed":true,"unsupported_claims":[],"customer_scoped":false,"supported":true,"safe":true,"confidence":0.96}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

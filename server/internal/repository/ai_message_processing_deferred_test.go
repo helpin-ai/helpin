@@ -18,7 +18,7 @@ func setupProcessingTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE ai_message_processing (
- validation_repair_used BOOLEAN NOT NULL DEFAULT 0,
+ action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		workspace_id TEXT NOT NULL,
 		source_message_id TEXT NOT NULL UNIQUE,

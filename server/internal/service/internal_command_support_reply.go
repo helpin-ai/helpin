@@ -151,7 +151,7 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.send_reply",
 			Alias:       "send_support_reply",
 			Category:    "Support",
-			Description: "Send your reply to the visitor. For public product facts, first call search_knowledge. Factual answers must cite knowledge evidence IDs or MCP tool names for each material claim; the server re-validates grounding and confidence. For customer-specific findings, cite the exact MCP tool name in evidence_ids and source_doc_ids. The server uses its latest read-only result this customer turn and checks customer scope, factual support, and privacy. Reply when the evidence is clear; MCP use alone is not a reason to hand off. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
+			Description: "Send your reply to the visitor. For public product facts, first call search_knowledge. Factual answers must cite knowledge evidence IDs or MCP tool names for each material claim; the server re-validates grounding and confidence. For customer-specific findings, cite the exact MCP tool name in evidence_ids and source_doc_ids. The server uses its latest read-only result this customer turn and checks customer scope, factual support, and privacy. Reply when the evidence is clear; MCP use alone is not a reason to hand off. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. For a useful answer that also needs team action, use escalate_to_human with a grounded customer_update instead of sending first. Never claim or promise an action without a successful result; the entire message is checked, regardless of reply_kind. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -178,7 +178,7 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.escalate_to_human",
 			Alias:       "escalate_to_human",
 			Category:    "Support",
-			Description: "Hand the conversation to a human teammate. Use when the visitor asks for a human, the request is risky (billing disputes, account deletion, legal), or the permitted research fallback cannot produce a grounded answer. The server sends the availability-aware handoff message — after calling this, end your turn without sending another reply. The teammate fields become a card the support team reads first: keep each one short and plain, say each fact once, and leave a field out when you have nothing new for it.",
+			Description: "Hand the conversation to a human teammate. Use when the visitor asks for a human, the request is risky (billing disputes, account deletion, legal), or the permitted research fallback cannot produce a grounded answer. Use this for feature requests or feedback that need team action as well. Include a grounded customer_update when you can also provide a useful answer or workaround. The server saves the team brief and changes ownership together, then sends the checked update with the availability-aware handoff message. Do not announce a handoff yourself. After calling this, end your turn without sending another reply. The teammate fields become a card the support team reads first: keep each one short and plain, say each fact once, and leave a field out when you have nothing new for it.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -201,8 +201,8 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 					"unresolved_questions": map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "Only a specific question still open that the issue summary doesn't already say, e.g. \"Which workspace was the import in?\" Usually omit. Internal only; do not repeat sensitive credentials."},
 					"unavailable_data":     map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string"}, "description": "Kinds of data you needed to answer but none of your tools can provide, e.g. \"Payment history\". Name the kind of data, not a product, unless a workspace skill names the product. Omit it when one of your tools covers that data, even if you did not use it."},
 					"help_article_gap":     map[string]any{"type": "string", "description": "Only when search_knowledge found nothing that answers this: what the help articles are missing, e.g. \"How to export reports to CSV\"."},
-					"customer_update":      map[string]any{"type": "string", "maxLength": 600, "description": "Optional one or two sentences for the customer, in their language, saying what you confirmed in their account this turn, e.g. \"I can see your import started on 3 May but did not finish.\" Only facts from read-only MCP lookups, each cited in claims; no causes, guesses, fixes or promises. The server fact-checks it like send_support_reply and sends it before the handoff message, or drops it if the check fails."},
-					"claims":               supportClaimsSchema("Each fact in customer_update mapped to the exact MCP tool names that support it. Required with customer_update."),
+					"customer_update":      map[string]any{"type": "string", "maxLength": 600, "description": "Optional concise answer, documented workaround, or verified account finding for the customer in their language. Cite each fact in claims using exact search_knowledge evidence IDs or read-only MCP tool names. Do not claim or promise a handoff, notification, account change, or future team work. The server validates the full update and includes it with the handoff message in the same operation; an unsafe update is omitted without delaying handoff."},
+					"claims":               supportClaimsSchema("Each fact in customer_update mapped to exact knowledge evidence IDs or MCP tool names. Required with customer_update."),
 				},
 				"required":             []string{"reason"},
 				"additionalProperties": false,
@@ -450,6 +450,9 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 		if escErr := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, gate.EscalationReason, "", "", held); escErr != nil {
 			return nil, fmt.Errorf("handoff after reply validation: %w", escErr)
 		}
+		if outcome, err := s.checkSupportHandoffCommitted(ctx, meta, conversationID); err != nil || outcome != nil {
+			return outcome, err
+		}
 		s.settleSupportSource(ctx, meta.WorkspaceID, conversationID, sourceMessageID)
 		supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
 		s.closeEscalatedSupportCommandRun(ctx, meta)
@@ -458,6 +461,10 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 			"reason":      gate.EscalationReason,
 			"next_action": "The reply did not pass server validation and the conversation was handed to a human. End your turn without sending anything else.",
 		}), nil
+	}
+
+	if outcome, err := s.checkSupportReplyActions(ctx, meta, conv, source, turn, content, replyRunID); err != nil || outcome != nil {
+		return outcome, err
 	}
 
 	kind := normalizeSupportReplyKind(req.ReplyKind)
@@ -658,6 +665,8 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 		if conv == nil || model.SupportAIConversationBlocked(conv) || (conv.AIControlVersion > 0 && (run == nil || derefString(conv.AIActiveRunID) != run.ID)) {
 			return mustJSON(map[string]any{"status": "suppressed", "next_action": "Ownership changed. End your turn."}), nil
 		}
+		brief.ExpectedControlVersion = &conv.AIControlVersion
+		brief.ExpectedMessageID = derefString(conv.LastPublicMessageID)
 		customerUpdate = s.checkedSupportHandoffUpdate(ctx, meta, conv, sourceMessageID, req.CustomerUpdate, req.Claims)
 		var used map[string]bool
 		brief.Checked, used, brief.CheckedKnown = s.supportHandoffChecks(ctx, meta, req.Checked)
@@ -673,6 +682,9 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 	brief.ExpectedRunID, brief.CustomerUpdate = escalationRunID, customerUpdate
 	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), brief); err != nil {
 		return nil, fmt.Errorf("escalate: %w", err)
+	}
+	if outcome, err := s.checkSupportHandoffCommitted(ctx, meta, conversationID); err != nil || outcome != nil {
+		return outcome, err
 	}
 	s.settleSupportSource(ctx, meta.WorkspaceID, conversationID, sourceMessageID)
 	supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)

@@ -267,7 +267,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
   const agentName = message.senderName;
   const agentAvatar = isAI ? (config?.branding?.avatarUrl || message.senderAvatar) : message.senderAvatar;
-  const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
+  const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar) && !config?.branding?.avatarUrl;
   // Flat pill is reserved for teammate_joined — the one and
   // only widget-visible routing event. Internal routing and escalation
   // events are filtered; their public handoff replies render normally.

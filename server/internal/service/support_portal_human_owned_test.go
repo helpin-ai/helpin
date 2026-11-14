@@ -54,7 +54,7 @@ func TestPortalAIRepliesStayPrivate(t *testing.T) {
 			svc, db, _, _ := setupAIControlTest(t)
 			ctx := context.Background()
 			mustExec(t, db, `UPDATE support_conversations SET channel='portal', source='portal', portal_visible=true`)
-			mustExec(t, db, `CREATE TABLE ai_message_processing(validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
+			mustExec(t, db, `CREATE TABLE ai_message_processing(action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
 			mustExec(t, db, `INSERT INTO support_widget_installations (id, workspace_id, widget_key, secret_key, settings, active) VALUES ('install', 'ws', 'key', 'secret', ?, true)`,
 				`{"portal_enabled":true,"portal_ai_mode":"`+mode+`","ai_agent_id":"agent"}`)
 			customer := &model.SupportMessage{ID: "question", WorkspaceID: "ws", ConversationID: "conv", SenderType: "customer", MessageType: "reply", Content: "Export fails"}

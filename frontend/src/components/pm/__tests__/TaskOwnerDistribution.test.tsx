@@ -101,7 +101,7 @@ describe('TaskOwnerDistribution', () => {
     container.remove();
   });
 
-  it('aligns labels and segments, renders real avatars, and keeps unassigned gray', () => {
+  it('renders owner summaries, proportional segments, real avatars, and unassigned in gray', () => {
     act(() => {
       root.render(
         <TooltipProvider>
@@ -118,15 +118,13 @@ describe('TaskOwnerDistribution', () => {
       );
     });
 
-    const labels = container.querySelector<HTMLElement>('[data-testid="task-owner-labels"]');
     const bar = container.querySelector<HTMLElement>('[data-testid="task-owner-bar"]');
     const avatar = container.querySelector<HTMLElement>('[data-testid="owner-avatar"]');
     const assigned = container.querySelector<HTMLElement>('[data-testid="task-owner-segment-member-a"]');
     const secondAssigned = container.querySelector<HTMLElement>('[data-testid="task-owner-segment-member-b"]');
     const unassigned = container.querySelector<HTMLElement>('[data-testid="task-owner-segment-__unassigned__"]');
 
-    expect(labels?.style.gridTemplateColumns).toBe('2fr 1fr 1fr');
-    expect(bar?.style.gridTemplateColumns).toBe(labels?.style.gridTemplateColumns);
+    expect(bar?.style.gridTemplateColumns).toBe('2fr 1fr 1fr');
     expect(bar?.getAttribute('aria-label')).toBe('Alice Johnson 50%, Bob Smith 25%, Unassigned 25%');
     expect(avatar?.dataset.avatarName).toBe('Alice Johnson');
     expect(avatar?.dataset.avatarUrl).toBe('https://cdn.example.com/alice.png');
@@ -135,6 +133,68 @@ describe('TaskOwnerDistribution', () => {
     expect(unassigned?.className).toContain('bg-muted-foreground/35');
     expect(container.textContent).toContain('2 tasks · 50%');
     expect(container.textContent).toContain('1 task · 25%');
+    expect(container.querySelector('button[aria-expanded]')).toBeNull();
+  });
+
+  it('keeps the overview compact, preserves the full distribution, and reveals all owners on demand', () => {
+    const manyMembers: AssignableMember[] = Array.from({ length: 19 }, (_, index) => ({
+      id: `member-${index}`,
+      role: 'member',
+      email: `owner${index}@example.com`,
+      display_name: `Owner ${String(index).padStart(2, '0')}`,
+      status: 'active',
+    }));
+    act(() => {
+      root.render(
+        <TooltipProvider>
+          <TaskOwnerDistribution
+            tasks={manyMembers.map((member) => ({ owner_member_ids: [member.id] }))}
+            members={manyMembers}
+          />
+        </TooltipProvider>,
+      );
+    });
+
+    const labels = container.querySelector('[data-testid="task-owner-labels"]')!;
+    const bar = container.querySelector('[data-testid="task-owner-bar"]')!;
+    const toggle = container.querySelector<HTMLButtonElement>('button[aria-expanded]');
+    expect(labels.children).toHaveLength(8);
+    expect(bar.children).toHaveLength(19);
+    expect(bar.getAttribute('aria-label')).toContain('Owner 18');
+    expect(toggle?.textContent).toBe('Show 11 more');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle?.getAttribute('aria-controls')).toBe(labels.id);
+
+    act(() => toggle?.click());
+    expect(labels.children).toHaveLength(19);
+    expect(labels.textContent).toContain('Owner 18');
+    expect(toggle?.textContent).toBe('Show less');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+
+    act(() => toggle?.click());
+    expect(labels.children).toHaveLength(8);
+    expect(bar.children).toHaveLength(19);
+  });
+
+  it('keeps unassigned work visible in a collapsed overview', () => {
+    act(() => {
+      root.render(
+        <TooltipProvider>
+          <TaskOwnerDistribution
+            tasks={[
+              ...Array.from({ length: 10 }, (_, index) => ({ owner_member_ids: [`missing-${index}`] })),
+              { owner_member_ids: [] },
+            ]}
+            members={[]}
+          />
+        </TooltipProvider>,
+      );
+    });
+
+    const labels = container.querySelector('[data-testid="task-owner-labels"]')!;
+    expect(labels.children).toHaveLength(8);
+    expect(labels.textContent).toContain('Unassigned');
+    expect(container.querySelector('button[aria-expanded]')?.textContent).toBe('Show 3 more');
   });
 
   it('shows a purposeful empty state when there are no tasks', () => {

@@ -12,7 +12,7 @@ import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { useCallback, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { ArrowLeft02Icon, ClipboardIcon, Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
+import { ArrowLeft02Icon, PlusSignIcon, Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { UpgradeRequiredDialog } from '@edition';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -862,7 +862,7 @@ export function MessageThread({
             aria-label="Create task"
             title="Create task"
           >
-            <ClipboardIcon className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
           </Button>
 
 

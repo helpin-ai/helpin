@@ -32,7 +32,7 @@ func TestValidationRepairReservationOnPostgres(t *testing.T) {
 	})
 	if err := db.Exec(`CREATE TABLE ai_message_processing (
 		id text PRIMARY KEY, workspace_id text, status text, reply_message_id text,
-		validation_repair_used boolean NOT NULL DEFAULT false, updated_at timestamptz
+		action_validation_repair_used boolean NOT NULL DEFAULT false, validation_repair_used boolean NOT NULL DEFAULT false, updated_at timestamptz
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -47,27 +47,37 @@ func TestValidationRepairReservationOnPostgres(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	repo := NewAIMessageProcessingRepository(db)
-	if allowed, err := repo.ClaimValidationRepair(ctx, "other-workspace", "turn"); err != nil || allowed {
-		t.Fatalf("cross-workspace allowance: %v, %v", allowed, err)
-	}
-	var granted atomic.Int32
-	var wg sync.WaitGroup
-	for range 8 {
-		wg.Go(func() {
-			allowed, err := repo.ClaimValidationRepair(ctx, "workspace", "turn")
-			if err != nil {
-				t.Error(err)
+	for _, check := range []struct {
+		name  string
+		claim func(*AIMessageProcessingRepository, context.Context, string, string) (bool, error)
+	}{
+		{"evidence", (*AIMessageProcessingRepository).ClaimValidationRepair},
+		{"action honesty", (*AIMessageProcessingRepository).ClaimActionValidationRepair},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			if allowed, err := check.claim(repo, ctx, "other-workspace", "turn"); err != nil || allowed {
+				t.Fatalf("cross-workspace allowance: %v, %v", allowed, err)
 			}
-			if allowed {
-				granted.Add(1)
+			var granted atomic.Int32
+			var wg sync.WaitGroup
+			for range 8 {
+				wg.Go(func() {
+					allowed, err := check.claim(repo, ctx, "workspace", "turn")
+					if err != nil {
+						t.Error(err)
+					}
+					if allowed {
+						granted.Add(1)
+					}
+				})
+			}
+			wg.Wait()
+			if granted.Load() != 1 {
+				t.Fatalf("granted %d corrections, want one", granted.Load())
+			}
+			if allowed, err := check.claim(NewAIMessageProcessingRepository(db), ctx, "workspace", "turn"); err != nil || allowed {
+				t.Fatalf("allowance did not survive repository restart: %v, %v", allowed, err)
 			}
 		})
-	}
-	wg.Wait()
-	if granted.Load() != 1 {
-		t.Fatalf("granted %d corrections, want one", granted.Load())
-	}
-	if allowed, err := NewAIMessageProcessingRepository(db).ClaimValidationRepair(ctx, "workspace", "turn"); err != nil || allowed {
-		t.Fatalf("allowance did not survive repository restart: %v, %v", allowed, err)
 	}
 }

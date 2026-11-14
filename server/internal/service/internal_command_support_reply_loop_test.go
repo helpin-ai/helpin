@@ -20,12 +20,12 @@ func TestSupportReplyRequiresUnansweredCustomerTurn(t *testing.T) {
 	env := setupEmailFallbackInboundTestEnv(t, settings)
 	db := env.convRepo.DB()
 	mustExec(t, db, `CREATE TABLE ai_message_processing (
- validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+ action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	conv := &model.SupportConversation{ID: "conv", WorkspaceID: "11111111-1111-1111-1111-111111111111", Channel: "widget", Source: "widget", Status: "open"}
 	if err := env.convRepo.Create(ctx, conv); err != nil {
 		t.Fatal(err)
 	}
-	ai := &SupportAIService{processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
+	ai := &SupportAIService{llmProvider: &greetingProvider{}, processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
 	svc := &InternalCommandService{supportAIService: ai, supportProcessingRepo: repository.NewAIMessageProcessingRepository(db)}
 	meta := model.InternalCommandContext{WorkspaceID: conv.WorkspaceID, TargetType: "support_conversation", TargetID: conv.ID}
 	input := json.RawMessage(`{"content":"Hello! How can I help?","reply_kind":"conversational","confidence":1}`)
@@ -85,7 +85,7 @@ func TestSupportReplyAtomicPersistence(t *testing.T) {
 	db := newTestDB(t)
 	mustExec(t, db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,status,channel) VALUES ('conv','ws',1,'Test','open','widget')`)
 	mustExec(t, db, `CREATE TABLE ai_message_processing (
- validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+ action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,conversation_id,status) VALUES ('turn','ws','conv','processing')`)
 	repo := repository.NewAIMessageProcessingRepository(db)
 	reply := func(id string) *model.SupportMessage {
@@ -135,7 +135,7 @@ func TestSupportReplyConcurrentPersistence(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	mustExec(t, db, `CREATE TABLE ai_message_processing (
- validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
+ action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
 	mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,conversation_id,status) VALUES ('turn','ws','conv','processing')`)
 	repo := repository.NewAIMessageProcessingRepository(db)
 	var wg sync.WaitGroup
@@ -174,12 +174,12 @@ func TestSupportReplyEmailChoiceDeliversEmailAndStillDeduplicates(t *testing.T) 
 	env := setupEmailFallbackInboundTestEnv(t, settings)
 	db := env.convRepo.DB()
 	mustExec(t, db, `CREATE TABLE ai_message_processing (
- validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
+ action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, attempts INTEGER, tokens_used INTEGER, created_at DATETIME, updated_at DATETIME)`)
 	conv := &model.SupportConversation{ID: "conv", WorkspaceID: "11111111-1111-1111-1111-111111111111", Channel: "widget", Source: "widget", Status: "open"}
 	if err := env.convRepo.Create(ctx, conv); err != nil {
 		t.Fatal(err)
 	}
-	ai := &SupportAIService{processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
+	ai := &SupportAIService{llmProvider: &greetingProvider{}, processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
 	svc := &InternalCommandService{supportAIService: ai, supportProcessingRepo: repository.NewAIMessageProcessingRepository(db)}
 	meta := model.InternalCommandContext{WorkspaceID: conv.WorkspaceID, TargetType: "support_conversation", TargetID: conv.ID}
 
@@ -209,7 +209,7 @@ func TestSupportReplyPendingCustomerAfterAIResolutionReopens(t *testing.T) {
 	db := newTestDB(t)
 	mustExec(t, db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,status,channel,ai_state) VALUES ('conv','ws',1,'Test','resolved','widget','resolved')`)
 	mustExec(t, db, `CREATE TABLE ai_message_processing (
- validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
+ action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, source_message_id TEXT, reply_message_id TEXT, status TEXT, updated_at DATETIME)`)
 	source := &model.SupportMessage{ID: "customer", WorkspaceID: "ws", ConversationID: "conv", SenderType: "customer", MessageType: "reply", Content: "Actually, one more question"}
 	if err := repository.NewSupportMessageRepository(db).Create(context.Background(), source); err != nil {
 		t.Fatal(err)
@@ -232,7 +232,7 @@ func TestSupportReplyPendingCustomerAfterAIResolutionReopens(t *testing.T) {
 func TestValidationRepairIsDurableAndScoped(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
-	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,status TEXT,reply_message_id TEXT,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,updated_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE ai_message_processing (id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,status TEXT,reply_message_id TEXT,action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,updated_at DATETIME)`)
 	mustExec(t, db, `INSERT INTO ai_message_processing(id,workspace_id,status) VALUES ('turn','ws','processing')`)
 	repo := repository.NewAIMessageProcessingRepository(db)
 	if ok, err := repo.ClaimValidationRepair(ctx, "other", "turn"); err != nil || ok {
@@ -272,7 +272,7 @@ func TestEvidenceRepairThroughReplyTool(t *testing.T) {
 			settings.AIConfidenceThreshold = 0.1
 			env := setupEmailFallbackInboundTestEnv(t, settings)
 			db := env.convRepo.DB()
-			mustExec(t, db, `CREATE TABLE ai_message_processing (validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,attempts INTEGER,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
+			mustExec(t, db, `CREATE TABLE ai_message_processing (action_validation_repair_used BOOLEAN NOT NULL DEFAULT 0,validation_repair_used BOOLEAN NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,conversation_id TEXT,source_message_id TEXT,reply_message_id TEXT,status TEXT,attempts INTEGER,tokens_used INTEGER,created_at DATETIME,updated_at DATETIME)`)
 			copySupportRunEvidenceSchema(t, db)
 			var schema string
 			if err := setupSupportKnowledgeTestDB(t).Raw("SELECT sql FROM sqlite_master WHERE name='agent_runs'").Scan(&schema).Error; err != nil {
@@ -301,7 +301,7 @@ func TestEvidenceRepairThroughReplyTool(t *testing.T) {
 			if err := db.Create(&model.SupportRunEvidence{WorkspaceID: conv.WorkspaceID, RunID: "run", EvidenceID: evidenceID, SourceType: "docs", Content: "The Pro plan costs $49 per month. Copy the x509 certificate, enable SSO, and sign in.", VectorScore: 0.9, CombinedScore: 0.9}).Error; err != nil {
 				t.Fatal(err)
 			}
-			ai := &SupportAIService{handoffRepo: repository.NewAgentHandoffRepository(db), processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
+			ai := &SupportAIService{llmProvider: &greetingProvider{}, handoffRepo: repository.NewAgentHandoffRepository(db), processingRepo: repository.NewAIMessageProcessingRepository(db), conversationRepo: env.convRepo, messageRepo: env.messageRepo, installationRepo: env.service.installRepo, wsPublisher: env.service.wsPublisher}
 			recorder := &capturePlatformTraceRecorder{traces: make(chan *model.SupportAIRetrievalTrace, 1)}
 			ai.SetSupportAIRetrievalTraceRecorder(recorder)
 			svc := &InternalCommandService{supportAIService: ai, supportProcessingRepo: repository.NewAIMessageProcessingRepository(db), agentRunRepo: repository.NewAgentRunRepository(db), supportRunEvidenceRepo: repository.NewSupportRunEvidenceRepository(db)}
