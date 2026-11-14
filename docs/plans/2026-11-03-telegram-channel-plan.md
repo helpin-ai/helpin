@@ -111,7 +111,7 @@ users.
 
 ### Slice 1: schema, models and registry (2 days)
 
-**Built 2026-11-13.** Migration `202611130001_support_channels.sql`, the
+**Built 2026-11-13.** Migration `202611140001_support_channels.sql`, the
 `telegram` registry entry with the `provider` transport, and setup evidence
 driven by the registry. Deviations from the outline below:
 

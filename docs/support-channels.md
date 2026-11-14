@@ -22,8 +22,8 @@ chat AI setting plus the bot's own **AI replies** switch.
 
 ## Tables
 
-All tables are created by versioned SQL (`202611130001_support_channels.sql`
-and `202611130002_support_channel_outbox_trigger.sql`).
+All tables are created by versioned SQL (`202611140001_support_channels.sql`
+and `202611140002_support_channel_outbox_trigger.sql`).
 
 | Table | Holds |
 | --- | --- |

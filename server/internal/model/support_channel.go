@@ -14,7 +14,7 @@ const (
 )
 
 // SupportChannelAccount is a connected provider account (a Telegram bot) that
-// feeds a mailbox. Owned by versioned SQL only (202611130001).
+// feeds a mailbox. Owned by versioned SQL only (202611140001).
 type SupportChannelAccount struct {
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null"`
@@ -67,7 +67,7 @@ type ReconnectSupportChannelRequest struct {
 }
 
 // SupportChannelIdentity is a customer of a connected account (a Telegram
-// user). Owned by versioned SQL only (202611130001).
+// user). Owned by versioned SQL only (202611140001).
 type SupportChannelIdentity struct {
 	ID               string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID      string     `json:"workspace_id" gorm:"type:uuid;not null"`
@@ -85,7 +85,7 @@ type SupportChannelIdentity struct {
 func (SupportChannelIdentity) TableName() string { return "support_channel_identities" }
 
 // SupportChannelOutbox is one reply queued for provider delivery. Rows are
-// written by the support_channel_outbox_enqueue trigger (202611130002).
+// written by the support_channel_outbox_enqueue trigger (202611140002).
 type SupportChannelOutbox struct {
 	ID                 string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID        string     `json:"workspace_id" gorm:"type:uuid"`
