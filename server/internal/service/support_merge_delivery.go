@@ -24,6 +24,9 @@ func mergedDeliveryConversation(ctx context.Context, repo *repository.SupportCon
 		if member.AnonymousID != nil || model.SupportChannelHasChatSession(member.Source) {
 			result.MergeHasWidget = true
 		}
+		if member.ChannelIdentityID != nil {
+			result.MergeHasChannel = true
+		}
 	}
 	if strings.TrimSpace(derefString(result.CustomerEmail)) == "" && len(result.MergeEmailRecipients) > 0 && !result.EmailUnsubscribed && result.PrimaryRecipientState != model.SupportPrimaryRecipientStateUnconfirmed {
 		result.CustomerEmail = &result.MergeEmailRecipients[0]

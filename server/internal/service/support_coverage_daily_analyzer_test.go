@@ -634,7 +634,7 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE TABLE support_messages (
+		`CREATE TABLE support_messages (channel_account_id TEXT, external_message_key TEXT, 
             origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,

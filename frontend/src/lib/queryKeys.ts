@@ -269,6 +269,7 @@ export const queryKeys = {
     companySLAAll: (wsId: string) => ['support', wsId, 'company-sla'] as const,
     companySLA: (wsId: string, companyId: string) => ['support', wsId, 'company-sla', companyId] as const,
     webhooks: (wsId: string) => ['support', wsId, 'webhooks'] as const,
+    channels: (wsId: string) => ['support', wsId, 'channels'] as const,
     webhookDeliveries: (wsId: string, webhookId: string) => ['support', wsId, 'webhooks', webhookId, 'deliveries'] as const,
   },
 

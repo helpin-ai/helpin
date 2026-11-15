@@ -12,7 +12,7 @@ import (
 // The channel behaviour matrix pins how every channel value, including unknown
 // and unnormalised ones, resolves in each policy consumer. Adding a channel
 // must only add rows; changing an existing row is a behaviour change.
-var supportChannelMatrixInputs = []string{"", "widget", "chat", "email", "portal", "api", "internal", "intercom", " Email ", "Widget", "telegram"}
+var supportChannelMatrixInputs = []string{"", "widget", "chat", "email", "portal", "api", "internal", "intercom", " Email ", "Widget", "telegram", "whatsapp"}
 
 func TestSupportChannelMatrixAIChannelEnabled(t *testing.T) {
 	// want lists the inputs enabled for each saved selection, with portal AI
@@ -22,12 +22,12 @@ func TestSupportChannelMatrixAIChannelEnabled(t *testing.T) {
 		drafts    bool
 		want      []string
 	}{
-		{"", false, []string{"", "widget", "chat", "Widget"}},
-		{"chat", false, []string{"", "widget", "chat", "Widget"}},
+		{"", false, []string{"", "widget", "chat", "Widget", "telegram"}},
+		{"chat", false, []string{"", "widget", "chat", "Widget", "telegram"}},
 		{"email", false, []string{"email", " Email "}},
-		{"both", false, []string{"", "widget", "chat", "email", " Email ", "Widget"}},
+		{"both", false, []string{"", "widget", "chat", "email", " Email ", "Widget", "telegram"}},
 		{"invalid", false, nil},
-		{"chat", true, []string{"", "widget", "chat", "portal", "Widget"}},
+		{"chat", true, []string{"", "widget", "chat", "portal", "Widget", "telegram"}},
 		{"invalid", true, []string{"portal"}},
 	} {
 		settings := model.DefaultSupportInboxSettings()
@@ -51,7 +51,7 @@ func TestSupportChannelMatrixTriage(t *testing.T) {
 	// values deliberately fall through to the widget setting.
 	setting := map[string]string{
 		"": "widget", "widget": "widget", "chat": "widget", "email": "email", "portal": "widget",
-		"api": "internal", "internal": "internal", "intercom": "widget", " Email ": "widget", "Widget": "widget", "telegram": "widget",
+		"api": "internal", "internal": "internal", "intercom": "widget", " Email ": "widget", "Widget": "widget", "telegram": "widget", "whatsapp": "widget",
 	}
 	for _, channel := range supportChannelMatrixInputs {
 		for _, enabled := range []string{"widget", "email", "internal"} {
@@ -67,7 +67,7 @@ func TestSupportChannelMatrixTriage(t *testing.T) {
 		}
 	}
 
-	ruleChannels := []string{"widget", "email", "api", "internal", " Email ", "Widget"}
+	ruleChannels := []string{"widget", "email", "api", "internal", " Email ", "Widget", "telegram"}
 	for _, channel := range supportChannelMatrixInputs {
 		if got, want := validSupportTriageChannel(channel), slices.Contains(ruleChannels, channel); got != want {
 			t.Errorf("rule channel %q: got %v want %v", channel, got, want)
@@ -76,7 +76,7 @@ func TestSupportChannelMatrixTriage(t *testing.T) {
 }
 
 func TestSupportChannelMatrixSLAPolicyChannels(t *testing.T) {
-	selectable := []string{"widget", "email", "portal", "api", "internal"}
+	selectable := []string{"widget", "email", "portal", "api", "internal", "telegram"}
 	for _, channel := range supportChannelMatrixInputs {
 		_, err := normalizeSLAList([]string{channel}, supportSLAChannelAllowed, "channel")
 		// Values are trimmed, not lowercased, before the check; blanks are skipped.
@@ -177,7 +177,7 @@ func TestSupportChannelMatrixTriageSourcePrecedence(t *testing.T) {
 func TestSupportChannelMatrixAISupported(t *testing.T) {
 	// AI may run on chat, email and portal conversations, and on customer
 	// messages that arrived through them. Inputs are normalised first.
-	supported := []string{"", "widget", "chat", "email", "portal", " Email ", "Widget"}
+	supported := []string{"", "widget", "chat", "email", "portal", " Email ", "Widget", "telegram"}
 	for _, channel := range supportChannelMatrixInputs {
 		want := slices.Contains(supported, channel)
 		if got := supportAIConversationSupported(&model.SupportConversation{Channel: channel}); got != want {
@@ -199,9 +199,9 @@ func TestSupportChannelMatrixFollowUpChannels(t *testing.T) {
 		selection string
 		want      []string
 	}{
-		{"chat", []string{"widget"}},
+		{"chat", []string{"widget", "telegram"}},
 		{"email", []string{"email"}},
-		{"both", []string{"widget", "email"}},
+		{"both", []string{"widget", "telegram", "email"}},
 		{"invalid", []string{}},
 	} {
 		settings := model.DefaultSupportInboxSettings()
@@ -209,5 +209,13 @@ func TestSupportChannelMatrixFollowUpChannels(t *testing.T) {
 		if got := repository.SupportFollowUpChannels(settings); !slices.Equal(got, tc.want) {
 			t.Errorf("selection=%q: got %v want %v", tc.selection, got, tc.want)
 		}
+	}
+}
+
+func TestSupportChannelMatrixSetupEvidence(t *testing.T) {
+	// Telegram joins the channels that already counted toward activation.
+	want := []string{"widget", "email", "api", "telegram"}
+	if got := model.SupportSetupEvidenceChannels(); !slices.Equal(got, want) {
+		t.Fatalf("setup evidence channels = %v, want %v", got, want)
 	}
 }

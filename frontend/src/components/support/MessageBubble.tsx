@@ -34,6 +34,7 @@ import { getReplyEmailSubject, getReplyDeliveryMode, REPLY_DELIVERY_LABELS } fro
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { buildTaskPath } from '@/lib/pmTaskLinks';
 import { openTaskPanelFromLink } from '@/components/pm/task-detail/taskRouteNavigation';
 import { SupportLink } from './SupportLink';
@@ -399,6 +400,18 @@ export const MessageBubble = memo(function MessageBubble({
     await api.post(`/support/inbox/messages/${message.id}/attachments/${id}/retry?workspace_id=${encodeURIComponent(message.workspace_id)}`, {});
     await queryClient.invalidateQueries({ queryKey: ['support', message.workspace_id, 'conversations', message.conversation_id] });
   }, [message.id, message.workspace_id, message.conversation_id, queryClient]);
+  const confirm = useConfirm();
+  const retryChannelDelivery = useCallback(async () => {
+    // Telegram may already have the unconfirmed reply; sending again could duplicate it.
+    if (message.channel_delivery?.status === 'unconfirmed' && !(await confirm({
+      title: 'Send this reply again?',
+      description: 'Telegram did not confirm the first attempt. If it did arrive, the customer will get it twice.',
+      confirmText: 'Send again',
+    }))) return;
+    const { error } = await api.post(`/support/inbox/messages/${message.id}/channel-retry?workspace_id=${encodeURIComponent(message.workspace_id)}`, {});
+    if (error) toast.error('Could not retry the reply', { description: error });
+    await queryClient.invalidateQueries({ queryKey: ['support', message.workspace_id, 'conversations', message.conversation_id] });
+  }, [confirm, message.channel_delivery?.status, message.id, message.workspace_id, message.conversation_id, queryClient]);
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
   const aiConfidence = typeof aiMeta?.ai_confidence === 'number' && Number.isFinite(aiMeta.ai_confidence)
@@ -1130,6 +1143,15 @@ export const MessageBubble = memo(function MessageBubble({
                   </div>
                 )}
                 {delivery && <MessageDeliveryStatus delivery={delivery} onClick={() => setInfoOpen(true)} />}
+                {message.channel_delivery?.retryable && (
+                  <button
+                    type="button"
+                    className="text-[11px] font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                    onClick={() => void retryChannelDelivery()}
+                  >
+                    {message.channel_delivery.status === 'unconfirmed' ? 'Send again' : 'Retry'}
+                  </button>
+                )}
                 {cancellableActive && (
                   <button
                     type="button"

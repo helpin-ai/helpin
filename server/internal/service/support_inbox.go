@@ -75,6 +75,7 @@ type SupportInboxService struct {
 	workspaceRepo                *repository.WorkspaceRepository
 	authzService                 *authorization.AuthzService
 	attachmentService            *SupportAttachmentService
+	channelOutbox                *repository.SupportChannelOutboxRepository
 	linkPreviewService           SupportMessageLinkPreviewer
 	presence                     websocket.PresenceProvider
 	statusOverrideRepo           *repository.SupportTeammateStatusOverrideRepository
@@ -861,6 +862,12 @@ func (s *SupportInboxService) SetPushSenderService(ps *PushSenderService) *Suppo
 }
 
 // SetAttachmentService injects the support attachment service for file upload support.
+// SetChannelOutbox shows provider delivery state (Telegram) on replies.
+func (s *SupportInboxService) SetChannelOutbox(outbox *repository.SupportChannelOutboxRepository) *SupportInboxService {
+	s.channelOutbox = outbox
+	return s
+}
+
 func (s *SupportInboxService) SetAttachmentService(attachmentService *SupportAttachmentService) *SupportInboxService {
 	if s == nil {
 		return nil
@@ -1654,6 +1661,14 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 			slog.ErrorContext(ctx, "hydrate support conversation triage", "error", err, "workspace_id", workspaceID, "conversation_id", id)
 		}
 	}
+	if ticket.ChannelAccountID != nil {
+		var account model.SupportChannelAccount
+		if err := s.conversationRepo.DB().WithContext(ctx).Select("handle").
+			Where("workspace_id = ? AND id = ?", workspaceID, *ticket.ChannelAccountID).Limit(1).Find(&account).Error; err != nil {
+			slog.ErrorContext(ctx, "load conversation channel account", "error", err, "conversation_id", id)
+		}
+		ticket.ChannelHandle = account.Handle
+	}
 	if ticket.MergeRevision > 0 && ticket.MergedIntoID == nil {
 		group, err := s.mergeRepository().Group(ctx, workspaceID, id)
 		if err != nil {
@@ -1664,6 +1679,9 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 			for _, c := range group {
 				if c.AnonymousID != nil || model.SupportChannelHasChatSession(c.Source) {
 					ticket.MergeHasWidget = true
+				}
+				if c.ChannelIdentityID != nil {
+					ticket.MergeHasChannel = true
 				}
 				label := strings.TrimSpace(derefString(c.CustomerEmail))
 				if label == "" {
@@ -2065,6 +2083,7 @@ func (s *SupportInboxService) listConversationMessagesWith(ctx context.Context, 
 			hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
 		}
 	}
+	s.hydrateChannelDelivery(ctx, workspaceID, conv, messages)
 
 	return messages, nil
 }
@@ -2258,8 +2277,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// Any request the customer sees in the portal (portal intake, or an email
 	// thread claimed after sign-in) can receive replies there.
 	portalReplySurface := supportConversationPortalReplySurface(conv)
+	// A provider-channel conversation (Telegram), or a merged group holding
+	// one, delivers "chat" replies through the channel outbox.
+	providerChannel := conv.ChannelIdentityID != nil || deliveryConversation.MergeHasChannel
 	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
-		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && !model.SupportChannelHasChatSession(conv.Source) && !deliveryConversation.MergeHasWidget && !portalReplySurface {
+		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && !model.SupportChannelHasChatSession(conv.Source) && !deliveryConversation.MergeHasWidget && !portalReplySurface && !providerChannel {
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
 	}
 
@@ -4623,6 +4645,14 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return nil, err
+	}
+	// The provider customer's later conversations start linked to the contact.
+	if ticket.ChannelIdentityID != nil {
+		if err := s.conversationRepo.DB().WithContext(ctx).Model(&model.SupportChannelIdentity{}).
+			Where("workspace_id = ? AND id = ?", workspaceID, *ticket.ChannelIdentityID).
+			Updates(map[string]any{"crm_contact_id": normalizedContactID, "updated_at": time.Now().UTC()}).Error; err != nil {
+			return nil, err
+		}
 	}
 	ticket.CRMContactID = normalizedContactID
 	ticket.UpdatedAt = time.Now().UTC()

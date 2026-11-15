@@ -1,0 +1,91 @@
+-- Replies to provider-channel customers (Telegram) are queued for delivery by
+-- a trigger, so every producer (teammates, the AI agent, AI follow-ups, the
+-- API) queues in the same transaction that saves the message.
+
+ALTER TABLE support_channel_outbox ADD COLUMN IF NOT EXISTS parts_sent INTEGER NOT NULL DEFAULT 0;
+
+CREATE OR REPLACE FUNCTION support_channel_outbox_enqueue()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    identity_id UUID;
+    account_id UUID;
+    account_live BOOLEAN;
+BEGIN
+    SELECT c.channel_identity_id INTO identity_id
+      FROM support_conversations c
+     WHERE c.id = NEW.conversation_id AND c.workspace_id = NEW.workspace_id;
+    -- In a merged conversation, reply to the person behind the latest
+    -- provider message routed into it.
+    IF identity_id IS NULL THEN
+        SELECT origin.channel_identity_id INTO identity_id
+          FROM support_messages m
+          JOIN support_conversations origin ON origin.id = COALESCE(m.origin_conversation_id, m.conversation_id)
+         WHERE m.conversation_id = NEW.conversation_id AND m.workspace_id = NEW.workspace_id
+           AND m.sender_type = 'customer' AND m.channel_account_id IS NOT NULL AND m.deleted_at IS NULL
+           AND origin.channel_identity_id IS NOT NULL
+         ORDER BY m.created_at DESC
+         LIMIT 1;
+    END IF;
+    IF identity_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    SELECT i.channel_account_id, (a.disabled_at IS NULL AND a.status = 'active')
+      INTO account_id, account_live
+      FROM support_channel_identities i
+      JOIN support_channel_accounts a ON a.id = i.channel_account_id
+     WHERE i.id = identity_id;
+    IF account_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    -- created_at orders a customer's replies. clock_timestamp(), unlike now(),
+    -- differs between replies saved in one transaction.
+    INSERT INTO support_channel_outbox (
+        workspace_id, channel_account_id, channel_identity_id, conversation_id, message_id, semantic_key,
+        dispatch_status, last_error_code, next_attempt_at, created_at
+    ) VALUES (
+        NEW.workspace_id, account_id, identity_id, NEW.conversation_id, NEW.id, 'message:' || NEW.id,
+        -- A disconnected bot cannot send; the row shows the reply as not delivered.
+        CASE WHEN account_live THEN 'pending' ELSE 'cancelled' END,
+        CASE WHEN account_live THEN NULL ELSE 'disconnected' END,
+        -- A reply inside its undo window waits for the window to end.
+        GREATEST(NOW(), COALESCE(NEW.cancellable_until, NOW())),
+        clock_timestamp()
+    )
+    ON CONFLICT (semantic_key) DO NOTHING;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS support_channel_outbox_enqueue ON support_messages;
+CREATE TRIGGER support_channel_outbox_enqueue
+AFTER INSERT ON support_messages
+FOR EACH ROW
+WHEN (NEW.message_type = 'reply' AND NOT NEW.is_internal AND NEW.system_event_type IS NULL
+    AND NEW.sender_type IN ('user', 'ai', 'agent') AND NEW.deleted_at IS NULL
+    -- Messages that came from the provider are never sent back to it.
+    AND NEW.external_message_key IS NULL
+    AND COALESCE(NEW.metadata->>'imported_from', '') = ''
+    AND COALESCE(NEW.metadata->>'delivery_mode', '') <> 'email_only')
+EXECUTE FUNCTION support_channel_outbox_enqueue();
+
+-- Undoing a reply inside its window cancels its delivery.
+CREATE OR REPLACE FUNCTION support_channel_outbox_cancel_deleted()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE support_channel_outbox
+       SET dispatch_status = 'cancelled', last_error_code = 'deleted', claim_token = NULL, lease_expires_at = NULL, updated_at = NOW()
+     WHERE message_id = NEW.id AND dispatch_status = 'pending';
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS support_channel_outbox_cancel_deleted ON support_messages;
+CREATE TRIGGER support_channel_outbox_cancel_deleted
+AFTER UPDATE OF deleted_at ON support_messages
+FOR EACH ROW
+WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)
+EXECUTE FUNCTION support_channel_outbox_cancel_deleted();
