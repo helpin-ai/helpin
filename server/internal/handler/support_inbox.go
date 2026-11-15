@@ -1549,6 +1549,20 @@ func (h *SupportInboxHandler) PreviewTaskFromConversation(w http.ResponseWriter,
 }
 
 // RetryInboundAttachment requeues only a failed attachment the actor can access.
+// RetryChannelDelivery handles POST /api/support/inbox/messages/{id}/channel-retry.
+func (h *SupportInboxHandler) RetryChannelDelivery(w http.ResponseWriter, r *http.Request) {
+	err := h.supportService.RetryChannelDelivery(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
+	switch {
+	case errors.Is(err, service.ErrChannelNothingToRetry):
+		writeError(w, http.StatusConflict, err.Error())
+	case err != nil:
+		slog.ErrorContext(r.Context(), "retry channel delivery", "error", err)
+		writeError(w, http.StatusInternalServerError, "unable to retry delivery")
+	default:
+		writeJSON(w, http.StatusOK, map[string]bool{"queued": true})
+	}
+}
+
 func (h *SupportInboxHandler) RetryInboundAttachment(w http.ResponseWriter, r *http.Request) {
 	if err := h.supportService.RetryInboundAttachment(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), chi.URLParam(r, "attachmentID")); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

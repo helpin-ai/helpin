@@ -4,6 +4,7 @@
 
 Implementation plans, progress notes, and audits. Dated documents record the state of a particular change; consult current engineering guides for present behavior.
 
+- [Telegram channel (combined inbox phase 1)](2026-11-03-telegram-channel-plan.md)
 - [Combined inbox: social and messaging channels](2026-11-02-combined-inbox-plan.md)
 - [Combined inbox plan review](2026-11-02-combined-inbox-review.md)
 - [Customer portal AI replies implementation plan](2026-09-28-customer-portal-ai-replies.md)

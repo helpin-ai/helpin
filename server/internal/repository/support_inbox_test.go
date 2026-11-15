@@ -24,7 +24,7 @@ func setupSupportMessageTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE support_messages (
+	if err := db.Exec(`CREATE TABLE support_messages (channel_account_id TEXT, external_message_key TEXT, 
             origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
@@ -55,7 +55,7 @@ func setupSupportMessageTestDB(t *testing.T) *gorm.DB {
 func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := setupSupportMessageTestDB(t)
-	if err := db.Exec(`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
+	if err := db.Exec(`CREATE TABLE support_conversations (channel_account_id TEXT, channel_identity_id TEXT, snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 		id TEXT PRIMARY KEY,

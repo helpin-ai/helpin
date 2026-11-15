@@ -2,7 +2,7 @@
 
 export type ConversationStatus = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketSource = 'widget' | 'internal' | 'email' | 'api' | 'portal';
+export type TicketSource = 'widget' | 'internal' | 'email' | 'api' | 'portal' | 'telegram';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 export type SupportConversationTriageStatus = 'not_run' | 'suggested' | 'auto_moved' | 'dismissed' | 'overridden';
 export type SupportConversationTriageSource = 'rule' | 'ai';
@@ -41,6 +41,10 @@ export interface SupportConversation {
   merge_revision?: number;
   merge_email_recipients?: string[];
   merge_has_widget?: boolean;
+  /** A merged member came from a messaging app (Telegram); replies reach it there. */
+  merge_has_channel?: boolean;
+  /** The connected bot's handle, for Telegram conversations. */
+  channel_handle?: string;
   merge_continuation_id?: string;
   merge_participants?: string[];
   list_last_message_preview?: string;
@@ -822,7 +826,7 @@ export interface SupportMessage {
   system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
-  via_channel?: 'email' | 'widget' | 'portal' | null;
+  via_channel?: 'email' | 'widget' | 'portal' | 'telegram' | null;
   email_notified_at?: string;
   widget_read_at?: string | null;
   email_read_at?: string;
@@ -842,6 +846,8 @@ export interface SupportMessage {
   email_projection_version?: number;
   /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
   email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
+  /** Delivery through a messaging app (Telegram). */
+  channel_delivery?: { status: 'sending' | 'sent' | 'failed' | 'unconfirmed' | 'cancelled'; error_code?: string; retryable: boolean } | null;
   /** Human-readable bounce or complaint description. Empty unless delivery failed. */
   email_delivery_error?: string;
   /** Primary outbound email recipient, populated for messages sent via email. */
@@ -1678,6 +1684,25 @@ export type WebhookEventType =
   | 'sla.warning'
   | 'sla.breached'
   | 'csat.submitted';
+
+/** A connected messaging account (a Telegram bot) that feeds an inbox. */
+export interface SupportChannelAccount {
+  id: string
+  workspace_id: string
+  provider: 'telegram'
+  external_account_id: string
+  display_name: string
+  handle: string
+  mailbox_id: string | null
+  ai_replies_disabled: boolean
+  status: 'active' | 'reauthorization_required' | 'disabled'
+  last_error_code: string | null
+  last_error_message: string | null
+  last_event_at: string | null
+  created_at: string
+  failed_deliveries: number
+  unconfirmed_deliveries: number
+}
 
 export interface WebhookEndpoint {
   id: string;

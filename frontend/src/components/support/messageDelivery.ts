@@ -5,7 +5,7 @@ import { hasChatTransport } from '@/lib/supportChannels';
 
 export type DeliveryState = 'sent' | 'delivered' | 'read' | 'queued' | 'sending' | 'failed' | 'unknown' | 'external';
 export interface ChannelDelivery {
-  channel: 'chat' | 'email';
+  channel: 'chat' | 'email' | 'telegram';
   state: DeliveryState;
   description: string;
 }
@@ -34,6 +34,27 @@ function emailDelivery(message: SupportMessage, receipt?: SupportReceiptStatus):
   return email('unknown', 'status unavailable');
 }
 
+const CHANNEL_DELIVERY_REASONS: Record<string, string> = {
+  blocked: 'the customer blocked the bot',
+  auth: 'Telegram rejected the bot token',
+  disconnected: 'the bot was disconnected',
+  retries_exhausted: 'Telegram kept refusing it',
+  too_large: 'a file is too large for Telegram',
+}
+
+/** A reply sent through a messaging app (Telegram) has one delivery: that app. */
+function providerDelivery(delivery: NonNullable<SupportMessage['channel_delivery']>): MessageDelivery {
+  const reason = delivery.error_code ? CHANNEL_DELIVERY_REASONS[delivery.error_code] : undefined
+  const entry = (state: DeliveryState, description: string): MessageDelivery => ({ channels: [{ channel: 'telegram', state, description }], state })
+  switch (delivery.status) {
+    case 'sent': return entry('sent', 'Sent to Telegram')
+    case 'sending': return entry('sending', 'Sending to Telegram')
+    case 'unconfirmed': return entry('failed', 'Telegram did not confirm delivery')
+    case 'cancelled': return entry('failed', `Not sent${reason ? `: ${reason}` : ''}`)
+    default: return entry('failed', `Not delivered to Telegram${reason ? `: ${reason}` : ''}`)
+  }
+}
+
 /** Keep each channel's outcome; a successful chat must not hide an email failure. */
 export function getMessageDelivery(
   message: SupportMessage,
@@ -44,6 +65,7 @@ export function getMessageDelivery(
   } = {},
 ): MessageDelivery | null {
   if (message.sender_type === 'customer' || message.is_internal || (message.message_type && message.message_type !== 'reply') || message.pending_send) return null;
+  if (message.channel_delivery) return providerDelivery(message.channel_delivery);
   if (isExternalSupportEmailReply(message.metadata) || receiptStatus === 'sent_outside_helpin') {
     return { channels: [{ channel: 'email', state: 'external', description: 'Email sent outside Helpin · Delivery tracking unavailable' }], state: 'external' };
   }

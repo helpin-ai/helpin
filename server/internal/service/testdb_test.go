@@ -744,7 +744,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, crm_company_changed_at DATETIME,
+		`CREATE TABLE support_conversations (channel_account_id TEXT, channel_identity_id TEXT, snoozed_until DATETIME, snoozed_by_user_id TEXT, crm_company_changed_at DATETIME,
             custom_fields TEXT NOT NULL DEFAULT '{}', request_type_id TEXT,
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
@@ -922,7 +922,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE support_messages (
+		`CREATE TABLE support_messages (channel_account_id TEXT, external_message_key TEXT, 
             origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,

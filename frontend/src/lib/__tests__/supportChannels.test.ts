@@ -3,7 +3,7 @@ import { SUPPORT_CHANNELS, hasChatTransport, supportChannel, supportChannelLabel
 
 describe('support channel registry', () => {
   it('lists channels in display order with unique keys', () => {
-    expect(SUPPORT_CHANNELS.map((channel) => channel.key)).toEqual(['widget', 'email', 'portal', 'api', 'internal'])
+    expect(SUPPORT_CHANNELS.map((channel) => channel.key)).toEqual(['widget', 'email', 'portal', 'api', 'internal', 'telegram'])
   })
 
   it('matches keys exactly and ignores provenance values', () => {
@@ -14,9 +14,9 @@ describe('support channel registry', () => {
   })
 
   it('keeps existing labels per surface', () => {
-    expect(SUPPORT_CHANNELS.map((channel) => channel.label)).toEqual(['Chat', 'Email', 'Portal', 'API', 'Started by team'])
-    expect(SUPPORT_CHANNELS.map((channel) => channel.inbox?.label ?? null)).toEqual(['Live chat', 'Email', 'Customer portal', null, null])
-    expect(SUPPORT_CHANNELS.map((channel) => channel.messageLabel ?? null)).toEqual(['Chat', 'Email', 'Portal', 'API', 'Internal'])
+    expect(SUPPORT_CHANNELS.map((channel) => channel.label)).toEqual(['Chat', 'Email', 'Portal', 'API', 'Started by team', 'Telegram'])
+    expect(SUPPORT_CHANNELS.map((channel) => channel.inbox?.label ?? null)).toEqual(['Live chat', 'Email', 'Customer portal', null, null, 'Telegram'])
+    expect(SUPPORT_CHANNELS.map((channel) => channel.messageLabel ?? null)).toEqual(['Chat', 'Email', 'Portal', 'API', 'Internal', 'Telegram'])
     expect(supportChannelLabel('intercom')).toBe('Intercom')
   })
 

@@ -104,6 +104,7 @@ func (s *SupportInboxService) ListConversationMessagePage(
 			hydrateEmailBodiesFromLogs(messages, logs)
 		}
 	}
+	s.hydrateChannelDelivery(ctx, workspaceID, conversation, messages)
 
 	page := &model.SupportMessagePage{Data: messages, HasMore: hasMore}
 	if hasMore && len(messages) > 0 {

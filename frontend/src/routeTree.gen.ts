@@ -69,6 +69,7 @@ import { Route as AuthenticatedWSlugSettingsSupportWebhooksRouteImport } from '.
 import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
 import { Route as AuthenticatedWSlugSettingsSupportSlaRouteImport } from './routes/_authenticated/w/$slug/settings/support-sla'
 import { Route as AuthenticatedWSlugSettingsSupportConversationFieldsRouteImport } from './routes/_authenticated/w/$slug/settings/support-conversation-fields'
+import { Route as AuthenticatedWSlugSettingsSupportChannelsRouteImport } from './routes/_authenticated/w/$slug/settings/support-channels'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
 import { Route as AuthenticatedWSlugSettingsServerRouteImport } from './routes/_authenticated/w/$slug/settings/server'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
@@ -476,6 +477,12 @@ const AuthenticatedWSlugSettingsSupportConversationFieldsRoute =
   AuthenticatedWSlugSettingsSupportConversationFieldsRouteImport.update({
     id: '/settings/support-conversation-fields',
     path: '/settings/support-conversation-fields',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsSupportChannelsRoute =
+  AuthenticatedWSlugSettingsSupportChannelsRouteImport.update({
+    id: '/settings/support-channels',
+    path: '/settings/support-channels',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsSupportAiAssistantRoute =
@@ -1061,6 +1068,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-channels': typeof AuthenticatedWSlugSettingsSupportChannelsRoute
   '/w/$slug/settings/support-conversation-fields': typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
@@ -1196,6 +1204,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-channels': typeof AuthenticatedWSlugSettingsSupportChannelsRoute
   '/w/$slug/settings/support-conversation-fields': typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
@@ -1338,6 +1347,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/_authenticated/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/_authenticated/w/$slug/settings/support-channels': typeof AuthenticatedWSlugSettingsSupportChannelsRoute
   '/_authenticated/w/$slug/settings/support-conversation-fields': typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   '/_authenticated/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
@@ -1482,6 +1492,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-channels'
     | '/w/$slug/settings/support-conversation-fields'
     | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
@@ -1617,6 +1628,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-channels'
     | '/w/$slug/settings/support-conversation-fields'
     | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
@@ -1758,6 +1770,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/repositories'
     | '/_authenticated/w/$slug/settings/server'
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
+    | '/_authenticated/w/$slug/settings/support-channels'
     | '/_authenticated/w/$slug/settings/support-conversation-fields'
     | '/_authenticated/w/$slug/settings/support-sla'
     | '/_authenticated/w/$slug/settings/support-translation'
@@ -2243,6 +2256,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/support-conversation-fields'
       fullPath: '/w/$slug/settings/support-conversation-fields'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportConversationFieldsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/support-channels': {
+      id: '/_authenticated/w/$slug/settings/support-channels'
+      path: '/settings/support-channels'
+      fullPath: '/w/$slug/settings/support-channels'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportChannelsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/support-ai-assistant': {
@@ -3040,6 +3060,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
   AuthenticatedWSlugSettingsServerRoute: typeof AuthenticatedWSlugSettingsServerRoute
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  AuthenticatedWSlugSettingsSupportChannelsRoute: typeof AuthenticatedWSlugSettingsSupportChannelsRoute
   AuthenticatedWSlugSettingsSupportConversationFieldsRoute: typeof AuthenticatedWSlugSettingsSupportConversationFieldsRoute
   AuthenticatedWSlugSettingsSupportSlaRoute: typeof AuthenticatedWSlugSettingsSupportSlaRoute
   AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
@@ -3140,6 +3161,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsServerRoute: AuthenticatedWSlugSettingsServerRoute,
   AuthenticatedWSlugSettingsSupportAiAssistantRoute:
     AuthenticatedWSlugSettingsSupportAiAssistantRoute,
+  AuthenticatedWSlugSettingsSupportChannelsRoute:
+    AuthenticatedWSlugSettingsSupportChannelsRoute,
   AuthenticatedWSlugSettingsSupportConversationFieldsRoute:
     AuthenticatedWSlugSettingsSupportConversationFieldsRoute,
   AuthenticatedWSlugSettingsSupportSlaRoute:

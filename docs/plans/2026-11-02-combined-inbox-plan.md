@@ -20,10 +20,12 @@ plans the work so it is ready when it gets scheduled; it does not set priority.
 Intercom parity: Intercom's
 [channel list](https://www.intercom.com/help/en/articles/9955432-channels-explained)
 names Messenger, email, phone, WhatsApp, Switch, Slack, SMS, Facebook,
-Instagram and Telegram. Telegram is listed without detail, so its depth is
-unverified. X and RCS are not listed. Phases 1–5 aim at that set. Being on a
-list is not feature parity, and only RCS is a candidate differentiator. Check
-it again before using it in positioning.
+Instagram and Telegram, plus a native Discord channel. Telegram is native
+(checked 2026-11-13): bot token, private chats only, one conversation per user.
+X and RCS are not offered. Phases 1–5 aim at that set. Being on a list is not
+feature parity, and only RCS is a candidate differentiator. Check it again
+before using it in positioning. The section "Compared with Intercom" below
+records where this design differs, and why.
 
 ## Problem
 
@@ -207,6 +209,70 @@ Slack appears in two roles. They must not be confused:
 - **Slack as a customer channel** (customers in a shared Slack Connect
   channel): one more `provider` adapter. It is the bridge plan's reserved
   `customer_channel` mode, and it is not scheduled.
+
+## Compared with Intercom
+
+Researched 2026-11-13 from Intercom's help center. Items marked unverified
+could not be confirmed there.
+
+**Routing.**
+- **Intercom:** no default inbox per channel or per account. Every new
+  conversation goes to one workspace-wide default assignee, and Workflows
+  reassign it using an attribute that names the account ("Telegram bot",
+  "Workspace SMS phone number", Facebook page, "Email to", Brand). Intercom
+  users have asked for a per-channel default; there is an open community
+  request, "Default assignee by channel".
+- **Chatwoot:** each connected account is its own inbox.
+- **Helpin:** each connected account has a default mailbox, the same way an
+  email route attaches to one. Triage rules override it. The order is fixed:
+  **a triage rule wins, then the account's default mailbox, then the workspace
+  default.** Triage conditions on a specific account (for example "Telegram bot
+  is @acme_support") come when a workspace runs several accounts of one
+  provider.
+
+**Conversation keys.** Direct-message channels (Telegram private chats,
+Messenger, Instagram, WhatsApp, SMS) have one conversation per person at a
+time, which `channel_identity_id` covers. Intercom's reopen windows differ by
+channel: 5 days for Facebook, Instagram and SMS, configurable for WhatsApp,
+and a setting for email. Helpin uses 5 days for messaging channels, with a
+per-account setting to come.
+
+**Thread-based channels** (Slack, Discord, Telegram groups; not scheduled).
+Intercom treats one Slack or Discord thread as one conversation, posts
+teammate replies back into the thread (optionally as the teammate's own Slack
+user), and turns each poster into a lead or matches them by email. These
+channels don't fit one-person conversations, so they will need three additive
+changes when they arrive:
+- `support_conversations.external_thread_key`, unique per account. The
+  conversation is found by thread, not by person.
+- `support_messages.sender_channel_identity_id`, because one thread has
+  several customer participants.
+- `support_channel_links`: each monitored Slack or Discord channel, with its
+  own default mailbox, an optional **CRM company**, and a start trigger (every
+  message, a mention, an emoji or a keyword, as Intercom offers). A Slack
+  Connect channel usually means one customer company, so conversations arrive
+  already routed and tied to the account. Intercom doesn't document routing by
+  Slack channel at all (unverified).
+
+**Contacts.**
+- **Intercom:** every channel user becomes a lead. WhatsApp matches existing
+  contacts by phone, Slack optionally by email, and Telegram is matched by
+  hand. A lead merges into a user one way only.
+- **Helpin:** keeps a separate identity per account and links it to a CRM
+  contact by hand. One contact can hold any number of identities (Telegram,
+  WhatsApp, Slack), listed on the contact page. A one-click "Create contact
+  from this person" in the sidebar is planned for the Telegram-only case,
+  instead of creating an email-less CRM contact for every sender.
+
+**Composer and AI per channel.**
+- **Limits:** Intercom shows per-channel limits (SMS segment counter,
+  Instagram's 1,000 characters, WhatsApp templates after 24 hours, Telegram's
+  4,096 characters). That matches `Capabilities` here.
+- **AI:** Intercom deploys its AI agent per channel. Helpin follows the chat or
+  email setting by channel, plus a per-account "AI replies" switch.
+- **Outbound:** Intercom starts outbound conversations only on email, chat,
+  WhatsApp, SMS and phone. Messaging channels here stay reply-only until a
+  later phase.
 
 ## Data model
 
@@ -595,6 +661,17 @@ transport.
 
 ### Phase 1: foundation plus Telegram (10–14 days)
 
+Implementation plan: [Telegram channel](2026-11-03-telegram-channel-plan.md).
+
+**As built (2026-11-13, branch `feat/telegram-channel`).** Phase 1 shipped as
+the seven slices of the Telegram plan; its "Built" notes record the
+deviations. The main ones: replies are queued by a database trigger rather
+than `EnqueueTx` calls in each producer, so every producer is covered without
+code changes; there is no window service, because Telegram has no reply
+window; and contact linking stays manual, because Telegram gives no email or
+phone to match on. The engineering guide is
+[Support messaging channels](../support-channels.md).
+
 Telegram goes first because it needs no app review, no business verification
 and no OAuth. Connecting it means pasting a bot token. That lets one provider
 prove the shared delivery architecture end to end, and it works for self-hosters
@@ -828,8 +905,9 @@ Consequences:
 - Ad-originated 7-day windows.
 - Unified person record and contact merge across channels.
 - Showing agent names to customers.
-- Slack/Mattermost as a customer channel; that is the bridge plan's reserved
-  `customer_channel` mode.
+- Slack and Discord as customer channels; see "Thread-based channels" in
+  Compared with Intercom. The Slack/Mattermost bridge plan reserved this as
+  its `customer_channel` mode.
 
 ## Security and privacy
 

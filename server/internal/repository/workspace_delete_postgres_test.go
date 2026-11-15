@@ -52,6 +52,7 @@ func seedWorkspaceForDelete(t *testing.T, db *gorm.DB, ownerID, key string) work
 		pipelineID: uuid.NewString(), periodID: uuid.NewString(),
 	}
 	eventID, conversationID := uuid.NewString(), uuid.NewString()
+	accountID, identityID := uuid.NewString(), uuid.NewString()
 	for _, stmt := range []struct {
 		sql  string
 		args []any
@@ -75,6 +76,13 @@ func seedWorkspaceForDelete(t *testing.T, db *gorm.DB, ownerID, key string) work
 		{`INSERT INTO support_messages (workspace_id, conversation_id, sender_type, content) VALUES (?, ?, 'customer', 'Hi')`,
 			[]any{f.workspaceID, conversationID}},
 		{`UPDATE support_conversations SET anonymized_at = now() WHERE id = ?`, []any{conversationID}},
+		// Channel tables chain account -> identity -> outbox through blocking keys.
+		{`INSERT INTO support_channel_accounts (id, workspace_id, provider, external_account_id, token_encrypted, webhook_secret_hash)
+		  VALUES (?, ?, 'telegram', ?, 'enc', 'hash')`, []any{accountID, f.workspaceID, "bot-" + uuid.NewString()}},
+		{`INSERT INTO support_channel_identities (id, workspace_id, channel_account_id, external_user_id) VALUES (?, ?, ?, '42')`,
+			[]any{identityID, f.workspaceID, accountID}},
+		{`INSERT INTO support_channel_outbox (workspace_id, channel_account_id, channel_identity_id, conversation_id, message_id, semantic_key)
+		  VALUES (?, ?, ?, ?, ?, ?)`, []any{f.workspaceID, accountID, identityID, conversationID, uuid.NewString(), "message:" + uuid.NewString()}},
 		// AI usage is billing history and outlives the workspace.
 		{`INSERT INTO billing_ai_usage_periods (id, workspace_id, period_start, period_end, allowance_microusd, enforcement_mode, pricing_version)
 		  VALUES (?, ?, now(), now() + interval '30 days', 1000, 'soft', 'v1')`, []any{f.periodID, f.workspaceID}},
