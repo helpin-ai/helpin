@@ -88,8 +88,6 @@ jobs:
       level: full
       architecture: ${{ matrix.arch }}
       export-images: true
-    secrets:
-      runtime_read_token: ${{ secrets.COMMUNITY_RUNTIME_READ_TOKEN }}
   push:
     needs: native
     environment: community-release

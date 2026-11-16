@@ -100,11 +100,10 @@ remove their own resources. They do not upload raw logs or credential-bearing tr
 Fork PR jobs use GitHub-hosted runners without private credentials. Internal
 jobs retain ARC runners where already configured. ARC runner-group access is
 restricted to trusted workflows/refs because a contributor can edit workflow
-YAML; the runner selector alone is not an authorization boundary. While the
-Runtime repository is private, scheduled/manual/release acceptance uses
-`COMMUNITY_RUNTIME_READ_TOKEN` with Contents: read on that repository. PR checks
-do not check out Runtime or need that token; do not supply private credentials
-or use `pull_request_target` for forks.
+YAML; the runner selector alone is not an authorization boundary. The Runtime
+repository is public, so scheduled/manual/release acceptance checks it out with
+the workflow's own token. PR checks do not check out Runtime; do not supply
+private credentials or use `pull_request_target` for forks.
 
 Go and Node are pinned in `.go-version` and `.node-version`; pnpm is declared in
 `package.json`. CI validates the Community image toolchain pins against those

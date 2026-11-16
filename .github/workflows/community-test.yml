@@ -11,9 +11,6 @@ on:
       export-images:
         type: boolean
         default: false
-    secrets:
-      runtime_read_token:
-        required: false
 permissions:
   contents: read
 jobs:
@@ -44,7 +41,7 @@ jobs:
         env:
           LEVEL: ${{ inputs.level }}
           EXPORT_IMAGES: ${{ inputs.export-images }}
-          GH_TOKEN: ${{ secrets.runtime_read_token || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           [[ "$LEVEL" == smoke || "$LEVEL" == full ]]
           [[ "$COMMUNITY_ARCH" == amd64 || "$COMMUNITY_ARCH" == arm64 ]]
@@ -53,7 +50,7 @@ jobs:
           [[ $revision =~ ^[a-f0-9]{40}$ ]]
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
           if ! gh api repos/helpin-ai/agent-runtime --silent >/dev/null 2>&1; then
-            echo '::error::Runtime source is unavailable. Internal runs need COMMUNITY_RUNTIME_READ_TOKEN with Contents: read on agent-runtime. Fork runs require the pinned Runtime source to be public; no private token is exposed to forks.'
+            echo '::error::The Runtime source (helpin-ai/agent-runtime) could not be read. It is public; check that the repository and the pinned revision exist.'
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,7 +59,6 @@ jobs:
           repository: helpin-ai/agent-runtime
           ref: ${{ steps.runtime.outputs.revision }}
           path: agent-runtime
-          token: ${{ secrets.runtime_read_token || github.token }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           package-manager-cache: false

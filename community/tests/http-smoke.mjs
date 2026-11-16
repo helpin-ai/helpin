@@ -108,16 +108,10 @@ const unsigned = new URL(editorUpload.url); unsigned.search = '';
 assert.ok([400,403].includes((await fetch(unsigned)).status), 'storage object was anonymously readable');
 const imageNodes = [{ type: 'resizableImage', attrs: { src: imageSrc, attachmentId: editorUpload.attachment.id } }];
 if (process.env.COMMUNITY_TEST_AI === 'yes') {
-  const imported = await request('/api/docs/images/import', { method: 'POST', body: { image_url: 'http://test-providers:8080/image.png' } });
-  const privateURL = new URL(imported.url);
-  assert.equal(privateURL.pathname, '/api/docs/images/content');
-  assert.equal((await fetch(privateURL)).status, 401, 'imported Docs image was publicly readable');
-  const privateImage = await fetch(privateURL, { headers: { Authorization: `Bearer ${token}` } });
-  assert.equal(privateImage.status, 200);
-  assert.deepEqual(Buffer.from(await privateImage.arrayBuffer()), png);
-  const publicAttempt = `${base}/api/public/assets/${privateURL.searchParams.get('key')}`;
-  assert.equal((await fetch(publicAttempt)).status, 404, 'private import passed the public allowlist');
-  imageNodes.push({ type: 'resizableImage', attrs: { src: imported.url } });
+  // Image import reaches only public addresses, so the server cannot be used
+  // to fetch internal services.
+  const refused = await request('/api/docs/images/import', { method: 'POST', status: 400, body: { image_url: 'http://test-providers:8080/image.png' } });
+  assert.match(refused.error, /non-public address/, 'image import reached a private address');
 }
 await request(`/api/docs/documents/${article.id}/publish`, { method: 'POST', body: {
   slug: 'first-conversation', published_content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Install the widget on your website to start a conversation.' }] }, ...imageNodes] },
