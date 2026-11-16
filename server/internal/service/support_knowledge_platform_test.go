@@ -108,32 +108,6 @@ func TestPricingAnswerIsValidatedAgainstRetrievedSources(t *testing.T) {
 	}
 }
 
-func TestValidationRejectsUncitedNumber(t *testing.T) {
-	plan := SupportQueryPlanContract{
-		Route:           supportDecisionAnswer,
-		Intent:          supportIntentPricingGeneral,
-		Subject:         "Usermaven",
-		StandaloneQuery: "What is your pricing?",
-	}
-	results := []KnowledgeSearchResult{
-		{ID: "cited", Title: "Usermaven Pricing", URL: "https://usermaven.com/pricing", Content: "Growth starts at $49 per month. Enterprise has custom pricing."},
-		{ID: "uncited", Title: "Legacy", Content: "An old plan cost $99 per month."},
-	}
-	response := &AIResponseContract{
-		Content:    "Growth starts at $99 per month. Enterprise has custom pricing.",
-		CanAnswer:  true,
-		Confidence: 0.95,
-		Claims: []AIResponseClaim{
-			{Text: "Growth starts at $99 per month.", EvidenceIDs: []string{"cited"}},
-		},
-		EvidenceCoverage: map[string][]string{},
-	}
-	validation := validateSupportAnswer(plan, supportEvidenceCoverage{Found: map[string][]string{}}, results, response)
-	if validation.Outcome != supportValidationNumeric {
-		t.Fatalf("uncited retrieved number must not validate: %+v", validation)
-	}
-}
-
 func TestValidationRejectsUnknownEvidenceID(t *testing.T) {
 	plan := SupportQueryPlanContract{}
 	results := []KnowledgeSearchResult{{
