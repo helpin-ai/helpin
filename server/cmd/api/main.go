@@ -1860,6 +1860,7 @@ func main() {
 
 	// The edition may add features on top of the product services, such as
 	// extra MCP tools. It must do so before the MCP and REST handlers are built.
+	supportPreviewService := service.NewSupportPreviewService(agentService, supportAIService, supportRunEvidenceRepo)
 	if err := editionServices.ExtendWith(edition.Extension{
 		DB:                     db,
 		HelpcenterHostedDomain: cfg.HelpcenterHostedDomain,
@@ -1874,6 +1875,11 @@ func main() {
 		SupportInbox:           supportInboxService,
 		CRMCompanies:           crmCompanyRepo,
 		CRMActivities:          crmActivityService,
+		DocsDocuments:          docsDocumentService,
+		AgentKnowledgeSources:  agentKnowledgeSourceService,
+		ContentSources:         supportContentSourceService,
+		AgentContentSources:    agentContentSourceService,
+		SupportPreview:         supportPreviewService,
 	}); err != nil {
 		slog.Error("startup: edition extension failed", "error", err)
 		os.Exit(1)
@@ -2056,7 +2062,7 @@ func main() {
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService).SetPreviewService(service.NewSupportPreviewService(agentService, supportAIService, supportRunEvidenceRepo)),
+		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService).SetPreviewService(supportPreviewService),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),

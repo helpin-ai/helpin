@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,12 @@ const (
 	// envDemoOrganizationName names the organization that holds the demo
 	// workspaces. Optional; the default is "Demos".
 	envDemoOrganizationName = "DEMO_PROVISIONING_ORGANIZATION_NAME"
+	// envDemoWebsiteCrawlLimit caps the pages crawled from a company
+	// website. Optional; the default is 100.
+	envDemoWebsiteCrawlLimit = "DEMO_PROVISIONING_WEBSITE_CRAWL_LIMIT"
+	// envDemoIndexTimeout is how long a build waits for indexing, as a Go
+	// duration such as "60m". Optional; the default is an hour.
+	envDemoIndexTimeout = "DEMO_PROVISIONING_INDEX_TIMEOUT"
 )
 
 // demoConfigFromEnv reads the demo provisioning settings.
@@ -38,11 +45,16 @@ func demoConfigFromEnv(hostedDomain string) demo.Config {
 			workspaces = append(workspaces, id)
 		}
 	}
+	// Unset or unreadable values fall back to the defaults.
+	crawlLimit, _ := strconv.Atoi(os.Getenv(envDemoWebsiteCrawlLimit))
+	indexTimeout, _ := time.ParseDuration(os.Getenv(envDemoIndexTimeout))
 	return demo.Config{
 		HomeWorkspaceIDs:       workspaces,
 		OwnerEmail:             os.Getenv(envDemoOwnerEmail),
 		OrganizationName:       os.Getenv(envDemoOrganizationName),
 		HelpcenterHostedDomain: hostedDomain,
+		WebsiteCrawlLimit:      crawlLimit,
+		IndexTimeout:           indexTimeout,
 	}
 }
 
@@ -62,7 +74,8 @@ func (d *demoProvisioning) extend(ext edition.Extension) error {
 	}
 	if ext.DB == nil || ext.MCP == nil || ext.Workspaces == nil || ext.Organizations == nil || ext.Users == nil ||
 		ext.Helpcenter == nil || ext.DocsImport == nil || ext.DocsSpaces == nil || ext.DocsCollections == nil ||
-		ext.SupportInbox == nil || ext.CRMCompanies == nil || ext.CRMActivities == nil {
+		ext.SupportInbox == nil || ext.CRMCompanies == nil || ext.CRMActivities == nil || ext.DocsDocuments == nil ||
+		ext.AgentKnowledgeSources == nil || ext.ContentSources == nil || ext.AgentContentSources == nil || ext.SupportPreview == nil {
 		return fmt.Errorf("demo provisioning is configured but a product service it needs is missing")
 	}
 	service := demo.NewService(cfg, demo.Deps{
@@ -74,9 +87,15 @@ func (d *demoProvisioning) extend(ext edition.Extension) error {
 		Imports:       ext.DocsImport,
 		Spaces:        ext.DocsSpaces,
 		Collections:   ext.DocsCollections,
+		Documents:     ext.DocsDocuments,
 		Support:       ext.SupportInbox,
-		Companies:     ext.CRMCompanies,
-		Activities:    ext.CRMActivities,
+
+		Knowledge:           ext.AgentKnowledgeSources,
+		ContentSources:      ext.ContentSources,
+		AgentContentSources: ext.AgentContentSources,
+		Preview:             ext.SupportPreview,
+		Companies:           ext.CRMCompanies,
+		Activities:          ext.CRMActivities,
 	})
 	if err := ext.MCP.RegisterToolExtensions(service.MCPTools()...); err != nil {
 		return fmt.Errorf("register demo tools: %w", err)

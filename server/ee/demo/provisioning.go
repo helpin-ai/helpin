@@ -29,8 +29,11 @@ const (
 	PropertyStatus       = "demo_status"
 	PropertyWorkspaceID  = "demo_workspace_id"
 	PropertyWorkspaceURL = "demo_workspace_url"
+	PropertyWebsiteURL   = "demo_website_url"
 	// PropertyHelpCenterURL is read when a request names no address.
 	PropertyHelpCenterURL = "help_center_url"
+	// PropertyCompanyWebsite is read when a request names no website.
+	PropertyCompanyWebsite = "website"
 )
 
 // Build steps, in order. A build stores the step it is on, so a restarted
@@ -41,7 +44,11 @@ const (
 	demoStepBranding     = "branding"
 	demoStepImport       = "import"
 	demoStepHomepage     = "homepage"
+	demoStepWebsite      = "website"
 	demoStepWidget       = "widget"
+	demoStepKnowledge    = "knowledge"
+	demoStepIndexWait    = "index_wait"
+	demoStepVerify       = "verify"
 	demoStepCRM          = "crm"
 	demoStepDone         = "done"
 )
@@ -92,9 +99,14 @@ type Config struct {
 	OrganizationName string
 	// HelpcenterHostedDomain is the root that hosted help centers live under.
 	HelpcenterHostedDomain string
-	// MaxUnfinished caps how many builds one home workspace may have queued
-	// or running.
+	// MaxUnfinished caps how many builds one home workspace may have running.
+	// Further builds wait in the queue.
 	MaxUnfinished int
+	// WebsiteCrawlLimit caps the pages crawled from a company website.
+	WebsiteCrawlLimit int
+	// IndexTimeout is how long a build waits for indexing before it checks
+	// the demo anyway.
+	IndexTimeout time.Duration
 }
 
 // Enabled reports whether demos can be built at all.
@@ -116,6 +128,12 @@ func (c Config) normalized() Config {
 	if c.MaxUnfinished <= 0 {
 		c.MaxUnfinished = 5
 	}
+	if c.WebsiteCrawlLimit <= 0 {
+		c.WebsiteCrawlLimit = 100
+	}
+	if c.IndexTimeout <= 0 {
+		c.IndexTimeout = time.Hour
+	}
 	return c
 }
 
@@ -123,10 +141,10 @@ type demoStore interface {
 	CreateOrGet(ctx context.Context, demo *eerepository.DemoWorkspace) (*eerepository.DemoWorkspace, bool, error)
 	GetByID(ctx context.Context, homeWorkspaceID, id string) (*eerepository.DemoWorkspace, error)
 	GetByCompany(ctx context.Context, homeWorkspaceID, companyID string) (*eerepository.DemoWorkspace, error)
-	CountUnfinished(ctx context.Context, homeWorkspaceID string) (int64, error)
-	ClaimNext(ctx context.Context, now time.Time, lease time.Duration) (*eerepository.DemoWorkspace, error)
+	ClaimNext(ctx context.Context, now time.Time, lease time.Duration, maxBuilding int) (*eerepository.DemoWorkspace, error)
 	Save(ctx context.Context, demo *eerepository.DemoWorkspace) error
 	Requeue(ctx context.Context, homeWorkspaceID, id string) error
+	Restart(ctx context.Context, homeWorkspaceID, id, step string) (bool, error)
 }
 
 type demoUsers interface {
@@ -140,6 +158,7 @@ type demoOrganizations interface {
 
 type demoWorkspaces interface {
 	Create(ctx context.Context, req model.CreateWorkspaceRequest, ownerID string) (*model.WorkspaceWithRole, error)
+	Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest, actorID string) (*model.Workspace, error)
 }
 
 type demoHelpcenter interface {
@@ -170,6 +189,30 @@ type demoSupport interface {
 	UpdateInstallationSettings(ctx context.Context, workspaceID string, req model.UpdateInstallationSettingsRequest) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error)
 }
 
+type demoDocuments interface {
+	List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error)
+}
+
+type demoKnowledge interface {
+	List(ctx context.Context, workspaceID, agentID string) ([]coreservice.KnowledgeSourceWithSpace, error)
+	Set(ctx context.Context, workspaceID, agentID string, spaceIDs []string) error
+	Reindex(ctx context.Context, workspaceID, agentID, spaceID string) error
+}
+
+type demoContentSources interface {
+	List(ctx context.Context, workspaceID string) ([]model.SupportContentSource, error)
+	Create(ctx context.Context, workspaceID string, req model.CreateSupportContentSourceRequest) (*model.SupportContentSource, error)
+}
+
+type demoAgentContentSources interface {
+	Set(ctx context.Context, workspaceID, agentID string, contentSourceIDs []string) error
+}
+
+type demoPreview interface {
+	Start(ctx context.Context, workspaceID, agentID string, req model.SupportAIPreviewRequest) (*model.SupportAIPreviewResponse, error)
+	Get(ctx context.Context, workspaceID, agentID, runID string) (*model.SupportAIPreviewResponse, error)
+}
+
 type demoCompanies interface {
 	GetByID(ctx context.Context, id string) (*model.CRMCompany, error)
 	GetByDomain(ctx context.Context, workspaceID, domain string) (*model.CRMCompany, error)
@@ -190,9 +233,17 @@ type Deps struct {
 	Imports       demoImports
 	Spaces        demoSpaces
 	Collections   demoCollections
+	Documents     demoDocuments
 	Support       demoSupport
-	Companies     demoCompanies
-	Activities    demoActivities
+	// Knowledge, ContentSources and AgentContentSources index the help
+	// center and the company website for the support agent.
+	Knowledge           demoKnowledge
+	ContentSources      demoContentSources
+	AgentContentSources demoAgentContentSources
+	// Preview asks the support agent the build's check questions.
+	Preview    demoPreview
+	Companies  demoCompanies
+	Activities demoActivities
 }
 
 // Service builds demo workspaces: it creates a workspace for
@@ -232,6 +283,14 @@ type Report struct {
 	FailedImages     int                   `json:"failed_images"`
 	FailedArticles   []model.ImportFailure `json:"failed_articles,omitempty"`
 	AIRepliesEnabled bool                  `json:"ai_replies_enabled"`
+	Website          *WebsiteReport        `json:"website,omitempty"`
+	Knowledge        *KnowledgeReport      `json:"knowledge,omitempty"`
+	// VerifyQuestions are the caller's own check questions.
+	VerifyQuestions []string       `json:"verify_questions,omitempty"`
+	Verify          []VerifyResult `json:"verify,omitempty"`
+	VerifyPassed    bool           `json:"verify_passed"`
+	// Issues names, as codes, why a finished build is ready_with_issues.
+	Issues []string `json:"issues,omitempty"`
 	// Notes lists, in plain words, everything that needs a look by hand.
 	Notes []string `json:"notes"`
 }
@@ -308,6 +367,12 @@ type CreateInput struct {
 	// HelpCenterURL is the company's public help center. Empty reads the
 	// company's "help_center_url" property.
 	HelpCenterURL string
+	// WebsiteURL is the company website. Empty reads the company's "website"
+	// property, then uses its domain.
+	WebsiteURL string
+	// VerifyQuestions are asked of the support agent after the build, five
+	// at most.
+	VerifyQuestions []string
 }
 
 // Create queues a demo build for a company, or returns the build the company
@@ -358,17 +423,14 @@ func (s *Service) Create(ctx context.Context, homeWorkspaceID, userID string, in
 		}
 		return nil, false, fmt.Errorf("check help center: %w", err)
 	}
-	unfinished, err := s.deps.Store.CountUnfinished(ctx, homeWorkspaceID)
+	report, err := initialDemoReport(company, input)
 	if err != nil {
 		return nil, false, err
-	}
-	if unfinished >= int64(s.cfg.MaxUnfinished) {
-		return nil, false, demoInputError("%d demos are already being built. Wait for one to finish, then try again.", unfinished)
 	}
 	demo, isNew, err := s.deps.Store.CreateOrGet(ctx, &eerepository.DemoWorkspace{
 		HomeWorkspaceID: homeWorkspaceID, CompanyID: company.ID, CompanyName: strings.TrimSpace(company.Name),
 		Domain: normalizeDemoDomain(derefDemoString(company.Domain)), HelpCenterURL: homeURL,
-		Status: eerepository.DemoStatusQueued, Step: demoStepOrganization, Report: json.RawMessage(`{}`), RequestedBy: userID,
+		Status: eerepository.DemoStatusQueued, Step: demoStepOrganization, Report: report, RequestedBy: userID,
 	})
 	if err != nil {
 		return nil, false, err
@@ -378,6 +440,71 @@ func (s *Service) Create(ctx context.Context, homeWorkspaceID, userID string, in
 		s.logger.InfoContext(ctx, "demo build queued", "demo_id", demo.ID, "home_workspace_id", homeWorkspaceID, "company_id", company.ID)
 	}
 	return demoView(demo), isNew, nil
+}
+
+// initialDemoReport holds what the request says about the website and the
+// check questions until the build gets to them.
+func initialDemoReport(company *model.CRMCompany, input CreateInput) (json.RawMessage, error) {
+	website := strings.TrimSpace(input.WebsiteURL)
+	if website == "" {
+		website, _ = company.CustomProperties[PropertyCompanyWebsite].(string)
+	}
+	website, err := validateDemoWebsiteURL(website)
+	if err != nil {
+		if strings.TrimSpace(input.WebsiteURL) != "" {
+			return nil, err
+		}
+		// A bad CRM value falls back to the domain, like a missing one.
+		website = ""
+	}
+	if len(input.VerifyQuestions) > demoMaxVerifyQuestions {
+		return nil, demoInputError("Pass at most %d verify_questions.", demoMaxVerifyQuestions)
+	}
+	report := Report{}
+	if website != "" {
+		report.Website = &WebsiteReport{URL: website}
+	}
+	for _, question := range input.VerifyQuestions {
+		if question = strings.TrimSpace(question); question != "" {
+			report.VerifyQuestions = append(report.VerifyQuestions, question)
+		}
+	}
+	return json.Marshal(report)
+}
+
+// Refresh runs a finished demo again from its website step: it relinks the
+// website, renames and locks down the widget, reindexes, and asks the check
+// questions again. The help center is not imported again.
+func (s *Service) Refresh(ctx context.Context, homeWorkspaceID, demoID string, input CreateInput) (*View, error) {
+	view, err := s.Get(ctx, homeWorkspaceID, demoID, input)
+	if err != nil {
+		return nil, err
+	}
+	demo, err := s.deps.Store.GetByID(ctx, homeWorkspaceID, view.ID)
+	if err != nil || demo == nil {
+		return nil, fmt.Errorf("reload demo: %w", err)
+	}
+	if demo.Status != eerepository.DemoStatusReady && demo.Status != eerepository.DemoStatusReadyWithIssues {
+		return nil, demoInputError("Only a finished demo can be refreshed; this one is %s. Use create_demo to continue a failed one.", demo.Status)
+	}
+	// The last run's findings are cleared before the build is queued, so
+	// get_demo never shows them as the new result.
+	report := readDemoReport(demo)
+	report.Verify, report.VerifyPassed, report.Issues, report.Knowledge = nil, false, nil, nil
+	writeDemoReport(demo, report)
+	if err := s.deps.Store.Save(ctx, demo); err != nil {
+		return nil, err
+	}
+	restarted, err := s.deps.Store.Restart(ctx, homeWorkspaceID, demo.ID, demoStepWebsite)
+	if err != nil {
+		return nil, err
+	}
+	if !restarted {
+		return nil, demoInputError("The demo changed while it was being refreshed. Check it with get_demo and try again.")
+	}
+	s.setCompanyProperties(ctx, demo.CompanyID, homeWorkspaceID, map[string]any{PropertyStatus: "building"})
+	s.logger.InfoContext(ctx, "demo refresh queued", "demo_id", demo.ID, "home_workspace_id", homeWorkspaceID)
+	return s.Get(ctx, homeWorkspaceID, demo.ID, CreateInput{})
 }
 
 // forgetDeadImport lets a requeued build start its import again. An import
