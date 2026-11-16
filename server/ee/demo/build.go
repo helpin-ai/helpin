@@ -3,6 +3,7 @@
 package demo
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -37,7 +38,7 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 // drain advances every build that is due.
 func (s *Service) drain(ctx context.Context) {
 	for ctx.Err() == nil {
-		demo, err := s.deps.Store.ClaimNext(ctx, s.now(), demoLease)
+		demo, err := s.deps.Store.ClaimNext(ctx, s.now(), demoLease, s.cfg.MaxUnfinished)
 		if err != nil {
 			if ctx.Err() == nil {
 				s.logger.ErrorContext(ctx, "claim demo build", "error", err)
@@ -55,8 +56,9 @@ func (s *Service) drain(ctx context.Context) {
 type demoStepResult struct {
 	next string
 	// wait means the step is waiting on outside work and should run again
-	// after a short delay.
-	wait bool
+	// after delay, or a short default.
+	wait  bool
+	delay time.Duration
 }
 
 // advance runs a build's steps until one has to wait, one fails, or the
@@ -83,13 +85,13 @@ func (s *Service) advance(ctx context.Context, demo *eerepository.DemoWorkspace)
 			return
 		}
 		if result.wait {
-			s.release(ctx, demo, demoPollDelay)
+			s.release(ctx, demo, cmp.Or(result.delay, demoPollDelay))
 			return
 		}
 		demo.Step, demo.Attempts = result.next, 0
 		if demo.Step == demoStepDone {
 			done := s.now()
-			demo.Status, demo.CompletedAt, demo.LeaseUntil, demo.Error = eerepository.DemoStatusReady, &done, nil, nil
+			demo.Status, demo.CompletedAt, demo.LeaseUntil, demo.Error = finishedDemoStatus(demo), &done, nil, nil
 			s.save(ctx, demo)
 			s.logger.InfoContext(ctx, "demo build ready", "demo_id", demo.ID, "workspace_id", derefDemoString(demo.WorkspaceID))
 			return
@@ -109,9 +111,22 @@ func (s *Service) steps() map[string]func(context.Context, *eerepository.DemoWor
 		demoStepBranding:     s.stepBranding,
 		demoStepImport:       s.stepImport,
 		demoStepHomepage:     s.stepHomepage,
+		demoStepWebsite:      s.stepWebsite,
 		demoStepWidget:       s.stepWidget,
+		demoStepKnowledge:    s.stepKnowledge,
+		demoStepIndexWait:    s.stepIndexWait,
+		demoStepVerify:       s.stepVerify,
 		demoStepCRM:          s.stepCRM,
 	}
+}
+
+// finishedDemoStatus is ready when the widget answers with AI and the check
+// questions passed, and ready_with_issues otherwise.
+func finishedDemoStatus(demo *eerepository.DemoWorkspace) string {
+	if report := readDemoReport(demo); report.VerifyPassed && report.AIRepliesEnabled {
+		return eerepository.DemoStatusReady
+	}
+	return eerepository.DemoStatusReadyWithIssues
 }
 
 func (s *Service) save(ctx context.Context, demo *eerepository.DemoWorkspace) bool {
@@ -203,9 +218,9 @@ func (s *Service) stepOrganization(ctx context.Context, demo *eerepository.DemoW
 	return demoStepResult{next: demoStepWorkspace}, nil
 }
 
-// stepWorkspace creates the demo workspace, owned by the demo owner. No
-// website is set on it: a website would put the company's own site on the
-// chat widget's allowlist.
+// stepWorkspace creates the demo workspace, owned by the demo owner. The
+// website step adds the company website later, and the widget step keeps it
+// off the chat widget's allowlist.
 func (s *Service) stepWorkspace(ctx context.Context, demo *eerepository.DemoWorkspace) (demoStepResult, error) {
 	if demo.WorkspaceID != nil {
 		return demoStepResult{next: demoStepBranding}, nil
@@ -232,10 +247,13 @@ func (s *Service) stepBranding(ctx context.Context, demo *eerepository.DemoWorks
 	if err != nil {
 		return demoStepResult{}, err
 	}
-	enabled, hosted := true, model.HelpcenterPublicURLModeHostedSubdomain
+	enabled, hosted, light := true, model.HelpcenterPublicURLModeHostedSubdomain, "light"
 	seoTitle := demo.CompanyName + " Help Center"
 	req := model.UpdateDocsHelpcenterConfigRequest{
 		Subdomain: &subdomain, PublicURLMode: &hosted, BrandName: &demo.CompanyName, SEOTitle: &seoTitle,
+		// Never the visitor's system theme: the demo must look the same to
+		// everyone. Branding switches to dark only for a dark-only logo.
+		ThemeMode: &light,
 		// Demo mode keeps the copy out of search engines and labels it as a
 		// demo with a link to the real help center.
 		DemoMode: &enabled, IsPublished: &enabled, ChatWidgetEnabled: &enabled, AIAnswersEnabled: &enabled,
@@ -430,7 +448,7 @@ func (s *Service) stepHomepage(ctx context.Context, demo *eerepository.DemoWorks
 	if _, err := s.deps.Helpcenter.UpsertConfig(ctx, workspaceID, model.UpdateDocsHelpcenterConfigRequest{HomepageConfig: encoded}); err != nil {
 		return demoStepResult{}, fmt.Errorf("save demo homepage: %w", err)
 	}
-	return demoStepResult{next: demoStepWidget}, nil
+	return demoStepResult{next: demoStepWebsite}, nil
 }
 
 // stepWidget turns on the chat widget's AI replies with the built-in support
@@ -444,9 +462,16 @@ func (s *Service) stepWidget(ctx context.Context, demo *eerepository.DemoWorkspa
 	if err != nil {
 		return demoStepResult{}, fmt.Errorf("read chat widget: %w", err)
 	}
-	name, assistant := demo.CompanyName, demo.CompanyName+" Assistant"
+	// Visitors must be able to tell this is not the company's own assistant.
+	name, assistant := demo.CompanyName+" demo support", demo.CompanyName+" demo assistant"
 	req := model.UpdateInstallationSettingsRequest{
 		WidgetName: &name, AIDisplayName: &assistant, WidgetHelpSpaceIDs: []string{derefDemoString(demo.SpaceID)},
+	}
+	if demoURL := derefDemoString(demo.DemoURL); demoURL != "" {
+		// Only the demo help center may embed the widget, never the
+		// company's real site that the workspace website would suggest.
+		origins := []string{demoURL}
+		req.AllowedOrigins = &origins
 	}
 	if cfg, err := s.deps.Helpcenter.GetConfig(ctx, workspaceID); err != nil {
 		return demoStepResult{}, fmt.Errorf("read demo help center: %w", err)
@@ -470,8 +495,11 @@ func (s *Service) stepWidget(ctx context.Context, demo *eerepository.DemoWorkspa
 		withAI.AIEnabled, withAI.AIAgentID, withAI.AIConfidenceThreshold = &enabled, settings.AIAgentID, &threshold
 		if _, _, err := s.deps.Support.UpdateInstallationSettings(ctx, workspaceID, withAI); err == nil {
 			report.AIRepliesEnabled = true
+			if err := s.linkWebsiteSource(ctx, demo, *settings.AIAgentID, &report); err != nil {
+				return demoStepResult{}, err
+			}
 			writeDemoReport(demo, report)
-			return demoStepResult{next: demoStepCRM}, nil
+			return demoStepResult{next: demoStepKnowledge}, nil
 		} else if ctx.Err() != nil {
 			return demoStepResult{}, ctx.Err()
 		} else {
@@ -485,16 +513,31 @@ func (s *Service) stepWidget(ctx context.Context, demo *eerepository.DemoWorkspa
 	report.AIRepliesEnabled = false
 	writeDemoReport(demo, report)
 	addDemoNote(demo, "AI replies could not be turned on for the chat widget. Turn them on in the demo workspace's chat settings.")
-	return demoStepResult{next: demoStepCRM}, nil
+	return demoStepResult{next: demoStepKnowledge}, nil
+}
+
+// linkWebsiteSource gives the support agent the website crawl as knowledge.
+func (s *Service) linkWebsiteSource(ctx context.Context, demo *eerepository.DemoWorkspace, agentID string, report *Report) error {
+	if report.Website == nil || report.Website.SourceID == "" {
+		return nil
+	}
+	if err := s.deps.AgentContentSources.Set(ctx, derefDemoString(demo.WorkspaceID), agentID, []string{report.Website.SourceID}); err != nil {
+		return fmt.Errorf("link website to support agent: %w", err)
+	}
+	return nil
 }
 
 // stepCRM records the finished demo on the company in the home workspace.
 func (s *Service) stepCRM(ctx context.Context, demo *eerepository.DemoWorkspace) (demoStepResult, error) {
-	s.setCompanyProperties(ctx, demo.CompanyID, demo.HomeWorkspaceID, map[string]any{
-		PropertyStatus:       "ready",
+	properties := map[string]any{
+		PropertyStatus:       finishedDemoStatus(demo),
 		PropertyWorkspaceID:  derefDemoString(demo.WorkspaceID),
 		PropertyWorkspaceURL: derefDemoString(demo.DemoURL),
-	})
+	}
+	if website := readDemoReport(demo).Website; website != nil && website.URL != "" {
+		properties[PropertyWebsiteURL] = website.URL
+	}
+	s.setCompanyProperties(ctx, demo.CompanyID, demo.HomeWorkspaceID, properties)
 	subject, body := "Demo built", demoNoteBody(demo)
 	if _, err := s.deps.Activities.Create(ctx, model.CreateCRMActivityRequest{
 		WorkspaceID: demo.HomeWorkspaceID, ActivityType: model.CRMActivityNote, CompanyID: &demo.CompanyID,
@@ -523,6 +566,25 @@ func demoNoteBody(demo *eerepository.DemoWorkspace) string {
 		out.WriteString("Chat widget: on, with AI replies\n")
 	} else {
 		out.WriteString("Chat widget: on, AI replies off\n")
+	}
+	if website := report.Website; website != nil && website.URL != "" {
+		fmt.Fprintf(&out, "Website: %s (%d pages indexed)\n", website.URL, website.IndexedPages)
+	}
+	if report.Knowledge != nil {
+		fmt.Fprintf(&out, "Help articles indexed for the AI: %d\n", report.Knowledge.IndexedDocuments)
+	}
+	if len(report.Verify) > 0 {
+		out.WriteString("\nCheck questions:\n")
+		for _, result := range report.Verify {
+			outcome := "answered"
+			if result.Decision != "answer" {
+				outcome = "not answered (" + cmp.Or(result.Reason, result.Decision) + ")"
+			}
+			fmt.Fprintf(&out, "- %s: %s\n", result.Question, outcome)
+		}
+	}
+	if len(report.Issues) > 0 {
+		fmt.Fprintf(&out, "\nIssues: %s\n", strings.Join(report.Issues, ", "))
 	}
 	if len(report.Notes) > 0 {
 		out.WriteString("\nNeeds a look:\n")

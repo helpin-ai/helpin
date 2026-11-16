@@ -3,15 +3,18 @@
 package demo
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	coreservice "github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -54,6 +57,23 @@ type demoFakes struct {
 
 	companies  map[string]*model.CRMCompany
 	activities []model.CreateCRMActivityRequest
+
+	websites       []string
+	contentSources []model.SupportContentSource
+	sourceErr      error
+	linkedSources  []string
+	knowledgeSets  [][]string
+	reindexes      int
+	indexStarted   bool
+	indexPolls     int
+	indexReadyAt   int
+	indexedDocs    int
+	documents      map[string][]model.DocsDocument
+	previewStarts  []string
+	previewErr     error
+	// decisions maps a question to the decision its preview run ends with;
+	// the default answers from the help center.
+	decisions map[string]string
 }
 
 func newDemoFakes() *demoFakes {
@@ -73,6 +93,13 @@ func newDemoFakes() *demoFakes {
 			{ID: "c3", Name: "Refunds", Slug: "refunds", PublicID: "pub3", Position: 0, ParentCollectionID: strPtr("c2")},
 		},
 		importDoneAt: 2,
+		indexReadyAt: 2,
+		indexedDocs:  19,
+		documents: map[string][]model.DocsDocument{
+			"c1": {{ID: "d2", Title: "Second step", Position: 1}, {ID: "d1", Title: "Getting started", Position: 0}},
+			"c2": {{ID: "d3", Title: "Update your card", Position: 0}},
+		},
+		decisions: map[string]string{},
 	}
 }
 
@@ -83,7 +110,9 @@ func (f *demoFakes) service() *Service {
 		HomeWorkspaceIDs: []string{demoHomeWorkspace}, OwnerEmail: "owner@example.com", HelpcenterHostedDomain: "helpin.test",
 	}, Deps{
 		Store: f, Users: f, Organizations: demoFakeOrganizations{f}, Workspaces: demoFakeWorkspaces{f}, Helpcenter: f, Imports: f,
-		Spaces: f, Collections: demoFakeCollections{f}, Support: f, Companies: demoFakeCompanies{f}, Activities: demoFakeActivities{f},
+		Spaces: f, Collections: demoFakeCollections{f}, Documents: demoFakeDocuments{f}, Support: f,
+		Knowledge: demoFakeKnowledge{f}, ContentSources: demoFakeContentSources{f}, AgentContentSources: demoFakeAgentContent{f},
+		Preview: demoFakePreview{f}, Companies: demoFakeCompanies{f}, Activities: demoFakeActivities{f},
 	})
 	svc.now = func() time.Time { return f.now }
 	return svc
@@ -136,18 +165,17 @@ func (f *demoFakes) GetByCompany(_ context.Context, homeWorkspaceID, companyID s
 	return nil, nil
 }
 
-func (f *demoFakes) CountUnfinished(_ context.Context, homeWorkspaceID string) (int64, error) {
-	var count int64
+func (f *demoFakes) ClaimNext(_ context.Context, now time.Time, lease time.Duration, maxBuilding int) (*eerepository.DemoWorkspace, error) {
+	building := map[string]int{}
 	for _, demo := range f.demos {
-		if demo.HomeWorkspaceID == homeWorkspaceID && !demo.Finished() {
-			count++
+		if demo.Status == eerepository.DemoStatusBuilding {
+			building[demo.HomeWorkspaceID]++
 		}
 	}
-	return count, nil
-}
-
-func (f *demoFakes) ClaimNext(_ context.Context, now time.Time, lease time.Duration) (*eerepository.DemoWorkspace, error) {
 	for _, demo := range f.demos {
+		if demo.Status == eerepository.DemoStatusQueued && building[demo.HomeWorkspaceID] >= maxBuilding {
+			continue
+		}
 		if !demo.Finished() && (demo.LeaseUntil == nil || !demo.LeaseUntil.After(now)) {
 			until := now.Add(lease)
 			demo.LeaseUntil = &until
@@ -168,6 +196,16 @@ func (f *demoFakes) Requeue(_ context.Context, homeWorkspaceID, id string) error
 		demo.StartedAt = nil
 	}
 	return nil
+}
+
+func (f *demoFakes) Restart(_ context.Context, homeWorkspaceID, id, step string) (bool, error) {
+	demo, ok := f.demos[id]
+	if !ok || demo.HomeWorkspaceID != homeWorkspaceID ||
+		(demo.Status != eerepository.DemoStatusReady && demo.Status != eerepository.DemoStatusReadyWithIssues) {
+		return false, nil
+	}
+	demo.Status, demo.Step, demo.Attempts, demo.LeaseUntil, demo.CompletedAt, demo.StartedAt = eerepository.DemoStatusQueued, step, 0, nil, nil, nil
+	return true, nil
 }
 
 // --- product services ---
@@ -204,6 +242,106 @@ func (w demoFakeWorkspaces) Create(_ context.Context, req model.CreateWorkspaceR
 	}
 	w.f.workspaces = append(w.f.workspaces, req)
 	return &model.WorkspaceWithRole{Workspace: model.Workspace{ID: fmt.Sprintf("demo-ws-%d", len(w.f.workspaces)), Name: req.Name, Slug: req.Slug}}, nil
+}
+
+func (w demoFakeWorkspaces) Update(_ context.Context, _ string, req model.UpdateWorkspaceRequest, actorID string) (*model.Workspace, error) {
+	if actorID != demoOwnerID {
+		return nil, fmt.Errorf("workspace updated by %q, want the demo owner", actorID)
+	}
+	w.f.websites = append(w.f.websites, *req.WebsiteURL)
+	return &model.Workspace{}, nil
+}
+
+type demoFakeDocuments struct{ f *demoFakes }
+
+func (d demoFakeDocuments) List(_ context.Context, _ string, _, collectionID, status, _ *string, _, _ string, _ bool) ([]model.DocsDocument, error) {
+	if *status != model.DocStatusPublished {
+		return nil, fmt.Errorf("listed %q articles, want published ones", *status)
+	}
+	return d.f.documents[*collectionID], nil
+}
+
+type demoFakeKnowledge struct{ f *demoFakes }
+
+func (k demoFakeKnowledge) List(context.Context, string, string) ([]coreservice.KnowledgeSourceWithSpace, error) {
+	if !k.f.indexStarted {
+		return nil, nil
+	}
+	k.f.indexPolls++
+	source := model.AgentKnowledgeSource{SpaceID: "space-1", SyncStatus: model.KnowledgeSourceSyncRunning}
+	if k.f.indexPolls >= k.f.indexReadyAt {
+		done := k.f.now
+		source.SyncStatus, source.IndexedDocuments, source.LastSyncCompletedAt = model.KnowledgeSourceSyncReady, k.f.indexedDocs, &done
+	}
+	return []coreservice.KnowledgeSourceWithSpace{{AgentKnowledgeSource: source}}, nil
+}
+
+func (k demoFakeKnowledge) Set(_ context.Context, _, agentID string, spaceIDs []string) error {
+	if agentID != "agent-echo" {
+		return fmt.Errorf("knowledge set on agent %q", agentID)
+	}
+	k.f.knowledgeSets = append(k.f.knowledgeSets, spaceIDs)
+	k.f.indexStarted = true
+	return nil
+}
+
+func (k demoFakeKnowledge) Reindex(context.Context, string, string, string) error {
+	k.f.reindexes++
+	k.f.indexPolls = 0
+	return nil
+}
+
+type demoFakeContentSources struct{ f *demoFakes }
+
+func (c demoFakeContentSources) List(context.Context, string) ([]model.SupportContentSource, error) {
+	return c.f.contentSources, nil
+}
+
+func (c demoFakeContentSources) Create(_ context.Context, workspaceID string, req model.CreateSupportContentSourceRequest) (*model.SupportContentSource, error) {
+	if c.f.sourceErr != nil {
+		return nil, c.f.sourceErr
+	}
+	source := model.SupportContentSource{
+		ID: fmt.Sprintf("source-%d", len(c.f.contentSources)+1), WorkspaceID: workspaceID, Name: req.Name, SourceType: model.ContentSourceTypeWebsite,
+		StartURL: req.StartURL, CrawlLimit: req.CrawlLimit, SyncStatus: model.KnowledgeSourceSyncReady, IndexedPages: 12,
+	}
+	c.f.contentSources = append(c.f.contentSources, source)
+	return &source, nil
+}
+
+type demoFakeAgentContent struct{ f *demoFakes }
+
+func (a demoFakeAgentContent) Set(_ context.Context, _, _ string, ids []string) error {
+	a.f.linkedSources = ids
+	return nil
+}
+
+type demoFakePreview struct{ f *demoFakes }
+
+func (p demoFakePreview) Start(ctx context.Context, workspaceID, _ string, req model.SupportAIPreviewRequest) (*model.SupportAIPreviewResponse, error) {
+	if actor := authorization.GetActor(ctx); actor == nil || actor.UserID != demoOwnerID || actor.WorkspaceID != workspaceID {
+		return nil, errors.New("preview needs the demo owner as actor")
+	}
+	if p.f.previewErr != nil {
+		return nil, p.f.previewErr
+	}
+	if req.IncludeAnswer == nil || !*req.IncludeAnswer {
+		return nil, errors.New("preview asked without an answer")
+	}
+	p.f.previewStarts = append(p.f.previewStarts, req.Message)
+	return &model.SupportAIPreviewResponse{RunID: req.Message, FinalDecision: "pending"}, nil
+}
+
+func (p demoFakePreview) Get(_ context.Context, _, _, runID string) (*model.SupportAIPreviewResponse, error) {
+	decision := cmp.Or(p.f.decisions[runID], "answer")
+	response := &model.SupportAIPreviewResponse{RunID: runID, FinalDecision: decision,
+		Retrieval: model.SupportAIPreviewRetrieval{Results: []model.SupportAIPreviewSearchResult{{SourceType: "docs"}, {SourceType: "docs"}}}}
+	if decision == "answer" {
+		response.Answer = &model.SupportAIPreviewAnswer{GroundedConfidence: 0.9}
+	} else {
+		response.FinalReason = "answer_validation_numeric_mismatch"
+	}
+	return response, nil
 }
 
 type demoFakeCollections struct{ f *demoFakes }
@@ -375,16 +513,6 @@ func TestDemoCreateValidatesTheRequest(t *testing.T) {
 			},
 			wantErr: "not an Intercom help center",
 		},
-		{
-			name: "too many builds in progress", workspace: demoHomeWorkspace, input: CreateInput{CompanyID: "company-1"},
-			prepare: func(f *demoFakes) {
-				for i := range 5 {
-					id := fmt.Sprintf("busy-%d", i)
-					f.demos[id] = &eerepository.DemoWorkspace{ID: id, HomeWorkspaceID: demoHomeWorkspace, CompanyID: id, Status: eerepository.DemoStatusBuilding}
-				}
-			},
-			wantErr: "already being built",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -489,9 +617,35 @@ func TestDemoBuildsEndToEnd(t *testing.T) {
 	}
 	widget := fakes.widgetReqs[0]
 	if widget.AIEnabled == nil || !*widget.AIEnabled || *widget.AIAgentID != "agent-echo" || *widget.AIConfidenceThreshold != 0.7 ||
-		*widget.WidgetName != "Acme Inc" || *widget.AIDisplayName != "Acme Inc Assistant" || widget.WidgetHelpSpaceIDs[0] != "space-1" ||
-		*widget.BrandColor != "#0b17bf" || *widget.ColorScheme != "dark" || *widget.LogoURL != "https://files/fav.png" || widget.AllowedOrigins != nil {
+		*widget.WidgetName != "Acme Inc demo support" || *widget.AIDisplayName != "Acme Inc demo assistant" || widget.WidgetHelpSpaceIDs[0] != "space-1" ||
+		*widget.BrandColor != "#0b17bf" || *widget.ColorScheme != "dark" || *widget.LogoURL != "https://files/fav.png" {
 		t.Fatalf("widget request = %+v", widget)
+	}
+	// Only the demo help center may embed the widget, never the company's site.
+	if widget.AllowedOrigins == nil || strings.Join(*widget.AllowedOrigins, ",") != "https://acme-inc-demo-2.helpin.test" {
+		t.Fatalf("allowed origins = %v", widget.AllowedOrigins)
+	}
+
+	// The website is saved, crawled once, and given to the support agent.
+	if strings.Join(fakes.websites, ",") != "https://acme.com" || len(fakes.contentSources) != 1 ||
+		fakes.contentSources[0].StartURL != "https://acme.com" || fakes.contentSources[0].CrawlLimit != 100 ||
+		fakes.contentSources[0].Name != "Acme Inc website" || strings.Join(fakes.linkedSources, ",") != "source-1" {
+		t.Fatalf("websites = %v, sources = %+v, linked = %v", fakes.websites, fakes.contentSources, fakes.linkedSources)
+	}
+	// The help center is an explicit knowledge source, indexed before the check.
+	if len(fakes.knowledgeSets) != 1 || fakes.knowledgeSets[0][0] != "space-1" || fakes.reindexes != 0 {
+		t.Fatalf("knowledge sets = %v, reindexes = %d", fakes.knowledgeSets, fakes.reindexes)
+	}
+	if got.Report.Website == nil || got.Report.Website.IndexedPages != 12 || got.Report.Website.SyncStatus != "ready" ||
+		got.Report.Knowledge == nil || got.Report.Knowledge.IndexedDocuments != 19 {
+		t.Fatalf("website = %+v, knowledge = %+v", got.Report.Website, got.Report.Knowledge)
+	}
+	// One question per top collection, from its first article's title, then pricing.
+	if strings.Join(fakes.previewStarts, "|") != "Can you help me with Getting started?|Can you help me with Update your card?|How much does Acme Inc cost?" {
+		t.Fatalf("check questions = %q", fakes.previewStarts)
+	}
+	if !got.Report.VerifyPassed || len(got.Report.Issues) != 0 || got.Report.Verify[0].Decision != "answer" || got.Report.Verify[0].SourceTypes[0] != "docs" {
+		t.Fatalf("verify = %+v, issues = %v", got.Report.Verify, got.Report.Issues)
 	}
 
 	report := got.Report
@@ -505,12 +659,13 @@ func TestDemoBuildsEndToEnd(t *testing.T) {
 	}
 
 	properties := fakes.companies["company-1"].CustomProperties
-	if properties[PropertyStatus] != "ready" || properties[PropertyWorkspaceID] != "demo-ws-1" ||
+	if properties[PropertyStatus] != "ready" || properties[PropertyWorkspaceID] != "demo-ws-1" || properties[PropertyWebsiteURL] != "https://acme.com" ||
 		properties[PropertyWorkspaceURL] != "https://acme-inc-demo-2.helpin.test" || properties["demo_tier"] != "A" {
 		t.Fatalf("company properties = %v", properties)
 	}
 	if len(fakes.activities) != 1 || *fakes.activities[0].CompanyID != "company-1" || fakes.activities[0].WorkspaceID != demoHomeWorkspace ||
-		!strings.Contains(*fakes.activities[0].Body, "Articles imported: 19 (1 failed)") || !strings.Contains(*fakes.activities[0].Body, "Needs a look:") {
+		!strings.Contains(*fakes.activities[0].Body, "Articles imported: 19 (1 failed)") || !strings.Contains(*fakes.activities[0].Body, "Needs a look:") ||
+		!strings.Contains(*fakes.activities[0].Body, "- How much does Acme Inc cost?: answered") {
 		t.Fatalf("CRM note = %+v", fakes.activities)
 	}
 
@@ -703,10 +858,10 @@ func TestDemoDegradesInsteadOfFailing(t *testing.T) {
 	}
 	fakes.build(t, svc, 10)
 	got, err := svc.Get(context.Background(), demoHomeWorkspace, view.ID, CreateInput{})
-	if err != nil || got.Status != eerepository.DemoStatusReady {
+	if err != nil || got.Status != eerepository.DemoStatusReadyWithIssues || !slices.Contains(got.Report.Issues, IssueAIRepliesOff) {
 		t.Fatalf("Get = %+v, %v", got, err)
 	}
-	if got.Report.AIRepliesEnabled || len(fakes.widgetReqs) != 1 || fakes.widgetReqs[0].AIEnabled != nil || *fakes.widgetReqs[0].WidgetName != "Acme Inc" {
+	if got.Report.AIRepliesEnabled || len(fakes.widgetReqs) != 1 || fakes.widgetReqs[0].AIEnabled != nil || *fakes.widgetReqs[0].WidgetName != "Acme Inc demo support" {
 		t.Fatalf("widget = %+v, report = %+v", fakes.widgetReqs, got.Report)
 	}
 	notes := strings.Join(got.Report.Notes, "\n")
@@ -737,7 +892,7 @@ func TestDemoMCPTools(t *testing.T) {
 	fakes := newDemoFakes()
 	svc := fakes.service()
 	tools := svc.MCPTools()
-	if len(tools) != 2 || tools[0].Definition.Name != ToolCreate || tools[1].Definition.Name != ToolGet {
+	if len(tools) != 3 || tools[0].Definition.Name != ToolCreate || tools[1].Definition.Name != ToolGet || tools[2].Definition.Name != ToolRefresh {
 		t.Fatalf("tools = %+v", tools)
 	}
 	for _, tool := range tools {
@@ -745,8 +900,8 @@ func TestDemoMCPTools(t *testing.T) {
 			t.Fatalf("%s availability is not limited to the home workspace", tool.Definition.Name)
 		}
 	}
-	if !tools[0].Definition.Mutating || tools[1].Definition.Mutating {
-		t.Fatal("create_demo must be a write and get_demo a read")
+	if !tools[0].Definition.Mutating || tools[1].Definition.Mutating || !tools[2].Definition.Mutating {
+		t.Fatal("create_demo and refresh_demo must be writes and get_demo a read")
 	}
 	call := coreservice.MCPToolCall{WorkspaceID: demoHomeWorkspace, UserID: "user-1"}
 
