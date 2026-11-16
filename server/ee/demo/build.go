@@ -498,9 +498,6 @@ func (s *Service) stepWidget(ctx context.Context, demo *eerepository.DemoWorkspa
 			if err := s.linkWebsiteSource(ctx, demo, *settings.AIAgentID, &report); err != nil {
 				return demoStepResult{}, err
 			}
-			if err := s.saveWorkspaceWebsite(ctx, demo, report); err != nil {
-				return demoStepResult{}, err
-			}
 			writeDemoReport(demo, report)
 			return demoStepResult{next: demoStepKnowledge}, nil
 		} else if ctx.Err() != nil {
@@ -512,9 +509,6 @@ func (s *Service) stepWidget(ctx context.Context, demo *eerepository.DemoWorkspa
 	// The widget is still worth having without AI replies; say they are off.
 	if _, _, err := s.deps.Support.UpdateInstallationSettings(ctx, workspaceID, req); err != nil {
 		return demoStepResult{}, fmt.Errorf("configure chat widget: %w", err)
-	}
-	if err := s.saveWorkspaceWebsite(ctx, demo, report); err != nil {
-		return demoStepResult{}, err
 	}
 	report.AIRepliesEnabled = false
 	writeDemoReport(demo, report)

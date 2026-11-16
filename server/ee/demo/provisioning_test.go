@@ -624,10 +624,12 @@ func TestDemoBuildsEndToEnd(t *testing.T) {
 		homepage.FeaturedCards[0].Description != "Start here" {
 		t.Fatalf("featured cards = %+v", homepage.FeaturedCards)
 	}
-	if len(fakes.widgetReqs) != 1 {
-		t.Fatalf("widget updates = %d", len(fakes.widgetReqs))
+	// The website step locks the widget to the demo before saving the website.
+	if len(fakes.widgetReqs) != 2 || fakes.widgetReqs[0].WidgetName != nil ||
+		strings.Join(*fakes.widgetReqs[0].AllowedOrigins, ",") != "https://acme-inc-demo-2.helpin.test" {
+		t.Fatalf("widget updates = %+v", fakes.widgetReqs)
 	}
-	widget := fakes.widgetReqs[0]
+	widget := fakes.widgetReqs[1]
 	if widget.AIEnabled == nil || !*widget.AIEnabled || *widget.AIAgentID != "agent-echo" || *widget.AIConfidenceThreshold != 0.7 ||
 		*widget.WidgetName != "Acme Inc demo support" || *widget.AIDisplayName != "Acme Inc demo assistant" || widget.WidgetHelpSpaceIDs[0] != "space-1" ||
 		*widget.BrandColor != "#0b17bf" || *widget.ColorScheme != "dark" || *widget.LogoURL != "https://files/fav.png" {
@@ -878,7 +880,7 @@ func TestDemoDegradesInsteadOfFailing(t *testing.T) {
 	if err != nil || got.Status != eerepository.DemoStatusReadyWithIssues || !slices.Contains(got.Report.Issues, IssueAIRepliesOff) {
 		t.Fatalf("Get = %+v, %v", got, err)
 	}
-	if got.Report.AIRepliesEnabled || len(fakes.widgetReqs) != 1 || fakes.widgetReqs[0].AIEnabled != nil || *fakes.widgetReqs[0].WidgetName != "Acme Inc demo support" {
+	if got.Report.AIRepliesEnabled || len(fakes.widgetReqs) != 2 || fakes.widgetReqs[1].AIEnabled != nil || *fakes.widgetReqs[1].WidgetName != "Acme Inc demo support" {
 		t.Fatalf("widget = %+v, report = %+v", fakes.widgetReqs, got.Report)
 	}
 	notes := strings.Join(got.Report.Notes, "\n")

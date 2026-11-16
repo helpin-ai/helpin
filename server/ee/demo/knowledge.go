@@ -112,9 +112,9 @@ func addDemoIssue(report *Report, issue string) {
 	}
 }
 
-// stepWebsite starts crawling the company website as AI knowledge, before
-// the import so the two run side by side. A website that cannot be crawled
-// never fails the build. The widget step saves the website on the workspace.
+// stepWebsite saves the company website on the demo workspace and starts
+// crawling it as AI knowledge, before the import so the two run side by
+// side. A website that cannot be crawled never fails the build.
 func (s *Service) stepWebsite(ctx context.Context, demo *eerepository.DemoWorkspace) (demoStepResult, error) {
 	workspaceID := derefDemoString(demo.WorkspaceID)
 	report := readDemoReport(demo)
@@ -136,6 +136,9 @@ func (s *Service) stepWebsite(ctx context.Context, demo *eerepository.DemoWorksp
 		writeDemoReport(demo, report)
 		return demoStepResult{next: next}, nil
 	}
+	if err := s.saveWorkspaceWebsite(ctx, demo, website.URL); err != nil {
+		return demoStepResult{}, err
+	}
 	if website.SourceID == "" {
 		source, err := s.websiteSource(ctx, workspaceID, demo.CompanyName, website.URL)
 		if err != nil {
@@ -155,18 +158,25 @@ func (s *Service) stepWebsite(ctx context.Context, demo *eerepository.DemoWorksp
 	return demoStepResult{next: next}, nil
 }
 
-// saveWorkspaceWebsite sets the company website on the demo workspace. It
-// runs only once the widget has an explicit allowlist: saving a website fills
-// an empty allowlist with the company's own site.
-func (s *Service) saveWorkspaceWebsite(ctx context.Context, demo *eerepository.DemoWorkspace, report Report) error {
-	if demo.DemoURL == nil || report.Website == nil || report.Website.URL == "" {
+// saveWorkspaceWebsite sets the company website on the demo workspace. The
+// widget is limited to the demo help center first: saving a website fills an
+// empty allowlist with the company's own site. Without a demo address there
+// is nothing to limit it to, so the website is not saved.
+func (s *Service) saveWorkspaceWebsite(ctx context.Context, demo *eerepository.DemoWorkspace, websiteURL string) error {
+	demoURL := derefDemoString(demo.DemoURL)
+	if demoURL == "" {
 		return nil
+	}
+	workspaceID := derefDemoString(demo.WorkspaceID)
+	origins := []string{demoURL}
+	if _, _, err := s.deps.Support.UpdateInstallationSettings(ctx, workspaceID, model.UpdateInstallationSettingsRequest{AllowedOrigins: &origins}); err != nil {
+		return fmt.Errorf("limit chat widget to the demo: %w", err)
 	}
 	owner, err := s.owner(ctx)
 	if err != nil {
 		return err
 	}
-	if _, err := s.deps.Workspaces.Update(ctx, derefDemoString(demo.WorkspaceID), model.UpdateWorkspaceRequest{WebsiteURL: &report.Website.URL}, owner.ID); err != nil {
+	if _, err := s.deps.Workspaces.Update(ctx, workspaceID, model.UpdateWorkspaceRequest{WebsiteURL: &websiteURL}, owner.ID); err != nil {
 		return fmt.Errorf("save demo workspace website: %w", err)
 	}
 	return nil
