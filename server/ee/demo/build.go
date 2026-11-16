@@ -278,7 +278,7 @@ func (s *Service) stepBranding(ctx context.Context, demo *eerepository.DemoWorks
 		// A demo without the brand is still a demo; say what is missing.
 		s.logger.WarnContext(ctx, "demo: brand not read", "demo_id", demo.ID, "error", err)
 		addDemoNote(demo, "The company's branding could not be read. Set the logo, color and favicon in the help center settings.")
-		return demoStepResult{next: demoStepImport}, nil
+		return demoStepResult{next: demoStepWebsite}, nil
 	}
 	report := readDemoReport(demo)
 	report.HelpCenterName = proposal.HelpCenterName
@@ -292,7 +292,7 @@ func (s *Service) stepBranding(ctx context.Context, demo *eerepository.DemoWorks
 	for _, note := range applied.Notes {
 		addDemoNote(demo, note)
 	}
-	return demoStepResult{next: demoStepImport}, nil
+	return demoStepResult{next: demoStepWebsite}, nil
 }
 
 // pickSubdomain returns "<company>-demo", or the first numbered variant that
@@ -448,7 +448,7 @@ func (s *Service) stepHomepage(ctx context.Context, demo *eerepository.DemoWorks
 	if _, err := s.deps.Helpcenter.UpsertConfig(ctx, workspaceID, model.UpdateDocsHelpcenterConfigRequest{HomepageConfig: encoded}); err != nil {
 		return demoStepResult{}, fmt.Errorf("save demo homepage: %w", err)
 	}
-	return demoStepResult{next: demoStepWebsite}, nil
+	return demoStepResult{next: demoStepWidget}, nil
 }
 
 // stepWidget turns on the chat widget's AI replies with the built-in support
@@ -498,6 +498,9 @@ func (s *Service) stepWidget(ctx context.Context, demo *eerepository.DemoWorkspa
 			if err := s.linkWebsiteSource(ctx, demo, *settings.AIAgentID, &report); err != nil {
 				return demoStepResult{}, err
 			}
+			if err := s.saveWorkspaceWebsite(ctx, demo, report); err != nil {
+				return demoStepResult{}, err
+			}
 			writeDemoReport(demo, report)
 			return demoStepResult{next: demoStepKnowledge}, nil
 		} else if ctx.Err() != nil {
@@ -509,6 +512,9 @@ func (s *Service) stepWidget(ctx context.Context, demo *eerepository.DemoWorkspa
 	// The widget is still worth having without AI replies; say they are off.
 	if _, _, err := s.deps.Support.UpdateInstallationSettings(ctx, workspaceID, req); err != nil {
 		return demoStepResult{}, fmt.Errorf("configure chat widget: %w", err)
+	}
+	if err := s.saveWorkspaceWebsite(ctx, demo, report); err != nil {
+		return demoStepResult{}, err
 	}
 	report.AIRepliesEnabled = false
 	writeDemoReport(demo, report)

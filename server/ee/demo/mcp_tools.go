@@ -122,7 +122,7 @@ func (s *Service) executeCreateDemo(ctx context.Context, call coreservice.MCPToo
 	}
 	summary := fmt.Sprintf("A demo for %s already exists (status: %s).", view.CompanyName, view.Status)
 	if created {
-		summary = fmt.Sprintf("Building a demo for %s. Poll get_demo with demo_id %s until status is ready or failed.", view.CompanyName, view.ID)
+		summary = fmt.Sprintf("Building a demo for %s. Poll get_demo with demo_id %s until status is ready, ready_with_issues or failed.", view.CompanyName, view.ID)
 	}
 	return demoToolResult(summary, view), nil
 }

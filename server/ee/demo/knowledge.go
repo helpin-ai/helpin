@@ -30,6 +30,10 @@ const (
 	demoArticleQuestions   = 3
 )
 
+// _demoWebsiteExcludes keeps blog posts out of the crawl: they fill the page
+// limit without answering product questions.
+var _demoWebsiteExcludes = []string{"/blog*"}
+
 // Issues a build can finish with. A verify handoff is recorded as
 // "verify_handoffs:<reason>".
 const (
@@ -108,11 +112,17 @@ func addDemoIssue(report *Report, issue string) {
 	}
 }
 
-// stepWebsite saves the company website on the demo workspace and crawls it
-// as AI knowledge. A website that cannot be crawled never fails the build.
+// stepWebsite starts crawling the company website as AI knowledge, before
+// the import so the two run side by side. A website that cannot be crawled
+// never fails the build. The widget step saves the website on the workspace.
 func (s *Service) stepWebsite(ctx context.Context, demo *eerepository.DemoWorkspace) (demoStepResult, error) {
 	workspaceID := derefDemoString(demo.WorkspaceID)
 	report := readDemoReport(demo)
+	next := demoStepImport
+	if report.ArticlesImported > 0 {
+		// A refresh: the help center is already imported.
+		next = demoStepWidget
+	}
 	if report.Website == nil {
 		report.Website = &WebsiteReport{}
 	}
@@ -124,18 +134,7 @@ func (s *Service) stepWebsite(ctx context.Context, demo *eerepository.DemoWorksp
 		addDemoIssue(&report, IssueWebsiteCrawlFailed)
 		report.Notes = appendNote(report.Notes, "No company website is known, so pricing and product questions the help center does not cover go unanswered.")
 		writeDemoReport(demo, report)
-		return demoStepResult{next: demoStepWidget}, nil
-	}
-	// The widget step replaces the allowlist the website suggests; without a
-	// demo address it could not, and the company's own site would stay on it.
-	if demo.DemoURL != nil {
-		owner, err := s.owner(ctx)
-		if err != nil {
-			return demoStepResult{}, err
-		}
-		if _, err := s.deps.Workspaces.Update(ctx, workspaceID, model.UpdateWorkspaceRequest{WebsiteURL: &website.URL}, owner.ID); err != nil {
-			return demoStepResult{}, fmt.Errorf("save demo workspace website: %w", err)
-		}
+		return demoStepResult{next: next}, nil
 	}
 	if website.SourceID == "" {
 		source, err := s.websiteSource(ctx, workspaceID, demo.CompanyName, website.URL)
@@ -148,12 +147,29 @@ func (s *Service) stepWebsite(ctx context.Context, demo *eerepository.DemoWorksp
 			addDemoIssue(&report, IssueWebsiteCrawlFailed)
 			report.Notes = appendNote(report.Notes, "The company website could not be crawled. Add it under the AI's content sources.")
 			writeDemoReport(demo, report)
-			return demoStepResult{next: demoStepWidget}, nil
+			return demoStepResult{next: next}, nil
 		}
 		website.SourceID, website.SyncStatus = source.ID, source.SyncStatus
 	}
 	writeDemoReport(demo, report)
-	return demoStepResult{next: demoStepWidget}, nil
+	return demoStepResult{next: next}, nil
+}
+
+// saveWorkspaceWebsite sets the company website on the demo workspace. It
+// runs only once the widget has an explicit allowlist: saving a website fills
+// an empty allowlist with the company's own site.
+func (s *Service) saveWorkspaceWebsite(ctx context.Context, demo *eerepository.DemoWorkspace, report Report) error {
+	if demo.DemoURL == nil || report.Website == nil || report.Website.URL == "" {
+		return nil
+	}
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := s.deps.Workspaces.Update(ctx, derefDemoString(demo.WorkspaceID), model.UpdateWorkspaceRequest{WebsiteURL: &report.Website.URL}, owner.ID); err != nil {
+		return fmt.Errorf("save demo workspace website: %w", err)
+	}
+	return nil
 }
 
 // websiteSource returns the workspace's content source for the website,
@@ -173,7 +189,7 @@ func (s *Service) websiteSource(ctx context.Context, workspaceID, companyName, w
 	render := true
 	return s.deps.ContentSources.Create(ctx, workspaceID, model.CreateSupportContentSourceRequest{
 		Name: companyName + " website", StartURL: websiteURL, CrawlLimit: s.cfg.WebsiteCrawlLimit, CrawlDepth: 2,
-		CrawlSource: "all", Formats: []string{"markdown"}, Render: &render,
+		CrawlSource: "all", Formats: []string{"markdown"}, Render: &render, ExcludePatterns: _demoWebsiteExcludes,
 		CrawlPurposes: []string{"search", "ai-input"}, MaxAgeSeconds: 86400,
 	})
 }

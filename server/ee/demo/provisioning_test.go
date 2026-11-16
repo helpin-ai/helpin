@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -58,19 +59,20 @@ type demoFakes struct {
 	companies  map[string]*model.CRMCompany
 	activities []model.CreateCRMActivityRequest
 
-	websites       []string
-	contentSources []model.SupportContentSource
-	sourceErr      error
-	linkedSources  []string
-	knowledgeSets  [][]string
-	reindexes      int
-	indexStarted   bool
-	indexPolls     int
-	indexReadyAt   int
-	indexedDocs    int
-	documents      map[string][]model.DocsDocument
-	previewStarts  []string
-	previewErr     error
+	websites           []string
+	importsBeforeCrawl int
+	contentSources     []model.SupportContentSource
+	sourceErr          error
+	linkedSources      []string
+	knowledgeSets      [][]string
+	reindexes          int
+	indexStarted       bool
+	indexPolls         int
+	indexReadyAt       int
+	indexedDocs        int
+	documents          map[string][]model.DocsDocument
+	previewStarts      []string
+	previewErr         error
 	// decisions maps a question to the decision its preview run ends with;
 	// the default answers from the help center.
 	decisions map[string]string
@@ -172,7 +174,11 @@ func (f *demoFakes) ClaimNext(_ context.Context, now time.Time, lease time.Durat
 			building[demo.HomeWorkspaceID]++
 		}
 	}
-	for _, demo := range f.demos {
+	// Oldest first, like the repository.
+	ordered := slices.SortedFunc(maps.Values(f.demos), func(a, b *eerepository.DemoWorkspace) int {
+		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID, b.ID))
+	})
+	for _, demo := range ordered {
 		if demo.Status == eerepository.DemoStatusQueued && building[demo.HomeWorkspaceID] >= maxBuilding {
 			continue
 		}
@@ -248,6 +254,10 @@ func (w demoFakeWorkspaces) Update(_ context.Context, _ string, req model.Update
 	if actorID != demoOwnerID {
 		return nil, fmt.Errorf("workspace updated by %q, want the demo owner", actorID)
 	}
+	// Saving a website fills an empty widget allowlist with it.
+	if last := len(w.f.widgetReqs) - 1; last < 0 || w.f.widgetReqs[last].AllowedOrigins == nil {
+		return nil, errors.New("website saved before the widget had an explicit allowlist")
+	}
 	w.f.websites = append(w.f.websites, *req.WebsiteURL)
 	return &model.Workspace{}, nil
 }
@@ -304,7 +314,9 @@ func (c demoFakeContentSources) Create(_ context.Context, workspaceID string, re
 	source := model.SupportContentSource{
 		ID: fmt.Sprintf("source-%d", len(c.f.contentSources)+1), WorkspaceID: workspaceID, Name: req.Name, SourceType: model.ContentSourceTypeWebsite,
 		StartURL: req.StartURL, CrawlLimit: req.CrawlLimit, SyncStatus: model.KnowledgeSourceSyncReady, IndexedPages: 12,
+		ExcludePatterns: req.ExcludePatterns,
 	}
+	c.f.importsBeforeCrawl = len(c.f.importStarts)
 	c.f.contentSources = append(c.f.contentSources, source)
 	return &source, nil
 }
@@ -629,8 +641,13 @@ func TestDemoBuildsEndToEnd(t *testing.T) {
 	// The website is saved, crawled once, and given to the support agent.
 	if strings.Join(fakes.websites, ",") != "https://acme.com" || len(fakes.contentSources) != 1 ||
 		fakes.contentSources[0].StartURL != "https://acme.com" || fakes.contentSources[0].CrawlLimit != 100 ||
-		fakes.contentSources[0].Name != "Acme Inc website" || strings.Join(fakes.linkedSources, ",") != "source-1" {
+		fakes.contentSources[0].Name != "Acme Inc website" || strings.Join(fakes.linkedSources, ",") != "source-1" ||
+		strings.Join(fakes.contentSources[0].ExcludePatterns, ",") != "/blog*" {
 		t.Fatalf("websites = %v, sources = %+v, linked = %v", fakes.websites, fakes.contentSources, fakes.linkedSources)
+	}
+	// The crawl starts before the import, so the two run side by side.
+	if fakes.importsBeforeCrawl != 0 {
+		t.Fatalf("the crawl started after %d imports", fakes.importsBeforeCrawl)
 	}
 	// The help center is an explicit knowledge source, indexed before the check.
 	if len(fakes.knowledgeSets) != 1 || fakes.knowledgeSets[0][0] != "space-1" || fakes.reindexes != 0 {
