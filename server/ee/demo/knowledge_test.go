@@ -240,6 +240,17 @@ func TestDemoReusesAWebsiteSourceAddedByHand(t *testing.T) {
 	}
 }
 
+func TestDemoAsksAboutArticlesInSubCollections(t *testing.T) {
+	fakes := newDemoFakes()
+	// Billing holds only its Refunds sub-collection, as many help centers do.
+	fakes.documents["c2"] = nil
+	fakes.documents["c3"] = []model.DocsDocument{{ID: "d4", Title: "Request a refund"}}
+	buildDemo(t, fakes, fakes.service(), CreateInput{})
+	if strings.Join(fakes.previewStarts[:2], "|") != "Can you help me with Getting started?|Can you help me with Request a refund?" {
+		t.Fatalf("check questions = %q", fakes.previewStarts)
+	}
+}
+
 func TestArticleQuestion(t *testing.T) {
 	for title, want := range map[string]string{
 		"How do I export?": "How do I export?",

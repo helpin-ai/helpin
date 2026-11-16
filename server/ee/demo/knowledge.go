@@ -428,32 +428,31 @@ func verifyPassed(results []VerifyResult) bool {
 }
 
 // verifyQuestions picks the check questions: one per leading collection,
-// from its first article's title (never its text), a pricing question when
-// the website was indexed, and the caller's own, five at most.
+// from the first article's title (never its text) in it or, when it only
+// holds sub-collections, in those; a pricing question when the website was
+// indexed; and the caller's own, five at most.
 func (s *Service) verifyQuestions(ctx context.Context, demo *eerepository.DemoWorkspace, report Report) ([]VerifyResult, error) {
-	workspaceID, spaceID := derefDemoString(demo.WorkspaceID), derefDemoString(demo.SpaceID)
+	spaceID := derefDemoString(demo.SpaceID)
 	collections, err := s.deps.Collections.List(ctx, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list demo collections: %w", err)
 	}
-	collections = slices.DeleteFunc(collections, func(collection model.DocsCollection) bool { return collection.ParentCollectionID != nil })
 	slices.SortStableFunc(collections, func(a, b model.DocsCollection) int { return a.Position - b.Position })
-	var results []VerifyResult
-	published := model.DocStatusPublished
+	children := map[string][]model.DocsCollection{}
 	for _, collection := range collections {
+		children[derefDemoString(collection.ParentCollectionID)] = append(children[derefDemoString(collection.ParentCollectionID)], collection)
+	}
+	var results []VerifyResult
+	for _, top := range children[""] {
 		if len(results) == demoArticleQuestions {
 			break
 		}
-		documents, err := s.deps.Documents.List(ctx, workspaceID, &spaceID, &collection.ID, &published, nil, "", model.RoleOwner, false)
+		title, err := s.firstArticleTitle(ctx, demo, top, children)
 		if err != nil {
-			return nil, fmt.Errorf("list demo articles: %w", err)
+			return nil, err
 		}
-		slices.SortStableFunc(documents, func(a, b model.DocsDocument) int { return a.Position - b.Position })
-		for _, document := range documents {
-			if title := strings.TrimSpace(document.Title); title != "" {
-				results = append(results, VerifyResult{Question: articleQuestion(title), Kind: verifyKindArticle})
-				break
-			}
+		if title != "" {
+			results = append(results, VerifyResult{Question: articleQuestion(title), Kind: verifyKindArticle})
 		}
 	}
 	if report.Website != nil && report.Website.IndexedPages > 0 {
@@ -463,6 +462,28 @@ func (s *Service) verifyQuestions(ctx context.Context, demo *eerepository.DemoWo
 		results = append(results, VerifyResult{Question: question, Kind: verifyKindCustom})
 	}
 	return results[:min(len(results), demoMaxVerifyQuestions)], nil
+}
+
+// firstArticleTitle returns the title of the first published article in a
+// collection, or in its sub-collections in display order, or "".
+func (s *Service) firstArticleTitle(ctx context.Context, demo *eerepository.DemoWorkspace, collection model.DocsCollection, children map[string][]model.DocsCollection) (string, error) {
+	workspaceID, spaceID, published := derefDemoString(demo.WorkspaceID), derefDemoString(demo.SpaceID), model.DocStatusPublished
+	documents, err := s.deps.Documents.List(ctx, workspaceID, &spaceID, &collection.ID, &published, nil, "", model.RoleOwner, false)
+	if err != nil {
+		return "", fmt.Errorf("list demo articles: %w", err)
+	}
+	slices.SortStableFunc(documents, func(a, b model.DocsDocument) int { return a.Position - b.Position })
+	for _, document := range documents {
+		if title := strings.TrimSpace(document.Title); title != "" {
+			return title, nil
+		}
+	}
+	for _, child := range children[collection.ID] {
+		if title, err := s.firstArticleTitle(ctx, demo, child, children); err != nil || title != "" {
+			return title, err
+		}
+	}
+	return "", nil
 }
 
 // articleQuestion turns an article title into what a customer would type.
