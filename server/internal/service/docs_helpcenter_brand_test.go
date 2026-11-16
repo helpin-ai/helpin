@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -140,6 +141,71 @@ func TestParseBrandPage(t *testing.T) {
 				t.Fatalf("parseBrandPage = %+v, want %+v", *got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseBrandPageInlineSVGLogo(t *testing.T) {
+	base, _ := url.Parse("https://acme.example/")
+	tests := []struct {
+		name     string
+		page     string
+		want     []string
+		wantNone []string
+	}{
+		{
+			name: "svg in the home link takes the brand color",
+			page: `<html><head><meta name="theme-color" content="#0b17bf"></head><body><header>
+				<button><svg class="menu-icon"><path d="M0 0"/></svg></button>
+				<a href="https://acme.example/"><svg viewBox="0 0 10 10" onload="x()"><script>x()</script><path fill="currentColor" d="M1 1"/></svg></a>
+				</header></body></html>`,
+			want:     []string{`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">`, `fill="#0b17bf"`},
+			wantNone: []string{"onload", "script", "currentColor"},
+		},
+		{
+			name: "svg named logo, near-black without a theme color",
+			page: `<html><body><nav><svg aria-label="Acme logo" xmlns="http://www.w3.org/2000/svg"><path fill="currentcolor"/></svg></nav></body></html>`,
+			want: []string{`fill="#111111"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, err := html.Parse(strings.NewReader(tt.page))
+			if err != nil {
+				t.Fatal(err)
+			}
+			logo := parseBrandPage(root, base).logoURL
+			encoded, ok := strings.CutPrefix(logo, _brandSVGDataPrefix)
+			if !ok {
+				t.Fatalf("logo = %q, want an SVG data address", logo)
+			}
+			markup, _ := base64.StdEncoding.DecodeString(encoded)
+			for _, want := range tt.want {
+				if !strings.Contains(string(markup), want) {
+					t.Errorf("logo %s lacks %s", markup, want)
+				}
+			}
+			for _, unwanted := range tt.wantNone {
+				if strings.Contains(string(markup), unwanted) {
+					t.Errorf("logo %s contains %s", markup, unwanted)
+				}
+			}
+			// The stored copy is the same SVG.
+			contentType, body, err := fetchHelpcenterAsset(context.Background(), brandPageHTTPClient, logo)
+			if err != nil || contentType != "image/svg+xml" || string(body) != string(markup) {
+				t.Fatalf("fetch = %q, %q, %v", contentType, body, err)
+			}
+		})
+	}
+
+	// An image logo wins, and an icon outside a home link is not a logo.
+	for _, page := range []string{
+		`<html><body><header><a href="/"><img src="/acme-logo.png"><svg><path/></svg></a></header></body></html>`,
+		`<html><body><header><a href="/pricing"><svg><path/></svg></a></header></body></html>`,
+	} {
+		root, _ := html.Parse(strings.NewReader(page))
+		if logo := parseBrandPage(root, base).logoURL; strings.HasPrefix(logo, "data:") {
+			t.Errorf("logo for %s = %.60s, want no inline SVG", page, logo)
+		}
 	}
 }
 
