@@ -243,7 +243,7 @@ export const supportService = {
   },
   listConversationSharedItems: (workspaceId: string, conversationId: string) =>
     api.get<SupportSharedItem[]>(`/support/inbox/conversations/${conversationId}/shared-items${qs(workspaceId)}`),
-  sendConversationTranscript: (workspaceId: string, conversationId: string, payload: { email?: string; update_customer_email?: boolean }) =>
+  sendConversationTranscript: (workspaceId: string, conversationId: string, payload: { email?: string }) =>
     api.post<SendSupportConversationTranscriptResponse>(`/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`, payload),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),

@@ -533,7 +533,13 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 		}
 	}
 
-	if err := s.sendConversationTranscript(ctx, session.WorkspaceID, conversation, recipientEmail, strings.TrimSpace(derefString(conversation.CustomerEmail)) == "" && strings.TrimSpace(email) != ""); err != nil {
+	// Keep the widget's audience boundary, but retain durable progress metadata
+	// so transcript filtering can exclude historical AI status acknowledgments.
+	messages, err := s.listConversationMessagesWith(ctx, session.WorkspaceID, conversation.ID, false, false, true)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.sendConversationTranscript(ctx, session.WorkspaceID, conversation, recipientEmail, "", widgetVisibleSupportMessages(messages)); err != nil {
 		return nil, err
 	}
 
@@ -554,7 +560,7 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 }
 
 // SendSupportConversationTranscript sends a transcript from the authenticated support inbox.
-func (s *SupportInboxService) SendSupportConversationTranscript(ctx context.Context, workspaceID, conversationID, email string, updateCustomerEmail bool) (*model.SendSupportConversationTranscriptResponse, error) {
+func (s *SupportInboxService) SendSupportConversationTranscript(ctx context.Context, workspaceID, conversationID, email, actorID string) (*model.SendSupportConversationTranscriptResponse, error) {
 	if strings.TrimSpace(conversationID) == "" {
 		return nil, fmt.Errorf("conversation_id is required")
 	}
@@ -584,17 +590,17 @@ func (s *SupportInboxService) SendSupportConversationTranscript(ctx context.Cont
 	if _, err := mail.ParseAddress(recipientEmail); err != nil {
 		return nil, fmt.Errorf("invalid email address")
 	}
-	if err := s.sendConversationTranscript(ctx, workspaceID, conversation, recipientEmail, updateCustomerEmail); err != nil {
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversation.ID, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.sendConversationTranscript(ctx, workspaceID, conversation, recipientEmail, s.lookupUserName(ctx, actorID), messages); err != nil {
 		return nil, err
 	}
 	return &model.SendSupportConversationTranscriptResponse{Success: true, Email: recipientEmail, Message: fmt.Sprintf("Transcript sent to %s", recipientEmail)}, nil
 }
 
-func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, workspaceID string, conversation *model.SupportConversation, recipientEmail string, updateCustomerEmail bool) error {
-	messages, err := s.ListWidgetConversationMessages(ctx, workspaceID, conversation.ID)
-	if err != nil {
-		return err
-	}
+func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, workspaceID string, conversation *model.SupportConversation, recipientEmail, sentByName string, messages []model.SupportMessage) error {
 	workspaceName := "Support"
 	if s.workspaceRepo != nil {
 		if workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
@@ -604,16 +610,22 @@ func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, wo
 	if s.emailFallbackService == nil || s.emailFallbackService.emailClient == nil {
 		return fmt.Errorf("email is not configured")
 	}
-	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, conversation, messages)
-	if err := s.emailFallbackService.emailClient.SendEmail(recipientEmail, fmt.Sprintf("Your conversation transcript with %s", workspaceName), htmlBody, textBody); err != nil {
-		return err
-	}
-	if updateCustomerEmail && strings.TrimSpace(derefString(conversation.CustomerEmail)) != strings.TrimSpace(recipientEmail) {
-		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversation.ID, map[string]any{"customer_email": recipientEmail}); err != nil {
-			slog.WarnContext(ctx, "persist transcript recipient email failed", "error", err, "conversation_id", conversation.ID)
+	// Filter before downloading files as well as rendering their message bodies.
+	publicMessages := make([]model.SupportMessage, 0, len(messages))
+	for _, msg := range messages {
+		if supportTranscriptIncludesMessage(msg) {
+			publicMessages = append(publicMessages, msg)
 		}
 	}
-	return nil
+	prepared, attachments := s.emailFallbackService.prepareEmailAttachments(ctx, publicMessages)
+	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, sentByName, conversation, prepared)
+	subject := supportTranscriptSubject(workspaceName, conversation)
+	client := s.emailFallbackService.emailClient
+	if len(attachments) == 0 {
+		return client.SendEmail(recipientEmail, subject, htmlBody, textBody)
+	}
+	_, err := client.SendEmailWithHeadersAndAttachments(client.FromEmail(), recipientEmail, subject, htmlBody, textBody, "", nil, attachments)
+	return err
 }
 
 // createWidgetConversation commits contact, conversation, session and first message

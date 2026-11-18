@@ -794,18 +794,12 @@ export function useRemoveConversationTag(workspaceId: string) {
 }
 
 export function useSendConversationTranscript(workspaceId: string) {
-  const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ conversationId, email, updateCustomerEmail }: {
-      conversationId: string; email: string; updateCustomerEmail?: boolean
+    mutationFn: async ({ conversationId, email }: {
+      conversationId: string; email: string
     }) => unwrapOrThrow(await supportService.sendConversationTranscript(workspaceId, conversationId, {
-      email, update_customer_email: updateCustomerEmail,
+      email,
     })),
-    onSuccess: (_data, { conversationId, updateCustomerEmail }) => {
-      if (updateCustomerEmail) {
-        queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
-      }
-    },
   })
 }
 
