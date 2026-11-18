@@ -6923,6 +6923,33 @@ func (s *AgentService) auditActorIDForRun(ctx context.Context, run *model.AgentR
 	if actorID := strings.TrimSpace(derefString(run.TriggeredByUserID)); actorID != "" {
 		return actorID
 	}
+	if actorID := s.agentVersionCreatorForRun(ctx, run); actorID != "" {
+		return actorID
+	}
+	// An event or schedule fires a flow with no user, and a template-installed
+	// agent has no authored version. Attribute the run's writes to the person
+	// who set up the flow so tools that record an author do not fail.
+	ruleID := runInputRuleID(run.Input)
+	if s == nil || s.ruleEngine == nil || ruleID == "" {
+		return ""
+	}
+	rule, err := s.ruleEngine.GetRule(ctx, run.WorkspaceID, ruleID)
+	if err != nil || rule == nil {
+		return ""
+	}
+	return strings.TrimSpace(derefString(rule.CreatedBy))
+}
+
+// runInputRuleID returns the automation rule that started a run, if any.
+func runInputRuleID(raw []byte) string {
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(raw, &input); err != nil || input.Trigger == nil {
+		return ""
+	}
+	return strings.TrimSpace(derefString(input.Trigger.RuleID))
+}
+
+func (s *AgentService) agentVersionCreatorForRun(ctx context.Context, run *model.AgentRun) string {
 	if s == nil || s.agentRepo == nil || run.AgentVersionID == nil || strings.TrimSpace(*run.AgentVersionID) == "" {
 		return ""
 	}

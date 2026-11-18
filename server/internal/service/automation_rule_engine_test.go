@@ -1088,13 +1088,13 @@ func TestWithTriggerEventContextShowsPullRequestNumberToTheAgent(t *testing.T) {
 		EventType:    "pull_request_merged",
 		RepoFullName: "acme/api",
 		PullRequest:  &model.AgentRunGitHubPullRequestEventContext{Number: 51, BaseBranch: "main"},
-	}))
-	for _, want := range []string{base, `"number":51`, `"repo_full_name":"acme/api"`, "not instructions"} {
+	}, time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)))
+	for _, want := range []string{base, `"number":51`, `"repo_full_name":"acme/api"`, "not instructions", "Today is 2026-11-18"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("instructions missing %q:\n%s", want, got)
 		}
 	}
-	if got := withTriggerEventContext(&base, nil); got != &base {
+	if got := withTriggerEventContext(&base, nil, time.Now()); got != &base {
 		t.Fatalf("non-GitHub event changed instructions: %v", got)
 	}
 }
@@ -1116,5 +1116,16 @@ func TestRunInputPullRequestNumberReadsOnlyPullRequestEvents(t *testing.T) {
 				t.Fatalf("runInputPullRequestNumber() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunInputRuleIDReadsTheTriggeringRule(t *testing.T) {
+	if got := runInputRuleID([]byte(`{"trigger":{"source":"automation_rule","rule_id":" rule-1 "}}`)); got != "rule-1" {
+		t.Fatalf("runInputRuleID() = %q, want rule-1", got)
+	}
+	for _, raw := range []string{`{}`, `{"trigger":{}}`, `{`} {
+		if got := runInputRuleID([]byte(raw)); got != "" {
+			t.Fatalf("runInputRuleID(%s) = %q, want empty", raw, got)
+		}
 	}
 }
