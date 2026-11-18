@@ -34,6 +34,9 @@ type DockChatWorkSummary struct {
 	MessageID     string `json:"message_id"`
 	DurationMs    int64  `json:"duration_ms"`
 	ActivityCount int    `json:"activity_count"`
+	// SubtaskJobIDs lists runtime subtask jobs started during the turn, so
+	// their progress can be shown without loading the full work detail.
+	SubtaskJobIDs []string `json:"subtask_job_ids,omitempty"`
 }
 
 func (AgentRunMessage) TableName() string { return "agent_run_messages" }

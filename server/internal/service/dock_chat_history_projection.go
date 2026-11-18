@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -72,6 +74,7 @@ func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentR
 					MessageID:     workTarget.ID,
 					DurationMs:    duration.Milliseconds(),
 					ActivityCount: activityCount,
+					SubtaskJobIDs: dockSubtaskJobIDs(assistantGroup),
 				},
 			})
 		}
@@ -149,4 +152,24 @@ func dockAssistantActivityCount(messages []model.AgentRunMessage) int {
 		}
 	}
 	return count
+}
+
+// dockSubtaskJobIDs returns the subtask jobs spawned in a turn's messages, in
+// order and without repeats. Later calls such as wait_for_subtasks repeat the
+// same id, so every tool record of a message that spawned is scanned.
+func dockSubtaskJobIDs(messages []model.AgentRunMessage) []string {
+	var ids []string
+	for _, message := range messages {
+		for _, raw := range [][]byte{message.ToolInvocations, message.TurnSegments} {
+			if !bytes.Contains(raw, []byte("spawn_subtasks")) {
+				continue
+			}
+			for _, id := range _subtaskJobIDPattern.FindAll(raw, -1) {
+				if !slices.Contains(ids, string(id)) {
+					ids = append(ids, string(id))
+				}
+			}
+		}
+	}
+	return ids
 }

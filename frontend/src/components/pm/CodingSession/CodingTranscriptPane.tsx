@@ -38,6 +38,7 @@ import {
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
 import { DockWorkingGroup } from '@/components/agents/dock/DockWorkingGroup';
+import { SubtaskJobCards } from '@/components/agents/transcript/SubtaskJobCard';
 import { AgentTimelineEntry } from '@/components/agents/dock/AgentTimelineEntry';
 import { DockTranscriptViewPicker } from '@/components/agents/dock/DockTranscriptViewPicker';
 import { buildDockActivityTimeline } from '@/components/agents/dock/buildDockActivityTimeline';
@@ -344,15 +345,19 @@ export function CodingTranscriptPane({
         );
       case 'working_group':
         if (timelineView) return (
-          <AgentTimelineEntry
-            segment={item.segments[0]}
-            workingGroup={item}
-            runStatus={session?.status}
-            pauseReason={session?.pause_reason}
-            resolveActor={actorForMessage}
-          />
+          <>
+            <AgentTimelineEntry
+              segment={item.segments[0]}
+              workingGroup={item}
+              runStatus={session?.status}
+              pauseReason={session?.pause_reason}
+              resolveActor={actorForMessage}
+            />
+            <SubtaskJobCards segments={item.segments} />
+          </>
         );
         return (
+          <>
           <DockWorkingGroup
             id={item.key}
             segments={item.segments}
@@ -367,6 +372,8 @@ export function CodingTranscriptPane({
               />
             ))}
           </DockWorkingGroup>
+          <SubtaskJobCards segments={item.segments} />
+          </>
         );
       case 'streaming-status':
         return liveProgress ? <div data-agent-live-status-region data-working={liveProgress.tone === 'working'}><AgentLiveStatus progress={liveProgress} /></div> : null;

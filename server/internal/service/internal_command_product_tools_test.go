@@ -665,6 +665,11 @@ func (f *fakeReleaseFactsProvider) GetTaskContext(_ context.Context, workspaceID
 	return &model.GetTaskContextResult{}, nil
 }
 
+func (f *fakeReleaseFactsProvider) GetPullRequestChanges(_ context.Context, workspaceID string, req model.GetPullRequestChangesRequest) (*model.PullRequestChangesResult, error) {
+	f.workspaceID = workspaceID
+	return &model.PullRequestChangesResult{Number: req.PullNumber}, nil
+}
+
 func TestReleaseGetReleaseContextCommandDefaultsRepositoryFromTarget(t *testing.T) {
 	provider := &fakeReleaseFactsProvider{}
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
