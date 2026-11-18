@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { prepareAppRefresh } from '@/lib/appLoadRecovery'
 
-import type { WorkflowWithStates } from '@/lib/pmTypes'
+import type { EpicWithStats, WorkflowWithStates } from '@/lib/pmTypes'
 import { uploadToS3 } from '@/lib/api'
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
 import { pmLabelService } from '@/lib/services/pmLabelService'
+import { pmEpicService } from '@/lib/services/pmEpicService'
 import { pmTriageService } from '@/lib/services/pmTriageService'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { pmTaskTemplateService } from '@/lib/services/pmTaskTemplateService'
@@ -429,6 +430,7 @@ describe('CreateTaskModal', () => {
     vi.mocked(pmTaskService.saveAsTemplate).mockResolvedValue({ data: { id: 'template-1' }, error: null } as any)
     vi.mocked(pmWorkflowService.resolveTeamWorkflow).mockResolvedValue({ data: null, error: null } as any)
     vi.mocked(pmLabelService.list).mockResolvedValue({ data: [] } as any)
+    vi.mocked(pmEpicService.list).mockResolvedValue({ data: [], error: null })
     vi.mocked(pmAttachmentService.initiateUpload).mockResolvedValue({
       data: {
         attachment: { id: 'attachment-1' },
@@ -441,6 +443,38 @@ describe('CreateTaskModal', () => {
 
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it.each([false, true])('offers only the selected team’s epics when creating a task (support=%s)', async (supportSource) => {
+    vi.mocked(pmEpicService.list).mockResolvedValue({ data: [
+      { epic: { id: 'epic-core', name: 'Issue triage', team_id: 'team-1', color: '#e2564a', started: true } },
+      { epic: { id: 'epic-shared', name: 'Issue triage', team_id: null, started: true } },
+      { epic: { id: 'epic-other', name: 'Support rollout', team_id: 'team-2' } },
+    ] as EpicWithStats[], error: null })
+    const onCreate = vi.fn(async () => ({ id: 'created' }))
+    const prepareDraft = vi.fn(async () => ({ name: 'Prepared task', description: '<p>Brief</p>', task_type: 'bug' as const, priority: 'high' as const, source_hash: 'hash' }))
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(
+        <CreateTaskModal open workspaceId="ws-1" initialTeamId="team-1" initialName="New task"
+          workflow={workflow} initialStateId="state-1" onOpenChange={vi.fn()} onCreate={onCreate}
+          supportSource={supportSource} prepareDraft={supportSource ? prepareDraft : undefined} />,
+      ))
+      const epicOptions = Array.from(container.querySelectorAll('button')).filter(b => b.textContent === 'Issue triage')
+      expect(epicOptions).toHaveLength(1)
+      expect(container.textContent).not.toContain('Support rollout')
+      await act(async () => epicOptions[0].click())
+      if (!supportSource) await settleDraftCheck()
+      await act(async () => {
+        Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Save')!.click()
+      })
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ team_id: 'team-1', epic_id: 'epic-core' }))
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+    }
   })
 
   it('groups task templates by teams that have templates', () => {

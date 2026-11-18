@@ -1,6 +1,7 @@
 import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { EpicColorSwatch } from './EpicColorSwatch';
 import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from './epicPickerGroups';
+import { isEpicSelectableForTaskTeam } from './task-detail/taskPlanningScope';
 import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -306,6 +307,11 @@ export function TaskBulkActionsBar({
     : resolveSelectionWorkflow(selectedTasks, workflows, workflow);
   const effectiveSprints = teamChanged ? (teamSprintsQuery.data ?? EMPTY_SPRINTS) : sprints;
   const effectiveEpics = teamChanged ? (teamEpicsQuery.data ?? EMPTY_EPICS) : epics;
+  const selectableEpics = useMemo(() => effectiveEpics.filter(({ epic }) => (
+    teamChanged
+      ? isEpicSelectableForTaskTeam(epic.team_id, stagedTeamId)
+      : selectedTasks.every((task) => isEpicSelectableForTaskTeam(epic.team_id, task.team_id))
+  )), [effectiveEpics, teamChanged, stagedTeamId, selectedTasks]);
   const effectiveLabels = teamChanged ? (teamLabelsQuery.data ?? EMPTY_LABELS) : labels;
   const effectiveTeamId = teamChanged ? stagedTeamId : (teamId ?? undefined);
   const teamScopedLoading = teamChanged && (
@@ -378,6 +384,9 @@ export function TaskBulkActionsBar({
       team_id: shared((t) => t.team_id ?? ''),
     };
   }, [selectedTasks]);
+
+  const selectedEpicId = stagedEpicId === undefined ? commonValues.epic_id : stagedEpicId;
+  const selectedEpic = effectiveEpics.find(({ epic }) => epic.id === selectedEpicId)?.epic;
 
   const resetStaged = useCallback(() => {
     setStagedStatus(undefined);
@@ -823,11 +832,13 @@ export function TaskBulkActionsBar({
                   'h-7 flex-1 text-xs',
                   stagedEpicId !== undefined && 'border-primary',
                 )}>
-                  <SelectValue placeholder={commonValues.epic_id === MIXED ? 'Multiple' : 'No change'} />
+                  <SelectValue placeholder={commonValues.epic_id === MIXED ? 'Multiple' : 'No change'}>
+                    {selectedEpic ? <><EpicColorSwatch color={selectedEpic.color} /><span className="truncate">{selectedEpic.name}</span></> : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className={EPIC_PICKER_WIDTH}>
                   <SelectItem value="__none__">No epic</SelectItem>
-                  {groupEpicsByLifecycle(effectiveEpics.map(entry => entry.epic)).map(group => (
+                  {groupEpicsByLifecycle(selectableEpics.map(entry => entry.epic)).map(group => (
                     <SelectGroup key={group.label}>
                       <SelectLabel>{group.label}</SelectLabel>
                       {group.epics.map(epic => (

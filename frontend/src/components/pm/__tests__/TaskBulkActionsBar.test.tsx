@@ -40,7 +40,7 @@ import {
 } from '../TaskBulkActionsBar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { Label, Task, WorkflowWithStates } from '@/lib/pmTypes';
+import type { EpicWithStats, Label, Task, WorkflowWithStates } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.stubGlobal(
@@ -401,10 +401,51 @@ describe('TaskBulkActionsBar', () => {
     document.body.innerHTML = '';
   });
 
+  it.each([
+    { teams: ['team-a', 'team-a'], expected: ['epic-a'] },
+    { teams: ['team-a', 'team-b'], expected: [] },
+    { teams: [undefined, undefined], expected: ['epic-shared'] },
+  ])('offers epics matching every selected task team: $teams', async ({ teams, expected }) => {
+    const { container, root } = renderBar({
+      selectedTasks: teams.map((team_id, index) => ({ ...baseTask, id: `task-${index}`, team_id })),
+      epics: [
+        { epic: { id: 'epic-a', name: 'Issue triage', team_id: 'team-a' } },
+        { epic: { id: 'epic-shared', name: 'Issue triage', team_id: null } },
+        { epic: { id: 'epic-b', name: 'Other initiative', team_id: 'team-b' } },
+      ] as EpicWithStats[],
+    });
+    try {
+      await act(async () => container.querySelector('button')!.click());
+      const label = Array.from(document.querySelectorAll('span')).find(el => el.textContent === 'Epic')!;
+      await act(async () => label.parentElement!.querySelector<HTMLButtonElement>('button')!.click());
+      const epicOptions = Array.from(document.querySelectorAll('[role="option"]'))
+        .map(el => el.getAttribute('data-value')).filter(value => value !== '__none__');
+      expect(epicOptions).toEqual(expected);
+      expect(updateMock).not.toHaveBeenCalled();
+    } finally {
+      unmount(root, container);
+    }
+  });
+
   it('renders the bulk edit trigger with the selected count', () => {
     const { container, root } = renderBar();
     expect(container.textContent).toContain('Edit 2 tasks');
     unmount(root, container);
+  });
+
+  it('shows an existing teamless epic without changing the link when bulk edit opens', async () => {
+    const { container, root } = renderBar({
+      selectedTasks: [{ ...baseTask, team_id: 'team-a', epic_id: 'legacy-epic' }],
+      epics: [{ epic: { id: 'legacy-epic', name: 'Existing initiative', team_id: null } }] as EpicWithStats[],
+    });
+    try {
+      await act(async () => container.querySelector('button')!.click());
+      const label = Array.from(document.querySelectorAll('span')).find(el => el.textContent === 'Epic')!;
+      expect(label.parentElement!.querySelector('button')?.textContent).toBe('Existing initiative');
+      expect(updateMock).not.toHaveBeenCalled();
+    } finally {
+      unmount(root, container);
+    }
   });
 
   it('renders nothing when nothing is selected', () => {

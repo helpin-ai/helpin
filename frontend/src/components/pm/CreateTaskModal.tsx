@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { TaskDraftSuggestions } from './TaskDraftSuggestions';
-import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
+import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from '@/components/pm/epicPickerGroups';
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { useNavigate } from "@tanstack/react-router";
@@ -739,19 +740,16 @@ export function CreateTaskModal({
 
   // Group epics by lifecycle: not started → in progress → completed.
   const epicGroups = useMemo(() => {
-    const notStarted: typeof availableEpics = [];
-    const inProgress: typeof availableEpics = [];
-    const completed: typeof availableEpics = [];
-    for (const entry of availableEpics) {
-      if (entry.epic.completed) completed.push(entry);
-      else if (entry.epic.started) inProgress.push(entry);
-      else notStarted.push(entry);
-    }
     return [
       { label: undefined as string | undefined, options: [{ value: "__none__", label: "No epic" }] },
-      { label: "Not started", options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
-      { label: "In progress", options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
-      { label: "Completed", options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      ...groupEpicsByLifecycle(availableEpics.map(({ epic }) => epic)).map((group) => ({
+        label: group.label,
+        options: group.epics.map((epic) => ({
+          value: epic.id,
+          label: epic.name,
+          icon: <EpicColorSwatch color={epic.color} />,
+        })),
+      })),
     ];
   }, [availableEpics]);
 
