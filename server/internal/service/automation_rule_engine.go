@@ -455,6 +455,12 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		return err
 	}
 
+	if e.mergedPullRequestAlreadyHandled(ctx, rule, event, cfg.AgentID) {
+		slog.InfoContext(ctx, "automation rule skipped: merged pull request already handled",
+			"workspace_id", event.WorkspaceID, "rule_id", rule.ID, "pull_request", event.PullRequestNumber)
+		return nil
+	}
+
 	now := time.Now().UTC()
 	trigger := &model.AgentRunTriggerContext{
 		Source:      model.AgentRunTriggerSourceAutomationRule,
@@ -1565,6 +1571,38 @@ func (e *AutomationRuleEngine) StopRuleScheduleForRule(ctx context.Context, rule
 		return nil
 	}
 	return e.runEngine.StopRuleSchedule(ctx, ruleID)
+}
+
+// _handledPullRequestLookback bounds the search for an earlier run of the same
+// merged pull request.
+// shortcut: a redelivery more than 30 days after the merge runs again; store a
+// per-rule delivery key if that ever matters.
+const _handledPullRequestLookback = 30 * 24 * time.Hour
+
+// mergedPullRequestAlreadyHandled reports whether this flow already completed
+// a run for the merged pull request, so a redelivered webhook does not repeat
+// the work. Failed and cancelled runs do not count, so a redelivery retries them.
+func (e *AutomationRuleEngine) mergedPullRequestAlreadyHandled(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, agentID string) bool {
+	if event.TriggerType != model.TriggerGitHubPRMerged || event.PullRequestNumber <= 0 ||
+		e.agentService == nil || e.agentService.runRepo == nil {
+		return false
+	}
+	runs, err := e.agentService.runRepo.ListByAgentSince(ctx, event.WorkspaceID, agentID, time.Now().Add(-_handledPullRequestLookback))
+	if err != nil {
+		slog.WarnContext(ctx, "check handled pull request", "error", err, "rule_id", rule.ID)
+		return false
+	}
+	return completedRunForPullRequest(runs, rule.ID, event.PullRequestNumber)
+}
+
+func completedRunForPullRequest(runs []model.AgentRun, ruleID string, number int) bool {
+	for i := range runs {
+		if runs[i].Status == model.AgentRunStatusCompleted &&
+			runInputRuleID(runs[i].Input) == ruleID && runInputPullRequestNumber(runs[i].Input) == number {
+			return true
+		}
+	}
+	return false
 }
 
 // withTriggerEventContext appends the GitHub trigger event to the run

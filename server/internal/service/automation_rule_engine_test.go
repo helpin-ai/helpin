@@ -1129,3 +1129,38 @@ func TestRunInputRuleIDReadsTheTriggeringRule(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletedRunForPullRequestMatchesRuleAndNumberOnly(t *testing.T) {
+	input := func(ruleID string, number int) []byte {
+		return []byte(fmt.Sprintf(`{"trigger":{"rule_id":%q},"event":{"github":{"pull_request":{"number":%d}}}}`, ruleID, number))
+	}
+	runs := []model.AgentRun{
+		{Status: model.AgentRunStatusFailed, Input: input("rule-1", 62)},
+		{Status: model.AgentRunStatusCompleted, Input: input("rule-2", 62)},
+		{Status: model.AgentRunStatusCompleted, Input: input("rule-1", 51)},
+	}
+	if completedRunForPullRequest(runs, "rule-1", 62) {
+		t.Fatal("a failed run or another rule's run must not count as handled")
+	}
+	if !completedRunForPullRequest(runs, "rule-1", 51) {
+		t.Fatal("expected the completed run of the same rule and pull request to count as handled")
+	}
+}
+
+func TestSameTargetProposalsMatchesScopeAndBlock(t *testing.T) {
+	blockA, blockB := "block-a", "block-b"
+	pending := []model.DocsChangeProposal{
+		{ID: "p1", Scope: "block", BlockID: &blockA},
+		{ID: "p2", Scope: "block", BlockID: &blockB},
+		{ID: "p3", Scope: "document"},
+	}
+	if got := sameTargetProposals(pending, "block", "block-a"); len(got) != 1 || got[0]["proposal_id"] != "p1" {
+		t.Fatalf("block match = %v, want only p1", got)
+	}
+	if got := sameTargetProposals(pending, "document", ""); len(got) != 1 || got[0]["proposal_id"] != "p3" {
+		t.Fatalf("document match = %v, want only p3", got)
+	}
+	if got := sameTargetProposals(pending, "block", "block-c"); len(got) != 0 {
+		t.Fatalf("unrelated block matched: %v", got)
+	}
+}

@@ -30,7 +30,7 @@ agent:
       5. Create a new document only when the change adds a user-facing workflow that no existing document covers. Call create_document exactly once with the complete content, and do not repeat the document title as the first heading or opening line in the document body.
 
       update_mode controls how you change existing documents:
-      - propose: call publish_document_change_proposal for every change to an existing document so a person reviews it. Do not call edit_document.
+      - propose: call publish_document_change_proposal for every change to an existing document so a person reviews it. Do not call edit_document. When the result is `already_pending`, a proposal for that content is already waiting for review: do not retry, and name the pending proposal in your report. Use list_document_change_proposals to see what is waiting on a document.
       - direct: apply changes with edit_document, using targeted edits so untouched blocks keep their IDs and formatting.
 
       Never state a behavior, limit, label, or number that the diff or the repository does not confirm. When the evidence is incomplete, read the repository with the read-only repository tools. If the fact is still unconfirmed, leave it out and report the gap.
@@ -58,6 +58,7 @@ agent:
       - edit_document
       - create_document
       - publish_document_change_proposal
+      - list_document_change_proposals
     allowed_targets: [repository, document]
     approval_mode: never
 trigger:

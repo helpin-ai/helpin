@@ -99,6 +99,27 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		},
 		Execute: s.executePublishDocumentChangeProposal,
 	})
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.list_document_change_proposals",
+		Module:               "docs",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "document", "support_coverage_gap"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "docs.list_document_change_proposals",
+			Alias:       "list_document_change_proposals",
+			Category:    "Docs",
+			Description: "List the pending change proposals for a Docs document, newest first, with the proposed and current markdown. Call it before proposing a change so you do not submit one that is already waiting for review.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"document_id": map[string]any{"type": "string", "description": "The document ID."},
+				},
+				"required":             []string{"document_id"},
+				"additionalProperties": false,
+			},
+		},
+		Execute: s.executeListDocumentChangeProposals,
+	})
 }
 
 type insertDocumentArtifactRequest struct {
@@ -459,6 +480,15 @@ func (s *InternalCommandService) executePublishDocumentChangeProposal(ctx contex
 		return nil, fmt.Errorf("marshal proposal sources: %w", err)
 	}
 	localRunID := s.bestEffortLocalRunID(ctx, meta)
+	if existing := s.pendingProposalsBlockingUnattendedRun(ctx, meta, req.DocumentID, req.Scope, req.BlockID); len(existing) > 0 {
+		return mustJSON(map[string]any{
+			"status":      "already_pending",
+			"document_id": req.DocumentID,
+			"block_id":    req.BlockID,
+			"pending":     existing,
+			"next_action": "A proposal for this content is already waiting for review, so no new proposal was submitted. Do not retry. Name the pending proposal in your report. If your change differs from it, describe the difference so the reviewer can ask for it after resolving the pending one.",
+		}), nil
+	}
 	created, err := s.docsChangeProposalService.Create(ctx, meta.WorkspaceID, model.CreateDocsChangeProposalRequest{
 		Scope:           req.Scope,
 		DocumentID:      req.DocumentID,
@@ -483,6 +513,61 @@ func (s *InternalCommandService) executePublishDocumentChangeProposal(ctx contex
 		"block_id":    req.BlockID,
 		"next_action": "Finish. The proposal is now visible in Docs for a human to apply or discard.",
 	}), nil
+}
+
+func (s *InternalCommandService) executeListDocumentChangeProposals(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if s.docsChangeProposalService == nil {
+		return nil, fmt.Errorf("document change proposal storage is not available")
+	}
+	var req struct {
+		DocumentID string `json:"document_id"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("parse list document change proposals input: %w", err)
+	}
+	req.DocumentID = strings.TrimSpace(firstNonEmptyCommand(req.DocumentID, currentDocumentTargetID(meta)))
+	if req.DocumentID == "" {
+		return nil, errCommandInput("document_id is required")
+	}
+	if targetID := currentDocumentTargetID(meta); targetID != "" && targetID != req.DocumentID {
+		return nil, fmt.Errorf("document_id does not match this run target")
+	}
+	proposals, err := s.docsChangeProposalService.ListPending(ctx, meta.WorkspaceID, req.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]map[string]any, 0, len(proposals))
+	for i := range proposals {
+		items = append(items, mcpProposalState(&proposals[i], true))
+	}
+	return mustJSON(map[string]any{"document_id": req.DocumentID, "items": items}), nil
+}
+
+// pendingProposalsBlockingUnattendedRun returns the pending proposals that
+// already target the same document or block when the caller is a run fired by
+// an automation flow. Nobody watches those runs, so repeated events would pile
+// duplicate proposals onto one block. Interactive runs are not limited: a
+// person there may ask for a revised proposal.
+func (s *InternalCommandService) pendingProposalsBlockingUnattendedRun(ctx context.Context, meta model.InternalCommandContext, documentID, scope, blockID string) []map[string]any {
+	run, err := s.resolveCommandRun(ctx, meta)
+	if err != nil || run == nil || runInputRuleID(run.Input) == "" {
+		return nil
+	}
+	pending, err := s.docsChangeProposalService.ListPending(ctx, meta.WorkspaceID, documentID)
+	if err != nil {
+		return nil
+	}
+	return sameTargetProposals(pending, scope, blockID)
+}
+
+func sameTargetProposals(pending []model.DocsChangeProposal, scope, blockID string) []map[string]any {
+	var matches []map[string]any
+	for i := range pending {
+		if pending[i].Scope == scope && derefString(pending[i].BlockID) == blockID {
+			matches = append(matches, mcpProposalState(&pending[i], true))
+		}
+	}
+	return matches
 }
 
 // bestEffortLocalRunID maps the command context run ID (which may be an
