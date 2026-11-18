@@ -49,10 +49,10 @@ var supportTranscriptTemplate = template.Must(template.New("transcript").Parse(`
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
 {{if eq .Align "left"}}<td style="padding-right:8px;">{{template "avatar" .}}</td>{{end}}
 <td align="{{.Align}}" style="font-size:12px;line-height:19px;color:#78716c;">
-<strong style="color:#292524;font-size:13px;">{{.Sender}}</strong>{{if .AI}} <span style="color:#78716c;">· AI assistant</span>{{end}}{{if .Timestamp}}<br>{{.Timestamp}}{{end}}
+<strong style="color:#292524;font-size:13px;">{{.Sender}}</strong>{{if .AI}} <span style="color:#78716c;">· AI assistant</span>{{end}}
 </td>{{if eq .Align "right"}}<td style="padding-left:8px;">{{template "avatar" .}}</td>{{end}}
 </tr></table>
-</td></tr><tr><td dir="auto" style="padding:14px 16px;background:{{.Background}};border:1px solid #e7e5e4;border-radius:10px;font-size:14px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">{{.Body}}</td></tr></table>
+</td></tr><tr><td dir="auto" style="padding:14px 16px;background:{{.Background}};border:1px solid #e7e5e4;border-radius:10px;font-size:14px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">{{.Body}}{{if .Timestamp}}<div dir="ltr" style="padding-top:8px;text-align:right;font-size:11px;line-height:16px;color:#78716c;">{{.Timestamp}}</div>{{end}}</td></tr></table>
 </td></tr></table>{{else}}<p style="margin:0 8px 20px;color:#78716c;font-size:14px;">No public messages in this conversation.</p>{{end}}
 </td></tr></table>
 </td></tr></table></body></html>
