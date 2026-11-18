@@ -2,7 +2,9 @@ package service
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +37,7 @@ const (
 	helpcenterAssetMaxBytes = 2 << 20
 	brandPageMaxBytes       = 4 << 20
 	brandUserAgent          = "Mozilla/5.0 (compatible; HelpinImporter/1.0; +https://helpin.ai)"
+	_brandSVGDataPrefix     = "data:image/svg+xml;base64,"
 )
 
 // _helpcenterAssetTypes are the image types a help center asset may have.
@@ -72,6 +76,14 @@ func (s *DocsHelpcenterService) UploadAssetFromURL(ctx context.Context, workspac
 // fetchHelpcenterAsset downloads an image and returns its real content type
 // and bytes. The type comes from the bytes when the server mislabels them.
 func fetchHelpcenterAsset(ctx context.Context, client *http.Client, sourceURL string) (string, []byte, error) {
+	if encoded, ok := strings.CutPrefix(strings.TrimSpace(sourceURL), _brandSVGDataPrefix); ok {
+		// An inline SVG logo the brand import read from a page.
+		body, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil || len(body) == 0 || len(body) > helpcenterAssetMaxBytes {
+			return "", nil, brandInvalid("the image could not be read")
+		}
+		return "image/svg+xml", body, nil
+	}
 	parsed, err := url.Parse(strings.TrimSpace(sourceURL))
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.User != nil {
 		return "", nil, brandInvalid("enter the full address of an image, starting with https://")
@@ -360,8 +372,9 @@ func parseBrandPage(root *html.Node, base *url.URL) *brandPage {
 	page := &brandPage{finalURL: base}
 	var title, ogSiteName, appName, iconHref, appleIconHref string
 	var headerLogo string
-	var walk func(n *html.Node, inHeader bool)
-	walk = func(n *html.Node, inHeader bool) {
+	var headerSVG *html.Node
+	var walk func(n *html.Node, inHeader, inHomeLink bool)
+	walk = func(n *html.Node, inHeader, inHomeLink bool) {
 		if n.Type == html.ElementNode {
 			switch n.Data {
 			case "title":
@@ -399,22 +412,79 @@ func parseBrandPage(root *html.Node, base *url.URL) *brandPage {
 				if src := brandLogoSource(n); src != "" && inHeader && headerLogo == "" {
 					headerLogo = src
 				}
+			case "a":
+				inHomeLink = inHomeLink || brandHomeLink(n, base)
+			case "svg":
+				// Many sites draw the logo as inline SVG in the link home.
+				if inHeader && headerSVG == nil && (inHomeLink || brandLogoHint(n)) {
+					headerSVG = n
+				}
+				return
 			}
 			if !inHeader && brandHeaderLike(n) {
 				inHeader = true
 			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walk(child, inHeader)
+			walk(child, inHeader, inHomeLink)
 		}
 	}
-	walk(root, false)
+	walk(root, false, false)
 
 	page.siteName = firstNonEmpty(ogSiteName, appName, brandNameFromTitle(title))
 	// A PNG touch icon is sharper than a 16-pixel favicon.
 	page.faviconURL = resolveBrandURL(base, firstNonEmpty(appleIconHref, iconHref))
 	page.logoURL = resolveBrandURL(base, headerLogo)
+	if page.logoURL == "" && headerSVG != nil {
+		page.logoURL = brandSVGDataURL(headerSVG, page.themeColor)
+	}
 	return page
+}
+
+// brandHomeLink reports whether a link leads to the site's home page.
+func brandHomeLink(a *html.Node, base *url.URL) bool {
+	target := resolveBrandURL(base, strings.TrimSpace(htmlAttr(a, "href")))
+	parsed, err := url.Parse(target)
+	return target != "" && err == nil && strings.EqualFold(parsed.Hostname(), base.Hostname()) && strings.Trim(parsed.Path, "/") == ""
+}
+
+func brandLogoHint(n *html.Node) bool {
+	return strings.Contains(strings.ToLower(htmlAttr(n, "class")+" "+htmlAttr(n, "id")+" "+htmlAttr(n, "aria-label")), "logo")
+}
+
+// brandSVGDataURL turns an inline SVG logo into a standalone image. Outside
+// the page, currentColor has no text color to inherit, so it becomes the
+// brand color (or near-black); scripts and event handlers are dropped.
+func brandSVGDataURL(svg *html.Node, color string) string {
+	brandStripSVG(svg)
+	var out bytes.Buffer
+	if err := html.Render(&out, svg); err != nil {
+		return ""
+	}
+	markup := regexp.MustCompile(`(?i)currentcolor`).ReplaceAllString(out.String(), cmp.Or(color, "#111111"))
+	if htmlAttr(svg, "xmlns") == "" {
+		markup = strings.Replace(markup, "<svg", `<svg xmlns="http://www.w3.org/2000/svg"`, 1)
+	}
+	if len(markup) > helpcenterAssetMaxBytes {
+		return ""
+	}
+	return _brandSVGDataPrefix + base64.StdEncoding.EncodeToString([]byte(markup))
+}
+
+func brandStripSVG(n *html.Node) {
+	n.Attr = slices.DeleteFunc(n.Attr, func(a html.Attribute) bool {
+		key, value := strings.ToLower(a.Key), strings.ToLower(strings.TrimSpace(a.Val))
+		return strings.HasPrefix(key, "on") || strings.HasPrefix(value, "javascript:")
+	})
+	for child := n.FirstChild; child != nil; {
+		next := child.NextSibling
+		if child.Type == html.ElementNode && (strings.EqualFold(child.Data, "script") || strings.EqualFold(child.Data, "foreignobject")) {
+			n.RemoveChild(child)
+		} else {
+			brandStripSVG(child)
+		}
+		child = next
+	}
 }
 
 // brandLogoSource returns the address of an image that calls itself a logo.

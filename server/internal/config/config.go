@@ -193,6 +193,10 @@ type Config struct {
 	ExternalMCPEncryptionKey  string
 	// WebhookEncryptionKey encrypts webhook signing secrets; CRM_ENCRYPTION_KEY is the fallback.
 	WebhookEncryptionKey string
+	// ChannelEncryptionKey encrypts connected channel credentials (bot tokens); CRM_ENCRYPTION_KEY is the fallback.
+	ChannelEncryptionKey string
+	// TelegramAPIBaseURL points the Telegram adapter at a local Bot API server or test fake; empty means api.telegram.org.
+	TelegramAPIBaseURL string
 	// WebhooksAllowPrivateNetworks lets webhooks reach private addresses and plain HTTP (self-hosted only).
 	WebhooksAllowPrivateNetworks bool
 	// IntercomAPIBaseURL overrides the Intercom API host for imports (proxies and testing).
@@ -568,6 +572,8 @@ func Load() (*Config, error) {
 		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
 		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
 		WebhookEncryptionKey:                   strings.TrimSpace(os.Getenv("WEBHOOK_ENCRYPTION_KEY")),
+		ChannelEncryptionKey:                   strings.TrimSpace(os.Getenv("CHANNEL_ENCRYPTION_KEY")),
+		TelegramAPIBaseURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("TELEGRAM_API_BASE_URL")), "/"),
 		WebhooksAllowPrivateNetworks:           parseBoolEnv(os.Getenv("WEBHOOKS_ALLOW_PRIVATE_NETWORKS")),
 		IntercomAPIBaseURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("INTERCOM_API_BASE_URL")), "/"),
 		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*") + "," + os.Getenv("EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS")),

@@ -14,14 +14,18 @@ type SupportInboundJob struct {
 	RecoveryConversationID *string `gorm:"type:uuid"`
 	RecoveryRequestedBy    *string `gorm:"type:uuid"`
 	RecoveryRequestedAt    *time.Time
-	Payload                string    `gorm:"type:text;not null"`
-	Status                 string    `gorm:"not null;index:idx_support_inbound_due"`
-	Attempts               int       `gorm:"not null;default:0"`
-	AvailableAt            time.Time `gorm:"not null;index:idx_support_inbound_due"`
-	LeaseToken             string    `gorm:"not null;default:''"`
-	LastError              string    `gorm:"type:text;not null;default:''"`
-	CreatedAt              time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt              time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	ChannelAccountID       *string `gorm:"type:uuid"`
+	// SubjectKey is sha256("<account>:<external user>") for channel events, so
+	// privacy cleanup finds events whose conversation does not exist yet.
+	SubjectKey  *string   `gorm:"type:text"`
+	Payload     string    `gorm:"type:text;not null"`
+	Status      string    `gorm:"not null;index:idx_support_inbound_due"`
+	Attempts    int       `gorm:"not null;default:0"`
+	AvailableAt time.Time `gorm:"not null;index:idx_support_inbound_due"`
+	LeaseToken  string    `gorm:"not null;default:''"`
+	LastError   string    `gorm:"type:text;not null;default:''"`
+	CreatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
 func (SupportInboundJob) TableName() string { return "support_inbound_jobs" }

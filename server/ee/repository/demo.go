@@ -18,7 +18,10 @@ const (
 	DemoStatusQueued   = "queued"
 	DemoStatusBuilding = "building"
 	DemoStatusReady    = "ready"
-	DemoStatusFailed   = "failed"
+	// DemoStatusReadyWithIssues is a finished build whose check questions did
+	// not pass; the report lists why.
+	DemoStatusReadyWithIssues = "ready_with_issues"
+	DemoStatusFailed          = "failed"
 )
 
 // DemoWorkspace tracks one demo build: a workspace created for a company and
@@ -56,7 +59,7 @@ func (DemoWorkspace) TableName() string { return "demo_workspaces" }
 
 // Finished reports whether the build has ended, successfully or not.
 func (d *DemoWorkspace) Finished() bool {
-	return d.Status == DemoStatusReady || d.Status == DemoStatusFailed
+	return d.Status == DemoStatusReady || d.Status == DemoStatusReadyWithIssues || d.Status == DemoStatusFailed
 }
 
 // DemoRepository stores demo workspace builds.
@@ -113,27 +116,21 @@ func (r *DemoRepository) first(ctx context.Context, query string, args ...any) (
 	return &demo, nil
 }
 
-// CountUnfinished counts the builds of a home workspace that are still
-// queued or building.
-func (r *DemoRepository) CountUnfinished(ctx context.Context, homeWorkspaceID string) (int64, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).Model(&DemoWorkspace{}).
-		Where("home_workspace_id = ? AND status IN ?", homeWorkspaceID, []string{DemoStatusQueued, DemoStatusBuilding}).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count unfinished demo workspaces: %w", err)
-	}
-	return count, nil
-}
-
 // ClaimNext leases the oldest unfinished build nobody is working on, so two
-// API instances never advance the same build. It returns nil when there is
-// none.
-func (r *DemoRepository) ClaimNext(ctx context.Context, now time.Time, lease time.Duration) (*DemoWorkspace, error) {
+// API instances never advance the same build. A queued build waits while its
+// home workspace already has maxBuilding builds running. It returns nil when
+// there is none.
+func (r *DemoRepository) ClaimNext(ctx context.Context, now time.Time, lease time.Duration, maxBuilding int) (*DemoWorkspace, error) {
 	var claimed *DemoWorkspace
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var demo DemoWorkspace
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("status IN ? AND (lease_until IS NULL OR lease_until <= ?)", []string{DemoStatusQueued, DemoStatusBuilding}, now).
+			Where("(lease_until IS NULL OR lease_until <= ?)", now).
+			// shortcut: two instances claiming at once can each start one queued
+			// build past the cap; a per-workspace advisory lock would close that.
+			Where("status = ? OR (status = ? AND (SELECT COUNT(*) FROM demo_workspaces running "+
+				"WHERE running.home_workspace_id = demo_workspaces.home_workspace_id AND running.status = ?) < ?)",
+				DemoStatusBuilding, DemoStatusQueued, DemoStatusBuilding, maxBuilding).
 			Order("created_at ASC").
 			First(&demo).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -175,4 +172,17 @@ func (r *DemoRepository) Requeue(ctx context.Context, homeWorkspaceID, id string
 		return fmt.Errorf("requeue demo workspace: %w", result.Error)
 	}
 	return nil
+}
+
+// Restart puts a build that finished successfully back in the queue at step.
+// restarted is false when the build is not finished that way, such as one
+// still running.
+func (r *DemoRepository) Restart(ctx context.Context, homeWorkspaceID, id, step string) (restarted bool, err error) {
+	result := r.db.WithContext(ctx).Model(&DemoWorkspace{}).
+		Where("home_workspace_id = ? AND id = ? AND status IN ?", homeWorkspaceID, id, []string{DemoStatusReady, DemoStatusReadyWithIssues}).
+		Updates(map[string]any{"status": DemoStatusQueued, "step": step, "error": nil, "attempts": 0, "lease_until": nil, "started_at": nil, "completed_at": nil, "updated_at": time.Now()})
+	if result.Error != nil {
+		return false, fmt.Errorf("restart demo workspace: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
 }

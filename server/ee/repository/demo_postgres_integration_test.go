@@ -99,16 +99,13 @@ func TestDemoRepositoryPostgres(t *testing.T) {
 	if got, err := repo.GetByCompany(ctx, home, companyA); err != nil || got == nil || got.ID != first.ID {
 		t.Fatalf("GetByCompany = %+v, %v", got, err)
 	}
-	if count, err := repo.CountUnfinished(ctx, home); err != nil || count != 2 {
-		t.Fatalf("CountUnfinished = %d, %v; want 2", count, err)
-	}
 
 	// Each unfinished build is leased once, oldest first; a leased build is
 	// not handed out again until its lease ends.
 	now := time.Now()
 	claimedIDs := map[string]bool{}
 	for range 3 {
-		claimed, err := repo.ClaimNext(ctx, now, time.Minute)
+		claimed, err := repo.ClaimNext(ctx, now, time.Minute, 5)
 		if err != nil || claimed == nil {
 			t.Fatalf("ClaimNext = %+v, %v", claimed, err)
 		}
@@ -117,10 +114,10 @@ func TestDemoRepositoryPostgres(t *testing.T) {
 		}
 		claimedIDs[claimed.ID] = true
 	}
-	if claimed, err := repo.ClaimNext(ctx, now, time.Minute); err != nil || claimed != nil {
+	if claimed, err := repo.ClaimNext(ctx, now, time.Minute, 5); err != nil || claimed != nil {
 		t.Fatalf("ClaimNext with everything leased = %+v, %v", claimed, err)
 	}
-	if claimed, err := repo.ClaimNext(ctx, now.Add(2*time.Minute), time.Minute); err != nil || claimed == nil {
+	if claimed, err := repo.ClaimNext(ctx, now.Add(2*time.Minute), time.Minute, 5); err != nil || claimed == nil {
 		t.Fatalf("ClaimNext after the lease ended = %+v, %v", claimed, err)
 	}
 
@@ -137,7 +134,7 @@ func TestDemoRepositoryPostgres(t *testing.T) {
 	if err := repo.Save(ctx, second); err != nil {
 		t.Fatal(err)
 	}
-	if claimed, err := repo.ClaimNext(ctx, now.Add(time.Hour), time.Minute); err != nil || claimed == nil || claimed.ID != foreign.ID {
+	if claimed, err := repo.ClaimNext(ctx, now.Add(time.Hour), time.Minute, 5); err != nil || claimed == nil || claimed.ID != foreign.ID {
 		t.Fatalf("ClaimNext with two finished builds = %+v, %v; want only the other workspace's build", claimed, err)
 	}
 	// Requeue is limited to the build's own home workspace.
@@ -154,6 +151,42 @@ func TestDemoRepositoryPostgres(t *testing.T) {
 	if err != nil || requeued.Status != DemoStatusQueued || requeued.Error != nil || requeued.Attempts != 0 || requeued.CompletedAt != nil ||
 		requeued.Step != "import" || derefTestString(requeued.WorkspaceID) != workspaceID || !strings.Contains(string(requeued.Report), "check the logo") {
 		t.Fatalf("requeued build = %+v, %v; want it queued at the step it stopped, with its progress kept", requeued, err)
+	}
+
+	// A queued build waits while its home workspace has maxBuilding builds
+	// running; other workspaces are not held up.
+	busyUntil := now.Add(10 * time.Hour)
+	second.Status, second.LeaseUntil = DemoStatusBuilding, &busyUntil
+	if err := repo.Save(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(2 * time.Hour)
+	if claimed, err := repo.ClaimNext(ctx, later, time.Minute, 1); err != nil || claimed == nil || claimed.ID != foreign.ID {
+		t.Fatalf("ClaimNext at the cap = %+v, %v; want only the other workspace's build", claimed, err)
+	}
+	if claimed, err := repo.ClaimNext(ctx, later, time.Minute, 1); err != nil || claimed != nil {
+		t.Fatalf("ClaimNext at the cap = %+v, %v; want the queued build to wait", claimed, err)
+	}
+	if claimed, err := repo.ClaimNext(ctx, later, time.Minute, 2); err != nil || claimed == nil || claimed.ID != first.ID {
+		t.Fatalf("ClaimNext below the cap = %+v, %v; want the queued build", claimed, err)
+	}
+
+	// Restart reruns only a successfully finished build of its own workspace.
+	if restarted, err := repo.Restart(ctx, home, second.ID, "website"); err != nil || restarted {
+		t.Fatalf("Restart of a running build = %v, %v", restarted, err)
+	}
+	second.Status, second.LeaseUntil = DemoStatusReadyWithIssues, nil
+	if err := repo.Save(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	if restarted, err := repo.Restart(ctx, otherHome, second.ID, "website"); err != nil || restarted {
+		t.Fatalf("Restart from another workspace = %v, %v", restarted, err)
+	}
+	if restarted, err := repo.Restart(ctx, home, second.ID, "website"); err != nil || !restarted {
+		t.Fatalf("Restart = %v, %v", restarted, err)
+	}
+	if got, _ := repo.GetByID(ctx, home, second.ID); got.Status != DemoStatusQueued || got.Step != "website" || got.CompletedAt != nil {
+		t.Fatalf("restarted build = %+v", got)
 	}
 }
 

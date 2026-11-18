@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -16,6 +17,10 @@ const canonicalPricingPageChunkScanLimit = 32
 // chunks can score above the actual plan cards. Once a canonical pricing page
 // is found, inspect its released chunks and promote the first primary
 // price-bearing section before applying the per-document cap.
+
+// currencyValuePattern finds a price in text, to tell pricing evidence apart.
+var currencyValuePattern = regexp.MustCompile(`(?i)(?:[+−-]?[$€£]\s?[+−-]?\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?|\b(?:usd|eur|gbp)\s?[+−-]?\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?|[+−-]?\b\d[\d,.]*(?:\s*(?:thousand|million|billion|k)\b)?\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b)`)
+
 func (s *SupportAIService) ensureCanonicalPricingLeadChunks(
 	ctx context.Context,
 	workspaceID string,

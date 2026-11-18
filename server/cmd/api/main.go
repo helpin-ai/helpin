@@ -35,6 +35,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/cache"
+	"github.com/helpin-ai/helpin/server/internal/channels"
+	"github.com/helpin-ai/helpin/server/internal/channels/telegram"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/coordination"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
@@ -1698,6 +1700,18 @@ func main() {
 	}).SetSLAService(supportSLAService)
 	supportInboxService.SetWebhookService(webhookService)
 	supportSLAService.SetWebhookService(webhookService)
+	channelAdapters := channels.NewRegistry(telegram.NewAdapter(cfg.TelegramAPIBaseURL))
+	supportChannelService := service.NewSupportChannelService(
+		repository.NewSupportChannelAccountRepository(db), repository.NewSupportInboundJobRepository(db), channelAdapters,
+		service.SupportChannelConfig{
+			EncryptionKey:    resolveChannelEncryptionKey(cfg),
+			PublicAPIBaseURL: channelPublicAPIBaseURL(cfg),
+			// Telegram requires HTTPS webhooks; only a local Bot API fake runs without.
+			RequireHTTPS: cfg.TelegramAPIBaseURL == "",
+		}).SetInboxService(supportInboxService)
+	channelOutbox := repository.NewSupportChannelOutboxRepository(db)
+	supportChannelService.SetOutboxRepository(channelOutbox)
+	supportInboxService.SetChannelOutbox(channelOutbox)
 	commandService.SetSupportSLAService(supportSLAService)
 	supportImportService := service.NewSupportImportService(repository.NewSupportImportRepository(db), supportInboxService, resolvePMImportEncryptionKey(cfg)).
 		SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
@@ -1846,6 +1860,7 @@ func main() {
 
 	// The edition may add features on top of the product services, such as
 	// extra MCP tools. It must do so before the MCP and REST handlers are built.
+	supportPreviewService := service.NewSupportPreviewService(agentService, supportAIService, supportRunEvidenceRepo)
 	if err := editionServices.ExtendWith(edition.Extension{
 		DB:                     db,
 		HelpcenterHostedDomain: cfg.HelpcenterHostedDomain,
@@ -1860,6 +1875,11 @@ func main() {
 		SupportInbox:           supportInboxService,
 		CRMCompanies:           crmCompanyRepo,
 		CRMActivities:          crmActivityService,
+		DocsDocuments:          docsDocumentService,
+		AgentKnowledgeSources:  agentKnowledgeSourceService,
+		ContentSources:         supportContentSourceService,
+		AgentContentSources:    agentContentSourceService,
+		SupportPreview:         supportPreviewService,
 	}); err != nil {
 		slog.Error("startup: edition extension failed", "error", err)
 		os.Exit(1)
@@ -2042,7 +2062,7 @@ func main() {
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService).SetPreviewService(service.NewSupportPreviewService(agentService, supportAIService, supportRunEvidenceRepo)),
+		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService).SetPreviewService(supportPreviewService),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
@@ -2109,6 +2129,7 @@ func main() {
 		RequestTypes:        handler.NewSupportRequestTypeHandler(supportRequestTypeService),
 		CRMFieldDefinitions: handler.NewCRMFieldDefinitionHandler(customFieldService),
 		SupportWebhooks:     handler.NewSupportWebhookHandler(webhookService),
+		SupportChannels:     handler.NewSupportChannelHandler(supportChannelService),
 		SupportImports:      handler.NewSupportImportHandler(supportImportService),
 		SupportActions:      handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
 		SupportCoverage: handler.NewSupportCoverageHandler(
@@ -2423,6 +2444,9 @@ func main() {
 	go emailFallbackService.StartInboundWorker(inboundCtx, "email")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
+	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelEvent)
+	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
+	go supportChannelService.RunOutbox(inboundCtx, 2*time.Second)
 	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics, appEmailClient, cfg.OpsAlertEmails)
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
@@ -2778,6 +2802,31 @@ func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+// channelPublicAPIBaseURL follows external agents' upload links:
+// PUBLIC_API_BASE_URL, then CLI_PUBLIC_BASE_URL, then APP_BASE_URL.
+func channelPublicAPIBaseURL(cfg *config.Config) string {
+	for _, value := range []string{cfg.PublicAPIBaseURL, cfg.CLIPublicBaseURL, cfg.AppBaseURL} {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// resolveChannelEncryptionKey returns CHANNEL_ENCRYPTION_KEY, or
+// CRM_ENCRYPTION_KEY when it is unset.
+func resolveChannelEncryptionKey(cfg *config.Config) []byte {
+	if key, err := decodeOptionalAES256HexKey(cfg.ChannelEncryptionKey); err != nil {
+		slog.Warn("invalid CHANNEL_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err == nil && len(key) == 32 {
 		return key
 	}
 	return nil

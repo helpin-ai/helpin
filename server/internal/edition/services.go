@@ -32,6 +32,11 @@ type Extension struct {
 	SupportInbox           *service.SupportInboxService
 	CRMCompanies           *repository.CRMCompanyRepository
 	CRMActivities          *service.CRMActivityService
+	DocsDocuments          *service.DocsDocumentService
+	AgentKnowledgeSources  *service.AgentKnowledgeSourceService
+	ContentSources         *service.SupportContentSourceService
+	AgentContentSources    *service.AgentContentSourceService
+	SupportPreview         *service.SupportPreviewService
 }
 
 type Services struct {

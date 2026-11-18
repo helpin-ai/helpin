@@ -289,9 +289,9 @@ var setupTestSchema = []string{
 	`CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, settings TEXT NOT NULL DEFAULT '{}')`,
 	`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE support_email_routes (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1)`,
-	`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
+	`CREATE TABLE support_conversations (channel_account_id TEXT, channel_identity_id TEXT, snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL, subject TEXT NOT NULL DEFAULT '', channel TEXT NOT NULL DEFAULT 'internal', source TEXT NOT NULL DEFAULT 'internal', ai_state TEXT, flow_state TEXT, linked_task_id TEXT, resolved_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-	`CREATE TABLE support_messages (
+	`CREATE TABLE support_messages (channel_account_id TEXT, external_message_key TEXT, 
             origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, sender_type TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'reply', sender_user_id TEXT, is_internal BOOLEAN NOT NULL DEFAULT 0, metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, deleted_at DATETIME)`,
 	`CREATE TABLE support_coverage_recommendations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE agent_knowledge_sources (id TEXT PRIMARY KEY, agent_id TEXT, space_id TEXT, workspace_id TEXT NOT NULL, sync_status TEXT NOT NULL DEFAULT 'queued', indexed_documents INTEGER NOT NULL DEFAULT 0, indexed_chunks INTEGER NOT NULL DEFAULT 0)`,

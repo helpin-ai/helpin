@@ -753,7 +753,7 @@ func supportReplyCanRepairEvidence(gate supportReplyGateResult) bool {
 	}
 	for _, reason := range gate.ValidationReasons {
 		// unsupported_claim means no cited ID resolved, not a semantic verdict.
-		if reason != "unsupported_claim" && !strings.HasPrefix(reason, "unsupported_numeric:") && !strings.HasPrefix(reason, "numeric_qualifier_mismatch:") {
+		if reason != "unsupported_claim" && !strings.HasPrefix(reason, "unsupported_numeric:") {
 			return false
 		}
 	}

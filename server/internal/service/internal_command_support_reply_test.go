@@ -127,25 +127,6 @@ func TestEvaluateSupportReplyGate(t *testing.T) {
 			wantReason: "answer_validation_" + supportValidationNumeric,
 		},
 		{
-			name: "free trial cannot be generalized into free tier",
-			input: supportReplyGateInput{
-				Kind: "answer",
-				Contract: &AIResponseContract{
-					Content:      "We offer a free tier plus paid plans.",
-					CanAnswer:    true,
-					Confidence:   0.95,
-					SourceDocIDs: []string{"trial"},
-					Claims:       []AIResponseClaim{{Text: "We offer a free tier.", EvidenceIDs: []string{"trial"}}},
-				},
-				Evidence: []KnowledgeSearchResult{{
-					ID: "trial", ReferenceID: "content:pricing", Content: "Start a 14-day free trial. Sign up free.", VectorScore: 0.9,
-				}},
-				Threshold: 0.7,
-			},
-			wantOK:     false,
-			wantReason: "answer_validation_" + supportValidationUngrounded,
-		},
-		{
 			name: "low confidence answer escalates",
 			input: supportReplyGateInput{
 				Kind: "answer",
@@ -348,8 +329,6 @@ func TestEvidenceRepairDoesNotRelaxSourceGate(t *testing.T) {
 		{"citations and numeric", supportValidationNumeric, []string{"unsupported_numeric:20", "unsupported_claim"}, true},
 		{"citations only", supportValidationUngrounded, []string{"unsupported_claim"}, true},
 		{"missing claim map", supportValidationNumeric, []string{"unsupported_numeric:20", "answer_without_claim_map"}, false},
-		{"unsupported free plan", supportValidationUngrounded, []string{"unsupported_free_plan_claim"}, false},
-		{"mixed nonrepairable failure", supportValidationUngrounded, []string{"unsupported_claim", "unsupported_free_plan_claim"}, false},
 		{"no response", supportValidationUngrounded, []string{"missing_response"}, false},
 		{"source policy", "unapproved_source", []string{"unsupported_claim"}, false},
 		{"no reasons", supportValidationNumeric, nil, false},

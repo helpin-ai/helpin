@@ -45,7 +45,7 @@ func setupSupportPersonalStateTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
+		`CREATE TABLE support_conversations (channel_account_id TEXT, channel_identity_id TEXT, snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, mailbox_id TEXT,
 			status TEXT NOT NULL DEFAULT 'open', flow_state TEXT, ai_state TEXT,
@@ -56,7 +56,7 @@ func setupSupportPersonalStateTestDB(t *testing.T) *gorm.DB {
 			team_last_seen_at DATETIME, needs_human_reply BOOLEAN NOT NULL DEFAULT 0,
 			support_state_version INTEGER NOT NULL DEFAULT 0
 		)`,
-		`CREATE TABLE support_messages (
+		`CREATE TABLE support_messages (channel_account_id TEXT, external_message_key TEXT, 
             origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
 			sender_type TEXT NOT NULL, message_type TEXT NOT NULL, system_event_type TEXT,

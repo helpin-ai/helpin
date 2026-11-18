@@ -18,13 +18,13 @@ function DeliveryIcons({ mode }: { mode: SupportReplyDeliveryMode }) {
   );
 }
 
-function DeliveryOptionLabel({ mode, portal }: { mode: SupportReplyDeliveryMode; portal: boolean }) {
+function DeliveryOptionLabel({ mode, chatName }: { mode: SupportReplyDeliveryMode; chatName: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       {mode !== "email_only" && (
         <span className="inline-flex items-center gap-1.5">
           <BubbleChatIcon aria-hidden="true" className="size-3.5" />
-          {portal ? (mode === "chat_only" ? "Portal only" : "Portal") : (mode === "chat_only" ? "Chat only" : "Chat")}
+          {mode === "chat_only" ? `${chatName} only` : chatName}
         </span>
       )}
       {mode === "chat_and_email" && <span>+</span>}
@@ -46,6 +46,7 @@ export function ReplyDeliverySelector({
   emailUnavailableReason,
   chatUnavailableReason,
   portal = false,
+  channel,
 }: {
   mode: SupportReplyDeliveryMode;
   onChange: (mode: SupportReplyDeliveryMode) => void;
@@ -54,9 +55,12 @@ export function ReplyDeliverySelector({
   emailUnavailableReason?: string;
   chatUnavailableReason?: string;
   portal?: boolean;
+  /** A messaging app (Telegram) that carries "chat" replies. */
+  channel?: string;
 }) {
-  const labels: Record<SupportReplyDeliveryMode, string> = portal ? {
-    chat_only: "Portal only", chat_and_email: "Portal + email", email_only: "Email only",
+  const chatName = channel ?? (portal ? "Portal" : "Chat");
+  const labels: Record<SupportReplyDeliveryMode, string> = channel || portal ? {
+    chat_only: `${chatName} only`, chat_and_email: `${chatName} + email`, email_only: "Email only",
   } : REPLY_DELIVERY_LABELS;
   const unavailableReason =
     mode === "chat_only"
@@ -67,7 +71,7 @@ export function ReplyDeliverySelector({
   const description =
     unavailableReason ||
     (mode === "chat_only"
-      ? portal ? "Visible in the customer portal without an email notification." : "Only visible in the customer’s chat widget."
+      ? channel ? `Sent to the customer in ${channel}.` : portal ? "Visible in the customer portal without an email notification." : "Only visible in the customer’s chat widget."
       : `${labels[mode]} to ${email}.`);
   const options: SupportReplyDeliveryMode[] = [
     "chat_only",
@@ -115,7 +119,7 @@ export function ReplyDeliverySelector({
               label: labels[value],
               disabled: !!reason,
               tooltip: reason,
-              content: <DeliveryOptionLabel mode={value} portal={portal} />,
+              content: <DeliveryOptionLabel mode={value} chatName={chatName} />,
             };
           }),
         },
