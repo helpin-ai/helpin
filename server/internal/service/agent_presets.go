@@ -841,6 +841,7 @@ func commandAgentAvailableSkills() []string {
 		"api_docs_maintenance",
 		"post_release_docs_update",
 		"support_gap_docs_update",
+		"docs_writing_style",
 	}
 }
 
@@ -912,6 +913,7 @@ func askAgentAvailableSkills() []string {
 		"api_docs_maintenance",
 		"post_release_docs_update",
 		"support_gap_docs_update",
+		"docs_writing_style",
 		"marketing_context_setup",
 		"marketing_plan",
 		"customer_research_synthesis",
@@ -965,8 +967,10 @@ func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefini
 	if normalizePresetKey(preset.Key) != model.AgentPresetDocumentationAgent {
 		return preset
 	}
-	if !slices.Contains(preset.AvailableSkills, "document_editing") {
-		preset.AvailableSkills = append(preset.AvailableSkills, "document_editing")
+	for _, key := range []string{"document_editing", "docs_writing_style"} {
+		if !slices.Contains(preset.AvailableSkills, key) {
+			preset.AvailableSkills = append(preset.AvailableSkills, key)
+		}
 	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{
 		"read_document", "get_document_blocks", "find_skills", "read_skill",

@@ -178,7 +178,7 @@ func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing
 	}
 
 	out := runtimeAgentFromHelpinAgent(ask, "helpin")
-	if len(out.Skills) != 32 {
+	if len(out.Skills) != 33 {
 		t.Fatalf("expected curated Ask skills to be registered, got %d: %#v", len(out.Skills), out.Skills)
 	}
 	for _, skill := range out.Skills {
