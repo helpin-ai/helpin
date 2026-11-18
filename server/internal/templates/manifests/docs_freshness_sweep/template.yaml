@@ -1,5 +1,5 @@
 key: docs_freshness_sweep
-version: 1
+version: 2
 name: Internal docs freshness sweep
 icon: file-text
 short_description: Checks internal docs on a schedule and saves a freshness report.
@@ -106,6 +106,8 @@ flow:
     - destination_state_id: {{destination_state_id}}
 
     Review the selected internal docs area for stale, missing, duplicated, or poorly organized team documentation. Coverage gaps can be different types: missing new-feature docs, outdated product or process docs, missing onboarding or runbook coverage, misplaced docs, duplicated docs, unclear ownership, or support gaps that should become internal docs work.
+
+    Large scopes: list the documents in the review scope first. When the scope holds more than 8 documents, do not read them all yourself. Call spawn_subtasks with one item per document (`id` is the document ID, `input` is `{"document_id": "<id>", "title": "<title>"}`). The workers do not see these instructions, so write the review criteria for this sweep into the `instructions` you pass. Tell each worker to read its one document in full, judge it against those criteria, and return a result. Workers must not create documents, proposals, or tasks, and they have no repository checkout: an implementation-sensitive claim they cannot confirm is returned as "needs source verification". Use a result_schema with `status` (one of `ok`, `stale`, `duplicate`, `misplaced`, `incomplete`, `needs_source_verification`), `severity` (`low`, `medium`, `high`), `findings` (list of short statements with the quoted text they refer to), and `recommended_change`. Then call wait_for_subtasks until the job finishes, verify the "needs source verification" findings yourself when a repository is configured, and write the single report from the collected results. With 8 or fewer documents, review them yourself without subtasks.
 
     Source verification:
     - If source_repository_id is configured, use read-only repository inspection to verify product behavior, routes, configuration, API contracts, setup steps, and implementation-sensitive claims before marking docs as accurate or stale.

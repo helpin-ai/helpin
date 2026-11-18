@@ -1,5 +1,5 @@
 key: api_docs_freshness_sweep
-version: 1
+version: 2
 name: API docs freshness sweep
 icon: file-text
 short_description: Verifies API docs against source code and saves an accuracy report.
@@ -106,6 +106,8 @@ flow:
     - destination_state_id: {{destination_state_id}}
 
     Review the selected API docs against the configured source repository. Focus on real API accuracy: endpoint existence, paths, methods, request and response schemas, auth requirements, permissions, pagination, filtering, rate limits, webhooks, error codes, SDK or curl examples, versioning, deprecations, and release drift.
+
+    Large scopes: list the documents in the review scope first. When the scope holds more than 8 documents, do not read them all yourself. Call spawn_subtasks with one item per document (`id` is the document ID, `input` is `{"document_id": "<id>", "title": "<title>"}`). The workers do not see these instructions, so write the review criteria for this sweep into the `instructions` you pass. Tell each worker to read its one document in full, judge it against those criteria, and return a result. Workers must not create documents, proposals, or tasks, and they have no repository checkout: an implementation-sensitive claim they cannot confirm is returned as "needs source verification". Use a result_schema with `status` (one of `ok`, `stale`, `duplicate`, `misplaced`, `incomplete`, `needs_source_verification`), `severity` (`low`, `medium`, `high`), `findings` (list of short statements with the quoted text they refer to), and `recommended_change`. Then call wait_for_subtasks until the job finishes, verify the "needs source verification" findings yourself when a repository is configured, and write the single report from the collected results. With 8 or fewer documents, review them yourself without subtasks.
 
     Source verification:
     - Use read-only repository inspection as the source of truth. Look for route definitions, handlers/controllers, OpenAPI specs, schema/types, validation logic, auth middleware, SDK examples, tests, and error handling.
