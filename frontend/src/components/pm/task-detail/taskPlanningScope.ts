@@ -6,7 +6,7 @@ export function isEpicSelectableForTaskTeam(
   taskTeamId?: string | null,
 ) {
   if (!epicTeamId) {
-    return true;
+    return !taskTeamId;
   }
   if (!taskTeamId) {
     return false;

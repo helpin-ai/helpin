@@ -1072,6 +1072,7 @@ export function EpicDetailPage() {
                   teamId={epic.epic.team_id ?? null}
                   epicId={epicId}
                   externalTasks={tasks}
+                  fitContent
                   onExternalTasksChange={setTasks}
                   onInlineUpdateSavingChange={setTaskTableSaving}
                   onInlineUpdateError={setTaskTableSaveError}

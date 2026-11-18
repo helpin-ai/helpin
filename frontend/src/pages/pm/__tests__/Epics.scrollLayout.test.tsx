@@ -116,7 +116,7 @@ describe('EpicsPage scroll layout', () => {
     }
   })
 
-  it('filters epics through owner avatars and the searchable overflow, then clears the selection', async () => {
+  it('filters epics through the owner dropdown, preserves selections while searching, and clears the filter', async () => {
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     HTMLElement.prototype.scrollIntoView = vi.fn()
     stableMocks.members = Array.from({ length: 9 }, (_, index) => ({
@@ -135,14 +135,16 @@ describe('EpicsPage scroll layout', () => {
     const root = createRoot(container)
     try {
       await act(async () => root.render(<QueryClientProvider client={queryClient}><TooltipProvider><EpicsPage /></TooltipProvider></QueryClientProvider>))
-      const ownerButton = () => container.querySelector<HTMLButtonElement>('[aria-label="Filter by owner Member 1"]')!
+      const ownerButton = () => container.querySelector<HTMLButtonElement>('[aria-label^="Owner:"]')!
+      expect(ownerButton()?.textContent).toContain('All owners')
       await act(async () => ownerButton().click())
-      expect(ownerButton().getAttribute('aria-pressed')).toBe('true')
+      await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="member-1"]')!.click())
+      expect(ownerButton().textContent).toContain('Member 1')
+      expect(ownerButton().getAttribute('aria-expanded')).toBe('true')
       expect(container.querySelector('[aria-label="Remove Owner filter"]')?.parentElement?.textContent).toContain('Member 1')
       expect(container.textContent).toContain('Initiative 1')
       expect(container.textContent).not.toContain('Initiative 9')
-      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show 2 more members"]')!.click())
-      const search = document.querySelector<HTMLInputElement>('input[placeholder="Search members..."]')!
+      const search = document.querySelector<HTMLInputElement>('input[placeholder="Search owner…"]')!
       await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Member 9')
         search.dispatchEvent(new Event('input', { bubbles: true }))
@@ -152,10 +154,13 @@ describe('EpicsPage scroll layout', () => {
       await act(async () => ninthOwner.click())
       expect(container.textContent).toContain('Initiative 1')
       expect(container.textContent).toContain('Initiative 9')
-      expect(container.querySelector('[aria-label="Filter by owner Member 9"]')?.getAttribute('aria-pressed')).toBe('true')
-      const clear = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Clear all')!
-      await act(async () => clear.click())
-      expect(ownerButton().getAttribute('aria-pressed')).toBe('false')
+      expect(ownerButton().textContent).toContain('Owner: 2 selected')
+      expect(container.querySelector('[aria-label="Remove Owner filter"]')?.parentElement?.textContent).toContain('2 selected')
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Clear Owner filter"]')!.click())
+      expect(ownerButton().textContent).toContain('All owners')
+      expect(container.querySelector('[aria-label="Remove Owner filter"]')).toBeNull()
+      expect(container.textContent).toContain('Initiative 1')
+      expect(container.textContent).toContain('Initiative 9')
       expect(JSON.parse(localStorage.getItem('pm_epics_view_ws-1_all')!).filters.owner).toBeUndefined()
     } finally {
       act(() => root.unmount())

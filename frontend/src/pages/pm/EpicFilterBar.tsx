@@ -35,7 +35,6 @@ interface EpicFilterBarProps {
   categories: EpicFilterBarCategory[];
   onCategoryChange: (key: string, next: string[]) => void;
   onClearAll: () => void;
-  ownerFilter?: ReactNode;
 
   /** "Show Archived" toggle (separate from the State filter's __archived__ value). */
   showArchived: boolean;
@@ -61,7 +60,6 @@ export function EpicFilterBar({
   categories,
   onCategoryChange,
   onClearAll,
-  ownerFilter,
   showArchived,
   onToggleShowArchived,
   groupBy,
@@ -96,12 +94,7 @@ export function EpicFilterBar({
           placeholder="Search Epics…"
         />
 
-        {categories.map((category) => category.key === 'owner' && ownerFilter ? (
-          <div key={category.key} className="flex items-center gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">{category.label}</span>
-            {ownerFilter}
-          </div>
-        ) : (
+        {categories.map((category) => (
           <QuietFilterDropdown
             multiple
             key={category.key}

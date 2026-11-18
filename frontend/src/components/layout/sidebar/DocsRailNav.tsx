@@ -16,7 +16,7 @@ import {
   Tick01Icon,
   UserIcon,
 } from '@/lib/icons'
-import { cn, getInitials } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { getAvatarColor } from '@/lib/avatarColor'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { Button } from '@/components/ui/button'
@@ -96,7 +96,7 @@ function SpaceMark({ space, size = 'md' }: { space: DocsSpace; size?: 'xs' | 'sm
         name={space.icon}
         className={size === 'md' ? 'h-4 w-4' : size === 'sm' ? 'h-3.5 w-3.5' : 'h-3 w-3'}
         textClassName="leading-none"
-        fallback={<span>{getInitials(space.name).slice(0, 2)}</span>}
+        fallback={<span>{Array.from(space.name.trim().toUpperCase())[0] || '?'}</span>}
       />
     </span>
   )
