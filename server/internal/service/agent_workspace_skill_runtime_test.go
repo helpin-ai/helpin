@@ -124,6 +124,9 @@ func TestSkillCommandAuthorizationAndEdit(t *testing.T) {
 	if _, err := svc.Execute(context.Background(), meta, "skills.update", save.Input); err == nil {
 		t.Fatal("unattributed actor edited skill")
 	}
+	if !containsString(askAgentPresetTools(), "get_pull_request_changes") || !containsString(askAgentPresetTools(), "list_document_change_proposals") {
+		t.Fatal("Ask Agent must read merged pull requests and pending document proposals")
+	}
 	if !containsString(askAgentPresetTools(), "validate_skill_update") || !containsString(askAgentPresetTools(), "update_skill") || !containsString(askAgentPresetTools(), "list_workspace_skills") {
 		t.Fatal("Ask lacks skill tools")
 	}
