@@ -152,6 +152,7 @@ type commandReleaseFactsProvider interface {
 	GetReleaseContext(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error)
 	FindTasksForGitChanges(ctx context.Context, workspaceID string, req model.FindTasksForGitChangesRequest) (*model.FindTasksForGitChangesResult, error)
 	GetTaskContext(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
+	GetPullRequestChanges(ctx context.Context, workspaceID string, req model.GetPullRequestChangesRequest) (*model.PullRequestChangesResult, error)
 }
 
 // SetAuthorizationService enables the central per-actor RBAC gate: when a

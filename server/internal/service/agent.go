@@ -697,6 +697,16 @@ const defaultSupportChatIdleTimeoutSeconds = 24 * 60 * 60
 const supportChatTriggerType = "support_chat"
 
 // runInputTriggerType reads the trigger type stamped into a run's input.
+// runInputPullRequestNumber returns the GitHub pull request number of the
+// event that started a run, or 0 when the run was not started by one.
+func runInputPullRequestNumber(raw []byte) int {
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(raw, &input); err != nil || input.Event == nil || input.Event.GitHub == nil || input.Event.GitHub.PullRequest == nil {
+		return 0
+	}
+	return input.Event.GitHub.PullRequest.Number
+}
+
 func runInputTriggerType(run *model.AgentRun) string {
 	if run == nil || len(run.Input) == 0 {
 		return ""
@@ -6556,6 +6566,23 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		if params.allowActiveParentRun && params.parentRunID != nil && activeRun.ID == strings.TrimSpace(*params.parentRunID) {
 			activeRun = nil
+		}
+	}
+	// A run for a different pull request is separate work. Reusing the active
+	// run would silently drop a PR merged while an earlier one is still being
+	// handled. A redelivery of the same PR still reuses that PR's active run.
+	if number := runInputPullRequestNumber(params.input); number > 0 && activeRun != nil && activeRun.AgentID == params.agent.ID &&
+		params.targetType == "repository" && number != runInputPullRequestNumber(activeRun.Input) {
+		activeRun = nil
+		candidates, err := s.runRepo.ListActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range candidates {
+			if candidates[i].AgentID == params.agent.ID && runInputPullRequestNumber(candidates[i].Input) == number {
+				activeRun = &candidates[i]
+				break
+			}
 		}
 	}
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {

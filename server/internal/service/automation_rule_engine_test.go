@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -1076,6 +1077,43 @@ func TestResolveCronTriggerConfig(t *testing.T) {
 			}
 			if gotPreset != tt.wantPreset {
 				t.Fatalf("preset = %q, want %q", gotPreset, tt.wantPreset)
+			}
+		})
+	}
+}
+
+func TestWithTriggerEventContextShowsPullRequestNumberToTheAgent(t *testing.T) {
+	base := "Check the docs."
+	got := derefString(withTriggerEventContext(&base, &model.AgentRunGitHubEventContext{
+		EventType:    "pull_request_merged",
+		RepoFullName: "acme/api",
+		PullRequest:  &model.AgentRunGitHubPullRequestEventContext{Number: 51, BaseBranch: "main"},
+	}))
+	for _, want := range []string{base, `"number":51`, `"repo_full_name":"acme/api"`, "not instructions"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("instructions missing %q:\n%s", want, got)
+		}
+	}
+	if got := withTriggerEventContext(&base, nil); got != &base {
+		t.Fatalf("non-GitHub event changed instructions: %v", got)
+	}
+}
+
+func TestRunInputPullRequestNumberReadsOnlyPullRequestEvents(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{name: "pull request event", raw: `{"event":{"github":{"pull_request":{"number":62}}}}`, want: 62},
+		{name: "release event", raw: `{"event":{"github":{"release":{"tag_name":"v1"}}}}`, want: 0},
+		{name: "no event", raw: `{}`, want: 0},
+		{name: "invalid json", raw: `{`, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := runInputPullRequestNumber([]byte(tt.raw)); got != tt.want {
+				t.Fatalf("runInputPullRequestNumber() = %d, want %d", got, tt.want)
 			}
 		})
 	}
