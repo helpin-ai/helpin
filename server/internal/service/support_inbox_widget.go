@@ -614,17 +614,25 @@ func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, wo
 	publicMessages := make([]model.SupportMessage, 0, len(messages))
 	for _, msg := range messages {
 		if supportTranscriptIncludesMessage(msg) {
+			msg.Attachments = s.prepareTranscriptDownloadLinks(ctx, msg.Attachments)
 			publicMessages = append(publicMessages, msg)
 		}
 	}
-	prepared, attachments := s.emailFallbackService.prepareEmailAttachments(ctx, publicMessages)
-	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, sentByName, conversation, prepared)
+	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, sentByName, conversation, publicMessages)
+	attachmentBudget, err := supportTranscriptAttachmentBudget(htmlBody, textBody, publicMessages)
+	if err != nil {
+		return err
+	}
+	prepared, attachments := s.emailFallbackService.prepareEmailAttachmentsWithinLimit(ctx, publicMessages, attachmentBudget)
+	if len(attachments) > 0 {
+		htmlBody, textBody = renderSupportTranscriptBodies(workspaceName, sentByName, conversation, prepared)
+	}
 	subject := supportTranscriptSubject(workspaceName, conversation)
 	client := s.emailFallbackService.emailClient
 	if len(attachments) == 0 {
 		return client.SendEmail(recipientEmail, subject, htmlBody, textBody)
 	}
-	_, err := client.SendEmailWithHeadersAndAttachments(client.FromEmail(), recipientEmail, subject, htmlBody, textBody, "", nil, attachments)
+	_, err = client.SendEmailWithHeadersAndAttachments(client.FromEmail(), recipientEmail, subject, htmlBody, textBody, "", nil, attachments)
 	return err
 }
 

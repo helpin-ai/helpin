@@ -14,6 +14,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 )
 
 func TestSupportTranscriptRendersRichMessages(t *testing.T) {
@@ -293,6 +294,64 @@ func TestSendSupportTranscriptIncludesEmailOnlyReplies(t *testing.T) {
 	}
 	if captured.Subject != "Transcript: Billing question — Acme Support" {
 		t.Errorf("subject = %q", captured.Subject)
+	}
+}
+
+func TestSendSupportTranscriptKeepsLargeFileDownloadsAvailableForSevenDays(t *testing.T) {
+	svc, conv, captured := setupSupportTranscriptTest(t)
+	svc.attachmentService = NewSupportAttachmentService(nil, storage.NewS3Client("test-access", "test-secret", "test-bucket", "us-east-1", "https://files.example.test", ""))
+	messages := []model.SupportMessage{{SenderType: "customer", MessageType: "reply", Attachments: []model.SupportAttachmentPayload{{
+		ID: "recording", FileKey: "support/recording.mp4", FileName: "recording.mp4", FileSize: 20 * 1024 * 1024, URL: "https://files.example.test/old-short-lived-link",
+	}}}}
+	if err := svc.sendConversationTranscript(context.Background(), conv.WorkspaceID, conv, "ada@example.com", "", messages); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{captured.HtmlBody, captured.TextBody} {
+		if !strings.Contains(body, "X-Amz-Expires=604800") || !strings.Contains(body, "Download available until") {
+			t.Error("large-file download is missing its seven-day validity or expiry label")
+		}
+		if strings.Contains(body, "old-short-lived-link") {
+			t.Error("old short-lived link was retained")
+		}
+	}
+	if messages[0].Attachments[0].URL != "https://files.example.test/old-short-lived-link" {
+		t.Error("sending transcript mutated the original message attachment")
+	}
+}
+
+func TestSendSupportTranscriptReservesSpaceForLongConversationBody(t *testing.T) {
+	svc, conv, _ := setupSupportTranscriptTest(t)
+	large := make([]byte, 4*1024*1024)
+	small := make([]byte, 3*1024*1024)
+	svc.emailFallbackService.attachmentDownloader = fakeSupportEmailAttachmentDownloader{data: map[string][]byte{"first": large, "second": small}}
+	var captured struct {
+		HtmlBody    string
+		Attachments []email.Attachment
+	}
+	var wireSize int
+	svc.emailFallbackService.emailClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wireSize = len(body)
+		if err := json.Unmarshal(body, &captured); err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"ErrorCode":0,"Message":"OK"}`))}, nil
+	})})
+	messages := []model.SupportMessage{{SenderType: "customer", MessageType: "reply", Content: strings.Repeat("A", 400_000), Attachments: []model.SupportAttachmentPayload{
+		{ID: "first", FileKey: "support/first", FileName: "first.pdf", FileSize: int64(len(large)), URL: "https://example.com/first"},
+		{ID: "second", FileKey: "support/second", FileName: "second.pdf", FileSize: int64(len(small)), URL: "https://example.com/second"},
+	}}}
+	if err := svc.sendConversationTranscript(context.Background(), conv.WorkspaceID, conv, "ada@example.com", "", messages); err != nil {
+		t.Fatal(err)
+	}
+	if wireSize > 10_000_000 {
+		t.Errorf("transcript exceeds email provider limit: %d bytes", wireSize)
+	}
+	if len(captured.Attachments) != 1 || !strings.Contains(captured.HtmlBody, "https://example.com/second") {
+		t.Error("attachment that exceeds remaining budget should remain available as a link")
 	}
 }
 

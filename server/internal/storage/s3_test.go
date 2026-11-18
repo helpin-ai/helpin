@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSeparateBrowserPresignOrigin(t *testing.T) {
@@ -76,5 +77,39 @@ func TestDownloadGetURLStillSignsAtRequestTime(t *testing.T) {
 	}
 	if got := u.Query().Get("X-Amz-Expires"); got != "3600" {
 		t.Fatalf("X-Amz-Expires = %q, want 3600", got)
+	}
+}
+
+func TestDownloadGetURLCustomExpiry(t *testing.T) {
+	client := NewS3Client("test-access", "test-secret", "test-bucket", "us-east-1", "https://files.example.test", "")
+	for _, tc := range []struct {
+		name   string
+		expiry time.Duration
+		valid  bool
+	}{
+		{name: "seven days", expiry: 7 * 24 * time.Hour, valid: true},
+		{name: "zero", expiry: 0},
+		{name: "negative", expiry: -time.Hour},
+		{name: "over seven days", expiry: 7*24*time.Hour + time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := client.GeneratePresignedGetURLWithExpiry("support/report.pdf", "report.pdf", tc.expiry)
+			if !tc.valid {
+				if err == nil || raw != "" {
+					t.Fatal("unsupported download expiry was accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := url.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.Query().Get("X-Amz-Expires") != "604800" || parsed.Query().Get("response-content-disposition") != `attachment; filename="report.pdf"` {
+				t.Error("download did not retain its expiry and filename")
+			}
+		})
 	}
 }

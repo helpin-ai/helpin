@@ -191,6 +191,11 @@ func renderSupportTranscriptBodies(workspaceName, sentByName string, conversatio
 			}
 			text.WriteString("\n")
 			body += `</p>`
+			if expiry := supportTranscriptDownloadExpiry(link); expiry != "" {
+				notice := "Download available until " + expiry + "."
+				text.WriteString(notice + "\n")
+				body += `<p><small>` + html.EscapeString(notice) + `</small></p>`
+			}
 		}
 		text.WriteString("\n")
 		align, background := "left", "#f5f5f4"
