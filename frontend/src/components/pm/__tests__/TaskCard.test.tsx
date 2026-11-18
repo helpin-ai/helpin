@@ -205,8 +205,8 @@ describe('TaskCard', () => {
   ])('saves board epic changes from %s via %s', async (currentId, selectedId, savedId) => {
     const task = buildTask({ epic_id: currentId, epic_name: currentId ? 'Same name' : undefined })
     const epics = [
-      { id: 'epic-1', name: 'Same name', color: '#e2564a' },
-      { id: 'epic-2', name: 'Same name', color: '#4e8fea' },
+      { id: 'epic-1', name: 'Same name', color: '#e2564a', team_id: 'team-1' },
+      { id: 'epic-2', name: 'Same name', color: '#4e8fea', team_id: 'team-1' },
     ] as Epic[]
     const savedTask = { ...task, epic_id: savedId || undefined, epic_name: savedId ? 'Same name' : undefined }
     vi.mocked(pmTaskService.update).mockResolvedValue({ data: { task: savedTask }, error: null } as Awaited<ReturnType<typeof pmTaskService.update>>)
@@ -240,7 +240,7 @@ describe('TaskCard', () => {
 
   it('reports a failed epic save without changing the board task', async () => {
     const task = buildTask({ epic_id: 'epic-1', epic_name: 'Current epic' })
-    const epics = [{ id: 'epic-1', name: 'Current epic', color: '#e2564a' }] as Epic[]
+    const epics = [{ id: 'epic-1', name: 'Current epic', color: '#e2564a', team_id: 'team-1' }] as Epic[]
     vi.mocked(pmTaskService.update).mockResolvedValue({ data: null, error: 'Unable to save' } as Awaited<ReturnType<typeof pmTaskService.update>>)
     const { container, root, callbacks } = renderTaskCard(task, {}, epics)
     try {
@@ -257,7 +257,7 @@ describe('TaskCard', () => {
 
   it.each([false, true])('updates an epic badge from board data, including overlays (%s)', (isOverlay) => {
     const task = buildTask({ epic_id: 'epic-1', epic_name: 'Stale name' })
-    const epic = { id: 'epic-1', name: 'Current epic', color: '#e2564a' } as Epic
+    const epic = { id: 'epic-1', name: 'Current epic', color: '#e2564a', team_id: 'team-1' } as Epic
     const { container, root, rerender } = renderTaskCard(task, { isOverlay }, [epic])
     const badge = () => container.querySelector<HTMLElement>('[title="Current epic"]')!
     expect(badge().querySelector<HTMLElement>('[aria-hidden="true"]')!.style.backgroundColor).toBe('rgb(226, 86, 74)')
@@ -271,8 +271,8 @@ describe('TaskCard', () => {
   it('updates color when reassigned to an epic with the same name', () => {
     const task = buildTask({ epic_id: 'epic-1', epic_name: 'Same name' })
     const epics = [
-      { id: 'epic-1', name: 'Same name', color: '#e2564a' },
-      { id: 'epic-2', name: 'Same name', color: '#4e8fea' },
+      { id: 'epic-1', name: 'Same name', color: '#e2564a', team_id: 'team-1' },
+      { id: 'epic-2', name: 'Same name', color: '#4e8fea', team_id: 'team-1' },
     ] as Epic[]
     const { container, root, rerender } = renderTaskCard(task, {}, epics)
     rerender({ ...task, epic_id: 'epic-2' })
