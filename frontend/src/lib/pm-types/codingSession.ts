@@ -187,6 +187,7 @@ export interface CodingSessionTranscriptMessage {
     message_id: string;
     duration_ms: number;
     activity_count: number;
+    subtask_job_ids?: string[];
   };
   attachments?: Array<{ id: string; file_name: string; file_type: string; file_size: number }>;
   // For review_checkpoint_resolution / approval_request_resolution messages,
