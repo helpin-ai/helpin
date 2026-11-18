@@ -30,7 +30,7 @@ import { groupAdjacentDockTools } from './dockTranscriptGrouping';
 import { finalAssistantIndex } from './agentTurnState';
 import { buildDockWorkingTimeline } from './dockWorkingGroups';
 import { DockWorkingGroup } from './DockWorkingGroup';
-import { SubtaskJobCards } from '@/components/agents/transcript/SubtaskJobCard';
+import { SubtaskJobCard, SubtaskJobCards } from '@/components/agents/transcript/SubtaskJobCard';
 import { mergePersistedChatMessages } from './dockChatTimeline';
 import { findLastMatchingIndex } from './findLastMatchingIndex';
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
@@ -159,6 +159,11 @@ function DockWorkDisclosure({
         {timelineView ? <><span className="grid h-5 w-5 place-items-center"><Tick01Icon className="h-3.5 w-3.5" /></span><span>Work completed</span><span className="text-[11px] font-normal tabular-nums">{formatCodingSessionElapsed(summary.duration_ms)}</span></> : <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>}
         {hasDetails && <DisclosureChevron open={open} />}
       </Summary>
+      {summary.subtask_job_ids?.map((jobId) => (
+        <div key={jobId} className="pt-2">
+          <SubtaskJobCard jobId={jobId} />
+        </div>
+      ))}
       {open && hasDetails ? (
         <div className={cn("mt-2", !timelineView && "border-l border-border/70 pl-3")}>
           {loading ? <div className="text-xs text-muted-foreground">Loading work…</div> : null}
@@ -442,6 +447,7 @@ export function DockTranscript({
               data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
               {timelineView ? (
+                <>
                 <AgentTimelineEntry
                   segment={entry.segment}
                   workingGroup={workingGroup}
@@ -458,6 +464,8 @@ export function DockTranscript({
                     assistantPresentation: assistantPresentation?.presentation,
                   }}
                 />
+                {workingGroup ? <SubtaskJobCards segments={workingGroup.segments} /> : null}
+                </>
               ) : entry.segment.kind === 'review_decision' ? (
                 <DockDecisionRow
                   message={entry.segment.message}

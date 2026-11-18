@@ -1197,3 +1197,15 @@ func TestSubtaskUsageRoundTripsThroughRunSummaryAndAdds(t *testing.T) {
 		t.Fatalf("combined usage = %+v", total)
 	}
 }
+
+func TestDockSubtaskJobIDsListsEachSpawnedJobOnce(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{ToolInvocations: []byte(`[{"tool_name":"read_document","output_summary":"workjob_notspawned"}]`)},
+		{ToolInvocations: []byte(`[{"tool_name":"spawn_subtasks","output_summary":"{\"job_id\":\"workjob_aa\"}"},{"tool_name":"wait_for_subtasks","input":{"job_id":"workjob_aa"}}]`)},
+		{TurnSegments: []byte(`[{"kind":"tool_call","tool_call":{"tool_name":"spawn_subtasks","result":{"content":"{\"job_id\":\"workjob_bb\"}"}}}]`)},
+	}
+	got := dockSubtaskJobIDs(messages)
+	if len(got) != 2 || got[0] != "workjob_aa" || got[1] != "workjob_bb" {
+		t.Fatalf("dockSubtaskJobIDs() = %v, want [workjob_aa workjob_bb]", got)
+	}
+}
