@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"slices"
 	"strings"
 	"testing"
@@ -207,5 +208,20 @@ func TestReleaseFactsServiceGetTaskContextIncludesDocsAndGitLinks(t *testing.T) 
 	}
 	if len(task.GitLinks) != 1 || task.GitLinks[0].Repo != "acme/api" || task.GitLinks[0].CommitSHA == nil || *task.GitLinks[0].CommitSHA != "def456" {
 		t.Fatalf("unexpected git links %#v", task.GitLinks)
+	}
+}
+
+func TestBoundPullRequestPatchesKeepsFileListWhenBudgetIsSpent(t *testing.T) {
+	files := []githubapp.PullRequestFile{
+		{Filename: "a.go", Patch: "12345"},
+		{Filename: "b.go", Patch: "123456"},
+		{Filename: "c.go", Patch: "12345"},
+	}
+	got, truncated := boundPullRequestPatches(files, 10)
+	if !truncated {
+		t.Fatal("expected truncated when a patch exceeds the remaining budget")
+	}
+	if len(got) != 3 || got[0].Patch != "12345" || got[1].Patch != "" || got[2].Patch != "12345" {
+		t.Fatalf("bounded files = %+v, want all three listed and only b.go without a patch", got)
 	}
 }

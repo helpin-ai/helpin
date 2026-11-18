@@ -447,6 +447,70 @@ func (s *ReleaseFactsService) GetTaskContext(ctx context.Context, workspaceID st
 	return result, nil
 }
 
+// _pullRequestChangesMaxPatchBytes bounds the patch text returned to an agent.
+const _pullRequestChangesMaxPatchBytes = 60_000
+
+// GetPullRequestChanges loads a pull request's description and changed files
+// through the workspace's GitHub App installation. It works for merged pull
+// requests, where a local diff of the checked-out base branch is empty.
+func (s *ReleaseFactsService) GetPullRequestChanges(ctx context.Context, workspaceID string, req model.GetPullRequestChangesRequest) (*model.PullRequestChangesResult, error) {
+	if s == nil {
+		return nil, fmt.Errorf("release facts service is not configured")
+	}
+	if req.PullNumber <= 0 {
+		return nil, fmt.Errorf("pull_number is required")
+	}
+	repo, integration, owner, repoName, err := s.resolveGitHubRepository(ctx, workspaceID, req.RepositoryID, req.RepoFullName)
+	if err != nil {
+		return nil, err
+	}
+	installationID := strings.TrimSpace(*integration.InstallationID)
+	pr, err := s.githubApp.GetPullRequest(ctx, installationID, owner, repoName, req.PullNumber)
+	if err != nil {
+		return nil, err
+	}
+	files, err := s.githubApp.GetPullRequestFiles(ctx, installationID, owner, repoName, req.PullNumber)
+	if err != nil {
+		return nil, err
+	}
+	result := &model.PullRequestChangesResult{
+		RepoFullName: repo.FullName,
+		Number:       pr.Number,
+		Title:        pr.Title,
+		Body:         pr.Body,
+		URL:          pr.HTMLURL,
+		State:        pr.State,
+		Merged:       pr.Merged,
+		BaseBranch:   pr.BaseRef,
+		HeadBranch:   pr.HeadRef,
+	}
+	result.Files, result.Truncated = boundPullRequestPatches(files, _pullRequestChangesMaxPatchBytes)
+	return result, nil
+}
+
+// boundPullRequestPatches keeps every file entry but drops patch text once the
+// byte budget is spent, so a large pull request still lists what changed.
+func boundPullRequestPatches(files []githubapp.PullRequestFile, budget int) ([]model.PullRequestChangedFile, bool) {
+	out := make([]model.PullRequestChangedFile, 0, len(files))
+	truncated := false
+	for _, file := range files {
+		item := model.PullRequestChangedFile{
+			Filename:  file.Filename,
+			Status:    file.Status,
+			Additions: file.Additions,
+			Deletions: file.Deletions,
+		}
+		if len(file.Patch) <= budget {
+			item.Patch = file.Patch
+			budget -= len(file.Patch)
+		} else {
+			truncated = true
+		}
+		out = append(out, item)
+	}
+	return out, truncated
+}
+
 func (s *ReleaseFactsService) resolveGitHubRepository(ctx context.Context, workspaceID, repositoryID, repoFullName string) (*model.GitRepository, *model.GitIntegration, string, string, error) {
 	if s.repoRepo == nil || s.integrationRepo == nil {
 		return nil, nil, "", "", fmt.Errorf("git repositories are not available")

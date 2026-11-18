@@ -585,6 +585,7 @@ const TEMPLATE_DISPLAY_ORDER: Record<string, number> = {
   release_notes_writer: 30,
   engineering_security_triage: 40,
   engineering_dependency_auditor: 50,
+  update_docs_from_merged_prs: 55,
   docs_freshness_sweep: 60,
   public_help_freshness_sweep: 70,
   api_docs_freshness_sweep: 80,

@@ -258,6 +258,8 @@ export interface AgentRunMessage {
     message_id: string;
     duration_ms: number;
     activity_count: number;
+    /** Runtime sub-task jobs started during the turn. */
+    subtask_job_ids?: string[];
   };
   sequence_no: number;
   created_at: string;

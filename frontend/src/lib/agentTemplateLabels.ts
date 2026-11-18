@@ -7,6 +7,7 @@ const FLOW_TEMPLATE_NAMES: Record<string, string> = {
   dependency_auditor: 'Dependency Auditor',
   security_triage: 'Security Triage',
   review_merged_prs: 'Review merged PRs',
+  update_docs_from_merged_prs: 'Update docs from merged PRs',
   triage_failing_checks: 'Triage failing checks',
   buying_signal_to_task: 'High-intent buyer signal to task',
   stale_task_escalation: 'Stale task escalation',
