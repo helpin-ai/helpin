@@ -169,6 +169,7 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 		"run_on_release",
 		"stale_task_escalation",
 		"triage_failing_checks",
+		"update_docs_from_merged_prs",
 	}
 	if got := keysOf(registry.List()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("system registry keys = %#v, want %#v", got, want)

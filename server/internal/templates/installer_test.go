@@ -183,6 +183,48 @@ func TestInstallerInstallGitHubTemplateAddsRepositoryFilter(t *testing.T) {
 	}
 }
 
+func TestInstallerInstallDocsUpdateTemplateCreatesStyleAwareAgent(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	installer := NewInstaller(db, mustTestRegistry(t))
+
+	result, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "update_docs_from_merged_prs",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"repository_id": "repo-1",
+			"base_branch":   "main",
+			"docs_space_id": "space-1",
+			"update_mode":   "propose",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	var triggerConfig model.TriggerConfigGitHubPullRequest
+	if err := json.Unmarshal(result.Rule.TriggerConfig, &triggerConfig); err != nil {
+		t.Fatalf("unmarshal trigger config: %v", err)
+	}
+	if triggerConfig.RepoFullName != "acme/api" || triggerConfig.BaseBranch != "main" {
+		t.Fatalf("trigger config = %+v, want acme/api on main", triggerConfig)
+	}
+	if result.Agent == nil || result.Agent.PresetKey != "documentation_agent" {
+		t.Fatalf("agent = %+v, want a created documentation_agent", result.Agent)
+	}
+	skills := map[string]bool{}
+	for _, ref := range result.Agent.Skills {
+		skills[ref.Key] = true
+	}
+	for _, key := range []string{"post_release_docs_update", "docs_writing_style", "document_editing"} {
+		if !skills[key] {
+			t.Fatalf("agent skills = %+v, missing %q", result.Agent.Skills, key)
+		}
+	}
+	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "- update_mode: propose") {
+		t.Fatalf("agent prompt does not include update_mode: %v", result.Agent.SystemPrompt)
+	}
+}
+
 func TestInstallerInstallCreateAgentTemplateAppliesAgentSetup(t *testing.T) {
 	db := setupInstallerTestDB(t)
 	installer := NewInstaller(db, mustTestRegistry(t))
