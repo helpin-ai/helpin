@@ -545,12 +545,12 @@ func (s *InternalCommandService) executeListDocumentChangeProposals(ctx context.
 
 // pendingProposalsBlockingUnattendedRun returns the pending proposals that
 // already target the same document or block when the caller is a run fired by
-// an automation flow. Nobody watches those runs, so repeated events would pile
-// duplicate proposals onto one block. Interactive runs are not limited: a
+// an automation flow or a subtask worker. Nobody watches those, so repeated
+// events or parallel workers would pile duplicate proposals onto one block. Interactive runs are not limited: a
 // person there may ask for a revised proposal.
 func (s *InternalCommandService) pendingProposalsBlockingUnattendedRun(ctx context.Context, meta model.InternalCommandContext, documentID, scope, blockID string) []map[string]any {
 	run, err := s.resolveCommandRun(ctx, meta)
-	if err != nil || run == nil || runInputRuleID(run.Input) == "" {
+	if err != nil || run == nil || (runInputRuleID(run.Input) == "" && !meta.Subtask) {
 		return nil
 	}
 	pending, err := s.docsChangeProposalService.ListPending(ctx, meta.WorkspaceID, documentID)

@@ -1164,3 +1164,36 @@ func TestSameTargetProposalsMatchesScopeAndBlock(t *testing.T) {
 		t.Fatalf("unrelated block matched: %v", got)
 	}
 }
+
+func TestSpawnedSubtaskJobIDsReadsOnlySpawnResults(t *testing.T) {
+	calls := []AgentRuntimeToolCall{
+		// The runtime's real shape: the tool result is a JSON string inside an envelope.
+		{ToolName: "spawn_subtasks", Output: []byte(`{"duration_ms":14,"error":"","output":"{\\"items\\":5,\\"job_id\\":\\"workjob_1a\\",\\"state\\":\\"queued\\"}"}`)},
+		{ToolName: "wait_for_subtasks", Output: []byte(`{"output":"{\\"job_id\\":\\"workjob_1a\\",\\"finished\\":true}"}`)},
+		{ToolName: "spawn_subtasks", Output: []byte(`{"error":"subtasks are not available for this app"}`)},
+		{ToolName: "spawn_subtasks", Output: []byte(`{"job_id":"workjob_2b"}`)},
+	}
+	got := spawnedSubtaskJobIDs(calls)
+	if len(got) != 2 || got[0] != "workjob_1a" || got[1] != "workjob_2b" {
+		t.Fatalf("spawnedSubtaskJobIDs() = %v, want [workjob_1a workjob_2b]", got)
+	}
+}
+
+func TestSubtaskUsageRoundTripsThroughRunSummaryAndAdds(t *testing.T) {
+	run := &model.AgentRun{OutputSummary: []byte(`{"agent_runtime_latest_usage":{"total_tokens":10}}`)}
+	if got := storedSubtaskUsage(run); got != (agentRuntimeUsagePayload{}) {
+		t.Fatalf("stored subtask usage before any store = %+v, want zero", got)
+	}
+	sub := agentRuntimeUsagePayload{TotalTokens: 200, InputTokens: 150, CachedInputTokens: 100, OutputTokens: 50}
+	storeSubtaskUsage(run, sub)
+	if got := storedSubtaskUsage(run); got != sub {
+		t.Fatalf("stored subtask usage = %+v, want %+v", got, sub)
+	}
+	if !strings.Contains(string(run.OutputSummary), "agent_runtime_latest_usage") {
+		t.Fatalf("storing subtask usage dropped other summary keys: %s", run.OutputSummary)
+	}
+	total := addAgentRuntimeUsage(agentRuntimeUsagePayload{TotalTokens: 39, InputTokens: 37, OutputTokens: 2}, sub)
+	if total.TotalTokens != 239 || total.InputTokens != 187 || total.OutputTokens != 52 {
+		t.Fatalf("combined usage = %+v", total)
+	}
+}

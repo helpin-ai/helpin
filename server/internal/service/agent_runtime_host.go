@@ -976,6 +976,10 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	if meta.WorkspaceID == "" {
 		meta.WorkspaceID = runtimeWorkspaceID(req.Meta.WorkspaceMetadata, req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata)
 	}
+	if parentRuntimeRunID := s.subtaskParentRuntimeRunID(ctx, req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata); parentRuntimeRunID != "" {
+		meta.RunID = parentRuntimeRunID
+		meta.Subtask = true
+	}
 	mappedWorkspaceID, err := s.workspaceIDForRuntimeRun(ctx, meta.RunID)
 	if err != nil {
 		return nil, err
@@ -1375,6 +1379,25 @@ func (s *AgentRuntimeHostService) helpinRunForRuntimeRun(ctx context.Context, ru
 		return nil, nil
 	}
 	return s.runRepo.GetByExternalRuntimeID(ctx, agentRuntimeName, runtimeRunID)
+}
+
+// subtaskParentRuntimeRunID maps a tool call from a runtime subtask worker to
+// the run that spawned it. Workers are hidden runtime runs with no Helpin
+// row; they carry the parent's Helpin run id in the inherited target metadata.
+// Their tool calls act as the parent run, with the same agent and scope.
+func (s *AgentRuntimeHostService) subtaskParentRuntimeRunID(ctx context.Context, runInput map[string]interface{}, targetMetadata ...map[string]interface{}) string {
+	if s == nil || s.runRepo == nil || runtimeMetadataString("work_job_id", runInput) == "" {
+		return ""
+	}
+	parentID := runtimeMetadataString("helpin_run_id", targetMetadata...)
+	if parentID == "" {
+		return ""
+	}
+	parent, err := s.runRepo.GetByIDAny(ctx, parentID)
+	if err != nil || parent == nil {
+		return ""
+	}
+	return strings.TrimSpace(derefString(parent.ExternalRuntimeID))
 }
 
 func ensureRuntimeWorkspaceMatch(requestedWorkspaceID, actualWorkspaceID string) error {

@@ -30,6 +30,7 @@ import { groupAdjacentDockTools } from './dockTranscriptGrouping';
 import { finalAssistantIndex } from './agentTurnState';
 import { buildDockWorkingTimeline } from './dockWorkingGroups';
 import { DockWorkingGroup } from './DockWorkingGroup';
+import { SubtaskJobCards } from '@/components/agents/transcript/SubtaskJobCard';
 import { mergePersistedChatMessages } from './dockChatTimeline';
 import { findLastMatchingIndex } from './findLastMatchingIndex';
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
@@ -463,6 +464,7 @@ export function DockTranscript({
                   actor={resolveDecisionActor(entry.segment.message)}
                 />
               ) : workingGroup ? (
+                <>
                 <DockWorkingGroup
                   id={workingGroup.key}
                   segments={workingGroup.segments}
@@ -488,6 +490,8 @@ export function DockTranscript({
                     />
                   ))}
                 </DockWorkingGroup>
+                <SubtaskJobCards segments={workingGroup.segments} />
+                </>
               ) : (
                 <DockAnswerSegment
                   animate={assistantPresentation?.presentation === 'final' && animateAnswer(entry.segment)}

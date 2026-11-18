@@ -905,13 +905,29 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		hasUsage = true
 	}
 	if hasUsage {
-		if applyRuntimeUsage(run, usage) {
-			changed = true
-		}
+		// The stored latest usage stays parent-only so the cumulative max above
+		// keeps comparing like with like; subtask usage is kept beside it.
 		if storeLatestAgentRuntimeUsage(run, usage) {
 			changed = true
 		}
-		terminalUsageChanged, err := s.maybeConsumeTerminalUsage(ctx, run, event, usage)
+		subtaskUsage := storedSubtaskUsage(run)
+		var subtaskErr error
+		if isTerminalRuntimeEvent(event.Type) {
+			var fresh agentRuntimeUsagePayload
+			if fresh, subtaskErr = s.subtaskUsage(ctx, run); subtaskErr == nil && fresh != subtaskUsage {
+				subtaskUsage = fresh
+				storeSubtaskUsage(run, fresh)
+				changed = true
+			}
+		}
+		usage = addAgentRuntimeUsage(usage, subtaskUsage)
+		if applyRuntimeUsage(run, usage) {
+			changed = true
+		}
+		terminalUsageChanged, err := false, subtaskErr
+		if err == nil {
+			terminalUsageChanged, err = s.maybeConsumeTerminalUsage(ctx, run, event, usage)
+		}
 		if err != nil {
 			if errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
 				return err

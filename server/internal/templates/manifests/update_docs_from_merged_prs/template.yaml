@@ -33,6 +33,8 @@ agent:
       - propose: call publish_document_change_proposal for every change to an existing document so a person reviews it. Do not call edit_document. When the result is `already_pending`, a proposal for that content is already waiting for review: do not retry, and name the pending proposal in your report. Use list_document_change_proposals to see what is waiting on a document.
       - direct: apply changes with edit_document, using targeted edits so untouched blocks keep their IDs and formatting.
 
+      Backfill: when the run instructions name several pull requests instead of one trigger event, do not process them yourself. Call spawn_subtasks with one item per pull request (`id` is the pull request number as text, `input` is `{"pull_number": <number>}`), instructions that tell the worker to apply steps 1 to 5 above to that one pull request, and a result_schema with `outcome` (one of `no_change`, `proposed`, `already_pending`, `edited`, `created`), `documents` (titles of the documents proposed or changed), and `notes`. Then call wait_for_subtasks until the job finishes and report the outcome per pull request. For a single pull request, never spawn subtasks.
+
       Never state a behavior, limit, label, or number that the diff or the repository does not confirm. When the evidence is incomplete, read the repository with the read-only repository tools. If the fact is still unconfirmed, leave it out and report the gap.
 
       Finish with a short report: the pull request, each document you changed or proposed changes to and what changed, documents you checked and left alone, and any gaps you could not confirm.
@@ -59,6 +61,10 @@ agent:
       - create_document
       - publish_document_change_proposal
       - list_document_change_proposals
+      - spawn_subtasks
+      - subtask_status
+      - wait_for_subtasks
+      - cancel_subtasks
     allowed_targets: [repository, document]
     approval_mode: never
 trigger:

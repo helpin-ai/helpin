@@ -234,6 +234,11 @@ func (c *AgentRuntimeClient) ListInteractions(ctx context.Context, runtimeRunID 
 	return c.client.ListInteractions(ctx, runtimeRunID)
 }
 
+// GetWorkJob returns a runtime work job, including the usage of its workers.
+func (c *AgentRuntimeClient) GetWorkJob(ctx context.Context, jobID string) (*agentruntime.WorkJob, error) {
+	return c.client.GetWorkJob(ctx, jobID)
+}
+
 func (c *AgentRuntimeClient) ListToolCalls(ctx context.Context, runtimeRunID string) ([]AgentRuntimeToolCall, error) {
 	return c.client.ListToolCalls(ctx, runtimeRunID)
 }
