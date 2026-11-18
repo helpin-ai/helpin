@@ -45,17 +45,39 @@ var supportTranscriptTemplate = template.Must(template.New("transcript").Parse(`
 </td></tr>
 <tr><td style="padding:24px 20px 8px;">
 {{range .Messages}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;"><tr><td align="{{.Align}}">
-<table role="presentation" width="94%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 2px 7px;font-size:12px;line-height:19px;color:#78716c;">
+<table role="presentation" width="94%" cellpadding="0" cellspacing="0"><tr><td align="{{.Align}}" style="padding:0 2px 7px;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+{{if eq .Align "left"}}<td style="padding-right:8px;">{{template "avatar" .}}</td>{{end}}
+<td align="{{.Align}}" style="font-size:12px;line-height:19px;color:#78716c;">
 <strong style="color:#292524;font-size:13px;">{{.Sender}}</strong>{{if .AI}} <span style="color:#78716c;">· AI assistant</span>{{end}}{{if .Timestamp}}<br>{{.Timestamp}}{{end}}
+</td>{{if eq .Align "right"}}<td style="padding-left:8px;">{{template "avatar" .}}</td>{{end}}
+</tr></table>
 </td></tr><tr><td dir="auto" style="padding:14px 16px;background:{{.Background}};border:1px solid #e7e5e4;border-radius:10px;font-size:14px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">{{.Body}}</td></tr></table>
 </td></tr></table>{{else}}<p style="margin:0 8px 20px;color:#78716c;font-size:14px;">No public messages in this conversation.</p>{{end}}
 </td></tr></table>
-</td></tr></table></body></html>`))
+</td></tr></table></body></html>
+{{define "avatar"}}<table role="presentation" cellpadding="0" cellspacing="0" width="28"><tr><td align="center" width="28" height="28" style="width:28px;height:28px;background:{{.Background}};border:1px solid #d6d3d1;border-radius:50%;font-size:10px;line-height:28px;font-weight:600;color:#57534e;">{{if .AvatarURL}}<img src="{{.AvatarURL}}" alt="{{.AvatarText}}" width="28" height="28" style="display:block;width:28px;height:28px;border-radius:50%;object-fit:cover;border:0;">{{else}}{{.AvatarText}}{{end}}</td></tr></table>{{end}}`))
 
 type supportTranscriptMessage struct {
 	Sender, Timestamp, Align, Background string
+	AvatarURL, AvatarText                string
 	AI                                   bool
 	Body                                 template.HTML
+}
+
+func supportTranscriptAvatarText(sender string, isAI bool) string {
+	if isAI {
+		return "AI"
+	}
+	parts := strings.Fields(sender)
+	if len(parts) == 0 {
+		return "?"
+	}
+	initials := string([]rune(parts[0])[0])
+	if len(parts) > 1 {
+		initials += string([]rune(parts[len(parts)-1])[0])
+	}
+	return strings.ToUpper(initials)
 }
 
 func supportTranscriptSubject(workspaceName string, conversation *model.SupportConversation) string {
@@ -176,6 +198,7 @@ func renderSupportTranscriptBodies(workspaceName, sentByName string, conversatio
 			align, background = "right", "#eff6ff"
 		}
 		rendered = append(rendered, supportTranscriptMessage{Sender: sender, Timestamp: timestamp, Align: align, Background: background,
+			AvatarURL: supportTranscriptAttachmentURL(derefString(msg.SenderAvatarURL)), AvatarText: supportTranscriptAvatarText(sender, msg.SenderType == "ai" || msg.SenderType == "agent"),
 			AI: msg.SenderType == "ai" && sender != "AI assistant", Body: template.HTML(styleSupportTranscriptContent(body))})
 	}
 	if len(rendered) == 0 {
