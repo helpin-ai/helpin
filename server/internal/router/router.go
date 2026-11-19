@@ -707,6 +707,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Post("/", h.AIProfile.Save)
 					r.Post("/models", h.AIProfile.EnableModel)
 					r.Put("/{profileID}", h.AIProfile.Save)
+					r.Put("/{profileID}/agent-sharing", h.AIProfile.SetAgentSharing)
 					r.Put("/{profileID}/visibility", h.AIProfile.SetVisibility)
 					r.Delete("/{profileID}", h.AIProfile.Delete)
 				})

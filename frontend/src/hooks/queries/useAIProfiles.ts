@@ -63,6 +63,15 @@ export function useSetAIModelVisibility(workspaceId: string) {
   })
 }
 
+export function useSetAgentSharing(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({profile, shared}: {profile: AIProfile; shared: boolean}) =>
+      unwrap(await aiProfileService.setAgentSharing(workspaceId, profile, shared)),
+    onSettled: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
 export function useEnableAIModel(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({

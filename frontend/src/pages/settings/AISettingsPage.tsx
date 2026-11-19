@@ -189,7 +189,7 @@ function AISettingsContent({
                     Access
                     <AISetupHelp
                       label="About model access"
-                      description="Personal models are for your Ask Agent chats and manual runs. Workspace-wide models can also be assigned to agents for scheduled and automated runs. Only administrators can change shared model settings."
+                      description="Personal models are for your Ask Agent chats and manual runs. Workspace-wide models can also be assigned to agents for scheduled and automated runs. Administrators manage shared connections. A ChatGPT subscription owner can share an individual model."
                     />
                   </span>
                 </TableHead>
@@ -314,7 +314,7 @@ function AISettingsContent({
               </p>
             )}
             {(profiles.data ?? [])
-              .filter((p) => !all.some((c) => c.id === p.primary.connection_id))
+              .filter((p) => !p.agent_grant_id && !all.some((c) => c.id === p.primary.connection_id))
               .map((profile) => (
                 <Button
                   key={profile.id}

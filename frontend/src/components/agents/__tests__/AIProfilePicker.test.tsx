@@ -283,3 +283,20 @@ it('includes the saved thinking level in the selected model and its option', asy
   expect(document.querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain('GPT 6 Astra - Low');
   expect(document.querySelector('[cmdk-item][data-value="personal"]')?.textContent).toContain('GPT 6 Astra - Low');
 });
+
+it.each([true, false])("selects the exact shared subscription for agent defaults and runs (sharedOnly=%s)", async (sharedOnly) => {
+  const shared = ["Design", "Sales"].map(team => ({
+    ...profiles[0], id: team, name: "GPT", agent_grant_id: team,
+    scope: "personal" as const, subscription_status: "connected", subscription_name: team,
+  }));
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: [...shared, ...profiles], error: null });
+  const onChange = vi.fn();
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
+    <AIProfilePicker workspaceId="ws" sharedOnly={sharedOnly} onChange={onChange} />
+  </TooltipProvider></QueryClientProvider>));
+  await openPicker();
+  const sales = document.querySelector<HTMLElement>('[cmdk-item][data-value="Sales"]');
+  expect(sales?.textContent).toContain("Workspace · Sales");
+  await act(async () => sales!.click());
+  expect(onChange).toHaveBeenCalledWith("Sales");
+});

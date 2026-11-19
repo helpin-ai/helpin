@@ -15,6 +15,10 @@ type AIProfileRoute struct {
 
 // AIProfile is a workspace-scoped personal or shared model selection.
 type AIProfile struct {
+	AgentGrantID       *string                 `json:"agent_grant_id,omitempty" gorm:"type:uuid"`
+	GrantAccountID     string                  `json:"-" gorm:"not null;default:''"`
+	SubscriptionName   string                  `json:"subscription_name,omitempty" gorm:"-"`
+	SubscriptionStatus string                  `json:"subscription_status,omitempty" gorm:"-"`
 	HiddenFromAskAgent bool                    `json:"hidden_from_ask_agent" gorm:"not null;default:false"`
 	PrimaryPolicy      *AIConnectionPolicyView `json:"primary_policy,omitempty" gorm:"-"`
 	FallbackPolicy     *AIConnectionPolicyView `json:"fallback_policy,omitempty" gorm:"-"`
@@ -55,6 +59,7 @@ func (AIWorkspaceSettings) TableName() string { return "ai_workspace_settings" }
 
 // AIExecutionSelection freezes the route accepted at admission. It contains no secrets.
 type AIExecutionSelection struct {
+	AgentGrantID    *string                    `json:"agent_grant_id,omitempty"`
 	ProfileID       string                     `json:"profile_id,omitempty"`
 	ProfileRevision int64                      `json:"profile_revision,omitempty"`
 	ProfileOwnerID  *string                    `json:"profile_owner_id,omitempty"`
@@ -69,7 +74,7 @@ type AIExecutionSelection struct {
 // PersonalOwner preserves the originating personal selection even when the
 // actual connection is shared. Older snapshots use the connection owner.
 func (s *AIExecutionSelection) PersonalOwner() (string, bool) {
-	if s == nil {
+	if s == nil || s.AgentGrantID != nil {
 		return "", false
 	}
 	if s.ProfileOwnerID != nil {

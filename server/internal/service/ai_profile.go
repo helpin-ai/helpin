@@ -53,8 +53,37 @@ func (s *AIProfileService) List(ctx context.Context, workspace, user string) ([]
 	for _, c := range visible {
 		connections[c.ID] = c
 	}
+	var subscriptionIDs []string
+	for _, p := range profiles {
+		if p.AgentGrantID != nil {
+			subscriptionIDs = append(subscriptionIDs, p.Primary.ConnectionID)
+		}
+	}
+	sources, err := s.connections.repo.SubscriptionModelSources(ctx, workspace, subscriptionIDs)
+	if err != nil {
+		return nil, err
+	}
 	for i := range profiles {
 		p := &profiles[i]
+		if p.AgentGrantID != nil && derefString(p.UserID) != user {
+			p.Fallback = nil
+		}
+		if p.AgentGrantID != nil {
+			c, ok := sources[p.Primary.ConnectionID]
+			if ok && p.UserID != nil && derefString(c.UserID) == *p.UserID && c.AccountID == p.GrantAccountID {
+				p.SubscriptionName, p.SubscriptionStatus = c.Name, c.Status
+				if c.SubscriberName != "" {
+					p.SubscriptionName = c.Name + " · " + c.SubscriberName
+				}
+				p.PrimaryPolicy, err = connectionPolicyView(ctx, s.admissionPolicy, workspace, &c.AIConnection)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				p.PrimaryPolicy = &model.AIConnectionPolicyView{Message: "Subscription unavailable"}
+			}
+			continue
+		}
 		p.PrimaryPolicy = profileRoutePolicy(p.Primary, p.Scope, connections)
 		if p.Fallback != nil {
 			p.FallbackPolicy = profileRoutePolicy(*p.Fallback, p.Scope, connections)
@@ -159,6 +188,9 @@ func (s *AIProfileService) Save(ctx context.Context, workspace, user, id string,
 		if p.Scope != req.Scope {
 			return nil, errors.New("profile ownership cannot be changed")
 		}
+		if p.AgentGrantID != nil && (p.Primary.ConnectionID != req.Primary.ConnectionID || p.Primary.Model.Model != req.Primary.Model.Model) {
+			return nil, errors.New("make the model personal before changing the shared route")
+		}
 		if p.Revision != req.Revision {
 			return nil, repository.ErrAIProfileChanged
 		}
@@ -199,6 +231,9 @@ func (s *AIProfileService) Delete(ctx context.Context, workspace, user, id strin
 	}
 	if err := s.authorizeProfile(ctx, workspace, user, p, true); err != nil {
 		return err
+	}
+	if p.AgentGrantID != nil {
+		return errors.New("make the model personal before deleting it")
 	}
 	return s.repo.Delete(ctx, workspace, id, revision)
 }

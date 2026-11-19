@@ -49,8 +49,9 @@ type AIConnectionService struct {
 	catalog         *aimodel.Catalog
 	runtime         *AgentRuntimeClient
 	authz           *authorization.AuthzService
-	observer        AIConnectionChangeObserver
-	testProviders   AIConnectionTestProviderFactory
+
+	observer      AIConnectionChangeObserver
+	testProviders AIConnectionTestProviderFactory
 }
 
 func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *aimodel.Catalog, runtime *AgentRuntimeClient, cfg AIConnectionConfig) (*AIConnectionService, error) {
@@ -368,13 +369,21 @@ func (s *AIConnectionService) Credential(ctx context.Context, workspace, user, i
 }
 
 func (s *AIConnectionService) loadConnectionCredential(ctx context.Context, workspace, user, id string, force bool, rejectedFingerprint ...string) (*model.AIConnection, *sdk.ModelCredential, error) {
+	return s.readAuthorizedCredential(ctx, force, func(read func(*model.AIConnection) error) error {
+		return s.repo.WithLocked(ctx, id, func(c *model.AIConnection) error {
+			if err := accessAIConnection(c, workspace, user); err != nil {
+				return err
+			}
+			return read(c)
+		})
+	}, rejectedFingerprint...)
+}
+
+func (s *AIConnectionService) readAuthorizedCredential(ctx context.Context, force bool, withAuthorizedConnection func(func(*model.AIConnection) error) error, rejectedFingerprint ...string) (*model.AIConnection, *sdk.ModelCredential, error) {
 	var connection *model.AIConnection
 	var credential *sdk.ModelCredential
 	var publicErr error
-	err := s.repo.WithLocked(ctx, id, func(c *model.AIConnection) error {
-		if err := accessAIConnection(c, workspace, user); err != nil {
-			return err
-		}
+	err := withAuthorizedConnection(func(c *model.AIConnection) error {
 		if c.Status != "connected" {
 			return ErrAIConnectionUnavailable
 		}
@@ -460,11 +469,32 @@ func (s *AIConnectionService) RefreshRun(ctx context.Context, req sdk.ModelCrede
 		return nil, ErrAIConnection
 	}
 	run, err := s.repo.Run(ctx, c.WorkspaceID, req.HostRunID)
-	if err != nil || run == nil || !model.IsAgentRunActiveStatus(run.Status) || (c.UserID != nil && derefString(run.TriggeredByUserID) != *c.UserID) {
+	if err != nil || run == nil || !model.IsAgentRunActiveStatus(run.Status) {
 		return nil, ErrAIConnection
 	}
 	var input model.AgentRunInputPayload
 	if json.Unmarshal(run.Input, &input) != nil || input.ModelConnectionID != c.ID || input.ModelProvider != req.Provider || c.Provider != req.Provider || c.AccountID != req.AccountID {
+		return nil, ErrAIConnection
+	}
+	if input.AISelection != nil && input.AISelection.AgentGrantID != nil {
+		selected := input.AISelection
+		runtimeID, mapped := agentRuntimeRunID(run)
+		if !mapped || runtimeID != req.RunID || selected.Route.ConnectionID != c.ID || selected.Route.Model.Model != input.ModelName {
+			return nil, ErrAIConnection
+		}
+		if run.TriggeredByUserID != nil {
+			active, err := s.repo.ActiveMember(ctx, c.WorkspaceID, *run.TriggeredByUserID)
+			if err != nil || !active {
+				return nil, ErrAIConnection
+			}
+		}
+		_, credential, err := s.grantedModelCredential(ctx, c.WorkspaceID, selected, req.Reason == "unauthorized", req.CredentialFingerprint)
+		if err != nil {
+			return nil, err
+		}
+		return &sdk.UpdateRunModelCredentialRequest{Credential: *credential}, nil
+	}
+	if c.UserID != nil && derefString(run.TriggeredByUserID) != *c.UserID {
 		return nil, ErrAIConnection
 	}
 	if input.AISelection != nil && !sameModelEndpoint(c.Endpoint, input.AISelection.Route.Model.Endpoint) {
@@ -509,7 +539,7 @@ func (s *AIConnectionService) Disconnect(ctx context.Context, workspace, user, i
 		return err
 	}
 	s.notifyConnectionsChanged(ctx, &disconnected)
-	runs, err := s.boundConnectionRuns(ctx, workspace, user, id)
+	runs, err := s.repo.BoundRuns(ctx, workspace, "", id)
 	if err != nil {
 		return err
 	}
@@ -549,6 +579,10 @@ func (s *AIConnectionService) ReauthorizeRuns(ctx context.Context, workspace, us
 				continue
 			}
 			return err
+		}
+		if input.AISelection != nil && input.AISelection.AgentGrantID != nil {
+			// Delegated runs request credentials through the grant-checked callback.
+			continue
 		}
 		if err := s.runtime.UpdateRunModelCredential(ctx, runtimeID, *credential); err != nil {
 			current, lookupErr := s.runtime.GetRun(ctx, runtimeID)

@@ -15,7 +15,7 @@ vi.mock('@/lib/services/aiConnectionService', () => ({
   aiConnectionService: { list: vi.fn(), endpoints: vi.fn(), create: vi.fn(), reconnect: vi.fn(), poll: vi.fn(), disconnect: vi.fn(), models: vi.fn(), refreshModels: vi.fn() },
 }));
 vi.mock('@/lib/services/aiProfileService', () => ({
-  aiProfileService: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), settings: vi.fn(), setDefault: vi.fn(), setPersonalDefault: vi.fn(), setVisibility: vi.fn(), enableModel: vi.fn() },
+  aiProfileService: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), settings: vi.fn(), setDefault: vi.fn(), setPersonalDefault: vi.fn(), setVisibility: vi.fn(), setAgentSharing: vi.fn(), enableModel: vi.fn() },
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -257,4 +257,23 @@ it('shows common pricing in the page subtext without repeating usage tooltips on
   expect(document.querySelector('[aria-label="Usage details for My model"]')).toBeNull();
   await act(async () => { Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Manage connections')?.click(); });
   expect(document.querySelector('[aria-label="Usage details"]')).toBeNull();
+});
+
+it('requires explicit owner confirmation to share one ChatGPT model', async () => {
+  frame.permissions = new Set();
+  const connection = {id:'mine', name:'My subscription', provider:'openai_chatgpt', scope:'personal', user_id:'me', status:'connected'} as const;
+  const profile = {id:'model', workspace_id:'ws', scope:'personal', user_id:'me', name:'GPT', revision:2, primary:{connection_id:'mine', model:{provider:'openai_chatgpt',model:'gpt-test',controls:{}}}, fallback:null} as const;
+  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true, connections:[connection], models:[]}, error:null});
+  vi.mocked(aiProfileService.list).mockResolvedValue({data:[profile], error:null});
+  vi.mocked(aiProfileService.setAgentSharing).mockResolvedValue({data:{...profile,agent_grant_id:'grant'}, error:null});
+  await render('personal');
+  const actions = document.querySelector<HTMLButtonElement>('[aria-label="Access for GPT: Personal"]')!;
+  await act(async () => { actions.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',bubbles:true})); });
+  const share = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(item => item.textContent === 'Workspace-wide');
+  expect(share).toBeDefined();
+  await act(async () => share!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('My subscription');
+  expect(aiProfileService.setAgentSharing).not.toHaveBeenCalled();
+  await act(async () => Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Share model')!.click());
+  expect(aiProfileService.setAgentSharing).toHaveBeenCalledWith('ws',profile,true);
 });
