@@ -15,6 +15,7 @@ func AutoMigrationModels() []any {
 		&model.PasswordResetToken{},
 		&model.EmailVerificationToken{},
 		&model.OAuthMobileHandoff{},
+		&model.UserOIDCIdentity{},
 		&model.CLIConnection{}, &model.CLIToken{}, &model.CLIExecution{}, &model.CLIGeneration{},
 		&model.Organization{},
 		&model.OrganizationMember{},
