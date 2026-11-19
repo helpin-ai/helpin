@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"log/slog"
 	"net/mail"
 	"net/netip"
@@ -689,97 +688,6 @@ func (s *SupportInboxService) isConversationAssignableUser(ctx context.Context, 
 		return false
 	}
 	return s.userHasSupportModuleAccess(ctx, workspaceID, userID) && s.userCanAccessMailbox(ctx, workspaceID, mailboxID, userID)
-}
-
-func supportTranscriptSenderName(workspaceName string, msg model.SupportMessage) string {
-	switch msg.SenderType {
-	case "customer":
-		if strings.TrimSpace(derefString(msg.SenderDisplayName)) != "" {
-			return strings.TrimSpace(derefString(msg.SenderDisplayName))
-		}
-		return "You"
-	case "ai":
-		return "Helpin AI"
-	default:
-		if strings.TrimSpace(derefString(msg.SenderDisplayName)) != "" {
-			return strings.TrimSpace(derefString(msg.SenderDisplayName))
-		}
-		if strings.TrimSpace(workspaceName) != "" {
-			return workspaceName
-		}
-		return "Support"
-	}
-}
-
-func renderSupportTranscriptBodies(workspaceName string, conversation *model.SupportConversation, messages []model.SupportMessage) (string, string) {
-	subject := strings.TrimSpace(conversation.Subject)
-	if subject == "" {
-		subject = "Conversation transcript"
-	}
-
-	var text strings.Builder
-	text.WriteString(workspaceName)
-	text.WriteString(" conversation transcript\n")
-	text.WriteString("Conversation #")
-	text.WriteString(fmt.Sprintf("%d", conversation.DisplayID))
-	text.WriteString("\n")
-	text.WriteString("Subject: ")
-	text.WriteString(subject)
-	text.WriteString("\n\n")
-
-	var htmlBody strings.Builder
-	htmlBody.WriteString("<p>")
-	htmlBody.WriteString(html.EscapeString(workspaceName))
-	htmlBody.WriteString(" conversation transcript</p>")
-	htmlBody.WriteString("<p><strong>Conversation #")
-	htmlBody.WriteString(fmt.Sprintf("%d", conversation.DisplayID))
-	htmlBody.WriteString("</strong><br />Subject: ")
-	htmlBody.WriteString(html.EscapeString(subject))
-	htmlBody.WriteString("</p>")
-
-	for _, msg := range messages {
-		sender := supportTranscriptSenderName(workspaceName, msg)
-		timestamp := formatSupportTranscriptTimestamp(msg.CreatedAt)
-		content := strings.TrimSpace(msg.Content)
-
-		text.WriteString(sender)
-		text.WriteString(" — ")
-		text.WriteString(timestamp)
-		text.WriteString("\n")
-		if content != "" {
-			text.WriteString(content)
-			text.WriteString("\n")
-		}
-		for _, attachment := range msg.Attachments {
-			text.WriteString("[Attachment: ")
-			text.WriteString(strings.TrimSpace(attachment.FileName))
-			text.WriteString("]\n")
-		}
-		text.WriteString("\n")
-
-		htmlBody.WriteString("<p><strong>")
-		htmlBody.WriteString(html.EscapeString(sender))
-		htmlBody.WriteString("</strong> <span style=\"color:#6b7280\">")
-		htmlBody.WriteString(html.EscapeString(timestamp))
-		htmlBody.WriteString("</span><br />")
-		if content != "" {
-			htmlBody.WriteString(strings.ReplaceAll(html.EscapeString(content), "\n", "<br />"))
-			if len(msg.Attachments) > 0 {
-				htmlBody.WriteString("<br />")
-			}
-		}
-		for i, attachment := range msg.Attachments {
-			if i > 0 {
-				htmlBody.WriteString("<br />")
-			}
-			htmlBody.WriteString("[Attachment: ")
-			htmlBody.WriteString(html.EscapeString(strings.TrimSpace(attachment.FileName)))
-			htmlBody.WriteString("]")
-		}
-		htmlBody.WriteString("</p>")
-	}
-
-	return htmlBody.String(), text.String()
 }
 
 // SetSupportAIService injects the AI-first auto-reply service.

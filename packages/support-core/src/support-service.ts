@@ -420,7 +420,6 @@ export const supportService = {
     getApi().post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
   sendConversationTranscript: (workspaceId: string, conversationId: string, payload: {
     email: string
-    update_customer_email?: boolean
   }) => getApi().post<SendSupportConversationTranscriptResponse>(
     `/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`,
     payload,

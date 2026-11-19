@@ -1109,10 +1109,9 @@ export function useConversationMessages(workspaceId: string, conversationId: str
 
 export function useSendConversationTranscript(workspaceId: string) {
   return useMutation({
-    mutationFn: ({ conversationId, email, updateCustomerEmail }: { conversationId: string; email?: string; updateCustomerEmail?: boolean }) =>
+    mutationFn: ({ conversationId, email }: { conversationId: string; email?: string }) =>
       supportService.sendConversationTranscript(workspaceId, conversationId, {
         email,
-        update_customer_email: updateCustomerEmail,
       }).then(unwrap),
   });
 }

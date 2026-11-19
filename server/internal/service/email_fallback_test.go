@@ -1231,6 +1231,32 @@ func TestEmailFallbackPrepareEmailAttachmentsEmbedsSmallFilesAndLeavesLargeFiles
 	}
 }
 
+func TestEmailFallbackPrepareEmailAttachmentsHonorsRemainingBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		budget     int64
+		storedSize int64
+		wantFile   bool
+	}{
+		{name: "exact fit", budget: 8, storedSize: 8, wantFile: true},
+		{name: "no room", budget: 0, storedSize: 8},
+		{name: "metadata exceeds room", budget: 4, storedSize: 8},
+		{name: "download exceeds advertised size", budget: 4, storedSize: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &EmailFallbackService{attachmentDownloader: fakeSupportEmailAttachmentDownloader{data: map[string][]byte{"file": []byte("12345678")}}}
+			messages := []model.SupportMessage{{Attachments: []model.SupportAttachmentPayload{{ID: "file", FileKey: "support/file", FileName: "receipt.pdf", FileSize: tc.storedSize, URL: "https://example.com/file"}}}}
+			prepared, files := svc.prepareEmailAttachmentsWithinLimit(context.Background(), messages, tc.budget)
+			if (len(files) == 1) != tc.wantFile {
+				t.Errorf("file attached = %v, want %v", len(files) == 1, tc.wantFile)
+			}
+			if (prepared[0].Attachments[0].URL == "") != tc.wantFile {
+				t.Error("file should remain linked unless attached")
+			}
+		})
+	}
+}
+
 func TestEmailFallbackRenderBodiesOmitsRegularEmailAttachmentsFromBody(t *testing.T) {
 	svc := &EmailFallbackService{}
 

@@ -103,21 +103,22 @@ test('sends a transcript to a selected recent recipient', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Send transcript' }))
 
   expect(transcript).toHaveBeenCalledWith(
-    { conversationId: 'conv-1', email: 'finance@example.com', updateCustomerEmail: false },
+    { conversationId: 'conv-1', email: 'finance@example.com' },
     expect.anything(),
   )
 })
 
-test('can save a custom transcript email to a customer without an email', () => {
+test('sends to a custom recipient without offering to change customer identity', () => {
   const { transcript } = setup()
   renderSheet({ conversation: { ...CONVERSATION, customer_email: undefined, email_cc: [] } })
 
   fireEvent.click(screen.getByRole('button', { name: 'Email transcript' }))
   fireEvent.change(screen.getByPlaceholderText('recipient@example.com'), { target: { value: 'new@example.com' } })
+  expect(screen.queryByText(/save this email/i)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Send transcript' }))
 
   expect(transcript).toHaveBeenCalledWith(
-    { conversationId: 'conv-1', email: 'new@example.com', updateCustomerEmail: true },
+    { conversationId: 'conv-1', email: 'new@example.com' },
     expect.anything(),
   )
 })

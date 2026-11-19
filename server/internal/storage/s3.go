@@ -199,6 +199,14 @@ func (s *S3Client) PutObject(ctx context.Context, key, contentType string, size 
 
 // GeneratePresignedGetURL generates a presigned GET URL for downloading a file.
 func (s *S3Client) GeneratePresignedGetURL(key, filename string) (string, error) {
+	return s.GeneratePresignedGetURLWithExpiry(key, filename, time.Hour)
+}
+
+// GeneratePresignedGetURLWithExpiry signs a private download for up to seven days.
+func (s *S3Client) GeneratePresignedGetURLWithExpiry(key, filename string, expiry time.Duration) (string, error) {
+	if expiry < time.Second || expiry > 7*24*time.Hour {
+		return "", fmt.Errorf("download link expiry must be between one second and seven days")
+	}
 	input := &s3.GetObjectInput{
 		Bucket:                     aws.String(s.bucket),
 		Key:                        aws.String(key),
@@ -206,7 +214,7 @@ func (s *S3Client) GeneratePresignedGetURL(key, filename string) (string, error)
 	}
 
 	result, err := s.presignClient.PresignGetObject(context.Background(), input, func(o *s3.PresignOptions) {
-		o.Expires = 1 * time.Hour
+		o.Expires = expiry
 	})
 	if err != nil {
 		return "", fmt.Errorf("generate presigned GET URL: %w", err)

@@ -3195,7 +3195,11 @@ func truncateSupportEmailPreview(content string) string {
 }
 
 func (s *EmailFallbackService) prepareEmailAttachments(ctx context.Context, messages []model.SupportMessage) ([]model.SupportMessage, []email.Attachment) {
-	if len(messages) == 0 || s == nil || s.attachmentDownloader == nil {
+	return s.prepareEmailAttachmentsWithinLimit(ctx, messages, supportEmailAttachmentMaxTotalRawBytes)
+}
+
+func (s *EmailFallbackService) prepareEmailAttachmentsWithinLimit(ctx context.Context, messages []model.SupportMessage, maxTotalRawBytes int64) ([]model.SupportMessage, []email.Attachment) {
+	if len(messages) == 0 || s == nil || s.attachmentDownloader == nil || maxTotalRawBytes <= 0 {
 		return messages, nil
 	}
 
@@ -3212,7 +3216,7 @@ func (s *EmailFallbackService) prepareEmailAttachments(ctx context.Context, mess
 		copy(msgAttachments, prepared[msgIndex].Attachments)
 		for attachmentIndex := range msgAttachments {
 			attachment := msgAttachments[attachmentIndex]
-			if !isSupportEmailAttachmentCandidate(attachment, totalRawBytes) {
+			if !isSupportEmailAttachmentCandidate(attachment, totalRawBytes) || attachment.FileSize > maxTotalRawBytes-totalRawBytes {
 				continue
 			}
 			data, err := s.attachmentDownloader.DownloadContent(ctx, attachment)
@@ -3227,7 +3231,7 @@ func (s *EmailFallbackService) prepareEmailAttachments(ctx context.Context, mess
 				continue
 			}
 			rawSize := int64(len(data))
-			if rawSize <= 0 || rawSize > supportEmailAttachmentMaxFileBytes || totalRawBytes+rawSize > supportEmailAttachmentMaxTotalRawBytes {
+			if rawSize <= 0 || rawSize > supportEmailAttachmentMaxFileBytes || rawSize > maxTotalRawBytes-totalRawBytes {
 				continue
 			}
 			name := strings.TrimSpace(attachment.FileName)

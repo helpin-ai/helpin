@@ -1193,8 +1193,7 @@ type WidgetTranscriptResponse struct {
 }
 
 type SendSupportConversationTranscriptRequest struct {
-	Email               string `json:"email"`
-	UpdateCustomerEmail bool   `json:"update_customer_email"`
+	Email string `json:"email"`
 }
 
 type SendSupportConversationTranscriptResponse struct {

@@ -570,12 +570,12 @@ describe('agent productivity service paths', () => {
     })
 
     await supportService.sendConversationTranscript(WORKSPACE_ID, CONVERSATION_ID, {
-      email: 'ada@example.com', update_customer_email: true,
+      email: 'ada@example.com',
     })
 
     expect(fakeApi.post).toHaveBeenCalledWith(
       `/support/inbox/conversations/${CONVERSATION_ID}/transcript?workspace_id=${WORKSPACE_ID}`,
-      { email: 'ada@example.com', update_customer_email: true },
+      { email: 'ada@example.com' },
     )
   })
 })

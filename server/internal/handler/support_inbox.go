@@ -206,7 +206,7 @@ func (h *SupportInboxHandler) SendConversationTranscript(w http.ResponseWriter, 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	resp, err := h.supportService.SendSupportConversationTranscript(r.Context(), workspaceID, conversationID, req.Email, req.UpdateCustomerEmail)
+	resp, err := h.supportService.SendSupportConversationTranscript(r.Context(), workspaceID, conversationID, req.Email, middleware.GetUserID(r.Context()))
 	if err != nil {
 		status := http.StatusInternalServerError
 		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "invalid email") {

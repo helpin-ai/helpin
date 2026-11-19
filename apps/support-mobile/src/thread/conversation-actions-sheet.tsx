@@ -54,7 +54,6 @@ export function ConversationActionsSheet({
   const [transcriptEmail, setTranscriptEmail] = useState(
     conversation.customer_email ?? conversation.suggested_primary_recipient_email ?? '',
   )
-  const [updateCustomerEmail, setUpdateCustomerEmail] = useState(!conversation.customer_email)
   const [selectedTeamId, setSelectedTeamId] = useState(defaultTeamId ?? '')
   const [rememberTeam, setRememberTeam] = useState(false)
   const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null)
@@ -130,7 +129,7 @@ export function ConversationActionsSheet({
     const email = transcriptEmail.trim()
     if (!email) return
     sendTranscript.mutate(
-      { conversationId, email, updateCustomerEmail },
+      { conversationId, email },
       {
         onSuccess: (data) => {
           toast.success(data.message || 'Transcript sent')
@@ -326,7 +325,7 @@ export function ConversationActionsSheet({
               </div>
             )}
             <label className="flex flex-col gap-1.5">
-              <span className="text-footnote font-medium">Email address</span>
+              <span className="text-footnote font-medium">Recipient email</span>
               <input
                 type="email"
                 value={transcriptEmail}
@@ -335,17 +334,6 @@ export function ConversationActionsSheet({
                 className="rounded-xl border border-input bg-background px-3 py-2.5 text-body outline-none placeholder:text-muted-foreground"
               />
             </label>
-            {(!conversation.customer_email || transcriptEmail.trim().toLowerCase() !== conversation.customer_email.toLowerCase()) && (
-              <label className="flex items-start gap-2 text-footnote text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={updateCustomerEmail}
-                  onChange={(event) => setUpdateCustomerEmail(event.target.checked)}
-                  className="mt-0.5 h-4 w-4"
-                />
-                Also save this email to the customer profile
-              </label>
-            )}
             <PrimaryButton
               onPress={handleSendTranscript}
               busy={sendTranscript.isPending}
