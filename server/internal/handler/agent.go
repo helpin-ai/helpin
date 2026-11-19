@@ -810,6 +810,16 @@ func (h *AgentHandler) ListRecentRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
 }
 
+// GetSubtaskJob handles GET /api/pm/subtask-jobs/{jobID}.
+func (h *AgentHandler) GetSubtaskJob(w http.ResponseWriter, r *http.Request) {
+	job, err := h.agentService.GetSubtaskJob(r.Context(), getWorkspaceID(r), chi.URLParam(r, "jobID"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "subtask job not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
 // ListTargetRuns handles GET /api/pm/agent-runs?target_type=...&target_id=....
 func (h *AgentHandler) ListTargetRuns(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

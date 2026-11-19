@@ -136,3 +136,34 @@ type TaskContextItem struct {
 type GetTaskContextResult struct {
 	Tasks []TaskContextItem `json:"tasks"`
 }
+
+// GetPullRequestChangesRequest selects one pull request of a workspace repository.
+type GetPullRequestChangesRequest struct {
+	RepositoryID string `json:"repository_id,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+	PullNumber   int    `json:"pull_number"`
+}
+
+// PullRequestChangedFile is one changed file of a pull request with its patch.
+type PullRequestChangedFile struct {
+	Filename  string `json:"filename"`
+	Status    string `json:"status,omitempty"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Patch     string `json:"patch,omitempty"`
+}
+
+// PullRequestChangesResult is the pull request description and changed files.
+type PullRequestChangesResult struct {
+	RepoFullName string                   `json:"repo_full_name"`
+	Number       int                      `json:"number"`
+	Title        string                   `json:"title,omitempty"`
+	Body         string                   `json:"body,omitempty"`
+	URL          string                   `json:"url,omitempty"`
+	State        string                   `json:"state,omitempty"`
+	Merged       bool                     `json:"merged"`
+	BaseBranch   string                   `json:"base_branch,omitempty"`
+	HeadBranch   string                   `json:"head_branch,omitempty"`
+	Files        []PullRequestChangedFile `json:"files"`
+	Truncated    bool                     `json:"truncated,omitempty"`
+}

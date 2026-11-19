@@ -383,6 +383,11 @@ func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 			"Mark deprecations and breaking changes explicitly",
 			"Keep examples synchronized with the documented schema",
 		},
+		"docs_writing_style": {
+			"Every sentence must give the reader a fact, a step, or a condition",
+			"Read the whole article before you change it",
+			"Never fill the gap with a guess",
+		},
 		"docs_architecture_review": {
 			"Organize docs into spaces, collections, and subcollections",
 			"Avoid duplicate articles unless the audience or workflow is genuinely different",
@@ -596,6 +601,7 @@ func TestDocumentationAgentBundleIncludesDocumentationSkills(t *testing.T) {
 		"api_docs_maintenance",
 		"post_release_docs_update",
 		"support_gap_docs_update",
+		"docs_writing_style",
 	} {
 		if !containsString(bundle.SkillKeys, expected) {
 			t.Fatalf("expected documentation skill %q in bundle: %v", expected, bundle.SkillKeys)

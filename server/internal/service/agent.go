@@ -697,6 +697,16 @@ const defaultSupportChatIdleTimeoutSeconds = 24 * 60 * 60
 const supportChatTriggerType = "support_chat"
 
 // runInputTriggerType reads the trigger type stamped into a run's input.
+// runInputPullRequestNumber returns the GitHub pull request number of the
+// event that started a run, or 0 when the run was not started by one.
+func runInputPullRequestNumber(raw []byte) int {
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(raw, &input); err != nil || input.Event == nil || input.Event.GitHub == nil || input.Event.GitHub.PullRequest == nil {
+		return 0
+	}
+	return input.Event.GitHub.PullRequest.Number
+}
+
 func runInputTriggerType(run *model.AgentRun) string {
 	if run == nil || len(run.Input) == 0 {
 		return ""
@@ -6558,6 +6568,23 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			activeRun = nil
 		}
 	}
+	// A run for a different pull request is separate work. Reusing the active
+	// run would silently drop a PR merged while an earlier one is still being
+	// handled. A redelivery of the same PR still reuses that PR's active run.
+	if number := runInputPullRequestNumber(params.input); number > 0 && activeRun != nil && activeRun.AgentID == params.agent.ID &&
+		params.targetType == "repository" && number != runInputPullRequestNumber(activeRun.Input) {
+		activeRun = nil
+		candidates, err := s.runRepo.ListActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range candidates {
+			if candidates[i].AgentID == params.agent.ID && runInputPullRequestNumber(candidates[i].Input) == number {
+				activeRun = &candidates[i]
+				break
+			}
+		}
+	}
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		if activeRun.AgentID == params.agent.ID {
 			if err := requireAIConnectionRunOwner(activeRun, derefString(params.actorID)); err != nil {
@@ -6896,6 +6923,33 @@ func (s *AgentService) auditActorIDForRun(ctx context.Context, run *model.AgentR
 	if actorID := strings.TrimSpace(derefString(run.TriggeredByUserID)); actorID != "" {
 		return actorID
 	}
+	if actorID := s.agentVersionCreatorForRun(ctx, run); actorID != "" {
+		return actorID
+	}
+	// An event or schedule fires a flow with no user, and a template-installed
+	// agent has no authored version. Attribute the run's writes to the person
+	// who set up the flow so tools that record an author do not fail.
+	ruleID := runInputRuleID(run.Input)
+	if s == nil || s.ruleEngine == nil || ruleID == "" {
+		return ""
+	}
+	rule, err := s.ruleEngine.GetRule(ctx, run.WorkspaceID, ruleID)
+	if err != nil || rule == nil {
+		return ""
+	}
+	return strings.TrimSpace(derefString(rule.CreatedBy))
+}
+
+// runInputRuleID returns the automation rule that started a run, if any.
+func runInputRuleID(raw []byte) string {
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(raw, &input); err != nil || input.Trigger == nil {
+		return ""
+	}
+	return strings.TrimSpace(derefString(input.Trigger.RuleID))
+}
+
+func (s *AgentService) agentVersionCreatorForRun(ctx context.Context, run *model.AgentRun) string {
 	if s == nil || s.agentRepo == nil || run.AgentVersionID == nil || strings.TrimSpace(*run.AgentVersionID) == "" {
 		return ""
 	}

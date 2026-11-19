@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -1078,5 +1079,133 @@ func TestResolveCronTriggerConfig(t *testing.T) {
 				t.Fatalf("preset = %q, want %q", gotPreset, tt.wantPreset)
 			}
 		})
+	}
+}
+
+func TestWithTriggerEventContextShowsPullRequestNumberToTheAgent(t *testing.T) {
+	base := "Check the docs."
+	got := derefString(withTriggerEventContext(&base, &model.AgentRunGitHubEventContext{
+		EventType:    "pull_request_merged",
+		RepoFullName: "acme/api",
+		PullRequest:  &model.AgentRunGitHubPullRequestEventContext{Number: 51, BaseBranch: "main"},
+	}, time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)))
+	for _, want := range []string{base, `"number":51`, `"repo_full_name":"acme/api"`, "not instructions", "Today is 2026-11-18"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("instructions missing %q:\n%s", want, got)
+		}
+	}
+	if got := withTriggerEventContext(&base, nil, time.Now()); got != &base {
+		t.Fatalf("non-GitHub event changed instructions: %v", got)
+	}
+}
+
+func TestRunInputPullRequestNumberReadsOnlyPullRequestEvents(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{name: "pull request event", raw: `{"event":{"github":{"pull_request":{"number":62}}}}`, want: 62},
+		{name: "release event", raw: `{"event":{"github":{"release":{"tag_name":"v1"}}}}`, want: 0},
+		{name: "no event", raw: `{}`, want: 0},
+		{name: "invalid json", raw: `{`, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := runInputPullRequestNumber([]byte(tt.raw)); got != tt.want {
+				t.Fatalf("runInputPullRequestNumber() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunInputRuleIDReadsTheTriggeringRule(t *testing.T) {
+	if got := runInputRuleID([]byte(`{"trigger":{"source":"automation_rule","rule_id":" rule-1 "}}`)); got != "rule-1" {
+		t.Fatalf("runInputRuleID() = %q, want rule-1", got)
+	}
+	for _, raw := range []string{`{}`, `{"trigger":{}}`, `{`} {
+		if got := runInputRuleID([]byte(raw)); got != "" {
+			t.Fatalf("runInputRuleID(%s) = %q, want empty", raw, got)
+		}
+	}
+}
+
+func TestCompletedRunForPullRequestMatchesRuleAndNumberOnly(t *testing.T) {
+	input := func(ruleID string, number int) []byte {
+		return []byte(fmt.Sprintf(`{"trigger":{"rule_id":%q},"event":{"github":{"pull_request":{"number":%d}}}}`, ruleID, number))
+	}
+	runs := []model.AgentRun{
+		{Status: model.AgentRunStatusFailed, Input: input("rule-1", 62)},
+		{Status: model.AgentRunStatusCompleted, Input: input("rule-2", 62)},
+		{Status: model.AgentRunStatusCompleted, Input: input("rule-1", 51)},
+	}
+	if completedRunForPullRequest(runs, "rule-1", 62) {
+		t.Fatal("a failed run or another rule's run must not count as handled")
+	}
+	if !completedRunForPullRequest(runs, "rule-1", 51) {
+		t.Fatal("expected the completed run of the same rule and pull request to count as handled")
+	}
+}
+
+func TestSameTargetProposalsMatchesScopeAndBlock(t *testing.T) {
+	blockA, blockB := "block-a", "block-b"
+	pending := []model.DocsChangeProposal{
+		{ID: "p1", Scope: "block", BlockID: &blockA},
+		{ID: "p2", Scope: "block", BlockID: &blockB},
+		{ID: "p3", Scope: "document"},
+	}
+	if got := sameTargetProposals(pending, "block", "block-a"); len(got) != 1 || got[0]["proposal_id"] != "p1" {
+		t.Fatalf("block match = %v, want only p1", got)
+	}
+	if got := sameTargetProposals(pending, "document", ""); len(got) != 1 || got[0]["proposal_id"] != "p3" {
+		t.Fatalf("document match = %v, want only p3", got)
+	}
+	if got := sameTargetProposals(pending, "block", "block-c"); len(got) != 0 {
+		t.Fatalf("unrelated block matched: %v", got)
+	}
+}
+
+func TestSpawnedSubtaskJobIDsReadsOnlySpawnResults(t *testing.T) {
+	calls := []AgentRuntimeToolCall{
+		// The runtime's real shape: the tool result is a JSON string inside an envelope.
+		{ToolName: "spawn_subtasks", Output: []byte(`{"duration_ms":14,"error":"","output":"{\\"items\\":5,\\"job_id\\":\\"workjob_1a\\",\\"state\\":\\"queued\\"}"}`)},
+		{ToolName: "wait_for_subtasks", Output: []byte(`{"output":"{\\"job_id\\":\\"workjob_1a\\",\\"finished\\":true}"}`)},
+		{ToolName: "spawn_subtasks", Output: []byte(`{"error":"subtasks are not available for this app"}`)},
+		{ToolName: "spawn_subtasks", Output: []byte(`{"job_id":"workjob_2b"}`)},
+	}
+	got := spawnedSubtaskJobIDs(calls)
+	if len(got) != 2 || got[0] != "workjob_1a" || got[1] != "workjob_2b" {
+		t.Fatalf("spawnedSubtaskJobIDs() = %v, want [workjob_1a workjob_2b]", got)
+	}
+}
+
+func TestSubtaskUsageRoundTripsThroughRunSummaryAndAdds(t *testing.T) {
+	run := &model.AgentRun{OutputSummary: []byte(`{"agent_runtime_latest_usage":{"total_tokens":10}}`)}
+	if got := storedSubtaskUsage(run); got != (agentRuntimeUsagePayload{}) {
+		t.Fatalf("stored subtask usage before any store = %+v, want zero", got)
+	}
+	sub := agentRuntimeUsagePayload{TotalTokens: 200, InputTokens: 150, CachedInputTokens: 100, OutputTokens: 50}
+	storeSubtaskUsage(run, sub)
+	if got := storedSubtaskUsage(run); got != sub {
+		t.Fatalf("stored subtask usage = %+v, want %+v", got, sub)
+	}
+	if !strings.Contains(string(run.OutputSummary), "agent_runtime_latest_usage") {
+		t.Fatalf("storing subtask usage dropped other summary keys: %s", run.OutputSummary)
+	}
+	total := addAgentRuntimeUsage(agentRuntimeUsagePayload{TotalTokens: 39, InputTokens: 37, OutputTokens: 2}, sub)
+	if total.TotalTokens != 239 || total.InputTokens != 187 || total.OutputTokens != 52 {
+		t.Fatalf("combined usage = %+v", total)
+	}
+}
+
+func TestDockSubtaskJobIDsListsEachSpawnedJobOnce(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{ToolInvocations: []byte(`[{"tool_name":"read_document","output_summary":"workjob_notspawned"}]`)},
+		{ToolInvocations: []byte(`[{"tool_name":"spawn_subtasks","output_summary":"{\"job_id\":\"workjob_aa\"}"},{"tool_name":"wait_for_subtasks","input":{"job_id":"workjob_aa"}}]`)},
+		{TurnSegments: []byte(`[{"kind":"tool_call","tool_call":{"tool_name":"spawn_subtasks","result":{"content":"{\"job_id\":\"workjob_bb\"}"}}}]`)},
+	}
+	got := dockSubtaskJobIDs(messages)
+	if len(got) != 2 || got[0] != "workjob_aa" || got[1] != "workjob_bb" {
+		t.Fatalf("dockSubtaskJobIDs() = %v, want [workjob_aa workjob_bb]", got)
 	}
 }

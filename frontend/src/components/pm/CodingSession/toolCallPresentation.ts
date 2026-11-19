@@ -412,6 +412,11 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     return withRepository({ primaryLabel: path ? `List ${path}` : 'List repository root', secondaryLabel, chips: [] });
   }
 
+  if (toolName === 'spawn_subtasks') return { primaryLabel: 'Start sub-tasks', secondaryLabel, chips: [] };
+  if (toolName === 'wait_for_subtasks') return { primaryLabel: 'Wait for sub-tasks', secondaryLabel, chips: [] };
+  if (toolName === 'subtask_status') return { primaryLabel: 'Check sub-task progress', secondaryLabel, chips: [] };
+  if (toolName === 'cancel_subtasks') return { primaryLabel: 'Cancel sub-tasks', secondaryLabel, chips: [] };
+
   if (toolName === 'apply_patch') {
     return { primaryLabel: 'Apply patch', secondaryLabel, chips: [] };
   }

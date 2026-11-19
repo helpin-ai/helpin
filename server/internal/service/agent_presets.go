@@ -841,6 +841,7 @@ func commandAgentAvailableSkills() []string {
 		"api_docs_maintenance",
 		"post_release_docs_update",
 		"support_gap_docs_update",
+		"docs_writing_style",
 	}
 }
 
@@ -870,7 +871,7 @@ func askAgentPresetTools() []string {
 		"update_collection", "move_document", "archive_document", "restore_document", "write_document_content",
 		"update_document_block", "edit_document", "insert_document_block", "insert_document_artifact",
 		"link_document_to_object", "preview_md", "preview_json",
-		"publish_document_change_proposal", "publish_ai_section_candidate",
+		"publish_document_change_proposal", "list_document_change_proposals", "publish_ai_section_candidate",
 		// CRM reads and approval-gated writes.
 		"list_deals", "list_contacts", "list_crm_signals", "add_deal_note",
 		"update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company",
@@ -881,7 +882,7 @@ func askAgentPresetTools() []string {
 		// Read-only repository inspection. No shell, file-write, branch, push, or PR tools.
 		"list_repositories", "checkout_repositories", "list_commits",
 		"read_files", "list_directory", "repository_search", "list_symbols",
-		"read_symbol", "trace_symbol", "get_pull_request_diff", "get_check_run_logs",
+		"read_symbol", "trace_symbol", "get_pull_request_diff", "get_pull_request_changes", "get_check_run_logs",
 		"get_release_context", "find_tasks_for_git_changes",
 		// Team-only support notes.
 		"add_support_conversation_note",
@@ -912,6 +913,7 @@ func askAgentAvailableSkills() []string {
 		"api_docs_maintenance",
 		"post_release_docs_update",
 		"support_gap_docs_update",
+		"docs_writing_style",
 		"marketing_context_setup",
 		"marketing_plan",
 		"customer_research_synthesis",
@@ -965,8 +967,10 @@ func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefini
 	if normalizePresetKey(preset.Key) != model.AgentPresetDocumentationAgent {
 		return preset
 	}
-	if !slices.Contains(preset.AvailableSkills, "document_editing") {
-		preset.AvailableSkills = append(preset.AvailableSkills, "document_editing")
+	for _, key := range []string{"document_editing", "docs_writing_style"} {
+		if !slices.Contains(preset.AvailableSkills, key) {
+			preset.AvailableSkills = append(preset.AvailableSkills, key)
+		}
 	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{
 		"read_document", "get_document_blocks", "find_skills", "read_skill",

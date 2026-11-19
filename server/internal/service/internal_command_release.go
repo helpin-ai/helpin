@@ -108,6 +108,37 @@ func (s *InternalCommandService) registerReleaseFactsCommands() {
 		Execute: s.executeFindTasksForGitChanges,
 	})
 	s.register(InternalCommandDefinition{
+		Name:     "release.get_pull_request_changes",
+		Module:   "release",
+		Mutating: false,
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "release.get_pull_request_changes",
+			Alias:       "get_pull_request_changes",
+			Category:    "Release",
+			Description: "Load a GitHub pull request's title, description, and changed files with patches through the workspace GitHub integration. Works for merged pull requests. Use the pull request number from the run trigger event. Defaults the repository from the current repository target when available.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"repository_id": map[string]any{
+						"type":        "string",
+						"description": "Optional repository ID. Defaults from the current repository target when omitted.",
+					},
+					"repo_full_name": map[string]any{
+						"type":        "string",
+						"description": "Optional repository full name like owner/repo.",
+					},
+					"pull_number": map[string]any{
+						"type":        "integer",
+						"description": "The pull request number.",
+					},
+				},
+				"required":             []string{"pull_number"},
+				"additionalProperties": false,
+			},
+		},
+		Execute: s.executeGetPullRequestChanges,
+	})
+	s.register(InternalCommandDefinition{
 		Name:     "release.get_task_context",
 		Module:   "release",
 		Mutating: false,
@@ -138,6 +169,31 @@ func (s *InternalCommandService) executeGetReleaseContext(ctx context.Context, m
 	result, err := s.releaseFactsProvider.GetReleaseContext(ctx, meta.WorkspaceID, req)
 	if err != nil {
 		return nil, fmt.Errorf("get release context: %w", err)
+	}
+	return mustJSON(result), nil
+}
+
+func (s *InternalCommandService) executeGetPullRequestChanges(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	var req model.GetPullRequestChangesRequest
+	if len(input) > 0 {
+		if err := json.Unmarshal(input, &req); err != nil {
+			return nil, fmt.Errorf("parse get pull request changes input: %w", err)
+		}
+	}
+	applyCommandRepositoryTargetDefault(meta, &req.RepositoryID)
+	req.RepoFullName = strings.TrimSpace(req.RepoFullName)
+	if req.PullNumber <= 0 {
+		return nil, errCommandInput("pull_number is required")
+	}
+	if strings.TrimSpace(req.RepositoryID) == "" && req.RepoFullName == "" {
+		return nil, errCommandInput("repository_id or repo_full_name is required")
+	}
+	if s.releaseFactsProvider == nil {
+		return nil, fmt.Errorf("release facts are not available")
+	}
+	result, err := s.releaseFactsProvider.GetPullRequestChanges(ctx, meta.WorkspaceID, req)
+	if err != nil {
+		return nil, fmt.Errorf("get pull request changes: %w", err)
 	}
 	return mustJSON(result), nil
 }

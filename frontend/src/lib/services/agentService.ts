@@ -28,6 +28,28 @@ import type {
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
+/** Progress of one runtime sub-task job spawned by an agent run. */
+export interface SubtaskJob {
+  id: string;
+  run_id: string;
+  objective: string;
+  state: string;
+  error?: string;
+  counts: {
+    total: number;
+    pending: number;
+    running: number;
+    retry_wait: number;
+    blocked: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+  };
+  usage: { input_tokens: number; output_tokens: number; cached_input_tokens: number };
+  created_at: string;
+  completed_at?: string;
+}
+
 export const agentService = {
   previewSupportReply: (workspaceId: string, agentId: string, payload: SupportAIPreviewRequest) =>
     api.post<SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview${qs(workspaceId)}`, payload),
@@ -68,6 +90,8 @@ export const agentService = {
     automationService.startRun(workspaceId, payload) as ReturnType<typeof automationService.startRun>,
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
     automationService.listWorkspaceRuns(workspaceId, page, perPage) as ReturnType<typeof automationService.listWorkspaceRuns>,
+  getSubtaskJob: (workspaceId: string, jobId: string) =>
+    api.get<SubtaskJob>(`/pm/subtask-jobs/${encodeURIComponent(jobId)}${qs(workspaceId)}`),
   listRecentRuns: (workspaceId: string, limit = 20) =>
     api.get<{ runs: AgentRun[] }>(`/pm/agent-runs/recent${qs(workspaceId)}&limit=${limit}`),
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>
