@@ -1,6 +1,6 @@
-import { useContext } from "react";
-import { AIModelsPricingContext } from "./AIModelsPricingContext";
+import { useState } from "react";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -12,23 +12,24 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
-import { MoreHorizontalIcon } from "@/lib/icons";
+import { ArrowDown01Icon, MoreHorizontalIcon } from "@/lib/icons";
 import {
   catalogLabel,
   modelNameWithThinking,
   connectionStatusInfo,
   providerLabel,
+  providerShortLabel,
 } from "@/lib/aiProviders";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
 import type { AIProfile, AISettings } from "@/lib/services/aiProfileService";
 import {
+  useSetAgentSharing,
   useSetPersonalDefaultAIProfile,
   useSetDefaultAIProfile,
   useSetAIModelVisibility,
 } from "@/hooks/queries/useAIProfiles";
 import { ProviderIcon } from "./ProviderIcon";
 import { AISetupHelp } from "./AISetupHelp";
-import { aiUsagePricingText } from "@edition/ai";
 
 export function AIModelTableRow({
   workspaceId,
@@ -36,6 +37,7 @@ export function AIModelTableRow({
   connection,
   settings,
   canManageWorkspace,
+  onRemove,
   onEdit,
   onReconnect,
 }: {
@@ -44,43 +46,45 @@ export function AIModelTableRow({
   connection?: AIConnection;
   settings?: AISettings;
   canManageWorkspace: boolean;
+  onRemove: (profile: AIProfile) => void;
   onEdit: () => void;
   onReconnect: () => void;
 }) {
-  const sharedPricing = useContext(AIModelsPricingContext);
   const personalDefault = useSetPersonalDefaultAIProfile(workspaceId);
   const workspaceDefault = useSetDefaultAIProfile(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
-  const busy =
+  const sharing = useSetAgentSharing(workspaceId);
+  const [accessChange, setAccessChange] = useState<{ profile: AIProfile; shared: boolean } | null>(null);
+  const managed = connection?.funding === "managed";
+  const connectionName = managed
+    ? providerShortLabel(connection.provider)
+    : connection?.name ?? profile.subscription_name ?? providerLabel(profile.primary.model.provider);
+  const accessLabel = profile.scope === "workspace" || profile.agent_grant_id ? "Workspace-wide" : "Personal";
+  const busy = sharing.isPending ||
     personalDefault.isPending ||
     workspaceDefault.isPending ||
     visibility.isPending;
-  const editable = profile.scope === "personal" || canManageWorkspace;
+  const editable = profile.scope === "personal" ? !!connection || !profile.agent_grant_id : canManageWorkspace;
   const isPersonalDefault =
     settings?.personal_default_profile_id === profile.id;
   const isWorkspaceDefault = settings?.default_profile_id === profile.id;
-  const isDefault =
-    (settings?.personal_default_profile_id || settings?.default_profile_id) ===
-    profile.id;
   const policy = profile.primary_policy ?? connection?.policy;
-  const pricing = aiUsagePricingText(policy?.pricing);
+  const connectionStatus = connection?.status ?? profile.subscription_status;
   const ready =
     !!settings &&
-    connection?.status === "connected" &&
+    connectionStatus === "connected" &&
     policy?.allowed !== false &&
     !profile.hidden_from_ask_agent;
-  const info = connection ? connectionStatusInfo(connection.status) : null;
-  const status = !connection
+  const info = connectionStatus ? connectionStatusInfo(connectionStatus, connection?.last_verification_error) : null;
+  const status = !info
     ? "Connection missing"
     : policy?.allowed === false
       ? "Unavailable"
       : profile.hidden_from_ask_agent
         ? "Hidden from pickers"
-        : info!.label;
+        : info.label;
   const statusTone =
-    !connection ||
-    policy?.allowed === false ||
-    connection.status !== "connected"
+    policy?.allowed === false || connectionStatus !== "connected" || info?.tone === "attention"
       ? "text-amber-700 dark:text-amber-400"
       : profile.hidden_from_ask_agent
         ? "text-muted-foreground"
@@ -89,12 +93,6 @@ export function AIModelTableRow({
     catalogLabel(profile.primary.model.provider, profile.primary.model.model) ??
     profile.primary.model.model;
   const displayName = modelNameWithThinking(modelName, profile.primary.model.controls.reasoning_effort);
-  const normalizedName = (name: string) =>
-    name.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const hasCustomName =
-    normalizedName(profile.name) !== normalizedName(modelName) &&
-    normalizedName(profile.name) !==
-      normalizedName(profile.primary.model.model);
   async function update(action: () => Promise<unknown>, message: string) {
     try {
       await action();
@@ -108,39 +106,10 @@ export function AIModelTableRow({
   return (
     <TableRow>
       <TableCell className="min-w-[180px] max-w-[300px] py-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium" title={displayName}>
-            {displayName}
-          </span>
-          {isDefault && (
-            <QuickTooltip
-              label={
-                isPersonalDefault
-                  ? "Your default for new Ask Agent chats in this workspace. Saved chats and explicit agent choices keep their models."
-                  : "Used for new Ask Agent chats and agents without their own model. Make my default sets a personal choice for new chats only."
-              }
-            >
-              <Badge variant="secondary" tabIndex={0}>
-                Default
-              </Badge>
-            </QuickTooltip>
-          )}
-          {!isDefault && isWorkspaceDefault && canManageWorkspace && (
-            <QuickTooltip label="Shared default for workspace members without a personal choice, and agents without an explicit model.">
-              <Badge variant="secondary" tabIndex={0}>
-                Workspace default
-              </Badge>
-            </QuickTooltip>
-          )}
-        </div>
-        {hasCustomName && (
-          <p
-            className="mt-0.5 truncate text-xs text-muted-foreground"
-            title={profile.name}
-          >
-            {profile.name}
-          </p>
-        )}
+        <p className="truncate text-sm font-medium" title={profile.name}>{profile.name}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={profile.primary.model.model}>
+          {displayName}
+        </p>
         {profile.fallback && (
           <span className="sr-only">Fallback configured</span>
         )}
@@ -151,13 +120,42 @@ export function AIModelTableRow({
             provider={connection?.provider ?? profile.primary.model.provider}
             className="size-4 shrink-0"
           />
-          <span className="truncate text-sm" title={connection?.name}>
-            {connection?.name ?? providerLabel(profile.primary.model.provider)}
-          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm" title={connection?.name}>{connectionName}</p>
+            {managed && <p className="text-xs text-muted-foreground">Managed</p>}
+          </div>
         </div>
       </TableCell>
       <TableCell className="whitespace-nowrap text-sm">
-        {profile.scope === "personal" ? "Personal" : "Workspace-wide"}
+        {connection?.provider === "openai_chatgpt" && connection.scope === "personal" ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="-ml-2" disabled={busy} aria-label={`Access for ${profile.name}: ${accessLabel}`}>
+                {accessLabel}<ArrowDown01Icon className="size-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem disabled={!profile.agent_grant_id} onSelect={() => setAccessChange({ profile, shared: false })}>Personal</DropdownMenuItem>
+              <DropdownMenuItem disabled={!!profile.agent_grant_id || connection.status !== "connected"} onSelect={() => setAccessChange({ profile, shared: true })}>Workspace-wide</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : accessLabel}
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-col items-start gap-1">
+          {isPersonalDefault && (
+            <QuickTooltip label="Your default for new Ask Agent chats in this workspace.">
+              <Badge variant="secondary" tabIndex={0}>Your default</Badge>
+            </QuickTooltip>
+          )}
+          {isWorkspaceDefault && (
+            <QuickTooltip label="Shared default for workspace members without a personal choice, and agents without an explicit model.">
+              <Badge variant="secondary" tabIndex={0}>
+                Workspace default
+              </Badge>
+            </QuickTooltip>
+          )}
+        </div>
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1 whitespace-nowrap">
@@ -165,30 +163,17 @@ export function AIModelTableRow({
           <AISetupHelp
             label={`Status details for ${profile.name}`}
             description={
-              !connection
+              !connection && profile.agent_grant_id ? "Shared by the subscription owner for workspace agent runs." : !connection
                 ? "Choose another connection in Model settings. Your saved configuration and history are preserved."
                 : policy?.allowed === false
                   ? (policy.message ?? "Unavailable for new runs.")
                   : profile.hidden_from_ask_agent
                     ? "Hidden from new choices in Ask Agent and agent model pickers. Existing selections and defaults keep working. You can always manage it here."
                     : connection.status === "connected"
-                      ? "The connection is available. This does not verify that the provider can run this particular model."
+                      ? connection.last_verification_error || "The connection is available. This does not verify that the provider can run this particular model."
                       : "Reconnect this connection to use its models for new runs."
             }
           />
-          {pricing && pricing !== sharedPricing && (
-            <QuickTooltip
-              label={pricing}
-            >
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline"
-                aria-label={`Usage details for ${profile.name}`}
-              >
-                Usage
-              </button>
-            </QuickTooltip>
-          )}
         </div>
       </TableCell>
       <TableCell className="text-right">
@@ -206,7 +191,7 @@ export function AIModelTableRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem
-              disabled={!settings || (!isPersonalDefault && !ready)}
+              disabled={!settings || (!isPersonalDefault && (!ready || (!connection && !!profile.agent_grant_id)))}
               onSelect={() =>
                 void update(
                   () =>
@@ -269,13 +254,34 @@ export function AIModelTableRow({
                   }
                 >
                   {profile.hidden_from_ask_agent
-                    ? "Show in model pickers"
-                    : "Hide from model pickers"}
+                    ? "Show in pickers"
+                    : "Hide from pickers"}
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onSelect={() => onRemove(profile)}>
+                  Remove model
                 </DropdownMenuItem>
               </>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        <Dialog open={accessChange !== null} onOpenChange={open => { if (!open) setAccessChange(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{accessChange?.shared ? "Share this model with the workspace?" : "Make this model personal?"}</DialogTitle>
+              <DialogDescription>{!accessChange?.shared
+                ? "Agents using this shared model will need another model. Active shared runs lose access."
+                : `Workspace members and scheduled agents can use ${profile.name} through your ${connection?.name || "ChatGPT"} subscription.`}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setAccessChange(null)}>Cancel</Button>
+              <Button disabled={sharing.isPending} onClick={() => void update(async () => {
+                if (!accessChange) return;
+                await sharing.mutateAsync(accessChange);
+                setAccessChange(null);
+              }, "Model access updated")}>{accessChange?.shared ? "Share model" : "Make personal"}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </TableCell>
     </TableRow>
   );

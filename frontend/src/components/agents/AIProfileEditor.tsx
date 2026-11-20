@@ -49,6 +49,9 @@ export function AIProfileEditor({
   );
 
   function validate(): string | null {
+    if (profile?.agent_grant_id && (primary.connection_id !== profile.primary.connection_id || primary.model.model !== profile.primary.model.model)) {
+      return "Make this model personal before changing its subscription or model.";
+    }
     if (!name.trim()) return "Name is required";
     if (!primary.connection_id) return "Choose a primary connection";
     if (!primary.model.model.trim()) return "Enter a primary model";
@@ -98,8 +101,8 @@ export function AIProfileEditor({
         <DialogHeader className="space-y-1.5 border-b border-border/60 px-6 py-4 text-left">
           <DialogTitle>{profile ? `Edit “${profile.name}”` : "Add model"}</DialogTitle>
           <div className="flex items-center gap-1">
-            <DialogDescription>{scope === "personal" ? "Personal model · Only you" : "Workspace model · Shared with members"}</DialogDescription>
-            <AISetupHelp label="About this model" description={scope === "personal" ? "For your manual runs in this workspace. Changes apply to new runs." : "For workspace members and automation. Changes apply to new runs."} />
+            <DialogDescription>{profile?.agent_grant_id ? "Workspace-wide · Your ChatGPT subscription" : scope === "personal" ? "Personal model · Only you" : "Workspace model · Shared with members"}</DialogDescription>
+            <AISetupHelp label="About this model" description={profile?.agent_grant_id ? "Make this model personal to change its subscription or model." : scope === "personal" ? "For your manual runs in this workspace. Changes apply to new runs." : "For workspace members and automation. Changes apply to new runs."} />
           </div>
         </DialogHeader>
 

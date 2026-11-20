@@ -120,6 +120,23 @@ func (h *AIProfileHandler) SetVisibility(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, p)
 }
 
+func (h *AIProfileHandler) SetAgentSharing(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Revision int64 `json:"revision"`
+		Shared   *bool `json:"shared"`
+	}
+	if decodeAIConnection(w, r, &req) != nil || req.Revision < 1 || req.Shared == nil {
+		writeError(w, 400, "model access and revision are required")
+		return
+	}
+	p, err := h.service.SetAgentSharing(r.Context(), middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()), chi.URLParam(r, "profileID"), req.Revision, *req.Shared)
+	if err != nil {
+		h.failure(w, err)
+		return
+	}
+	writeJSON(w, 200, p)
+}
+
 func (h *AIProfileHandler) EnableModel(w http.ResponseWriter, r *http.Request) {
 	var req model.EnableAIModelRequest
 	if decodeAIConnection(w, r, &req) != nil {

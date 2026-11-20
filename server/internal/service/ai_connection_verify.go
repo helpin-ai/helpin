@@ -109,7 +109,7 @@ func (s *AIConnectionService) TestConnection(ctx context.Context, workspace, use
 	connection, credential, err := s.Credential(ctx, workspace, user, id, false)
 	if errors.Is(err, ErrAIConnectionUnavailable) {
 		result := &model.AIConnectionTestResult{Error: "Reconnect this connection before testing it."}
-		return result, s.recordTestResult(ctx, id, result)
+		return result, s.recordTestResult(ctx, stored, result)
 	}
 	if err != nil {
 		return nil, err
@@ -145,16 +145,16 @@ func (s *AIConnectionService) TestConnection(ctx context.Context, workspace, use
 		slog.InfoContext(ctx, "AI connection test succeeded", "workspace_id", workspace, "connection_id", id,
 			"provider", connection.Provider, "model", modelName, "latency_ms", result.LatencyMS)
 	}
-	return result, s.recordTestResult(ctx, id, result)
+	return result, s.recordTestResult(ctx, connection, result)
 }
 
-func (s *AIConnectionService) recordTestResult(ctx context.Context, id string, result *model.AIConnectionTestResult) error {
+func (s *AIConnectionService) recordTestResult(ctx context.Context, connection *model.AIConnection, result *model.AIConnectionTestResult) error {
 	var failure *string
 	if !result.OK {
 		message := result.Error
 		failure = &message
 	}
-	return s.repo.RecordVerification(ctx, id, time.Now().UTC(), failure)
+	return s.repo.RecordVerification(ctx, connection, time.Now().UTC(), failure)
 }
 
 // connectionTestModel prefers the workspace default profile's model when that

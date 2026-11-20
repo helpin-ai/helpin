@@ -1,5 +1,5 @@
 import { AIModelsPricingContext, sharedAIModelsPricing } from "@/components/agents/AIModelsPricingContext";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { aiUsagePricingText } from "@edition/ai";
 import { useRef, useState } from "react";
 import {
   AIConnectionDialog,
@@ -8,6 +8,7 @@ import {
 import { AIConnectionRow } from "@/components/agents/AIConnectionRow";
 import { AIConnectionModelsDialog } from "@/components/agents/AIConnectionModelsDialog";
 import { AIAddModelsDialog } from "@/components/agents/AIAddModelsDialog";
+import { RemoveAIModelDialog } from "@/components/agents/RemoveAIModelDialog";
 import { AIModelTableRow } from "@/components/agents/AIModelTableRow";
 import { AIProfileEditor } from "@/components/agents/AIProfileEditor";
 import { AISetupHelp } from "@/components/agents/AISetupHelp";
@@ -33,26 +34,23 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
+import { useConfirmAIConnectionDisconnect } from "@/hooks/useConfirmAIConnectionDisconnect";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoreHorizontalIcon, AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
 import { SettingsPageFrame } from "./SettingsPageFrame";
 
 // Retain legacy routes; both now land on the same model list.
 export function AISettingsPage(_props: { scope?: "personal" | "workspace" }) {
-  const workspaceId = useWorkspaceStore(state => state.currentWorkspace?.id ?? "");
-  const connections = useAIConnections(workspaceId);
-  const pricing = sharedAIModelsPricing((connections.data?.connections ?? []).map(connection => connection.policy));
   return (
-    <AIModelsPricingContext.Provider value={pricing}>
-      <SettingsPageFrame section="ai" descriptionSuffix={pricing ?? undefined}>
-        {({ workspaceId, permissions }) => (
-          <AISettingsContent
-            key={workspaceId}
-            workspaceId={workspaceId}
-            canManageWorkspace={permissions.has("workspace.update")}
-          />
-        )}
-      </SettingsPageFrame>
-    </AIModelsPricingContext.Provider>
+    <SettingsPageFrame section="ai">
+      {({ workspaceId, permissions }) => (
+        <AISettingsContent
+          key={workspaceId}
+          workspaceId={workspaceId}
+          canManageWorkspace={permissions.has("workspace.update")}
+        />
+      )}
+    </SettingsPageFrame>
   );
 }
 
@@ -63,11 +61,13 @@ function AISettingsContent({
   workspaceId: string;
   canManageWorkspace: boolean;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<"connections" | "providers" | null>(null);
+  const [modelOrigin, setModelOrigin] = useState<"connections" | "manage">("connections");
   const [managing, setManaging] = useState(false);
   const connectionsDialogRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<AIConnectionDialogMode | null>(null);
   const [modelsFor, setModelsFor] = useState<AIConnection | null>(null);
+  const [removing, setRemoving] = useState<AIProfile | null>(null);
   const [editing, setEditing] = useState<AIProfile | null>(null);
   const connections = useAIConnections(workspaceId);
   const profiles = useAIProfiles(workspaceId, {
@@ -78,16 +78,22 @@ function AISettingsContent({
   });
   const all = connections.data?.connections ?? [];
   const models = profiles.data ?? [];
+  const { requestDisconnect } = useConfirmAIConnectionDisconnect(workspaceId, models);
   const editable = (scope: string) =>
     scope === "personal" || canManageWorkspace;
   const selected = all.find((c) => c.id === modelsFor?.id) ?? modelsFor;
+  function openAddModels() {
+    setAdding("connections");
+    if (connections.isStale && !connections.isFetching) void connections.refetch();
+  }
   function openModels(connection: AIConnection) {
-    setAdding(false);
+    setModelOrigin(managing ? "manage" : "connections");
+    setAdding(null);
     setManaging(false);
     setModelsFor(connection);
   }
   function reconnect(connection: AIConnection) {
-    setAdding(false);
+    setAdding(null);
     setManaging(false);
     setDialog({
       kind: "reconnect",
@@ -119,11 +125,25 @@ function AISettingsContent({
         description="Ask your administrator to configure AI connection encryption and the agent runtime."
       />
     );
+  const usageGroups = new Map<string, string[]>();
+  for (const model of models) {
+    const connection = all.find(c => c.id === model.primary.connection_id);
+    const pricing = aiUsagePricingText((model.primary_policy ?? connection?.policy)?.pricing);
+    if (!pricing) continue;
+    const names = usageGroups.get(pricing) ?? [];
+    const connectionName = connection?.name ?? model.subscription_name;
+    const needsConnection = connectionName && models.some(other => other.id !== model.id && other.name === model.name);
+    names.push(needsConnection ? `${model.name} (${connectionName})` : model.name);
+    usageGroups.set(pricing, names);
+  }
+  const commonPricing = sharedAIModelsPricing(all.map(c => c.policy));
+  if (!models.length && commonPricing) usageGroups.set(commonPricing, []);
   const knowledge = connections.data.knowledge;
   const knowledgeDetail = knowledge
     ? `${knowledge.embeddings_configured ? `${knowledge.embedding_detail || "Embeddings configured"}: ${knowledge.embedding_model} (${knowledge.embedding_dimensions} dimensions). Connectivity has not been verified.` : "Semantic search is not configured. Knowledge search uses keyword matching only. Connect OpenAI or OpenRouter as a workspace connection, or configure a server key."} Agent model choices do not configure help-center AI answers or automatic triage; these use server provider settings.${knowledge.chat_providers.length === 0 ? " No server chat provider is configured." : ""}`
     : "";
   return (
+    <AIModelsPricingContext.Provider value={commonPricing && usageGroups.has(commonPricing) ? commonPricing : null}>
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm font-medium">
@@ -133,13 +153,14 @@ function AISettingsContent({
             : ""}
         </span>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setManaging(true)}>
-            Manage connections
-          </Button>
-          <Button size="sm" onClick={() => setAdding(true)}>
+          <Button size="sm" onClick={openAddModels}>
             <PlusSignIcon className="size-4" />
             Add models
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" className="size-8" aria-label="AI model settings actions"><MoreHorizontalIcon className="size-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setManaging(true)}>Manage connections</DropdownMenuItem></DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {settings.isError && (
@@ -189,10 +210,11 @@ function AISettingsContent({
                     Access
                     <AISetupHelp
                       label="About model access"
-                      description="Personal models are for your Ask Agent chats and manual runs. Workspace-wide models can also be assigned to agents for scheduled and automated runs. Only administrators can change shared model settings."
+                      description="Personal models are for your Ask Agent chats and manual runs. Workspace-wide models can also be assigned to agents for scheduled and automated runs. Administrators manage shared connections. A ChatGPT subscription owner can share an individual model."
                     />
                   </span>
                 </TableHead>
+                <TableHead>Defaults</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>
                   <span className="sr-only">Actions</span>
@@ -210,6 +232,7 @@ function AISettingsContent({
                   )}
                   settings={settings.isError ? undefined : settings.data}
                   canManageWorkspace={canManageWorkspace}
+                  onRemove={setRemoving}
                   onEdit={() => setEditing(profile)}
                   onReconnect={() => {
                     const connection = all.find(
@@ -222,6 +245,17 @@ function AISettingsContent({
             </TableBody>
           </Table>
         </div>
+      )}
+      {usageGroups.size > 0 && (
+        <section aria-label="Model usage" className="space-y-1 text-xs text-muted-foreground">
+          <h3 className="font-medium text-foreground">Usage</h3>
+          {Array.from(usageGroups, ([pricing, names]) => (
+            <p key={pricing}>
+              {names.length < models.length && <strong className="font-medium">{names.join(", ")} — </strong>}
+              {pricing}
+            </p>
+          ))}
+        </section>
       )}
       {knowledge && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -242,11 +276,13 @@ function AISettingsContent({
           connections={all}
           models={connections.data.models}
           canManageWorkspace={canManageWorkspace}
-          onClose={() => setAdding(false)}
+          startWithProviders={adding === "providers"}
+          onDisconnect={requestDisconnect}
+          onClose={() => setAdding(null)}
           onModels={openModels}
           onReconnect={reconnect}
           onConnect={(provider) => {
-            setAdding(false);
+            setAdding(null);
             setDialog({ kind: "add", provider });
           }}
         />
@@ -297,6 +333,7 @@ function AISettingsContent({
                         onReconnect={reconnect}
                         onContinueLogin={reconnect}
                         onModels={() => openModels(connection)}
+                        profiles={models}
                         modelCount={
                           profiles.data?.filter(
                             (p) =>
@@ -314,7 +351,7 @@ function AISettingsContent({
               </p>
             )}
             {(profiles.data ?? [])
-              .filter((p) => !all.some((c) => c.id === p.primary.connection_id))
+              .filter((p) => !p.agent_grant_id && !all.some((c) => c.id === p.primary.connection_id))
               .map((profile) => (
                 <Button
                   key={profile.id}
@@ -335,7 +372,7 @@ function AISettingsContent({
               className="w-fit"
               onClick={() => {
                 setManaging(false);
-                setAdding(true);
+                setAdding("providers");
               }}
             >
               <PlusSignIcon className="size-4" />
@@ -357,8 +394,10 @@ function AISettingsContent({
           onOpenChange={(open) => {
             if (!open) setDialog(null);
           }}
+          onBack={() => { setDialog(null); setAdding("providers"); }}
           onConnected={(connection) => {
             setDialog(null);
+            setModelOrigin("connections");
             setModelsFor(connection);
           }}
         />
@@ -369,9 +408,16 @@ function AISettingsContent({
           connection={selected}
           connections={all}
           canManage={editable(selected.scope)}
+          onRemove={setRemoving}
+          onBack={() => {
+            setModelsFor(null);
+            if (modelOrigin === "manage") setManaging(true);
+            else setAdding("connections");
+          }}
           onClose={() => setModelsFor(null)}
         />
       )}
+      {removing && <RemoveAIModelDialog workspaceId={workspaceId} profile={removing} onClose={() => setRemoving(null)} />}
       {editing && (
         <AIProfileEditor
           workspaceId={workspaceId}
@@ -382,5 +428,6 @@ function AISettingsContent({
         />
       )}
     </div>
+    </AIModelsPricingContext.Provider>
   );
 }

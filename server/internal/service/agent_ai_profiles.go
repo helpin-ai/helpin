@@ -26,7 +26,7 @@ func (s *AgentService) validateSharedAIProfile(ctx context.Context, workspace st
 	if err != nil {
 		return err
 	}
-	if p == nil || p.Scope != "workspace" || p.UserID != nil {
+	if p == nil || (p.AgentGrantID == nil && (p.Scope != "workspace" || p.UserID != nil)) {
 		return errors.New("agent defaults require a shared workspace AI profile")
 	}
 	return nil

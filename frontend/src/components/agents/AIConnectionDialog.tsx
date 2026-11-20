@@ -39,7 +39,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
-import { InformationCircleIcon } from "@/lib/icons";
+import { ArrowLeft01Icon, InformationCircleIcon } from "@/lib/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function ConnectionHelp({ label, description }: { label: string; description: string }) {
@@ -58,6 +58,7 @@ export function AIConnectionDialog({
   mode,
   models,
   onOpenChange,
+  onBack,
   onConnected,
 }: {
   workspaceId: string;
@@ -67,6 +68,7 @@ export function AIConnectionDialog({
   mode: AIConnectionDialogMode;
   models: AIConnectionModel[];
   onOpenChange: (open: boolean) => void;
+  onBack?: () => void;
   onConnected?: (connection: AIConnection) => void;
 }) {
   const id = useId();
@@ -187,15 +189,19 @@ export function AIConnectionDialog({
         if (firstField) { event.preventDefault(); firstField.focus(); }
       }}>
         <DialogHeader className="space-y-1.5 border-b border-border/60 px-6 py-4 text-left">
+          {chosenProvider && onBack && !showDeviceLogin && (
+            <Button size="sm" variant="ghost" className="w-fit" onClick={onBack} disabled={pending}><ArrowLeft01Icon className="size-4" />Providers</Button>
+          )}
           <DialogTitle>
             {reconnecting ? `Reconnect “${reconnecting.name}”` : "Add connection"}
           </DialogTitle>
           <div className="flex items-center gap-1">
             <DialogDescription>
-              {scope === "personal" ? "Personal connection · Only you" : "Workspace connection · Shared with members"}
+              {isChatGPT ? "Your ChatGPT subscription" : scope === "personal" ? "Personal connection · Only you" : "Workspace connection · Shared with members"}
             </DialogDescription>
             <ConnectionHelp label={reconnecting ? "About reconnecting" : "Who can use this connection"} description={reconnecting
               ? "Replace the stored credential. Runs already accepted keep their route."
+              : isChatGPT ? "You manage this sign-in. Choose which saved models are available to workspace agents in AI Models."
               : scope === "personal"
                 ? "Only you can use this connection, for your manual runs and chats."
                 : "Members can select this connection. Shared models can be used for automation."} />

@@ -54,6 +54,9 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 	if err != nil {
 		return nil, nil, err
 	}
+	if p != nil && p.AgentGrantID != nil && !req.Direct {
+		return s.resolveGrantedAgentModel(ctx, workspace, p, source)
+	}
 	if err := s.authorizeProfile(ctx, workspace, user, p, false); err != nil {
 		return nil, nil, err
 	}
@@ -134,6 +137,10 @@ func (s *AIProfileService) Restore(ctx context.Context, workspace, user string, 
 	}
 	if err := s.checkExecutionRoute(ctx, selection.Route); err != nil {
 		return nil, err
+	}
+	if selection.AgentGrantID != nil {
+		_, credential, err := s.connections.grantedModelCredential(ctx, workspace, selection, false)
+		return credential, err
 	}
 	c, credential, err := s.routeCredential(ctx, workspace, user, selection.ConnectionScope == "workspace", selection.Route)
 	if err != nil {

@@ -1679,6 +1679,7 @@ func main() {
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService, service.NewSupportAgentDefaults(supportInboxService))
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	workspaceService.SetSubscriptionGrantRevoker(aiConnectionService)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	workspaceService.SetWebsiteDefaultsApplier(supportInboxService)
 	workspaceService.SetOrganizationRoles(orgRepo)
@@ -2423,6 +2424,7 @@ func main() {
 
 	// Durable inbound processing does not depend on outbound Postmark/Redis configuration.
 	inboundCtx, inboundCancel := context.WithCancel(context.Background())
+	go aiConnectionService.RunModelGrantRevocations(inboundCtx)
 	defer inboundCancel()
 	supportTagJobsDone := make(chan struct{})
 	go func() {

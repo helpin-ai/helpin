@@ -83,14 +83,15 @@ export function AIProfilePicker({
   const personalDefaultId = inDock && !sharedOnly ? settings.data?.personal_default_profile_id : null;
   const inheritedId = defaultProfileId || personalDefaultId || settings.data?.default_profile_id;
   const profiles = query.data.filter(
-    (p) => (!sharedOnly || p.scope === "workspace") &&
+    (p) => (!sharedOnly || p.scope === "workspace" || !!p.agent_grant_id) &&
       (!p.hidden_from_ask_agent || p.id === value || p.id === inheritedId),
   );
   const selectedId =
     value || inheritedId;
   const selected = profiles.find((p) => p.id === selectedId);
-  const blockedPolicy = selected?.primary_policy?.allowed === false;
-  const inherited = profiles.find((p) => p.id === inheritedId);
+  const blockedPolicy = selected?.primary_policy?.allowed === false || (!!selected?.agent_grant_id && selected.subscription_status !== "connected");
+  const inherited = profiles.find((p) => p.id === inheritedId &&
+    (!defaultProfileId || p.scope === "workspace" || !!p.agent_grant_id));
   profiles.sort((a, b) =>
     Number(b.id === inheritedId) - Number(a.id === inheritedId)
     || Number(a.scope === "personal") - Number(b.scope === "personal")
@@ -118,6 +119,9 @@ export function AIProfilePicker({
                 : "Personal or workspace-wide models for this run only."}
           </p>
         </div>
+      )}
+      {defaultProfileId && !value && !inherited && (
+        <p role="status" className="text-xs text-amber-700 dark:text-amber-400">Saved agent model unavailable. Choose another model.</p>
       )}
       <Select
         value={value || inherited?.id || "default"}
@@ -150,7 +154,7 @@ export function AIProfilePicker({
           )}
           {value && !selected && (
             <SelectItem value={value} disabled>
-              Saved model · unavailable for new runs
+              Saved model unavailable · Choose another model
             </SelectItem>
           )}
           {profiles.map((p) => (
@@ -158,7 +162,7 @@ export function AIProfilePicker({
               key={p.id}
               value={p.id}
               textValue={modelNameWithThinking(p.name, p.primary.model.controls.reasoning_effort)}
-              disabled={p.primary_policy?.allowed === false}
+              disabled={p.primary_policy?.allowed === false || (!!p.agent_grant_id && p.subscription_status !== "connected")}
             >
               <span className="flex min-w-0 w-full items-center gap-2">
                 {!compact && <ProviderIcon provider={p.primary.model.provider} className="h-3.5 w-3.5 shrink-0" />}
@@ -168,7 +172,7 @@ export function AIProfilePicker({
                     Default
                   </Badge>
                 )}
-                <span className="ml-auto shrink-0 text-[11px] text-quiet-text-secondary">{p.scope === "personal" ? "Personal" : "Workspace"}</span>
+                <span className="ml-auto shrink-0 text-[11px] text-quiet-text-secondary">{p.agent_grant_id ? `Workspace · ${p.subscription_name || "ChatGPT"}` : p.scope === "personal" ? "Personal" : "Workspace"}</span>
               </span>
               {p.primary_policy?.allowed === false && (
                 <span className="block text-[11px] text-quiet-text-tertiary">

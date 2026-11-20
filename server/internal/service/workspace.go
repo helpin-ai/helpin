@@ -25,7 +25,8 @@ var workspaceKeyPattern = regexp.MustCompile(`^[A-Z]{2,5}$`)
 
 // WorkspaceService handles workspace business logic.
 type WorkspaceService struct {
-	workspaceRepo *repository.WorkspaceRepository
+	subscriptionGrants *AIConnectionService
+	workspaceRepo      *repository.WorkspaceRepository
 	productAnalyticsEmitter
 	attachmentRepo      *repository.PMAttachmentRepository
 	s3Client            *storage.S3Client
@@ -638,6 +639,10 @@ func (s *WorkspaceService) UpdateSupportTaskPreferences(ctx context.Context, wor
 	return s.workspaceRepo.UpdateSupportTaskPreferences(ctx, memberID, req.SupportDefaultTeamID, req.SupportTaskDialogDismissed, req.SupportTaskInboxID)
 }
 
+func (s *WorkspaceService) SetSubscriptionGrantRevoker(connections *AIConnectionService) {
+	s.subscriptionGrants = connections
+}
+
 // RemoveMember revokes a workspace member with owner/admin safeguards.
 func (s *WorkspaceService) RemoveMember(ctx context.Context, workspaceID, actorID, memberID string) error {
 	if actorID == "" {
@@ -682,6 +687,11 @@ func (s *WorkspaceService) RemoveMember(ctx context.Context, workspaceID, actorI
 		return err
 	}
 
+	if s.subscriptionGrants != nil && targetMember.UserID != nil {
+		if err := s.subscriptionGrants.revokeDepartedMemberRuns(ctx, workspaceID, *targetMember.UserID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to revoke subscription credentials for active runs", "workspace_id", workspaceID, "user_id", *targetMember.UserID, "error", err)
+		}
+	}
 	s.logger.InfoContext(ctx, "workspace member removed", "workspace_id", workspaceID, "actor_id", actorID, "member_id", memberID)
 	if s.customerIOIdentity != nil {
 		if targetMember.UserID != nil {

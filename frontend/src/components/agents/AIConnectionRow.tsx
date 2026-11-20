@@ -1,12 +1,11 @@
-import { toast } from "sonner";
+import { useConfirmAIConnectionDisconnect } from "@/hooks/useConfirmAIConnectionDisconnect";
+import type { AIProfile } from "@/lib/services/aiProfileService";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { AIConnectionStatusBadge } from "./AIConnectionStatusBadge";
 import { ProviderIconTile } from "./ProviderIcon";
-import { useDisconnectAIConnection } from "@/hooks/queries/useAIConnections";
 import { providerLabel } from "@/lib/aiProviders";
 import { AISetupHelp } from "./AISetupHelp";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
-import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
@@ -33,6 +32,7 @@ export function AIConnectionRow({
   onReconnect,
   onContinueLogin,
   onModels,
+  profiles = [],
   modelCount,
 }: {
   workspaceId: string;
@@ -41,31 +41,12 @@ export function AIConnectionRow({
   onReconnect: (connection: AIConnection) => void;
   onContinueLogin: (connection: AIConnection) => void;
   onModels?: () => void;
+  profiles?: AIProfile[];
   modelCount?: number;
 }) {
-  const confirm = useConfirm();
-  const disconnect = useDisconnectAIConnection(workspaceId);
+  const { requestDisconnect, pending } = useConfirmAIConnectionDisconnect(workspaceId, profiles);
   const managed = connection.funding === "managed";
   const expiry = expiryLabel(connection);
-
-  async function requestDisconnect() {
-    const confirmed = await confirm({
-      title: `Disconnect “${connection.name}”?`,
-      description:
-        "Models that use this connection stop working for new runs. Runs already accepted keep their route.",
-      confirmText: "Disconnect",
-      variant: "destructive",
-    });
-    if (!confirmed) return;
-    try {
-      await disconnect.mutateAsync(connection.id);
-      toast.success("Connection disconnected");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not disconnect.",
-      );
-    }
-  }
 
   return (
     <TableRow className="group/connection">
@@ -88,7 +69,7 @@ export function AIConnectionRow({
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-1.5">
-          <AIConnectionStatusBadge status={connection.status} />
+          <AIConnectionStatusBadge status={connection.status} verificationError={connection.last_verification_error} />
           {managed && (
             <Badge variant="secondary" className="text-[10px]">
               Managed
@@ -149,9 +130,9 @@ export function AIConnectionRow({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  disabled={disconnect.isPending}
+                  disabled={pending || connection.status === "disconnected"}
                   aria-label={`Disconnect ${connection.name}`}
-                  onClick={() => void requestDisconnect()}
+                  onClick={() => void requestDisconnect(connection)}
                 >
                   <Unlink01Icon className="h-4 w-4" aria-hidden="true" />
                 </Button>

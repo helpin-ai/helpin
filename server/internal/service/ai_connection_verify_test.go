@@ -107,6 +107,28 @@ func TestAIConnectionTestSanitizesAndRecordsFailure(t *testing.T) {
 	}
 }
 
+func TestReconnectClearsOldVerification(t *testing.T) {
+	s, id, _ := setupAIConnectionVerifyTest(t, &fakeTestProvider{err: errors.New("old test failed")})
+	ctx := context.Background()
+	if _, err := s.TestConnection(ctx, "workspace", "owner", id, ""); err != nil {
+		t.Fatal(err)
+	}
+	tested, err := s.repo.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reconnect(ctx, "workspace", "owner", id, "replacement-key"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.recordTestResult(ctx, tested, &model.AIConnectionTestResult{Error: "late failure"}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.repo.Get(ctx, id)
+	if err != nil || current.LastVerifiedAt != nil || current.LastVerificationError != nil {
+		t.Fatalf("replacement credential inherited verification: %v", err)
+	}
+}
+
 func TestAIConnectionTestRequiresManagementAccess(t *testing.T) {
 	fake := &fakeTestProvider{}
 	s, id, _ := setupAIConnectionVerifyTest(t, fake)
