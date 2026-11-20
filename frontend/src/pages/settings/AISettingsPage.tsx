@@ -33,7 +33,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
+import { useConfirmAIConnectionDisconnect } from "@/hooks/useConfirmAIConnectionDisconnect";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoreHorizontalIcon, AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
 import { SettingsPageFrame } from "./SettingsPageFrame";
 
 // Retain legacy routes; both now land on the same model list.
@@ -63,7 +65,8 @@ function AISettingsContent({
   workspaceId: string;
   canManageWorkspace: boolean;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<"connections" | "providers" | null>(null);
+  const [modelOrigin, setModelOrigin] = useState<"connections" | "manage">("connections");
   const [managing, setManaging] = useState(false);
   const connectionsDialogRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<AIConnectionDialogMode | null>(null);
@@ -78,16 +81,22 @@ function AISettingsContent({
   });
   const all = connections.data?.connections ?? [];
   const models = profiles.data ?? [];
+  const { requestDisconnect } = useConfirmAIConnectionDisconnect(workspaceId, models);
   const editable = (scope: string) =>
     scope === "personal" || canManageWorkspace;
   const selected = all.find((c) => c.id === modelsFor?.id) ?? modelsFor;
+  function openAddModels() {
+    setAdding("connections");
+    if (connections.isStale && !connections.isFetching) void connections.refetch();
+  }
   function openModels(connection: AIConnection) {
-    setAdding(false);
+    setModelOrigin(managing ? "manage" : "connections");
+    setAdding(null);
     setManaging(false);
     setModelsFor(connection);
   }
   function reconnect(connection: AIConnection) {
-    setAdding(false);
+    setAdding(null);
     setManaging(false);
     setDialog({
       kind: "reconnect",
@@ -133,13 +142,14 @@ function AISettingsContent({
             : ""}
         </span>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setManaging(true)}>
-            Manage connections
-          </Button>
-          <Button size="sm" onClick={() => setAdding(true)}>
+          <Button size="sm" onClick={openAddModels}>
             <PlusSignIcon className="size-4" />
             Add models
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" className="size-8" aria-label="AI model settings actions"><MoreHorizontalIcon className="size-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setManaging(true)}>Manage connections</DropdownMenuItem></DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {settings.isError && (
@@ -242,11 +252,13 @@ function AISettingsContent({
           connections={all}
           models={connections.data.models}
           canManageWorkspace={canManageWorkspace}
-          onClose={() => setAdding(false)}
+          startWithProviders={adding === "providers"}
+          onDisconnect={requestDisconnect}
+          onClose={() => setAdding(null)}
           onModels={openModels}
           onReconnect={reconnect}
           onConnect={(provider) => {
-            setAdding(false);
+            setAdding(null);
             setDialog({ kind: "add", provider });
           }}
         />
@@ -297,6 +309,7 @@ function AISettingsContent({
                         onReconnect={reconnect}
                         onContinueLogin={reconnect}
                         onModels={() => openModels(connection)}
+                        profiles={models}
                         modelCount={
                           profiles.data?.filter(
                             (p) =>
@@ -335,7 +348,7 @@ function AISettingsContent({
               className="w-fit"
               onClick={() => {
                 setManaging(false);
-                setAdding(true);
+                setAdding("providers");
               }}
             >
               <PlusSignIcon className="size-4" />
@@ -357,8 +370,10 @@ function AISettingsContent({
           onOpenChange={(open) => {
             if (!open) setDialog(null);
           }}
+          onBack={() => { setDialog(null); setAdding("providers"); }}
           onConnected={(connection) => {
             setDialog(null);
+            setModelOrigin("connections");
             setModelsFor(connection);
           }}
         />
@@ -369,6 +384,11 @@ function AISettingsContent({
           connection={selected}
           connections={all}
           canManage={editable(selected.scope)}
+          onBack={() => {
+            setModelsFor(null);
+            if (modelOrigin === "manage") setManaging(true);
+            else setAdding("connections");
+          }}
           onClose={() => setModelsFor(null)}
         />
       )}

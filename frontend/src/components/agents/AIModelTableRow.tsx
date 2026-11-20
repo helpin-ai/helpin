@@ -75,7 +75,7 @@ export function AIModelTableRow({
     connectionStatus === "connected" &&
     policy?.allowed !== false &&
     !profile.hidden_from_ask_agent;
-  const info = connectionStatus ? connectionStatusInfo(connectionStatus) : null;
+  const info = connectionStatus ? connectionStatusInfo(connectionStatus, connection?.last_verification_error) : null;
   const status = !info
     ? "Connection missing"
     : policy?.allowed === false
@@ -84,7 +84,7 @@ export function AIModelTableRow({
         ? "Hidden from pickers"
         : info.label;
   const statusTone =
-    policy?.allowed === false || connectionStatus !== "connected"
+    policy?.allowed === false || connectionStatus !== "connected" || info?.tone === "attention"
       ? "text-amber-700 dark:text-amber-400"
       : profile.hidden_from_ask_agent
         ? "text-muted-foreground"
@@ -177,7 +177,7 @@ export function AIModelTableRow({
                   : profile.hidden_from_ask_agent
                     ? "Hidden from new choices in Ask Agent and agent model pickers. Existing selections and defaults keep working. You can always manage it here."
                     : connection.status === "connected"
-                      ? "The connection is available. This does not verify that the provider can run this particular model."
+                      ? connection.last_verification_error || "The connection is available. This does not verify that the provider can run this particular model."
                       : "Reconnect this connection to use its models for new runs."
             }
           />

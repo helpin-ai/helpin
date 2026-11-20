@@ -340,7 +340,8 @@ func (s *AIConnectionService) Reconnect(ctx context.Context, workspace, user, id
 			secret.APIKey = apiKey
 			c.Status = "connected"
 		}
-		// Model access may differ for the replacement key.
+		// Verification and discovery describe the previous credential.
+		c.LastVerifiedAt, c.LastVerificationError = nil, nil
 		c.DiscoveredModels = nil
 		c.ModelsFetchedAt = nil
 		// A user-supplied key takes ownership from the environment for good.
@@ -531,6 +532,7 @@ func (s *AIConnectionService) Disconnect(ctx context.Context, workspace, user, i
 			return err
 		}
 		c.Status = "disconnected"
+		c.LastVerifiedAt, c.LastVerificationError = nil, nil
 		c.EncryptedSecret = nil
 		c.ExpiresAt = nil
 		disconnected = *c

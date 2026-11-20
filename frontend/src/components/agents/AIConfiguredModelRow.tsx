@@ -1,10 +1,10 @@
 import type { AIProfile } from "@/lib/services/aiProfileService";
 import { catalogLabel, modelNameWithThinking } from "@/lib/aiProviders";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import {
+  Tick01Icon,
   PencilEdit01Icon,
   Delete01Icon,
   MoreHorizontalIcon,
@@ -73,6 +73,9 @@ export function AIConfiguredModelRow({
         )}
         <AIConnectionPolicyNotice policy={profile.primary_policy} />
       </div>
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" aria-label={`Added ${profile.name}`}>
+        <Tick01Icon className="size-3.5" />Added{profile.hidden_from_ask_agent && " · Hidden"}
+      </span>
       {editable && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -91,6 +94,9 @@ export function AIConfiguredModelRow({
               <PencilEdit01Icon className="size-4" />
               Model settings
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onVisibility(!!profile.hidden_from_ask_agent)}>
+              {profile.hidden_from_ask_agent ? "Show in pickers" : "Hide from pickers"}
+            </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onSelect={onRemove}>
               <Delete01Icon className="size-4" />
               Remove configuration
@@ -98,12 +104,6 @@ export function AIConfiguredModelRow({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      <Switch
-        aria-label={`Show ${profile.name} in model pickers`}
-        checked={!profile.hidden_from_ask_agent}
-        disabled={!editable || busy}
-        onCheckedChange={onVisibility}
-      />
     </div>
   );
 }

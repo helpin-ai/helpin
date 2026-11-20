@@ -111,9 +111,15 @@ func (r *AIConnectionRepository) DefaultProfile(ctx context.Context, workspace s
 }
 
 // RecordVerification stores a connection test outcome without touching secrets.
-func (r *AIConnectionRepository) RecordVerification(ctx context.Context, id string, at time.Time, failure *string) error {
-	return r.db.WithContext(ctx).Model(&model.AIConnection{}).Where("id = ?", id).
-		Updates(map[string]any{"last_verified_at": at, "last_verification_error": failure}).Error
+func (r *AIConnectionRepository) RecordVerification(ctx context.Context, tested *model.AIConnection, at time.Time, failure *string) error {
+	// A test can finish after disconnect or key rotation. Only update the credential it tested.
+	query := r.db.WithContext(ctx).Model(&model.AIConnection{}).Where("id = ? AND status = ?", tested.ID, tested.Status)
+	if tested.EncryptedSecret == nil {
+		query = query.Where("encrypted_secret IS NULL")
+	} else {
+		query = query.Where("encrypted_secret = ?", tested.EncryptedSecret)
+	}
+	return query.Updates(map[string]any{"last_verified_at": at, "last_verification_error": failure}).Error
 }
 
 // SharedEmbeddingConnections returns the workspace-owned, live, connected

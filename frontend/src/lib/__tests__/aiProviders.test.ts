@@ -48,6 +48,7 @@ it('describes every connection status and tolerates unknown ones', () => {
     'disconnected',
     'pending',
     'reauthorization_required',
+    'unconfigured',
   ])
   expect(connectionStatusInfo('reauthorization_required')).toEqual({ label: 'Reconnect required', tone: 'attention' })
   expect(connectionStatusInfo('brand_new_status').label).toBe('brand new status')
