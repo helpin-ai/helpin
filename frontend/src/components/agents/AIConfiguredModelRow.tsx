@@ -99,7 +99,7 @@ export function AIConfiguredModelRow({
             </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onSelect={onRemove}>
               <Delete01Icon className="size-4" />
-              Remove configuration
+              Remove model
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

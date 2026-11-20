@@ -41,7 +41,11 @@ export function useDeleteAIProfile(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (profile: AIProfile) => unwrap(await aiProfileService.remove(workspaceId, profile)),
-    onSuccess: () => invalidateAI(queryClient, workspaceId),
+    onSuccess: (_, removed) => {
+      queryClient.setQueryData<AIProfile[]>(queryKeys.ai.profiles(workspaceId), profiles =>
+        profiles?.filter(profile => profile.id !== removed.id))
+      return invalidateAI(queryClient, workspaceId)
+    },
   })
 }
 

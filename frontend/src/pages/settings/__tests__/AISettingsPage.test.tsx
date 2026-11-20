@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { queryKeys } from '@/lib/queryKeys';
 import { AISettingsPage } from '../AISettingsPage';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { aiConnectionService } from '@/lib/services/aiConnectionService';
@@ -331,4 +332,49 @@ it('confirms the affected shared model before disconnecting the selected subscri
   expect(aiConnectionService.disconnect).not.toHaveBeenCalled();
   await disconnect();
   expect(aiConnectionService.disconnect).toHaveBeenCalledWith('ws','sub');
+});
+
+it.each(['main table', 'model chooser', 'another saved variant', 'agent dependency'])('handles Remove model from the %s', async (entry) => {
+  const connection = { id:'team', name:'Team key', provider:'openai', scope:'workspace', user_id:null, status:'connected' } as const;
+  const profile = { id:'p', name:'Planning model', workspace_id:'ws', scope:'workspace', user_id:null, revision:3,
+    primary:{connection_id:'team',model:{provider:'openai',model:'gpt-test',controls:{}}}, fallback:null } as const;
+  const second = { ...profile, id:'second', name:'Another configuration' };
+  const inChooser = entry === 'model chooser' || entry === 'another saved variant';
+  let saved: (typeof second)[] = entry === 'another saved variant' ? [profile, second] : [profile];
+  vi.mocked(aiProfileService.list).mockImplementation(async () => ({data:saved,error:null}));
+  vi.mocked(aiProfileService.remove).mockImplementation(async (_, removed) => { saved=saved.filter(p => p.id !== removed.id); return {data:undefined,error:null}; });
+  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true,connections:[connection],models:[]},error:null});
+  vi.mocked(aiConnectionService.models).mockResolvedValue({data:{source:'provider',models:[{id:'gpt-test',name:'Test model'}],stale:false},error:null});
+  client.setQueryData(queryKeys.automation.agents('ws'), entry === 'agent dependency' ? [{id:'a',name:'Review assistant',ai_profile_id:'p'}] : []);
+  await render('workspace');
+  if (inChooser) {
+    await act(async () => Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Add models')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Models for Team key"]')!.click());
+  }
+  const surface = document.querySelector('[role="dialog"]') ?? document;
+  const trigger = surface.querySelector<HTMLButtonElement>('[aria-label="Actions for Planning model"]')!;
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})));
+  const remove = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(el => el.textContent === 'Remove model');
+  expect(remove).toBeDefined();
+  await act(async () => remove!.click());
+  const confirmation=document.querySelector('[role="alertdialog"]')!;
+  expect(confirmation.textContent).toContain('Planning model');
+  expect(aiProfileService.remove).not.toHaveBeenCalled();
+  if (entry === 'agent dependency') {
+    expect(confirmation.textContent).toContain('Review assistant');
+    expect(Array.from(confirmation.querySelectorAll('button')).some(b => b.textContent === 'Remove model' && !b.disabled)).toBe(false);
+    return;
+  }
+  await act(async () => Array.from(confirmation.querySelectorAll('button')).find(b => b.textContent === 'Remove model')!.click());
+  expect(aiProfileService.remove).toHaveBeenCalledWith('ws',profile);
+  await vi.waitFor(() => expect(document.querySelector('[aria-label="Actions for Planning model"]')).toBeNull());
+  if (inChooser) {
+    const add = surface.querySelector('[aria-label="Add Test model"]');
+    if (entry === 'another saved variant') {
+      expect(surface.querySelector('[aria-label="Added Another configuration"]')).not.toBeNull();
+      expect(add).toBeNull();
+    } else {
+      expect(add).not.toBeNull();
+    }
+  }
 });

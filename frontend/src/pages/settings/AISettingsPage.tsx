@@ -8,6 +8,7 @@ import {
 import { AIConnectionRow } from "@/components/agents/AIConnectionRow";
 import { AIConnectionModelsDialog } from "@/components/agents/AIConnectionModelsDialog";
 import { AIAddModelsDialog } from "@/components/agents/AIAddModelsDialog";
+import { RemoveAIModelDialog } from "@/components/agents/RemoveAIModelDialog";
 import { AIModelTableRow } from "@/components/agents/AIModelTableRow";
 import { AIProfileEditor } from "@/components/agents/AIProfileEditor";
 import { AISetupHelp } from "@/components/agents/AISetupHelp";
@@ -71,6 +72,7 @@ function AISettingsContent({
   const connectionsDialogRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<AIConnectionDialogMode | null>(null);
   const [modelsFor, setModelsFor] = useState<AIConnection | null>(null);
+  const [removing, setRemoving] = useState<AIProfile | null>(null);
   const [editing, setEditing] = useState<AIProfile | null>(null);
   const connections = useAIConnections(workspaceId);
   const profiles = useAIProfiles(workspaceId, {
@@ -220,6 +222,7 @@ function AISettingsContent({
                   )}
                   settings={settings.isError ? undefined : settings.data}
                   canManageWorkspace={canManageWorkspace}
+                  onRemove={setRemoving}
                   onEdit={() => setEditing(profile)}
                   onReconnect={() => {
                     const connection = all.find(
@@ -384,6 +387,7 @@ function AISettingsContent({
           connection={selected}
           connections={all}
           canManage={editable(selected.scope)}
+          onRemove={setRemoving}
           onBack={() => {
             setModelsFor(null);
             if (modelOrigin === "manage") setManaging(true);
@@ -392,6 +396,7 @@ function AISettingsContent({
           onClose={() => setModelsFor(null)}
         />
       )}
+      {removing && <RemoveAIModelDialog workspaceId={workspaceId} profile={removing} onClose={() => setRemoving(null)} />}
       {editing && (
         <AIProfileEditor
           workspaceId={workspaceId}

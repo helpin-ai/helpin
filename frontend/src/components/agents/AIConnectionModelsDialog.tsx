@@ -9,7 +9,6 @@ import {
   useAISettings,
   useEnableAIModel,
   useSetAIModelVisibility,
-  useDeleteAIProfile,
 } from "@/hooks/queries/useAIProfiles";
 import type {
   AIConnection,
@@ -28,7 +27,6 @@ import { Button } from "@/components/ui/button";
 import { QuietSearchInput } from "@/components/design-system/quiet";
 import { Input } from "@/components/ui/input";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
-import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ArrowLeft01Icon, ArrowReloadHorizontalIcon } from "@/lib/icons";
 import { AISetupHelp } from "./AISetupHelp";
 import { AIModelNewBadge } from "./AIModelNewBadge";
@@ -41,6 +39,7 @@ export function AIConnectionModelsDialog({
   connection,
   connections,
   canManage,
+  onRemove,
   onBack,
   onClose,
 }: {
@@ -48,6 +47,7 @@ export function AIConnectionModelsDialog({
   connection: AIConnection;
   connections: AIConnection[];
   canManage: boolean;
+  onRemove: (profile: AIProfile) => void;
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -65,13 +65,10 @@ export function AIConnectionModelsDialog({
   const refresh = useRefreshConnectionModels(workspaceId, connection.id);
   const save = useEnableAIModel(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
-  const remove = useDeleteAIProfile(workspaceId);
   const settings = useAISettings(workspaceId);
-  const confirm = useConfirm();
   const busy =
     save.isPending ||
-    visibility.isPending ||
-    remove.isPending;
+    visibility.isPending;
   const existing = (profiles.data ?? []).filter(
     (p) => p.primary.connection_id === connection.id,
   );
@@ -151,25 +148,6 @@ export function AIConnectionModelsDialog({
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not update visibility.",
-      );
-    }
-  }
-  async function deleteModel(profile: AIProfile) {
-    if (
-      !(await confirm({
-        title: `Remove “${profile.name}”?`,
-        description:
-          "Remove this saved configuration. Models used by agents must be reassigned first. To only hide it from model pickers, choose Hide from pickers instead.",
-        confirmText: "Remove",
-        variant: "destructive",
-      }))
-    )
-      return;
-    try {
-      await remove.mutateAsync(profile);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not remove model.",
       );
     }
   }
@@ -274,7 +252,7 @@ export function AIConnectionModelsDialog({
                         editable={editable}
                         busy={busy}
                         onEdit={() => setEditing(profile)}
-                        onRemove={() => void deleteModel(profile)}
+                        onRemove={() => onRemove(profile)}
                         onVisibility={(shown) => void toggle(profile, shown)}
                       />
                     );

@@ -38,6 +38,7 @@ export function AIModelTableRow({
   connection,
   settings,
   canManageWorkspace,
+  onRemove,
   onEdit,
   onReconnect,
 }: {
@@ -46,6 +47,7 @@ export function AIModelTableRow({
   connection?: AIConnection;
   settings?: AISettings;
   canManageWorkspace: boolean;
+  onRemove: (profile: AIProfile) => void;
   onEdit: () => void;
   onReconnect: () => void;
 }) {
@@ -274,8 +276,11 @@ export function AIModelTableRow({
                   }
                 >
                   {profile.hidden_from_ask_agent
-                    ? "Show in model pickers"
-                    : "Hide from model pickers"}
+                    ? "Show in pickers"
+                    : "Hide from pickers"}
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onSelect={() => onRemove(profile)}>
+                  Remove model
                 </DropdownMenuItem>
               </>
             )}
