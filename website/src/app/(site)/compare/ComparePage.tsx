@@ -101,7 +101,7 @@ function Editions() {
         <ul>
           {['One price per workspace, unlimited teammates', 'AI usage allowance included in every plan', 'Your own AI keys on Enterprise', 'Managed by Helpin, with support'].map(item => <li key={item}><Check size={14} strokeWidth={2.4} aria-hidden="true" />{item}</li>)}
         </ul>
-        <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial<ArrowRight size={15} aria-hidden="true" /></a>
+        <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial</a>
         <small>14 days, no card required</small>
       </article>
       <article>
@@ -109,7 +109,7 @@ function Editions() {
         <ul>
           {['Free, with no plan limits or seat counts', 'Every product, coding agents included', 'Runs on your own AI provider and keys', 'Docker Compose on your own servers'].map(item => <li key={item}><Check size={14} strokeWidth={2.4} aria-hidden="true" />{item}</li>)}
         </ul>
-        <Link prefetch={false} className="btn btn-secondary" href="/self-hosting">Self-host free<ArrowRight size={15} aria-hidden="true" /></Link>
+        <Link prefetch={false} className="btn btn-secondary" href="/self-hosting">Self-host free</Link>
         <small><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">View the code on GitHub</a></small>
       </article>
     </div>
@@ -217,7 +217,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               <div className="cmp-aside-cta">
                 <strong>Try Helpin free</strong>
                 <p>14-day Cloud trial, no card. Or self-host the open-source Community edition for free.</p>
-                <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</a>
+                <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial</a>
                 <Link prefetch={false} className="cmp-aside-link" href="/self-hosting">Self-host free<ArrowRight size={13} aria-hidden="true" /></Link>
               </div>
             </aside>

@@ -52,7 +52,7 @@ export function FlowTemplatesPreview({ selected, onSelect, onBack, id }: {
       {TEMPLATES.map(({ key, name, category, Icon, description, agent }, index) => (
         <li key={key}>
           <button className="adp-flow-card" id={`${id}-flow-${index}`} type="button" onClick={() => onSelect(index)} aria-label={`Preview ${name}`}>
-            <span className="adp-flow-card-top"><i><Icon size={18} /></i><small>{category}</small><ArrowUpRight size={15} /></span>
+            <span className="adp-flow-card-top"><i><Icon size={18} /></i><small>{category}</small><ArrowUpRight size={15} aria-hidden="true" /></span>
             <strong>{name}</strong>
             <span className="adp-flow-description">{description}</span>
             <span className="adp-flow-owner"><Bot size={14} />{agent}<span>View flow →</span></span>

@@ -198,7 +198,7 @@ export default function CRMPage() {
                 lede="Set a follow-up plan and owner. With automation enabled, an agent checks progress on a schedule and prepares the next action. Your approval rules decide what it can send or change."
               />
               <Link prefetch={false} className="crm-text-link" href="/products/ai-agents">
-                Explore AI agents <ArrowRight size={16} />
+                Explore AI agents <ArrowRight size={16} aria-hidden="true" />
               </Link>
             </div>
             <CRMPlaybook />
@@ -230,7 +230,7 @@ export default function CRMPage() {
               title="FAQs about Helpin’s CRM"
             />
             <div className="crm-faqs">
-              <FAQList items={FAQS} className="faq-items" /><Link prefetch={false} className="crm-text-link" href="/self-hosting">Explore self-hosting<ArrowRight size={16} /></Link>
+              <FAQList items={FAQS} className="faq-items" /><Link prefetch={false} className="crm-text-link" href="/self-hosting">Explore self-hosting<ArrowRight size={16} aria-hidden="true" /></Link>
             </div>
           </div>
         </section>

@@ -1,86 +1,40 @@
 import Link from 'next/link';
-import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
+import { Braces, Building2, CalendarDays, Database, DoorOpen, FolderKanban, Inbox, Plug, Reply, Route, SlidersHorizontal, SquareTerminal, Timer } from 'lucide-react';
 import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { HeroHeadline } from './_components/HeroHeadline';
-import { HeroVideo } from './_components/HeroVideo';
 import { HeroVortex } from './_components/HeroVortex';
-import { ProductPreview } from './_components/product-previews';
-import { ProductExplorer } from './_components/ProductExplorer';
+import { CoverageGapsScene, MergedPrDocsScene } from './_components/docs-paths/DocsPaths';
+import { ImportScene } from './_components/import-scene/ImportScene';
+import { SupportStory } from './_components/support-story/SupportStory';
 import { HostingDiagram } from './_components/HostingDiagram';
-import { AgentDirectoryPreview } from './_components/agent-directory/AgentDirectoryPreview';
 import { AgentControlArt } from './_components/AgentControlArt';
-import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
-import { CtaRow, GithubIcon, SectionHead, GITHUB_URL, SIGNUP_URL } from './_components/ui';
+import { CtaRow, GithubIcon, SectionHead, GITHUB_URL, SIGNUP_URL, LinkArrow } from './_components/ui';
 import { DOCS } from './_components/docsLinks';
 import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import { JsonLd, organization, softwareApplication, website } from '@/lib/structured-data';
 import { PLANS } from '../pricing/pricing-data';
 
 export const metadata = createPageMetadata(PAGE_SEO.home);
-const HERO_VIDEO = '/new/home/helpin-launch-1080p-v1.mp4';
-const HERO_POSTER = '/new/home/helpin-launch-poster-1600-v3.webp';
 const HOME_JSON_LD = {
   '@context': 'https://schema.org',
-  '@graph': [organization, website, softwareApplication(PLANS), {
-    '@type': 'VideoObject',
-    '@id': `${SITE_URL}/#intro-video`,
-    name: 'Introducing Helpin',
-    description: 'An introduction to Helpin, bringing customer support, projects, and customer records into one workspace.',
-    thumbnailUrl: `${SITE_URL}${HERO_POSTER}`,
-    contentUrl: `${SITE_URL}${HERO_VIDEO}`,
-    uploadDate: '2026-10-02T16:50:29Z',
-    duration: 'PT1M2.4S',
-    inLanguage: 'en',
-  }],
+  '@graph': [organization, website, softwareApplication(PLANS)],
 };
 
 const RECORD_FACTS = [
   {
-    "title": "AI agents answer with the full customer history.",
-    "description": "Past questions, replies, and attempted fixes help AI agents understand each customer’s issue, so customers get relevant help without explaining the same problem again.",
-    "image": "conversations",
-    "wide": true
+    title: 'AI agents answer with the full customer history.',
+    description: 'Past questions, replies, and attempted fixes help AI agents understand each customer’s issue, so customers get relevant help without explaining the same problem again.',
+    image: 'conversations',
   },
   {
-    "title": "Keep meeting decisions from getting lost.",
-    "description": "AI agents can use meeting notes and agreed next steps to help your team follow through, without replaying recordings or asking everyone what was decided.",
-    "image": "meetings",
-    "wide": false
+    title: 'AI agents turn customer reports into fixes.',
+    description: 'AI agents can plan, code, and review fixes using the customer’s report and the linked task. Your team checks the proposed changes before approving them.',
+    image: 'coding',
   },
-  {
-    "title": "Help AI agents solve the right problem.",
-    "description": "Linked customer requests help AI agents understand why a task matters, who is waiting, and what needs to change before they plan the work.",
-    "image": "projects",
-    "wide": false
-  },
-  {
-    "title": "AI agents turn customer reports into fixes.",
-    "description": "AI agents can plan, code, and review fixes using customer requests and linked tasks. Your team can check the proposed changes before approving them.",
-    "image": "coding",
-    "wide": true
-  },
-  {
-    "title": "Know what buyers need before following up.",
-    "description": "AI agents can use buyers’ questions, concerns, and past commitments to suggest relevant follow-ups, helping your team address what is holding up each deal.",
-    "image": "deals",
-    "wide": false
-  },
-  {
-    "title": "Put your company’s knowledge to work with AI.",
-    "description": "Product guides and internal docs spaces give AI agents the facts and instructions to answer questions and complete tasks without repeated explanations from your team.",
-    "image": "docs",
-    "wide": false
-  },
-  {
-    "title": "Get a meeting brief from your AI agents.",
-    "description": "AI agents can use emails and calendar events to help you prepare for meetings, so you know what was agreed and what still needs attention.",
-    "image": "email-calendar",
-    "wide": true
-  }
 ] as const;
 
 
@@ -95,32 +49,79 @@ export default function HomePage() {
         <HeroVortex />
         <div className="wrap hero-wrap">
           <div className="hero-inner">
-            <span className="eyebrow">AI-first, open-source alternative to <Link className="eyebrow-link" href="/compare/intercom">Intercom</Link> and <Link className="eyebrow-link" href="/compare/linear">Linear</Link></span>
+            <span className="eyebrow">AI-first, open-source alternative to <Link className="eyebrow-link" href="/compare/intercom">Intercom</Link></span>
             <HeroHeadline />
-            <p className="lede">Let AI agents answer customers, keep help docs current, follow up with leads, update customer records, and turn requests into code, all in one workspace. You decide what needs approval; your agents take care of the rest.</p>
+            <p className="lede">Customers get answers from your docs right away. Questions that need a person reach your team with the AI’s findings attached, so nobody starts over.</p>
             <CtaRow primaryLabel="Start free trial" />
-            <p className="cta-note">Open source · Self-host free, or let us run it</p>
+            <p className="cta-note">14-day free trial, no card · Open source, self-host free</p>
 
           </div>
-          <HeroVideo src={HERO_VIDEO} poster={HERO_POSTER} />
+          <figure className="hero-workflow hero-film">
+            <SupportStory />
+          </figure>
           <div className="hero-evaluation">
             <CustomerLogos />
           </div>
         </div>
       </section>
 
-      {/* Shared customer history: the context behind the work. */}
+      {/* The support desk: what a support team gets on day one. */}
+      <section id="support-desk" className="developer-section">
+        <div className="wrap">
+          <SectionHead eyebrow="The support desk" title="Everything your support team runs on, in one inbox."
+            lede="Chat, email, and Telegram arrive in the same place, with response targets, a customer portal, and AI agents that keep a conversation moving after the first reply." />
+          <div className="developer-features developer-features-six">
+            <article>
+              <span className="developer-feature-icon"><Inbox size={22} aria-hidden="true" /></span>
+              <h3>One inbox for every channel.</h3>
+              <p>Chat, email, and Telegram conversations land in a shared inbox, with team inboxes, assignment, and saved views.</p>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Route size={22} aria-hidden="true" /></span>
+              <h3>Routed to the right team.</h3>
+              <p>The AI classifies each new conversation, tags it, and moves it to the team inbox that handles it.</p>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Timer size={22} aria-hidden="true" /></span>
+              <h3>SLAs your team can act on.</h3>
+              <p>Set first-response and next-response targets by policy. Helpin warns your team before a target is missed.</p>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Reply size={22} aria-hidden="true" /></span>
+              <h3>AI agents that follow up.</h3>
+              <p>The Echo agent answers from your docs, checks whether the customer still needs help, and hands over with what it found.</p>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Plug size={22} aria-hidden="true" /></span>
+              <h3>Check account details before you reply.</h3>
+              <p>Connect tools for billing, error logs, or issue tracking so agents can check the facts behind a question. You choose what they can use and change.</p>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><DoorOpen size={22} aria-hidden="true" /></span>
+              <h3>A portal for your customers.</h3>
+              <p>Customers sign in to follow their requests, search their history, and read help written for them.</p>
+              <Link prefetch={false} className="inline-link" href="/products/customer-portal">Explore the portal<LinkArrow /></Link>
+            </article>
+          </div>
+          <div className="home-section-actions">
+            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL}>Start free trial</Link>
+            <Link prefetch={false} className="btn-link" href="/products/customer-support">Explore customer support<LinkArrow /></Link>
+          </div>
+        </div>
+      </section>
+
+      {/* When a question is a bug: history in, fix out, and the rest of the workspace behind it. */}
       <section id="record" className="dark record-motion">
         <HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="rs-copy record-intro">
-            <span className="rs-eyebrow">Your company’s brain</span>
-            <h2>Your team and AI agents can find what they need in one place.</h2>
-            <p>Helpin brings your customer conversations, meeting notes, docs, and project updates together. Your team and AI agents can use this information to answer questions without searching through separate tools or asking customers to repeat themselves.</p>
+            <span className="rs-eyebrow">When it’s a bug</span>
+            <h2>When a question turns out to be a bug, the fix stays attached.</h2>
+            <p>AI agents answer with the customer’s full history. When the answer is a bug, the task, the fix, and the update to the customer stay on the same conversation.</p>
           </div>
           <div className="record-bento">
-            {RECORD_FACTS.map(({ title, description, image, wide }) => (
-              <article className={`record-bento-card${wide ? ' record-bento-wide' : ''}`} key={title}>
+            {RECORD_FACTS.map(({ title, description, image }) => (
+              <article className="record-bento-card record-bento-wide" key={title}>
                 <div className="record-bento-copy">
                   <h3>{title}</h3>
                   <p>{description}</p>
@@ -129,60 +130,42 @@ export default function HomePage() {
               </article>
             ))}
           </div>
-          <div className="home-section-actions">
-            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</Link>
-            <Link prefetch={false} className="btn-link" href="/products/knowledge">Explore knowledge and docs →</Link>
+          <div className="built-in">
+            <p className="built-in-title">Built in, for when support needs it</p>
+            <div className="built-in-items">
+              <Link prefetch={false} href="/products/projects"><FolderKanban size={18} aria-hidden="true" /><span><b>Projects</b>The bug behind a conversation becomes a task your team can plan and ship.</span></Link>
+              <Link prefetch={false} href="/products/crm"><Building2 size={18} aria-hidden="true" /><span><b>CRM</b>Contacts, companies, and deals next to the conversations behind them.</span></Link>
+              <Link prefetch={false} href="/products/meetings"><CalendarDays size={18} aria-hidden="true" /><span><b>Meetings</b>Decisions and next steps from customer calls, linked to the work.</span></Link>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Ask Agent: answers, execution, and connected tools. */}
-      <section id="ask-agent" className="ask-agent-section section-motion" aria-labelledby="ask-agent-title"><HeroVortex variant="converge" tone="dark" />
+      {/* Docs that keep up: the two paths into a help-center update. */}
+      <section id="docs-paths" className="docs-paths-section">
         <div className="wrap">
-          <div className="ask-agent-intro">
-            <span className="eyebrow">Helpin AI</span>
-            <h2 id="ask-agent-title">Imagine what you could get done with Helpin AI.</h2>
-            <p className="lede">You can ask about a customer, investigate a bug, or prepare a follow-up in a conversation. Helpin AI uses your company’s information and brings in specialist agents when the task needs them.</p>
-          </div>
-          <figure className="ask-agent-preview">
-            <ProductPreview product="ask-agent" theme="light" />
-            <figcaption>See how Helpin AI checks a reported bug and prepares a plan and customer reply.</figcaption>
-          </figure>
-          <div className="ask-agent-capabilities">
-            <article>
-              <span className="ask-agent-label">Your workspace</span>
-              <h3>Get answers from your company’s information.</h3>
-              <p>Helpin AI can look through conversations, meeting notes, docs, and tasks. Ask what a customer needs or why a project is delayed without searching each tool yourself.</p>
-              <AskAgentBento variant="answers" />
+          <SectionHead eyebrow="Docs that keep up" title="Your help center learns from support and from every merged PR."
+            lede="Quill, the documentation agent, turns the questions customers keep asking and the changes your team ships into help-center updates. Changes wait for your review unless you let Quill edit directly." />
+          <div className="docs-paths">
+            <article className="docs-path">
+              <div className="docs-path-copy">
+                <h3>Turn repeated questions into help articles</h3>
+                <p>Helpin groups the questions your AI couldn’t answer well into coverage gaps and shows how many conversations hit each one in the last 30 days. Similar gaps merge, so one article covers all of them.</p>
+                <p>Open a gap and click <b>Prepare a fix</b>. Quill reads the conversations, checks your existing guides, and saves a draft for your team to review.</p>
+              </div>
+              <CoverageGapsScene />
             </article>
-            <article>
-              <span className="ask-agent-label">Your agents</span>
-              <h3>Finish complex tasks with specialist agents.</h3>
-              <p>Helpin AI can ask Scribe to <span className="home-feature">plan a fix</span>, Forge to <span className="home-feature">write code</span>, and Quill to <span className="home-feature">update the guide</span>. You can review their work in Helpin.</p>
-              <AskAgentBento variant="coordination" />
-            </article>
-            <article>
-              <span className="ask-agent-label">Connected tools · Beta</span>
-              <h3>Check account details before you reply.</h3>
-              <p>Connect tools for <span className="home-feature">billing, error logs, or issue tracking</span> so agents can check the facts behind a customer’s question. You choose which tools they can use and what they can change.</p>
-              <AskAgentBento variant="mcp" />
+            <article className="docs-path docs-path-flip">
+              <div className="docs-path-copy">
+                <h3>Check the docs whenever a pull request merges</h3>
+                <p>Quill reads the changes and the linked tasks, ignores what readers never see, like tests and CI, and proposes edits to the articles the change made wrong. A new workflow gets a new article.</p>
+                <p>Each run ends with a report of the articles it changed and the ones it left alone. You can also backfill past pull requests in one run.</p>
+              </div>
+              <MergedPrDocsScene />
             </article>
           </div>
-          <div className="ask-agent-links home-section-actions">
-            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</Link>
-            <Link prefetch={false} className="btn-link" href="/products/ai-agents">Meet the AI agents →</Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Explore each product area with the shared interactive previews. */}
-      <section id="product">
-        <div className="wrap">
-          <SectionHead eyebrow="What’s inside" title="You can manage support, development, sales and marketing in the same place." lede="Your team gets the inboxes, task boards, CRM, docs, and meeting notes it needs for day-to-day work. AI agents help with replies, updates, and follow-ups inside those tools." />
-          <ProductExplorer />
           <div className="home-section-actions">
-            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</Link>
-            <Link prefetch={false} className="btn-link" href="/pricing">See pricing →</Link>
+            <Link prefetch={false} className="btn-link" href="/products/knowledge">Explore knowledge and docs<LinkArrow /></Link>
           </div>
         </div>
       </section>
@@ -191,102 +174,76 @@ export default function HomePage() {
       <section id="control">
         <div className="wrap">
           <SectionHead eyebrow="Approvals built in" title="You decide what agents can do on their own."
-            lede="Choose what runs automatically and what needs your approval. You can see each agent’s activity, check its results, and step in when a task needs your attention." />
-          <figure className="control-screenshot">
-            <AgentDirectoryPreview showFlows />
-            <figcaption>Explore your agents and flow templates, with your team in control of approvals.</figcaption>
-          </figure>
+            lede="Choose what runs automatically and what needs your approval. You can see each agent’s activity, check its results, and step in when a conversation needs you." />
           <div className="ctrl">
             <article>
               <AgentControlArt variant="tools" />
               <div className="ctrl-copy">
-                <span className="k">Tools &amp; skills</span>
-                <h3>Give agents the tools and skills they need.</h3>
-                <p className="ctrl-description">Choose which docs, Helpin features, and connected services each agent can use. Add <span className="home-feature">built-in skills</span> or <span className="home-feature">bring your own skills</span> to guide how it does the work.</p>
+                <h3>Choose what your support agent can use.</h3>
+                <p className="ctrl-description">Pick the docs, Helpin features, and connected tools it can use. Add <span className="home-feature">built-in skills</span> or <span className="home-feature">your own</span> to guide how it answers.</p>
               </div>
             </article>
             <article id="approval-demo">
               <AgentControlArt variant="approvals" />
               <div className="ctrl-copy">
-                <span className="k">Approvals</span>
-                <h3>Choose which actions need your approval.</h3>
-                <p className="ctrl-description">Set <span className="home-feature">approval rules</span> for each agent so you can review the actions that matter to you before they happen.</p>
+                <h3>Review the replies that matter before they go out.</h3>
+                <p className="ctrl-description">Set <span className="home-feature">approval rules</span> for each agent, so a teammate checks the replies and actions you care about before they happen.</p>
               </div>
             </article>
             <article>
               <AgentControlArt variant="triggers" />
               <div className="ctrl-copy">
-                <span className="k">Triggers</span>
-                <h3>Run agents automatically when work needs attention.</h3>
-                <p className="ctrl-description"><span className="home-feature">Schedule a regular check</span> or start an agent when a <span className="home-feature">task changes stage</span> or a <span className="home-feature">pull request needs review</span>, so you don’t have to start every job yourself.</p>
+                <h3>Run checks on a schedule.</h3>
+                <p className="ctrl-description"><span className="home-feature">Schedule a weekly review</span> of your public help center, or start an agent when a <span className="home-feature">pull request merges</span>, so nobody has to start each job.</p>
               </div>
             </article>
           </div>
           <div className="home-section-actions">
-            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</Link>
-            <Link prefetch={false} className="btn-link" href="/products/ai-agents">Explore agents and automation →</Link>
+            <Link prefetch={false} className="btn-link" href="/products/ai-agents">Explore agents and approvals<LinkArrow /></Link>
           </div>
         </div>
       </section>
 
-      {/* Self-hosting */}
+      {/* Importers: switching without losing history. */}
+      <section id="switch" className="switch-section">
+        <div className="wrap switch-grid">
+          <div className="switch-copy">
+            <SectionHead eyebrow="Switching" title="Move from Intercom without starting over." tight
+              lede="Bring your help center and your past conversations, with their replies, notes, and tags. Your AI agents answer with that history from the first day." />
+            <div className="switch-sources">
+              <article><h3>Intercom</h3><p>Conversations and the Help Center, from the data region you use and from the date you choose. Articles keep their Intercom status or come in as drafts.</p></article>
+              <article><h3>Other help centers</h3><p>Copy a public Intercom help center from its address, with no token. Import HelpScout Docs or a Nextra site with images and redirects.</p></article>
+              <article><h3>The rest of your stack</h3><p>Contacts from HubSpot or a CSV file, and tasks, epics, and workflows from Shortcut.</p></article>
+            </div>
+            <Link prefetch={false} className="btn-link" href="/compare/intercom">See how Helpin compares with Intercom<LinkArrow /></Link>
+          </div>
+          <ImportScene />
+        </div>
+      </section>
+
+      {/* Open source, self-hosting, and building on Helpin. */}
       <section id="open-source" className="dark self-host-section section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="self-host-intro">
             <div>
               <SectionHead eyebrow="Open source" title="We can host Helpin for you, or you can run it yourself."
                 lede="Choose Helpin Cloud if you want us to manage the hosting, with AI usage included. Choose the open-source Community edition if you want to run Helpin on your own servers and connect your own AI providers." />
-              <div className="links"><a className="btn btn-primary" href={DOCS.selfHosting}>Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
+              <div className="links"><a className="btn btn-primary" href={DOCS.selfHosting}>Self-host Helpin</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code<LinkArrow external /></a></div>
               <p className="self-host-license">AGPL-3.0 · Community 0.2 beta</p>
             </div>
             <HostingDiagram />
           </div>
           <div className="self-host-features">
-            <article><Server size={23} aria-hidden="true" /><h3>Deploy with Docker Compose.</h3><p>Use the installation guide to set up Helpin on your servers. Your team manages the installation and covers hosting and AI provider costs.</p></article>
+            <article><SquareTerminal size={23} aria-hidden="true" /><h3>Install and manage it from your terminal.</h3><p>The Helpin CLI installs the self-hosted version, checks that its services are running, and shows the logs when something needs attention. <a className="inline-link" href={DOCS.selfHostingInstall}>Explore the CLI<LinkArrow /></a></p></article>
             <article><Database size={23} aria-hidden="true" /><h3>Control your data and backups.</h3><p>Keep your customer records and files on the servers you manage, and choose how you back them up.</p></article>
             <article><SlidersHorizontal size={23} aria-hidden="true" /><h3>Choose your AI provider.</h3><p>When you self-host, you can connect a supported AI provider and choose the models your agents use.</p></article>
           </div>
-        </div>
-      </section>
-
-      <section id="developers" className="developer-section">
-        <div className="wrap">
-          <SectionHead eyebrow="For developers" title="Connect Helpin to your AI agents and development tools."
-            lede="Use your preferred AI agents with Helpin, add support chat to your app, and automate work from task and code changes." />
-          <article className="developer-cli-feature">
-            <figure className="developer-visual">
-              <a href="/new/product/helpin-cli-tilted-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin CLI illustration at full size (opens in a new tab)">
-                <img src="/new/product/helpin-cli-tilted-1920-v1.webp" srcSet="/new/product/helpin-cli-tilted-1920-v1.webp 1920w, /new/product/helpin-cli-tilted-4k-v1.webp 3840w" sizes="(max-width: 700px) calc(100vw - 78px), (max-width: 1120px) 55vw, 590px" width={3840} height={2160} alt="An angled Helpin CLI terminal showing installation checks, diagnostics, status, and logs, with a softly blurred right edge." loading="lazy" decoding="async" />
-              </a>
-            </figure>
-            <div className="developer-cli-copy">
-              <span className="eyebrow">Helpin CLI</span>
-              <h3>Install and manage Helpin from your terminal.</h3>
-              <p>Use the Helpin command-line tool to install the self-hosted version, check that its services are running, and read logs when something needs attention.</p>
-              <a className="btn-link" href={DOCS.selfHostingInstall}>Explore the Helpin CLI →</a>
+          <div className="self-host-build">
+            <p className="self-host-build-title">Build with Helpin</p>
+            <div className="self-host-features self-host-build-grid">
+              <article><Braces size={23} aria-hidden="true" /><h3>Add support chat with customer context.</h3><p>Use Helpin’s APIs and SDKs to add support chat and share customer details from your app, so customers don’t have to explain who they are each time. <a className="inline-link" href={DOCS.widgetSdk}>Explore the SDK<LinkArrow /></a></p></article>
+              <article><Plug size={23} aria-hidden="true" /><h3>Connect your AI tools through MCP.</h3><p>Claude Code, Codex, Cursor, and other compatible clients can read conversations, create tasks, and update docs with the permissions you grant. <a className="inline-link" href={DOCS.mcpServer}>Set up Helpin MCP<LinkArrow /></a></p></article>
             </div>
-          </article>
-          <div className="developer-features">
-            <article>
-              <span className="developer-feature-icon"><Braces size={22} aria-hidden="true" /></span>
-              <h3>Add support chat with customer context.</h3>
-              <p>Use Helpin’s <span className="home-feature">APIs and SDKs</span> to add support chat and share customer details from your app. Your team and AI agents can answer with the right account information, so customers don’t have to explain who they are each time.</p>
-              <a className="inline-link" href={DOCS.developer}>Developer docs →</a>
-              <a className="inline-link" href={DOCS.widgetSdk}>Explore the SDK →</a>
-            </article>
-            <article>
-              <span className="developer-feature-icon"><Plug size={22} aria-hidden="true" /></span>
-              <h3>Connect external AI agents through MCP.</h3>
-              <p>Connect <span className="home-feature">Claude Code</span>, <span className="home-feature">Codex</span>, <span className="home-feature">Cursor</span>, <span className="home-feature">Hermes</span>, and other compatible agents through Helpin’s <span className="home-feature">MCP server</span>. They can read conversations, create tasks, update docs, and run Helpin agents with your chosen permissions. Helpin agents can also use tools from <span className="home-feature">external MCP servers</span>.</p>
-              <a className="inline-link" href={DOCS.mcpServer}>Set up Helpin MCP →</a>
-              <a className="inline-link" href={DOCS.externalMcp}>Connect external MCP servers →</a>
-            </article>
-            <article>
-              <span className="developer-feature-icon"><Webhook size={22} aria-hidden="true" /></span>
-              <h3>Run AI agents when tasks or code change.</h3>
-              <p>Start AI agents when tasks change or supported <span className="home-feature">GitHub and GitLab events</span> occur. For example, have an agent <span className="home-feature">review a new pull request</span> or work on a task that enters a chosen stage, without starting each run yourself.</p>
-              <a className="inline-link" href={DOCS.automation}>Explore automation →</a>
-            </article>
           </div>
         </div>
       </section>
@@ -294,11 +251,11 @@ export default function HomePage() {
       {/* 13 Final CTA */}
       <section className="final-cta final-cta-connected" aria-labelledby="final-cta-title">
         <div className="wrap">
-          <ConnectedWorkspace />
+          <ConnectedWorkspace focus="support" />
           <div className="final">
             <span className="eyebrow">14-day free trial</span>
             <h2 id="final-cta-title">Spend no time on repeat questions, follow-ups, and updates.</h2>
-            <p className="lede">Build your company’s brain, then ask an agent to handle a support question, documentation update, or sales follow-up. AI usage is included in the trial, and you don’t need a card to start.</p>
+            <p className="lede">Connect your docs, add support chat to your site, and let an agent take the repeat questions. AI usage is included in the trial, and you don’t need a card to start.</p>
             <CtaRow primaryLabel="Start free trial" />
             <div className="assure"><span>Open source</span><span>Self-host free, or let us run it</span><span>Built for SaaS teams</span></div>
           </div>

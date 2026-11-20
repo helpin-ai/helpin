@@ -29,7 +29,7 @@ export function PricingPlans() {
         <h3 id="plan-self-hosted">Self-hosted</h3>
         <p className="pricing-plan-description">The complete open-source product, on your servers.</p>
         <div className="pricing-price"><div className="pricing-price-amount"><span>$</span><strong>0</strong><span>forever</span></div><p>AGPL-3.0 · You cover hosting and AI providers</p></div>
-        <a className="btn btn-secondary" href="/self-hosting">Read the self-hosting guide<ArrowRight size={16} aria-hidden="true" /></a>
+        <a className="btn btn-secondary" href="/self-hosting">Read the self-hosting guide</a>
         <dl className="pricing-plan-metrics"><div><dt>Teammates</dt><dd>Unlimited</dd></div><div><dt>AI usage</dt><dd>Your provider keys</dd></div></dl>
         <ul>{SELF_HOSTED_FEATURES.map(feature => <li key={feature}><Check size={14} strokeWidth={2} aria-hidden="true" /><span>{feature}</span></li>)}</ul>
         <p className="pricing-plan-aside">Community 0.2 is in beta. <a href={GITHUB_URL}>View on GitHub</a></p>
@@ -59,7 +59,7 @@ export function PricingPlans() {
     </div>
 
     <article id="enterprise" className="pricing-enterprise-strip" aria-labelledby="enterprise-heading">
-      <div className="pricing-enterprise-copy"><span className="eyebrow"><Building2 size={17} aria-hidden="true" />Enterprise</span><h2 id="enterprise-heading">Helpin, set up for your company.</h2><p>Need a commercial license, a custom AI setup, or help with deployment? We’ll work through the requirements with your team.</p><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us about Enterprise<ArrowRight size={16} aria-hidden="true" /></a></div>
+      <div className="pricing-enterprise-copy"><span className="eyebrow"><Building2 size={17} aria-hidden="true" />Enterprise</span><h2 id="enterprise-heading">Helpin, set up for your company.</h2><p>Need a commercial license, a custom AI setup, or help with deployment? We’ll work through the requirements with your team.</p><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us about Enterprise</a></div>
       <ul className="pricing-enterprise-features">{['Commercial licensing', 'Custom AI setup', 'Deployment help', 'Support terms for your team'].map(feature => <li key={feature}><Check size={17} aria-hidden="true" />{feature}</li>)}</ul>
     </article>
   </div></section>;

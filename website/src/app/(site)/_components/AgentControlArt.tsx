@@ -8,7 +8,7 @@ type Variant = 'tools' | 'approvals' | 'triggers';
 const labels: Record<Variant, [string, string]> = {
   tools: ['Choose an agent’s tools', 'A support agent is given knowledge search, conversation access and a support playbook skill.'],
   approvals: ['Review an agent’s action', 'An agent prepares a reply to Maya. A teammate approves the message before it is sent.'],
-  triggers: ['Schedule recurring work', 'A weekday schedule starts a rollout review agent, which prepares a summary of blockers.'],
+  triggers: ['Schedule recurring work', 'A weekly schedule starts the public help freshness sweep, which saves a report of guides that need an update.'],
 };
 const delay = (seconds: number) => ({ '--ca-delay': `${seconds}s` }) as CSSProperties;
 function Icon({ icon: Glyph, x, y, size = 18 }: { icon: LucideIcon; x: number; y: number; size?: number }) {
@@ -67,9 +67,9 @@ function Triggers({ phase }: { phase: number }) {
   return <>
     <path d="M210 86 V234" className="ca-wire" /><path d="M210 86 V234" className="ca-route" pathLength={1} />
     {[
-      { y: 30, icon: Clock3, title: 'Every weekday', detail: '09:00 · Scheduled trigger' },
-      { y: 130, title: 'Review rollout tasks', detail: 'Reading tasks and conversations' },
-      { y: 230, icon: ListChecks, title: '1 blocker found', detail: 'Okta validation · Sam to follow up' },
+      { y: 30, icon: Clock3, title: 'Every Monday', detail: '09:00 · Scheduled trigger' },
+      { y: 130, title: 'Public help freshness sweep', detail: 'Reading guides and support gaps' },
+      { y: 230, icon: ListChecks, title: '3 guides need an update', detail: 'Freshness report saved for review' },
     ].map(({y,icon,title,detail},i) => phase >= i * 2 && <g key={title} className="ca-step-node">
       <rect x={58} y={y} width={304} height={60} rx={12} className="ca-panel" />
       <rect x={58} y={y} width={304} height={60} rx={12} className="ca-node-active" style={delay(i*1.05)} />

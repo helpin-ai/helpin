@@ -47,7 +47,7 @@ Preserve these elements unless the user explicitly authorizes a structural chang
 
 ## 3. Use this positioning, not a memorized tagline
 
-**Internal positioning direction:** Helpin connects customer history with the work your team and AI agents do next.
+**Internal positioning direction:** Helpin is open-source customer support software; it connects customer history with the work your team and AI agents do next. Top-level surfaces (homepage, README, site-wide metadata) lead with support.
 
 **Narrative:** Understand the request → decide what matters → do the work → follow up → carry the outcome into the next interaction.
 
@@ -55,9 +55,9 @@ Lead with a recognizable customer or team outcome. Explain how relevant history 
 
 Helpin is open source. Wherever hosting, pricing, trust, or a competitor comes up, name both editions: Helpin Cloud and the self-hosted Community edition. For support audiences, lead with the four advantages in [positioning and voice](references/positioning-and-voice.md): no per-seat or per-resolution fees, your own AI models, docs that keep up with the product, and agents that take a ticket to a fix and a customer update.
 
-Support, Projects, CRM, Meetings, and Knowledge are useful products in their own right. Their shared context strengthens agents; it does not reduce the products to “memory.”
+Support, Projects, CRM, Meetings, and Knowledge are useful products in their own right. Their shared context strengthens agents; it does not reduce the products to “memory.” On top-level surfaces, introduce the others by what they do for a support conversation.
 
-Keep full project management visible: roadmaps, sprints, objectives, dependencies, ownership, maintenance, and internal work, where verified. Do not make every project a support ticket or require every task to have a customer.
+On the Projects pages, keep full project management visible: roadmaps, sprints, objectives, dependencies, ownership, maintenance, and internal work, where verified. Do not make every project a support ticket or require every task to have a customer.
 
 Distinguish **Ask Agent**, the entry point/coordinator, from specialist agents doing focused work. Verify exact agent roles, names, and availability rather than carrying an old eight-agent list forward automatically.
 

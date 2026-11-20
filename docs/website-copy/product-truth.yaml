@@ -8,8 +8,197 @@ record_kind: product-truth
 release: Community 0.2 beta; Helpin Cloud
 deployment: https://helpin.ai (production, deployed from main)
 maintainer: Helpin team
-updated_at: 2026-09-29
+updated_at: 2026-11-20
 claims:
+  - id: positioning
+    question: What does Helpin lead with on top-level surfaces?
+    statement: >-
+      Customer support first. Helpin is open-source customer support software: support
+      chat, a shared inbox, a help center, and AI agents. “Alternative to Intercom” is a
+      supporting line, not the headline. Projects, CRM, and Meetings are
+      built in and are introduced by what they do for a support conversation.
+    status: owner-approved
+    sources:
+      - Owner decision 2026-11-20 (support first; other products secondary)
+    checked_at: 2026-11-20
+    qualifier: >-
+      Applies to the homepage, README, and site-wide metadata. Product and comparison
+      pages for Projects and CRM stay; the home social image still carries the old line.
+    conflict: null
+
+  - id: support-desk
+    question: Which support-desk capabilities does the homepage state?
+    statement: >-
+      Chat, email, and Telegram conversations in one shared inbox; SLA policies with
+      first-response and next-response targets and a warning before a target is missed; a
+      customer portal where customers sign in to follow requests, search their history,
+      and read customer-only help; and the Echo agent following up and handing over.
+    status: verified
+    sources:
+      - server/internal/model/support_sla.go, support_portal.go; docs/support-channels.md (origin/main f273bb2e1)
+      - website/src/app/(site)/products/customer-support/page.tsx (Echo follow-up wording)
+    checked_at: 2026-11-20
+    qualifier: >-
+      Checked in released code, not in a live workspace. Telegram is the only messaging
+      provider; don't imply WhatsApp or others.
+    conflict: null
+
+  - id: support-routing-tags
+    question: Does the AI classify, tag, and route new conversations?
+    statement: >-
+      Triage classifies new conversations and moves them between team inboxes; the support AI
+      can tag a conversation with add_support_conversation_tag.
+    status: verified
+    sources:
+      - server/internal/service/support_inbox_triage.go (AI triage classifies and moves to the suggested mailbox; tagging runs in its durable worker; origin/main dbc3be369)
+    checked_at: 2026-11-20
+    qualifier: Routing depends on configured team inboxes; don't promise priority setting by AI.
+    conflict: null
+
+  - id: connected-tools
+    question: Can agents use connected tools, and is it beta?
+    statement: >-
+      Agents can use tools from connected external MCP servers, with the tools each agent may
+      use chosen by the team and approvals where required. Not labelled beta (owner decision,
+      2026-11-20). A workspace manager turns on public MCP; the deployment must enable external
+      servers.
+    status: verified
+    sources:
+      - website/src/app/(site)/developers/page.tsx (setup wording); owner confirmation 2026-11-20
+    checked_at: 2026-11-20
+    qualifier: Keep the enablement steps; just don't call it beta.
+    conflict: null
+
+  - id: importers
+    question: What can customers import?
+    statement: >-
+      Settings → Import: Intercom with an access token (Help Center, and past conversations with
+      their replies, notes, and tags; data region; created-on-or-after date; inbox; article
+      status as drafts or matching Intercom); a public Intercom help center by address with no
+      token; HelpScout Docs (articles, categories, images, redirect map); Nextra repo zip (MDX,
+      navigation, images, redirects); CRM contacts from HubSpot or CSV; Shortcut tasks, epics,
+      workflows, and members.
+    status: verified
+    sources:
+      - frontend/src/components/settings/ImportTab.tsx, IntercomImportWizard.tsx, PublicHelpCenterImportWizard.tsx, HelpCenterImportSection.tsx
+      - server/internal/model/support_import.go, docs_import.go, crm_import.go, pm_import.go (origin/main dbc3be369)
+    checked_at: 2026-11-20
+    qualifier: >-
+      Linear and Jira importers show "Coming soon" in the app; don't claim them. No Zendesk
+      importer. Don't claim that Intercom contacts become CRM records.
+    conflict: null
+
+  - id: support-sla-policies
+    question: What do SLA policies do?
+    statement: >-
+      Policies set first-response, next-response, and resolution targets. A policy matches by
+      priority, team inbox, channel, request type, company SLA tier, or specific company; the
+      first enabled match by position applies. Options: count business hours only (from Chat
+      widget settings), pause resolution while waiting on the customer, warn N minutes before a
+      target is missed, notify chosen teammates and the company's customer success owner on
+      warnings and breaches, and assign a teammate at the warning if nobody is assigned.
+      Warnings and breaches emit sla.warning and sla.breached webhooks.
+    status: verified
+    sources:
+      - server/internal/model/support_sla.go, support_webhook.go
+      - frontend/src/components/settings/sla/SupportSLAPolicyDialog.tsx (origin/main dbc3be369)
+    checked_at: 2026-11-20
+    qualifier: Without business hours set up, targets run on calendar time.
+    conflict: null
+
+  - id: customer-portal
+    question: What can customers do in the portal?
+    statement: >-
+      Sign in with an emailed link (or send a request without signing in); open requests with a
+      request type and its fields, attachments, and copied colleagues; see related help articles
+      while writing; follow replies; search every message in their requests; use an assistant
+      that answers from help articles with source links; rate resolved requests. Roles: Requester
+      sees only their own requests, Member sees every company request, Admin sees company
+      requests and manages people (invites colleagues).
+    status: verified
+    sources:
+      - frontend/src/components/customer-portal (CustomerPortal, PortalRequestTable, PortalArticleSuggestions, PortalAssistant, PortalRatingCard, PortalCCEditor; origin/main dbc3be369)
+    checked_at: 2026-11-20
+    qualifier: >-
+      Request types are configured under Settings → Fields; the same types can be SLA conditions.
+      AI does not reply to portal requests: portal AI is Off or Private suggestions (drafts for a
+      teammate on unassigned requests that customers never see); the customer-reply mode was
+      retired. The customer-facing AI is Ask AI, which answers from help articles with sources.
+    conflict: null
+
+  - id: customer-portal-page
+    question: What does the customer portal page state beyond the portal basics?
+    statement: >-
+      Access modes: approved contacts, company members only, or any verified email; blocked
+      contacts can never sign in; requests without sign-in are optional and need new requests
+      turned on. While an SLA response target runs, requests show "Expect a reply by …" (list:
+      "Reply by …"); overdue targets and policy names stay internal. Up to five published articles
+      are suggested from chosen help spaces; the Portal self-service report shows Likely answered
+      by an article (opened a suggestion, no request within 30 minutes), Opened an article, Asked
+      after reading, and Nothing to suggest (collected by Coverage gaps). Company access and
+      company admins are set on the CRM company. The portal runs at /requests on the help center
+      domain with the help center's branding. Included in every plan and in the Community edition.
+    status: verified
+    sources:
+      - frontend/src/components/settings/CustomerPortalSettings.tsx; server/internal/service/customer_portal_reply_by.go, customer_portal_address.go, customer_portal_suggestions.go
+      - frontend/src/components/support/reports/ReportPortalIntake.tsx; frontend/src/components/crm/CompanyPortalPanel.tsx (origin/main dbc3be369)
+      - Branding and "included in every plan": owner confirmation 2026-11-20
+    checked_at: 2026-11-20
+    qualifier: Keep competitor comparisons off this page (owner decision); they belong on compare pages.
+    conflict: null
+
+  - id: support-channels-telegram
+    question: Which channels arrive in the inbox?
+    statement: >-
+      Widget chat, email, portal, and Telegram conversations share the inbox. Telegram connects
+      a bot by its @BotFather token; new conversations go to a chosen inbox, routing rules can
+      still move them, and each bot has its own AI replies switch. Telegram is the only messaging
+      provider.
+    status: verified
+    sources:
+      - docs/support-channels.md; frontend/src/components/settings/channels/SupportChannels.tsx (origin/main dbc3be369)
+    checked_at: 2026-11-20
+    qualifier: Don't imply WhatsApp, Slack, or other messaging apps.
+    conflict: null
+
+  - id: support-reports-csat
+    question: What do Reports and CSAT cover?
+    statement: >-
+      Reports (Last 7/30/90 days, by inbox) show new and resolved conversations, first response
+      by the team (median and 90th percentile), resolution time, AI resolution rate, AI
+      involvement, handoffs to the team, customer satisfaction (average for conversations
+      resolved by AI and by the team, rating distribution, recent comments), SLA target hit rates
+      with the conversations behind met and missed targets, and tables for channels, topics, and
+      teammates. Customers rate resolved conversations on a five-point scale in the widget or the
+      portal, with an optional comment.
+    status: verified
+    sources:
+      - frontend/src/components/support/reports/SupportReportsPage.tsx; frontend/src/lib/supportReportFormat.ts
+      - server/internal/model/support_csat.go (channels widget and portal; origin/main dbc3be369)
+    checked_at: 2026-11-20
+    qualifier: CSAT is not collected by email.
+    conflict: null
+
+  - id: docs-update-paths
+    question: Which two paths into a help-center update does the homepage state?
+    statement: >-
+      From support: Support coverage groups the questions the AI couldn't answer well into
+      gaps, merges similar gaps, and shows conversations per gap over 30 days; the "Prepare a
+      fix" starter on a gap has Quill prepare a draft that is saved for review. From merged
+      pull requests: the "Update docs from merged PRs" flow runs Quill on each PR merged into
+      the chosen branch; it reads the changes and linked tasks, skips changes readers never
+      see, proposes edits (or edits directly when configured), creates an article for a new
+      workflow, reports each article checked, and can backfill past PRs.
+    status: verified
+    sources:
+      - frontend/src/components/support/coverage (GapList, GapDetailPane, starterSuggestions "Prepare a fix"; origin/main dbc3be369)
+      - server/internal/templates/manifests/update_docs_from_merged_prs/template.yaml (trigger github.pull_request_merged; origin/main dbc3be369)
+    checked_at: 2026-11-20
+    qualifier: >-
+      The merged-PR flow has no browser tools, so it does not take screenshots; don't claim
+      screenshots for that path. Updates wait for review in the default "propose" mode.
+    conflict: null
+
   - id: editions-and-license
     question: How is Helpin offered, and under which licenses?
     statement: >-
