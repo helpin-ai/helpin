@@ -201,7 +201,7 @@ export function AIConnectionModelsDialog({
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto border-y px-6">
-            <AIConnectionPolicyNotice policy={connection.policy} />
+            <AIConnectionPolicyNotice policy={connection.policy} hideManagedPricing />
             {(discovered.data?.warning || discovered.isError) && (
               <p
                 role="status"
@@ -352,14 +352,12 @@ export function AIConnectionModelsDialog({
                 {canManage
                   ? "Supported models"
                   : "Managed by your workspace admins"}
-                <AISetupHelp
-                  label="About available models"
-                  description={
-                    canManage
-                      ? "This connection uses the supported model catalog. Model discovery does not change managed defaults or subscription runtime support."
-                      : "Ask an administrator to change shared model visibility. You can manage your own personal connections in Settings."
-                  }
-                />
+                {!canManage && (
+                  <AISetupHelp
+                    label="About available models"
+                    description="Ask an administrator to change shared model visibility. You can manage your own personal connections in Settings."
+                  />
+                )}
               </span>
             )}
           </div>

@@ -7,9 +7,11 @@ import { AISetupHelp } from "./AISetupHelp";
 export function AIConnectionPolicyNotice({
   policy,
   label,
+  hideManagedPricing = false,
 }: {
   policy?: AIConnectionPolicyView;
   label?: string;
+  hideManagedPricing?: boolean;
 }) {
   const sharedPricing = useContext(AIModelsPricingContext);
   if (!policy) return null;
@@ -20,6 +22,7 @@ export function AIConnectionPolicyNotice({
         {policy.message || "Unavailable for new runs."}
       </span>
     );
+  if (hideManagedPricing && policy.pricing?.funding_mode === "helpin_hosted") return null;
   const pricing = aiUsagePricingText(policy.pricing);
   return pricing && pricing !== sharedPricing ? <AISetupHelp label={label ? `${label} usage details` : "Usage details"} description={pricing} /> : null;
 }
