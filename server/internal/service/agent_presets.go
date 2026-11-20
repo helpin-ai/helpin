@@ -10,9 +10,12 @@ import (
 )
 
 const (
-	defaultAnthropicAgentModel      = "claude-opus-4-8"
-	defaultOpenAIAgentModel         = "gpt-5.6-terra"
-	defaultOpenRouterAgentModel     = "openai/gpt-5.6-terra"
+	defaultAnthropicAgentModel      = "claude-opus-5-5"
+	defaultOpenAIAgentModel         = "gpt-6.2-sol"
+	defaultOpenRouterAgentModel     = "openai/gpt-6.2-sol"
+	// legacyOpenAIAgentModel is the previous OpenAI product default; untouched
+	// rows still on it are upgraded when presets are reconciled.
+	legacyOpenAIAgentModel = "gpt-5.6-terra"
 	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4.1-flash-1017:nitro"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred fast OpenRouter model.

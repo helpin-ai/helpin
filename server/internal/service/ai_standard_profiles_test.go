@@ -83,8 +83,8 @@ func TestStandardAIProfilesUseDirectProviderCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct{ tier, provider, model string }{
-		{"large", "openai", "gpt-5.6-terra"},
-		{"flagship", "anthropic", "claude-sonnet-5"},
+		{"large", "openai", "gpt-6.2-sol"},
+		{"flagship", "anthropic", "claude-opus-5-5"},
 	} {
 		var profile model.AIProfile
 		if err := db.First(&profile, "id = ?", model.StandardAIProfileID("workspace", test.tier)).Error; err != nil {
@@ -221,27 +221,27 @@ func workspaceDefault(t *testing.T, db *gorm.DB) string {
 }
 
 func TestStandardProfilesFollowConfiguredProviders(t *testing.T) {
-	fixedLarge := standardRouteWant{"openai", "gpt-5.6-terra"}
-	fixedFlagship := standardRouteWant{"anthropic", "claude-sonnet-5"}
+	fixedLarge := standardRouteWant{"openai", "gpt-6.2-sol"}
+	fixedFlagship := standardRouteWant{"anthropic", "claude-opus-5-5"}
 	tests := []struct {
 		name        string
 		credentials map[string]string
 		want        map[string]standardRouteWant
 	}{
 		{name: "only anthropic", credentials: map[string]string{"anthropic": "anthropic-key"}, want: map[string]standardRouteWant{
-			"small": {"anthropic", "claude-haiku-4-5"}, "medium": {"anthropic", "claude-haiku-4-5"},
-			"large": {"anthropic", "claude-haiku-4-5"}, "flagship": fixedFlagship,
+			"small": {"anthropic", "claude-haiku-5-5"}, "medium": {"anthropic", "claude-haiku-5-5"},
+			"large": {"anthropic", "claude-sonnet-5-5"}, "flagship": fixedFlagship,
 		}},
 		{name: "only openai", credentials: map[string]string{"openai": "openai-key"}, want: map[string]standardRouteWant{
-			"small": {"openai", "gpt-5.6-luna"}, "medium": {"openai", "gpt-5-mini"},
-			"large": fixedLarge, "flagship": {"openai", "gpt-5.5"},
+			"small": {"openai", "gpt-6-luna"}, "medium": {"openai", "gpt-6.1-terra"},
+			"large": fixedLarge, "flagship": {"openai", "gpt-6.2-astra"},
 		}},
 		{name: "only openrouter", credentials: map[string]string{"openrouter": "openrouter-key"}, want: map[string]standardRouteWant{
-			"small": {"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"}, "medium": {"openrouter", "google/gemini-3.8-flash"},
-			"large": {"openrouter", "openai/gpt-5.6-terra"}, "flagship": {"openrouter", "anthropic/claude-sonnet-5"},
+			"small": {"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"}, "medium": {"openrouter", "openai/gpt-6.1-terra"},
+			"large": {"openrouter", "openai/gpt-6.2-sol"}, "flagship": {"openrouter", "openai/gpt-6.2-astra"},
 		}},
 		{name: "openai and anthropic", credentials: map[string]string{"openai": "openai-key", "anthropic": "anthropic-key"}, want: map[string]standardRouteWant{
-			"small": {"openai", "gpt-5.6-luna"}, "medium": {"openai", "gpt-5-mini"},
+			"small": {"openai", "gpt-6-luna"}, "medium": {"openai", "gpt-6.1-terra"},
 			"large": fixedLarge, "flagship": fixedFlagship,
 		}},
 	}
@@ -282,9 +282,9 @@ func TestStandardProfilesRemapWhenSharedConnectionsChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := login.Connection.ID
-	assertStandardProfile(t, db, "small", standardRouteWant{"openai", "gpt-5.6-luna"}, id)
-	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-5.6-terra"}, id)
-	assertStandardProfile(t, db, "flagship", standardRouteWant{"openai", "gpt-5.5"}, id)
+	assertStandardProfile(t, db, "small", standardRouteWant{"openai", "gpt-6-luna"}, id)
+	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-6.2-sol"}, id)
+	assertStandardProfile(t, db, "flagship", standardRouteWant{"openai", "gpt-6.2-astra"}, id)
 	var p model.AIProfile
 	if err := db.First(&p, "id = ?", model.StandardAIProfileID("workspace", "small")).Error; err != nil || p.Revision != 1 {
 		t.Fatalf("re-mapping changed the revision: %d, %v", p.Revision, err)
@@ -294,7 +294,7 @@ func TestStandardProfilesRemapWhenSharedConnectionsChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertStandardProfile(t, db, "small", fixedSmall, model.StandardAIConnectionID("workspace", "openrouter"))
-	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-5.6-terra"}, model.StandardAIConnectionID("workspace", "openai"))
+	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-6.2-sol"}, model.StandardAIConnectionID("workspace", "openai"))
 
 	if _, err := connections.Create(ctx, "workspace", "owner", model.CreateAIConnectionRequest{Name: "Mine", Provider: "anthropic", APIKey: "personal-key"}); err != nil {
 		t.Fatal(err)
@@ -316,8 +316,8 @@ func TestStandardProfilesNeverOverwriteEditedProfiles(t *testing.T) {
 	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
 		t.Fatal(err)
 	}
-	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-5.6-terra"}, model.StandardAIConnectionID("workspace", "openai"))
-	assertStandardProfile(t, db, "small", standardRouteWant{"anthropic", "claude-haiku-4-5"}, model.StandardAIConnectionID("workspace", "anthropic"))
+	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-6.2-sol"}, model.StandardAIConnectionID("workspace", "openai"))
+	assertStandardProfile(t, db, "small", standardRouteWant{"anthropic", "claude-haiku-5-5"}, model.StandardAIConnectionID("workspace", "anthropic"))
 }
 
 func TestStandardProfilesRepointDefaultOnlyFromUnrunnableSmall(t *testing.T) {
@@ -443,8 +443,8 @@ func TestAgentCreationUsesConnectedProviderRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if derefString(agent.Provider) != "openai" || derefString(agent.Model) != "gpt-5.6-luna" {
-		t.Fatalf("agent route = %s/%s, want openai/gpt-5.6-luna", derefString(agent.Provider), derefString(agent.Model))
+	if derefString(agent.Provider) != "openai" || derefString(agent.Model) != "gpt-6-luna" {
+		t.Fatalf("agent route = %s/%s, want openai/gpt-6-luna", derefString(agent.Provider), derefString(agent.Model))
 	}
 	var p model.AIProfile
 	if err := db.First(&p, "id = ?", model.StandardAIProfileID("ws-test", "small")).Error; err != nil || p.Primary.ConnectionID != shared.ID {

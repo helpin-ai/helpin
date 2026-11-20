@@ -15,7 +15,7 @@ func TestCoverageAnalysisUsesFallbackWhenStrictSchemaHasNoCompatibleEndpoint(t *
 			"z-ai/glm-5.3-flash:exacto": &llm.ProviderError{Provider: "openrouter", StatusCode: http.StatusNotFound,
 				Message: `{"error":{"message":"No endpoints found that support the requested parameters"}}`},
 		},
-		responses: map[string]*llm.ChatResponse{"openai/gpt-5.6-luna": {Content: coverageTestGapJSON}},
+		responses: map[string]*llm.ChatResponse{"openai/gpt-6-luna": {Content: coverageTestGapJSON}},
 	}
 	completion := NewAICompletionService(provider, NewCommunityAIUsage(&recordingCommunityUsage{}), DefaultAICompletionRouteRegistry()).
 		SetGovernance(aipolicy.DefaultRegistry(), nil)

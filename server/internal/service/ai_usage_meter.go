@@ -504,9 +504,9 @@ func agentPricingIdentity(agent *model.Agent) (provider, modelID, route string) 
 	if provider == "" || modelID == "" {
 		feature := AgentRunAIUsageFeature(agent)
 		if taskNatureForFeature(feature) == "planning" || taskNatureForFeature(feature) == "coding" || taskNatureForFeature(feature) == "review" {
-			provider, modelID = "openrouter", "openai/gpt-5.6-terra"
+			provider, modelID = "openrouter", "openai/gpt-6.2-sol"
 		} else {
-			provider, modelID = "openrouter", "openai/gpt-5.6-luna"
+			provider, modelID = "openrouter", "openai/gpt-6-luna"
 		}
 	}
 	route = modelID

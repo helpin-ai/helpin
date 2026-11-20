@@ -92,7 +92,7 @@ func TestAIConnectionHandlerTestReportsSuccess(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if !result.OK || result.Model != "claude-haiku-4-5" || result.Error != "" {
+	if !result.OK || result.Model != "claude-haiku-5-5" || result.Error != "" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 }
