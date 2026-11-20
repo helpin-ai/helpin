@@ -1,5 +1,4 @@
-import { useContext, useState } from "react";
-import { AIModelsPricingContext } from "./AIModelsPricingContext";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +29,6 @@ import {
 } from "@/hooks/queries/useAIProfiles";
 import { ProviderIcon } from "./ProviderIcon";
 import { AISetupHelp } from "./AISetupHelp";
-import { aiUsagePricingText } from "@edition/ai";
 
 export function AIModelTableRow({
   workspaceId,
@@ -51,7 +49,6 @@ export function AIModelTableRow({
   onEdit: () => void;
   onReconnect: () => void;
 }) {
-  const sharedPricing = useContext(AIModelsPricingContext);
   const personalDefault = useSetPersonalDefaultAIProfile(workspaceId);
   const workspaceDefault = useSetDefaultAIProfile(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
@@ -70,7 +67,6 @@ export function AIModelTableRow({
     (settings?.personal_default_profile_id || settings?.default_profile_id) ===
     profile.id;
   const policy = profile.primary_policy ?? connection?.policy;
-  const pricing = aiUsagePricingText(policy?.pricing);
   const connectionStatus = connection?.status ?? profile.subscription_status;
   const ready =
     !!settings &&
@@ -183,19 +179,6 @@ export function AIModelTableRow({
                       : "Reconnect this connection to use its models for new runs."
             }
           />
-          {pricing && pricing !== sharedPricing && (
-            <QuickTooltip
-              label={pricing}
-            >
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline"
-                aria-label={`Usage details for ${profile.name}`}
-              >
-                Usage
-              </button>
-            </QuickTooltip>
-          )}
         </div>
       </TableCell>
       <TableCell className="text-right">

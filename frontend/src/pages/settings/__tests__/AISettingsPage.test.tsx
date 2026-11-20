@@ -250,7 +250,7 @@ it('puts recent discoveries before saved models and older choices, without marki
   expect(Array.from(dialog.querySelectorAll('span')).filter(el => el.textContent === 'New')).toHaveLength(2);
 });
 
-it('shows common pricing in the page subtext without repeating usage tooltips on models or connections', async () => {
+it('shows common pricing below the model table without repeating usage tooltips on models or connections', async () => {
   const pricing = ([
     { mode: 'community', funding_mode: 'customer_unbilled' },
     { mode: 'ee', funding_mode: 'customer_funded_flat', flat_tariff: { version: 'v1', currency: 'USD', microusd_per_million: 0, accounting_version: 'v1' } },
@@ -264,7 +264,10 @@ it('shows common pricing in the page subtext without repeating usage tooltips on
     { id: 'priced-model', workspace_id: 'ws', user_id: 'me', scope: 'personal', name: 'My model', revision: 1, primary: { connection_id: 'priced', model: { provider: 'openai', model: 'gpt-model', controls: {} } }, fallback: null, primary_policy: policy },
   ], error: null });
   await render('personal');
-  expect(document.body.textContent).toContain(expected);
+  const usage = document.querySelector('[aria-label="Model usage"]')!;
+  expect(usage.textContent).toContain(expected);
+  expect(document.querySelector('table')!.compareDocumentPosition(usage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(document.body.textContent?.split(expected)).toHaveLength(2);
   expect(document.querySelector('[aria-label="Usage details for My model"]')).toBeNull();
   await openManageConnections();
   expect(document.querySelector('[aria-label="Usage details"]')).toBeNull();

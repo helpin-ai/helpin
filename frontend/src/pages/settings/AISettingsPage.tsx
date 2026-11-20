@@ -1,5 +1,5 @@
 import { AIModelsPricingContext, sharedAIModelsPricing } from "@/components/agents/AIModelsPricingContext";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { aiUsagePricingText } from "@edition/ai";
 import { useRef, useState } from "react";
 import {
   AIConnectionDialog,
@@ -41,21 +41,16 @@ import { SettingsPageFrame } from "./SettingsPageFrame";
 
 // Retain legacy routes; both now land on the same model list.
 export function AISettingsPage(_props: { scope?: "personal" | "workspace" }) {
-  const workspaceId = useWorkspaceStore(state => state.currentWorkspace?.id ?? "");
-  const connections = useAIConnections(workspaceId);
-  const pricing = sharedAIModelsPricing((connections.data?.connections ?? []).map(connection => connection.policy));
   return (
-    <AIModelsPricingContext.Provider value={pricing}>
-      <SettingsPageFrame section="ai" descriptionSuffix={pricing ?? undefined}>
-        {({ workspaceId, permissions }) => (
-          <AISettingsContent
-            key={workspaceId}
-            workspaceId={workspaceId}
-            canManageWorkspace={permissions.has("workspace.update")}
-          />
-        )}
-      </SettingsPageFrame>
-    </AIModelsPricingContext.Provider>
+    <SettingsPageFrame section="ai">
+      {({ workspaceId, permissions }) => (
+        <AISettingsContent
+          key={workspaceId}
+          workspaceId={workspaceId}
+          canManageWorkspace={permissions.has("workspace.update")}
+        />
+      )}
+    </SettingsPageFrame>
   );
 }
 
@@ -130,11 +125,25 @@ function AISettingsContent({
         description="Ask your administrator to configure AI connection encryption and the agent runtime."
       />
     );
+  const usageGroups = new Map<string, string[]>();
+  for (const model of models) {
+    const connection = all.find(c => c.id === model.primary.connection_id);
+    const pricing = aiUsagePricingText((model.primary_policy ?? connection?.policy)?.pricing);
+    if (!pricing) continue;
+    const names = usageGroups.get(pricing) ?? [];
+    const connectionName = connection?.name ?? model.subscription_name;
+    const needsConnection = connectionName && models.some(other => other.id !== model.id && other.name === model.name);
+    names.push(needsConnection ? `${model.name} (${connectionName})` : model.name);
+    usageGroups.set(pricing, names);
+  }
+  const commonPricing = sharedAIModelsPricing(all.map(c => c.policy));
+  if (!models.length && commonPricing) usageGroups.set(commonPricing, []);
   const knowledge = connections.data.knowledge;
   const knowledgeDetail = knowledge
     ? `${knowledge.embeddings_configured ? `${knowledge.embedding_detail || "Embeddings configured"}: ${knowledge.embedding_model} (${knowledge.embedding_dimensions} dimensions). Connectivity has not been verified.` : "Semantic search is not configured. Knowledge search uses keyword matching only. Connect OpenAI or OpenRouter as a workspace connection, or configure a server key."} Agent model choices do not configure help-center AI answers or automatic triage; these use server provider settings.${knowledge.chat_providers.length === 0 ? " No server chat provider is configured." : ""}`
     : "";
   return (
+    <AIModelsPricingContext.Provider value={commonPricing && usageGroups.has(commonPricing) ? commonPricing : null}>
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm font-medium">
@@ -235,6 +244,17 @@ function AISettingsContent({
             </TableBody>
           </Table>
         </div>
+      )}
+      {usageGroups.size > 0 && (
+        <section aria-label="Model usage" className="space-y-1 text-xs text-muted-foreground">
+          <h3 className="font-medium text-foreground">Usage</h3>
+          {Array.from(usageGroups, ([pricing, names]) => (
+            <p key={pricing}>
+              {names.length < models.length && <strong className="font-medium">{names.join(", ")} — </strong>}
+              {pricing}
+            </p>
+          ))}
+        </section>
       )}
       {knowledge && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -407,5 +427,6 @@ function AISettingsContent({
         />
       )}
     </div>
+    </AIModelsPricingContext.Provider>
   );
 }
