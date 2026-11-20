@@ -30,9 +30,9 @@ it('groups suggested models by catalog tier and hides disabled entries', () => {
 })
 
 it('suggests ChatGPT models and leaves compatible endpoints free text', () => {
-  expect(modelCatalogFor('openai_chatgpt').flatMap(group => group.models.map(model => model.selectionModel))).toEqual(['gpt-6-astra', 'gpt-6-sol', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
-  expect(catalogLabel('openai_chatgpt', 'gpt-6-sol')).toBe('GPT-6 Sol')
-  expect(catalogLabel('openai_chatgpt', 'gpt-6-astra')).toBe('GPT-6 Astra')
+  expect(modelCatalogFor('openai_chatgpt').flatMap(group => group.models.map(model => model.selectionModel))).toEqual(['gpt-6.2-astra', 'gpt-6.2-sol', 'gpt-6.1-terra', 'gpt-6-luna'])
+  expect(catalogLabel('openai_chatgpt', 'gpt-6.2-sol')).toBe('GPT-6.2 Sol')
+  expect(catalogLabel('openai_chatgpt', 'gpt-6.2-astra')).toBe('GPT-6.2 Astra')
   expect(modelCatalogFor('openai_compatible')).toEqual([])
 })
 
@@ -66,9 +66,9 @@ it('exposes model controls only where the provider supports them', () => {
 })
 
 it.each([
-  ['openai', ['gpt-6-astra', 'gpt-5.6-sol']],
-  ['anthropic', ['claude-fable-5-1', 'claude-opus-5']],
-  ['openrouter', ['openai/gpt-6-astra', 'openai/gpt-5.6-sol', 'anthropic/claude-fable-5.1', 'anthropic/claude-opus-5']],
+  ['openai', ['gpt-6.2-astra', 'gpt-6.2-sol']],
+  ['anthropic', ['claude-fable-5-2', 'claude-opus-5-5']],
+  ['openrouter', ['openai/gpt-6.2-astra', 'openai/gpt-6.2-sol', 'anthropic/claude-fable-5.2', 'anthropic/claude-opus-5.5']],
 ])('offers newer models for %s without duplicate suggestions', (provider, ids) => {
   const groups = modelCatalogFor(provider)
   expect(groups[0]).toMatchObject({ key: 'latest', label: 'Latest models' })
@@ -84,4 +84,11 @@ it('appends saved thinking levels without guessing defaults or repeating an exis
   expect(modelNameWithThinking('GPT 6 Astra')).toBe('GPT 6 Astra')
   expect(modelNameWithThinking('GPT 6 Astra', 'default')).toBe('GPT 6 Astra')
   expect(modelNameWithThinking('GPT 6 Astra - Low', 'low')).toBe('GPT 6 Astra - Low')
+})
+
+it('hides legacy catalog models from suggestions but keeps their labels', () => {
+  const ids = modelCatalogFor('openai').flatMap(group => group.models.map(model => model.selectionModel))
+  expect(ids).not.toContain('gpt-5-mini')
+  expect(ids).toContain('gpt-6.1-terra')
+  expect(catalogLabel('openai', 'gpt-5-mini')).toBe('GPT-5 mini')
 })

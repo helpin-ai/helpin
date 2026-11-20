@@ -10,7 +10,7 @@ import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CtaNote, CtaRow, DEMO_URL, FAQList, SectionHead, SIGNUP_URL } from '../_components/ui';
 import { CompareCard, HelpinMark } from './ComparePage';
 import { CompareMatrix } from './CompareMatrix';
-import { COMPETITORS, formatChecked } from './compare-data';
+import { COMPETITORS, SUPPORT_COMPETITORS, formatChecked } from './compare-data';
 import { InViewOnce } from './InViewOnce';
 import { LazyPreview } from './LazyPreview';
 import { MATRIX_TOOLS } from './matrix-data';
@@ -89,7 +89,7 @@ const HUB_JSON_LD = {
       url: `${SITE_URL}/compare`,
       mainEntity: {
         '@type': 'ItemList',
-        itemListElement: COMPETITORS.map((item, index) => ({ '@type': 'ListItem', position: index + 1, name: `Helpin vs ${item.name}`, url: `${SITE_URL}/compare/${item.slug}` })),
+        itemListElement: SUPPORT_COMPETITORS.map((item, index) => ({ '@type': 'ListItem', position: index + 1, name: `Helpin vs ${item.name}`, url: `${SITE_URL}/compare/${item.slug}` })),
       },
     },
   ],
@@ -179,7 +179,7 @@ export default function CompareHub() {
         <section id="comparisons">
           <div className="wrap">
             <div className="platform-section-intro"><SectionHead eyebrow="Full comparisons" title="Pick the tool you’re weighing up." lede="Compare AI agents, everyday workflows, pricing, hosting and what it takes to switch." /></div>
-            <div className="cmp-card-grid">{COMPETITORS.map(item => <CompareCard key={item.slug} competitor={item} />)}</div>
+            <div className="cmp-card-grid">{SUPPORT_COMPETITORS.map(item => <CompareCard key={item.slug} competitor={item} />)}</div>
           </div>
         </section>
 

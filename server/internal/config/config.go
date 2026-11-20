@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultCommandRouterLLMProvider                  = "openrouter"
-	defaultCommandRouterLLMModel                     = "openai/gpt-5.6-luna"
+	defaultCommandRouterLLMModel                     = "openai/gpt-6-luna"
 	defaultCommandRouterOpenRouterProviderOptionsRaw = `{"order":["google-vertex/global"],"allow_fallbacks":false}`
 )
 
@@ -516,7 +516,7 @@ func Load() (*Config, error) {
 		HelpcenterAnswerModel:                  strings.TrimSpace(os.Getenv("HELPCENTER_ANSWER_MODEL")),
 		DocsImportAIConversionEnabled:          parseBoolEnv(os.Getenv("DOCS_IMPORT_AI_CONVERSION_ENABLED")),
 		DocsImportAIConversionProvider:         strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_PROVIDER"), "openrouter")),
-		DocsImportAIConversionModel:            strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_MODEL"), "openai/gpt-5.6-luna")),
+		DocsImportAIConversionModel:            strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_MODEL"), "openai/gpt-6-luna")),
 		DocsImportAIConversionArticleLimit:     parsePositiveIntEnv(os.Getenv("DOCS_IMPORT_AI_CONVERSION_ARTICLE_LIMIT"), 0),
 		CloudflareAccountID:                    strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:                     strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
@@ -614,7 +614,7 @@ func Load() (*Config, error) {
 		VexaBaseURL:                            strings.TrimRight(strings.TrimSpace(os.Getenv("VEXA_BASE_URL")), "/"),
 		VexaAPIKey:                             strings.TrimSpace(os.Getenv("VEXA_API_KEY")),
 		VexaWebhookSecret:                      strings.TrimSpace(os.Getenv("VEXA_WEBHOOK_SECRET")),
-		QueryExpansionModel:                    strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.6-luna")),
+		QueryExpansionModel:                    strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-6-luna")),
 		QueryExpansionProvider:                 strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
 		QueryExpansionTimeoutMS:                parsePositiveIntEnv(os.Getenv("QUERY_EXPANSION_TIMEOUT_MS"), 10000),
 		CommandRouterLLMProvider:               strings.TrimSpace(firstNonEmpty(os.Getenv("COMMAND_ROUTER_LLM_PROVIDER"), defaultCommandRouterLLMProvider)),

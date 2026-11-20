@@ -14,7 +14,7 @@ export function CustomerLogos() {
       <ul aria-label="Teams using Helpin">
         {CUSTOMERS.map(({ name, domain }) => (
           <li key={domain}>
-            <img src={`/favicons/${domain}.png`} alt="" width={24} height={24} loading="lazy" decoding="async" />
+            <img src={`/favicons/${domain}.png`} alt="" width={32} height={32} loading="lazy" decoding="async" />
             <span>{name}</span>
           </li>
         ))}

@@ -141,9 +141,22 @@ func (c *Catalog) PublicModels() []PublicModel {
 				break
 			}
 		}
-		models = append(models, PublicModel{Provider: definition.Provider, CanonicalModel: definition.CanonicalModel, SelectionModel: selection, Label: definition.Label, Tier: definition.Tier, Enabled: definition.Enabled})
+		models = append(models, PublicModel{Provider: definition.Provider, CanonicalModel: definition.CanonicalModel, SelectionModel: selection, Label: definition.Label, Tier: definition.Tier, Enabled: definition.Enabled, Legacy: definition.Legacy})
 	}
 	return models
+}
+
+// Legacy reports whether a model is kept only for routes saved before it was superseded.
+func (c *Catalog) Legacy(provider, canonicalModel string) bool {
+	if c == nil {
+		return false
+	}
+	for _, definition := range c.Models {
+		if key(definition.Provider, definition.CanonicalModel) == key(provider, canonicalModel) {
+			return definition.Legacy
+		}
+	}
+	return false
 }
 
 func normalize(value string) string { return strings.ToLower(strings.TrimSpace(value)) }

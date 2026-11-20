@@ -12,8 +12,8 @@ export type PageSeo = {
 
 export const PAGE_SEO = {
   home: {
-    title: "AI agents for support, docs, sales, and coding | Helpin",
-    description: "AI agents answer customers, update docs, plan work, and help sales follow up. One open-source workspace for your team. Self-host or use Helpin Cloud.",
+    title: "Open-source customer support with AI agents | Helpin",
+    description: "An open-source alternative to Intercom: support chat, a shared inbox, a help center, and AI agents that answer and follow up. Self-host or use Helpin Cloud.",
     canonicalPath: '/',
     imagePath: '/og/helpin-new-home-green-v6.png',
     imageAlt: 'Helpin · AI agents for support, docs, sales, and coding.',
@@ -27,10 +27,17 @@ export const PAGE_SEO = {
   },
   customerSupport: {
     title: "AI customer support and shared inbox | Helpin",
-    description: "The Echo agent answers questions, follows up, and hands over with the findings. Manage chat, email, and team inboxes in Helpin. Cloud or self-hosted.",
+    description: "The Echo agent answers, follows up, and hands over with its findings. Chat, email, Telegram, and portal requests in one inbox, with SLAs and reports.",
     canonicalPath: '/products/customer-support',
     imagePath: '/og/helpin-customer-support-green-v6.png',
     imageAlt: 'Helpin customer support',
+  },
+  customerPortal: {
+    title: "Customer portal for B2B support | Helpin",
+    description: "Give customers one place to open requests, follow replies, and search their history. Help articles answer first, with company access and reply times.",
+    canonicalPath: '/products/customer-portal',
+    imagePath: '/og/helpin-customer-support-green-v6.png',
+    imageAlt: 'Helpin customer portal',
   },
   meetings: {
     title: "AI meeting notes and action items | Helpin",

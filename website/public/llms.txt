@@ -13,6 +13,7 @@ Key facts:
 
 - [Product overview](https://helpin.ai/product): how support, meetings, projects, CRM, docs and agents share one customer history
 - [Customer support](https://helpin.ai/products/customer-support): shared inbox with AI agents that answer from your docs and hand off to your team
+- [Customer portal](https://helpin.ai/products/customer-portal): a portal on your help center where customers open and follow requests, with company access and reply times
 - [Meetings](https://helpin.ai/products/meetings): notetaker for Google Meet, Zoom, Microsoft Teams and Webex that turns action items into tasks
 - [Projects](https://helpin.ai/products/projects): roadmaps and sprints where AI agents plan and code from the customer conversation
 - [CRM](https://helpin.ai/products/crm): contacts, companies and deals with the email, meetings and support work behind them

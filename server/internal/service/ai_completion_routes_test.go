@@ -56,7 +56,7 @@ func TestAICompletionRouteRegistryUsesLongOutputRoutesForDocsImport(t *testing.T
 	if !ok {
 		t.Fatal("docs import route policy missing")
 	}
-	if policy.Primary.Model != "openai/gpt-5.6-luna" {
+	if policy.Primary.Model != "openai/gpt-6-luna" {
 		t.Fatalf("docs import primary = %q, want OpenRouter Luna", policy.Primary.Model)
 	}
 	if policy.MaximumOutputTokens < 24_000 {

@@ -4,17 +4,18 @@ import { ArrowUpRight, Mail } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { DISCORD_URL, DiscordIcon, GITHUB_URL, GithubIcon } from './ui';
 import { DOCS } from './docsLinks';
-import { COMPETITORS } from '../compare/compare-data';
+import { SUPPORT_COMPETITORS } from '../compare/compare-data';
 
 // Keep the footer focused on current pages; detailed capabilities live on each page.
 const COLUMNS = [
   { title: 'Products', links: [
     { label: 'Support', href: '/products/customer-support' },
-    { label: 'Meetings', href: '/products/meetings' },
-    { label: 'Projects', href: '/products/projects' },
-    { label: 'CRM', href: '/products/crm' },
+    { label: 'Customer portal', href: '/products/customer-portal' },
     { label: 'Knowledge', href: '/products/knowledge' },
     { label: 'AI Agents', href: '/products/ai-agents' },
+    { label: 'Projects', href: '/products/projects' },
+    { label: 'CRM', href: '/products/crm' },
+    { label: 'Meetings', href: '/products/meetings' },
   ] },
   { title: 'Resources', links: [
     { label: 'Developers', href: '/developers' },
@@ -22,7 +23,7 @@ const COLUMNS = [
     { label: 'Documentation', href: DOCS.home },
   ] },
   { title: 'Compare', links: [
-    ...COMPETITORS.map(competitor => ({ label: `vs ${competitor.name}`, href: `/compare/${competitor.slug}` })),
+    ...SUPPORT_COMPETITORS.map(competitor => ({ label: `vs ${competitor.name}`, href: `/compare/${competitor.slug}` })),
     { label: 'All comparisons', href: '/compare' },
   ] },
   { title: 'Community', links: [
@@ -44,7 +45,7 @@ export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
             <Link prefetch={false} href="/" className="logo" aria-label="Helpin homepage">
               <HelpinBrand variant="light-on-dark" />
             </Link>
-            <p>One customer history.<br />{homepage ? "A shared workspace for your team and AI agents." : <>A workspace for your team<br />and agents.</>}</p>
+            <p>Open-source customer support.<br />{homepage ? "With AI agents that do more than answer." : <>With AI agents that do<br />more than answer.</>}</p>
           </div>
           <nav className="footer-nav" aria-label="Footer navigation">
             {COLUMNS.map((column) => (
@@ -76,7 +77,7 @@ export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
             <a href="mailto:hello@helpin.ai" aria-label="Email Helpin"><Mail size={18} aria-hidden="true" /></a>
           </div>
         </div>
-        {homepage && <p className="footer-descriptor">Helpin brings support, projects, CRM, meetings, and docs together for your team and AI agents.</p>}
+        {homepage && <p className="footer-descriptor">Helpin is open-source customer support software with AI agents, a help center, and built-in projects and CRM.</p>}
         <div className="footer-bottom">
           <nav className="footer-legal" aria-label="Legal and brand resources">
             <Link prefetch={false} href="/branding">Branding</Link>

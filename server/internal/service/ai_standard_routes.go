@@ -89,7 +89,7 @@ func tiersByDistance(tier aimodel.Tier) []aimodel.Tier {
 func catalogRouteForTier(catalog *aimodel.Catalog, provider string, tier aimodel.Tier, preferredCanonical string) (aimodel.RouteDefinition, bool) {
 	var first *aimodel.RouteDefinition
 	for _, candidate := range catalog.Routes {
-		if !strings.EqualFold(candidate.Provider, provider) || candidate.Tier != tier {
+		if !strings.EqualFold(candidate.Provider, provider) || candidate.Tier != tier || catalog.Legacy(provider, candidate.CanonicalModel) {
 			continue
 		}
 		resolved, err := catalog.Resolve(provider, candidate.CanonicalModel, candidate.Route, defaultAICompletionServiceTier)

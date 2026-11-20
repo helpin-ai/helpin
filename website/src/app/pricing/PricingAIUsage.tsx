@@ -1,6 +1,6 @@
 import { Cloud, Gauge, KeyRound } from 'lucide-react';
 import { AI_PRICING } from '@/generated/aiPricing';
-import { SectionHead } from '../(site)/_components/ui';
+import { SectionHead, LinkArrow } from '../(site)/_components/ui';
 import { AI_ALLOWANCE } from './pricing-data';
 import { DOCS } from '../(site)/_components/docsLinks';
 
@@ -14,7 +14,7 @@ const usd = (microusd: number) => new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', maximumFractionDigits: 4,
 }).format(microusd / 1_000_000);
 
-const modelsFor = (tier: string) => [...new Set(AI_PRICING.models.filter(model => model.tier === tier && model.enabled).map(model => model.label))];
+const modelsFor = (tier: string) => [...new Set(AI_PRICING.models.filter(model => model.tier === tier && model.enabled && !('legacy' in model && model.legacy)).map(model => model.label))];
 
 export function AIUsage() {
   return (
@@ -79,7 +79,7 @@ export function AIUsage() {
               <div><dt>Tracking usage</dt><dd>Billing settings show how much of the allowance is used and reserved, and when it resets.</dd></div>
               <div><dt>Trial</dt><dd>The 14-day Growth trial includes ${AI_ALLOWANCE.trial} of AI usage in total.</dd></div>
             </dl>
-            <a className="btn-link" href={DOCS.aiConnections}>AI connection guide →</a>
+            <a className="btn-link" href={DOCS.aiConnections}>AI connection guide<LinkArrow /></a>
           </div>
         </details>
       </div>

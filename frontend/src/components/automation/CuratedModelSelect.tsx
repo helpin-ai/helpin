@@ -21,8 +21,11 @@ interface CuratedModelSelectProps {
 
 export function CuratedModelSelect({ id, provider, value, disabled, onValueChange }: CuratedModelSelectProps) {
   const normalizedProvider = provider === 'openrouter-responses' ? 'openrouter' : provider;
-  const models = AI_MODELS.models.filter((model) => model.provider === normalizedProvider && model.enabled);
+  const providerModels = AI_MODELS.models.filter((model) => model.provider === normalizedProvider && model.enabled);
+  const models = providerModels.filter((model) => !('legacy' in model && model.legacy));
   const known = models.some((model) => model.selection_model === value || model.canonical_model === value);
+  // Superseded models stay runnable for saved profiles but are no longer offered.
+  const legacy = providerModels.find((model) => model.selection_model === value || model.canonical_model === value);
 
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled || models.length === 0}>
@@ -30,7 +33,7 @@ export function CuratedModelSelect({ id, provider, value, disabled, onValueChang
         <SelectValue placeholder={models.length ? 'Choose an approved model' : 'No approved models'} />
       </SelectTrigger>
       <SelectContent>
-        {!known && value && <SelectItem value={value} disabled>Unsupported legacy model · {value}</SelectItem>}
+        {!known && value && <SelectItem value={value} disabled>{legacy ? `${legacy.label} · Legacy` : `Unsupported legacy model · ${value}`}</SelectItem>}
         {TIERS.map((tier) => {
           const tierModels = models.filter((model) => model.tier === tier);
           if (!tierModels.length) return null;

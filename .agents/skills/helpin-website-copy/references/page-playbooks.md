@@ -4,7 +4,7 @@ Read the entry for the actual page. These priorities guide the story inside its 
 
 ## 1. Homepage
 
-Introduce what agents help accomplish and why shared history improves that work. Give the loop a concrete earlier event that changes the action. History cards explain what is known; product tabs explain what people can do. Keep those jobs distinct. Preserve the current approved hero rather than automatically reverting to an earlier slogan.
+Lead with customer support: what agents do for a support team, then why shared history improves that work. Projects, CRM, and Meetings appear as what a conversation can lead to, not as equal headline products. Give the loop a concrete earlier event that changes the action. History cards explain what is known; product tabs explain what people can do. Keep those jobs distinct. Preserve the current approved hero rather than automatically reverting to an earlier slogan.
 
 ## 2. Customer support
 

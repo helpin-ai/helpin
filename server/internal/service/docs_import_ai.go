@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultDocsImportAIProvider       = "openrouter"
-	defaultDocsImportAIModel          = "openai/gpt-5.6-luna"
+	defaultDocsImportAIModel          = "openai/gpt-6-luna"
 	defaultDocsImportAIMaxTokens      = 24000
 	defaultDocsImportAIRequestTimeout = 4 * time.Minute
 )

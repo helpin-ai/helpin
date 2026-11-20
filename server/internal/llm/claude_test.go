@@ -2,6 +2,7 @@ package llm
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
@@ -181,5 +182,23 @@ func TestBuildClaudeMessageContentUsesImageBlocks(t *testing.T) {
 	}
 	if blocks[1].Type != "image" {
 		t.Fatalf("expected second block image, got %#v", blocks[1])
+	}
+}
+
+func TestBuildClaudeMessageRequestAvoidsForcedToolChoiceOnNewerModels(t *testing.T) {
+	for _, tc := range []struct {
+		model  string
+		forced bool
+	}{{"claude-opus-5-5", false}, {"claude-sonnet-5-5", false}, {"claude-fable-5-2", false}, {"claude-haiku-5-5", true}, {"claude-sonnet-4-6", true}} {
+		req := buildClaudeMessageRequest(ChatRequest{Model: tc.model, SystemPrompt: "Base.", JSONMode: true})
+		if req.ToolChoice == nil {
+			t.Fatalf("%s: tool choice missing", tc.model)
+		}
+		if got := req.ToolChoice.Type == "tool"; got != tc.forced {
+			t.Fatalf("%s: tool choice = %+v, want forced=%v", tc.model, req.ToolChoice, tc.forced)
+		}
+		if !tc.forced && !strings.Contains(req.System, claudeJSONToolName) {
+			t.Fatalf("%s: system prompt does not name the JSON tool: %q", tc.model, req.System)
+		}
 	}
 }

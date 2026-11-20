@@ -16,7 +16,7 @@ const FEATURES = [
   {
     id: 'routing', label: 'Routing and assignment', icon: Route,
     title: 'Make ownership clear.',
-    copy: 'Route requests to team inboxes, then assign them manually or through round-robin assignment.',
+    copy: 'Route requests to team inboxes with rules or AI triage, then assign them manually or through round-robin assignment.',
     description: 'An invoice request matches a routing rule. The route leads to the Billing inbox, where round-robin assignment selects Sam Rivera.',
   },
   {
@@ -63,14 +63,14 @@ function WorkflowArt({ feature }: { feature: Feature }) {
     </div>;
 }
 
-function WorkflowCard({ feature, index }: { feature: Feature; index: number }) {
+function WorkflowCard({ feature }: { feature: Feature }) {
   const Icon = feature.icon;
   return <article id={feature.id === 'translate' ? 'support-live-translate' : undefined} className="ops-card" aria-labelledby={`ops-title-${feature.id}`}>
     {feature.id === 'translate' ? <SupportLiveTranslate /> : <WorkflowArt feature={feature} />}
-    <div className="ops-card-copy"><span className="ops-card-label"><Icon size={14} aria-hidden="true" />{feature.label}<span>0{index + 1}</span></span><h3 id={`ops-title-${feature.id}`}>{feature.title}</h3><p>{feature.copy}</p></div>
+    <div className="ops-card-copy"><span className="ops-card-label"><Icon size={14} aria-hidden="true" />{feature.label}</span><h3 id={`ops-title-${feature.id}`}>{feature.title}</h3><p>{feature.copy}</p></div>
   </article>;
 }
 
 export function SupportInboxFeatures() {
-  return <><div className="ops-cards">{FEATURES.map((feature, index) => <WorkflowCard key={feature.id} feature={feature} index={index} />)}</div></>;
+  return <><div className="ops-cards">{FEATURES.map(feature => <WorkflowCard key={feature.id} feature={feature} />)}</div></>;
 }

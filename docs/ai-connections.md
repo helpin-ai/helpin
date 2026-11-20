@@ -72,6 +72,16 @@ to Small; agents and saved versions using its former standard Medium default
 move to Small. Custom profile routes and other explicit profile selections are
 preserved, as are accepted run inputs. New installations use these same defaults.
 
+Migration `202611200001` moves unchanged standard profiles to the 2026-11
+lineup: Medium to `openai/gpt-6.1-terra` on OpenRouter, Large to `gpt-6.2-sol`
+on OpenAI, and Flagship to `claude-opus-5-5` on Anthropic. Small stays on
+DeepSeek V4.1 Flash. Profiles that the startup re-mapper moved to another
+provider follow the same lineup on that provider. Because OpenAI retires
+`gpt-5-mini` on 2026-12-11, every remaining `gpt-5-mini` route, including custom
+profiles, agents, and preset versions, moves to `gpt-6.1-terra`. Superseded
+models are marked `legacy` in the model catalog: saved routes keep resolving and
+billing, but pickers and tier fallback no longer offer them.
+
 API and worker startup provision standard profiles for existing workspaces; new
 workspaces are provisioned automatically. Enterprise fills untouched standard connection
 placeholders using Helpin's provider configuration and updates connected managed

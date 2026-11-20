@@ -357,11 +357,11 @@ func resolveSupportLLMConfig(agent *model.Agent) (string, string) {
 
 	switch provider {
 	case model.AgentModelProviderOpenAI:
-		return provider, "gpt-5-mini"
+		return provider, "gpt-6.1-terra"
 	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
-		return provider, "openai/gpt-5-mini"
+		return provider, "openai/gpt-6.1-terra"
 	default:
-		return model.AgentModelProviderAnthropic, "claude-sonnet-4-6"
+		return model.AgentModelProviderAnthropic, "claude-sonnet-5-5"
 	}
 }
 
