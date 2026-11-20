@@ -201,7 +201,8 @@ it('opens Manage connections without automatically opening a connection tooltip'
 });
 
 
-it('keeps hidden models in settings and marks the effective default beside the model', async () => {
+it.each([false, true])('labels workspace and personal defaults for members, including overlapping defaults (%s)', async (sameModel) => {
+  frame.permissions = new Set();
   vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true,connections:[
     {id:'team',name:'Team key',provider:'openai',scope:'workspace',user_id:null,status:'connected'},
     {id:'mine',name:'My key',provider:'anthropic',scope:'personal',user_id:'me',status:'disconnected'},
@@ -211,7 +212,7 @@ it('keeps hidden models in settings and marks the effective default beside the m
     {id:'my-model',workspace_id:'ws',scope:'personal',user_id:'me',name:'My model',revision:1,primary:{connection_id:'mine',model:{provider:'anthropic',model:'claude-test',controls:{}}},fallback:null},
     {id:'hidden',workspace_id:'ws',scope:'personal',user_id:'me',name:'Hidden model',hidden_from_ask_agent:true,revision:1,primary:{connection_id:'mine',model:{provider:'anthropic',model:'old',controls:{}}},fallback:null},
   ],error:null});
-  vi.mocked(aiProfileService.settings).mockResolvedValue({data:{default_profile_id:'team-model',personal_default_profile_id:'my-model'},error:null});
+  vi.mocked(aiProfileService.settings).mockResolvedValue({data:{default_profile_id:'team-model',personal_default_profile_id:sameModel ? 'team-model' : 'my-model'},error:null});
   await render('workspace');
   expect(Array.from(document.querySelectorAll('thead th')).map(el=>el.textContent)).toEqual(['Model','Connection','Access','Status','Actions']);
   expect(document.body.textContent).toContain('Shared model');
@@ -221,7 +222,10 @@ it('keeps hidden models in settings and marks the effective default beside the m
   expect(hiddenRow?.textContent).toContain('Hidden from pickers');
   expect(document.body.textContent).toContain('Workspace-wide');
   const row=Array.from(document.querySelectorAll('tbody tr')).find(el=>el.textContent?.includes('My model'));
-  expect(row?.querySelector('td')?.textContent).toContain('Default');
+  const teamRow = Array.from(document.querySelectorAll('tbody tr')).find(el => el.textContent?.includes('Shared model'));
+  expect(teamRow?.querySelector('td')?.textContent).toContain('Workspace default');
+  expect(teamRow?.querySelector('td')?.textContent?.includes('Your default')).toBe(sameModel);
+  expect(row?.querySelector('td')?.textContent?.includes('Your default')).toBe(!sameModel);
 });
 
 it('puts recent discoveries before saved models and older choices, without marking the baseline or expired discoveries new', async () => {

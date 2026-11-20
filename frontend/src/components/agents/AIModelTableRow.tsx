@@ -68,9 +68,6 @@ export function AIModelTableRow({
   const isPersonalDefault =
     settings?.personal_default_profile_id === profile.id;
   const isWorkspaceDefault = settings?.default_profile_id === profile.id;
-  const isDefault =
-    (settings?.personal_default_profile_id || settings?.default_profile_id) ===
-    profile.id;
   const policy = profile.primary_policy ?? connection?.policy;
   const connectionStatus = connection?.status ?? profile.subscription_status;
   const ready =
@@ -113,20 +110,12 @@ export function AIModelTableRow({
           <span className="truncate text-sm font-medium" title={profile.name}>
             {profile.name}
           </span>
-          {isDefault && (
-            <QuickTooltip
-              label={
-                isPersonalDefault
-                  ? "Your default for new Ask Agent chats in this workspace. Saved chats and explicit agent choices keep their models."
-                  : "Used for new Ask Agent chats and agents without their own model. Make my default sets a personal choice for new chats only."
-              }
-            >
-              <Badge variant="secondary" tabIndex={0}>
-                Default
-              </Badge>
+          {isPersonalDefault && (
+            <QuickTooltip label="Your default for new Ask Agent chats in this workspace.">
+              <Badge variant="secondary" tabIndex={0}>Your default</Badge>
             </QuickTooltip>
           )}
-          {!isDefault && isWorkspaceDefault && canManageWorkspace && (
+          {isWorkspaceDefault && (
             <QuickTooltip label="Shared default for workspace members without a personal choice, and agents without an explicit model.">
               <Badge variant="secondary" tabIndex={0}>
                 Workspace default
