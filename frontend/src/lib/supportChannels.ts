@@ -1,4 +1,4 @@
-import { GlobeIcon, Mail01Icon, Message01Icon, TelegramIcon } from '@/lib/icons'
+import { GlobeIcon, Mail01Icon, Message01Icon, TelegramIcon, SlackIcon } from '@/lib/icons'
 import type { TicketSource } from '@/lib/pm-types/support'
 
 /**
@@ -30,6 +30,7 @@ const SUPPORT_CHANNEL_SPECS: Record<TicketSource, SupportChannelSpec> = {
   api: { key: 'api', label: 'API', messageLabel: 'API', transport: 'none', aiMode: null, slaChannel: true },
   internal: { key: 'internal', label: 'Started by team', messageLabel: 'Internal', transport: 'none', aiMode: null, slaChannel: true },
   telegram: { key: 'telegram', label: 'Telegram', inbox: { icon: TelegramIcon, label: 'Telegram' }, messageLabel: 'Telegram', transport: 'provider', aiMode: 'chat', slaChannel: true },
+  slack: { key: 'slack', label: 'Slack', inbox: { icon: SlackIcon, label: 'Slack' }, messageLabel: 'Slack', transport: 'provider', aiMode: null, slaChannel: true },
 }
 
 /** Registered channels in display order. */
@@ -45,10 +46,15 @@ export function supportChannelLabel(key: string): string {
 }
 
 /** The messaging app that carries a conversation's "chat" replies, if any. */
-export function providerChannelLabel(conversation: { channel?: string | null; merge_has_channel?: boolean } | null | undefined): string | undefined {
+export function providerChannelLabel(conversation: { channel?: string | null; merge_has_channel?: boolean; provider_destinations?: { provider: string }[] } | null | undefined): string | undefined {
+  const choices = conversation?.provider_destinations
+  if (choices?.length) {
+    const providers = new Set(choices.map(d => d.provider))
+    return providers.size === 1 ? supportChannelLabel(choices[0].provider) : 'Channel'
+  }
   const spec = supportChannel(conversation?.channel)
   if (spec?.transport === 'provider') return spec.label
-  // Telegram is the only messaging app so far; a merged group names it too.
+  // Earlier API responses only exposed this flag for Telegram.
   return conversation?.merge_has_channel ? 'Telegram' : undefined
 }
 

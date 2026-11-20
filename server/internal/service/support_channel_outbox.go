@@ -99,7 +99,7 @@ func (s *SupportChannelService) dispatch(ctx context.Context, row *model.Support
 	case account.DisabledAt != nil:
 		return dispatchOutcome{status: "cancelled", code: "disconnected", detail: "the bot was disconnected"}
 	case account.Status == model.SupportChannelAccountReauthRequired:
-		return dispatchOutcome{status: "rejected", code: channels.CodeAuth, detail: "Telegram rejected the bot token"}
+		return dispatchOutcome{status: "rejected", code: channels.CodeAuth, detail: "The channel rejected its credentials"}
 	}
 	msg, err := s.inbox.messageRepo.GetByID(ctx, row.MessageID)
 	if err != nil {
@@ -121,6 +121,26 @@ func (s *SupportChannelService) dispatch(ctx context.Context, row *model.Support
 	}
 	if identity.ID == "" {
 		return dispatchOutcome{status: "cancelled", code: "deleted", detail: "the customer's details were deleted"}
+	}
+	if row.ProviderOriginID != nil && *row.ProviderOriginID != conv.ID {
+		merges := repository.NewSupportMergeRepository(s.inbox.conversationRepo.DB())
+		root, err := merges.Root(ctx, row.WorkspaceID, *row.ProviderOriginID)
+		if err != nil {
+			return dispatchOutcome{status: "retry", code: "database"}
+		}
+		if root != conv.ID {
+			return dispatchOutcome{status: "cancelled", code: "audience_changed"}
+		}
+		conv, err = s.inbox.conversationRepo.GetByID(ctx, row.WorkspaceID, *row.ProviderOriginID, "", model.RoleOwner)
+		if err != nil {
+			return dispatchOutcome{status: "retry", code: "database"}
+		}
+		if conv == nil || conv.AnonymizedAt != nil {
+			return dispatchOutcome{status: "cancelled", code: "deleted"}
+		}
+	}
+	if account.Provider == "slack" && s.slack != nil {
+		return s.slack.dispatchSlack(ctx, account, conv, msg, row)
 	}
 	adapter, ok := s.adapters.Lookup(account.Provider)
 	if !ok {
@@ -252,7 +272,7 @@ var ErrChannelNothingToRetry = errors.New("this reply has no delivery to retry")
 
 // channelDeliveryView maps an outbox row to the bubble's delivery state.
 func channelDeliveryView(row model.SupportChannelOutbox) *model.SupportChannelDelivery {
-	view := &model.SupportChannelDelivery{ErrorCode: derefString(row.LastErrorCode)}
+	view := &model.SupportChannelDelivery{Provider: row.Provider, ErrorCode: derefString(row.LastErrorCode)}
 	switch row.DispatchStatus {
 	case "pending", "dispatching":
 		view.Status = "sending"

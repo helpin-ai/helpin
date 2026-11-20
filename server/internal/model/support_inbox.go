@@ -17,7 +17,8 @@ type SupportConversation struct {
 	MergeHasWidget           bool     `json:"merge_has_widget,omitempty" gorm:"-"`
 	// MergeHasChannel: a merged member came from a provider channel (Telegram),
 	// so replies in the group reach that customer there.
-	MergeHasChannel bool `json:"merge_has_channel,omitempty" gorm:"-"`
+	ProviderDestinations []SupportProviderDestination `json:"provider_destinations,omitempty" gorm:"-"`
+	MergeHasChannel      bool                         `json:"merge_has_channel,omitempty" gorm:"-"`
 	// ChannelHandle is the connected bot's handle (Telegram), for the sidebar.
 	ChannelHandle       string   `json:"channel_handle,omitempty" gorm:"-"`
 	MergeContinuationID *string  `json:"merge_continuation_id,omitempty" gorm:"-"`
@@ -26,10 +27,12 @@ type SupportConversation struct {
 	// ChannelAccountID and ChannelIdentityID link a provider-channel
 	// conversation (Telegram) to its bot and customer. The default tag keeps
 	// them out of inserts when unset.
-	ChannelAccountID  *string    `json:"channel_account_id,omitempty" gorm:"type:uuid;default:null"`
-	ChannelIdentityID *string    `json:"channel_identity_id,omitempty" gorm:"type:uuid;default:null"`
-	MergeRevision     int64      `json:"merge_revision" gorm:"not null;default:0"`
-	AnonymizedAt      *time.Time `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
+	ChannelAccountID    *string    `json:"channel_account_id,omitempty" gorm:"type:uuid;default:null"`
+	ProviderThreadKey   *string    `json:"-" gorm:"->"`
+	ProviderChannelName *string    `json:"provider_channel_name,omitempty" gorm:"->"`
+	ChannelIdentityID   *string    `json:"channel_identity_id,omitempty" gorm:"type:uuid;default:null"`
+	MergeRevision       int64      `json:"merge_revision" gorm:"not null;default:0"`
+	AnonymizedAt        *time.Time `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
 	// RequestTypeID and CustomFields are read-only here: their own endpoints
 	// validate and write them, and inserts leave the column defaults.
 	RequestTypeID                  *string         `json:"request_type_id,omitempty" gorm:"type:uuid;->"`
@@ -1047,6 +1050,14 @@ type CreateConversationWithMessageResponse struct {
 	Message      *SupportMessage      `json:"message"`
 }
 
+// SupportProviderDestination identifies the original thread in a merged conversation.
+type SupportProviderDestination struct {
+	ID        string `json:"id"`
+	Provider  string `json:"provider"`
+	Name      string `json:"name"`
+	DisplayID int    `json:"display_id"`
+}
+
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
 	ExpectedMergeRevision     *int64   `json:"expected_merge_revision,omitempty"`
@@ -1060,6 +1071,7 @@ type CreateMessageRequest struct {
 	MessageType               string   `json:"message_type"` // reply, csat_survey, system, email_notice
 	AttachmentIDs             []string `json:"attachment_ids,omitempty"`
 	Channels                  []string `json:"channels,omitempty"`
+	ProviderOriginID          string   `json:"provider_origin_id,omitempty"`
 	DeliveryMode              string   `json:"delivery_mode,omitempty"`
 	EmailSubject              *string  `json:"email_subject,omitempty"`
 	CCEmails                  []string `json:"cc_emails,omitempty"`
@@ -1073,6 +1085,7 @@ type LinkTaskRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
+	SlackThread       *SlackThread                 `json:"-"`
 	OwnerMemberIDs    []string                     `json:"owner_member_ids,omitempty"`
 	AssignedAgentID   *string                      `json:"assigned_agent_id,omitempty"`
 	RunOnCreate       bool                         `json:"run_on_create,omitempty"`

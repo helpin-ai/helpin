@@ -41,7 +41,6 @@ import {
   Timer01Icon,
   LeftToRightListBulletIcon,
   WebhookIcon,
-  TelegramIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -83,7 +82,7 @@ const CustomerPortal = hi(Globe02Icon);
 const SLAPolicies = hi(Timer01Icon);
 const Fields = hi(LeftToRightListBulletIcon);
 const Webhooks = hi(WebhookIcon);
-const Channels = hi(TelegramIcon);
+const Channels = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(PlugSocketIcon);
@@ -416,8 +415,8 @@ const allSettingsSections: SettingsSectionMeta[] = [
   {
     id: 'support-channels',
     label: 'Channels',
-    description: 'Connect messaging apps such as Telegram so customers can write in from them.',
-    keywords: ['telegram', 'bot', 'messaging', 'channels', 'omnichannel', 'social'],
+    description: 'Manage where conversations reach your team.',
+    keywords: ['slack', 'telegram', 'bot', 'messaging', 'channels', 'omnichannel', 'social'],
     icon: Channels,
     group: 'Support',
     requiredPermission: 'support.admin',
@@ -541,13 +540,14 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
     const module = workspaceSurface(buildSettingsRoutePath('workspace', section.id));
+    if (section.id === 'support-channels' && modules && !modules.includes('pm') && !modules.includes('support')) continue;
     if (modules && module && !modules.includes(module)) {
       continue;
     }
     if (section.requiresManageSettings && !canManageSettings) {
       continue;
     }
-    if (section.requiredPermission && !permissionSet?.has(section.requiredPermission)) {
+    if (section.requiredPermission && !permissionSet?.has(section.requiredPermission) && !(section.id === 'support-channels' && canManageSettings)) {
       continue;
     }
     if (section.sidebar === false) {

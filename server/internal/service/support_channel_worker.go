@@ -55,6 +55,12 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 	workCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	var workErr error
 	switch kind {
+	case "slack_shortcut":
+		workErr = s.slack.shortcutJob(workCtx, job)
+	case SlackPMDeliveryJob:
+		workErr = s.slack.deliverDiscussion(workCtx, job)
+	case SlackEventJob:
+		workErr = s.slack.process(workCtx, job)
 	case SupportInboundKindChannelEvent:
 		workErr = s.processEventJob(workCtx, job)
 	case SupportInboundKindChannelAttachment:
@@ -117,14 +123,19 @@ func (s *SupportChannelService) processAttachmentJob(ctx context.Context, job *m
 		return err
 	}
 	adapter, ok := s.adapters.Lookup(account.Provider)
-	if !ok {
+	if !ok && account.Provider != "slack" {
 		return fmt.Errorf("%w: unsupported provider", ErrChannelInvalid)
 	}
 	token, err := s.decryptToken(account)
 	if err != nil {
 		return err
 	}
-	data, err := adapter.DownloadFile(ctx, token, payload.FileID, adapter.Capabilities().MaxDownloadSize)
+	var data []byte
+	if account.Provider == "slack" {
+		data, err = s.slack.api.Download(ctx, token, payload.FileID, 25<<20)
+	} else {
+		data, err = adapter.DownloadFile(ctx, token, payload.FileID, adapter.Capabilities().MaxDownloadSize)
+	}
 	if err != nil {
 		return err
 	}

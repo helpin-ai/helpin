@@ -48,6 +48,7 @@ import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
 import { Route as AuthenticatedWSlugCrmRouteImport } from './routes/_authenticated/w/$slug/crm'
 import { Route as AuthenticatedWSlugAutomationRouteImport } from './routes/_authenticated/w/$slug/automation'
+import { Route as AuthenticatedOauthSlackCallbackRouteImport } from './routes/_authenticated/oauth/slack/callback'
 import { Route as AuthenticatedOauthExternalMcpCallbackRouteImport } from './routes/_authenticated/oauth/external-mcp/callback'
 import { Route as AuthenticatedOauthCliAuthorizeRouteImport } from './routes/_authenticated/oauth/cli/authorize'
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
@@ -353,6 +354,12 @@ const AuthenticatedWSlugAutomationRoute =
     id: '/automation',
     path: '/automation',
     getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedOauthSlackCallbackRoute =
+  AuthenticatedOauthSlackCallbackRouteImport.update({
+    id: '/oauth/slack/callback',
+    path: '/oauth/slack/callback',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedOauthExternalMcpCallbackRoute =
   AuthenticatedOauthExternalMcpCallbackRouteImport.update({
@@ -999,6 +1006,7 @@ export interface FileRoutesByFullPath {
   '/portal/$slug/': typeof PortalSlugIndexRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
+  '/oauth/slack/callback': typeof AuthenticatedOauthSlackCallbackRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1139,6 +1147,7 @@ export interface FileRoutesByTo {
   '/portal/$slug': typeof PortalSlugIndexRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
+  '/oauth/slack/callback': typeof AuthenticatedOauthSlackCallbackRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
@@ -1278,6 +1287,7 @@ export interface FileRoutesById {
   '/portal/$slug/': typeof PortalSlugIndexRoute
   '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/_authenticated/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
+  '/_authenticated/oauth/slack/callback': typeof AuthenticatedOauthSlackCallbackRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1423,6 +1433,7 @@ export interface FileRouteTypes {
     | '/portal/$slug/'
     | '/oauth/cli/authorize'
     | '/oauth/external-mcp/callback'
+    | '/oauth/slack/callback'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
@@ -1563,6 +1574,7 @@ export interface FileRouteTypes {
     | '/portal/$slug'
     | '/oauth/cli/authorize'
     | '/oauth/external-mcp/callback'
+    | '/oauth/slack/callback'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
@@ -1701,6 +1713,7 @@ export interface FileRouteTypes {
     | '/portal/$slug/'
     | '/_authenticated/oauth/cli/authorize'
     | '/_authenticated/oauth/external-mcp/callback'
+    | '/_authenticated/oauth/slack/callback'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
@@ -2110,6 +2123,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/automation'
       preLoaderRoute: typeof AuthenticatedWSlugAutomationRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/oauth/slack/callback': {
+      id: '/_authenticated/oauth/slack/callback'
+      path: '/oauth/slack/callback'
+      fullPath: '/oauth/slack/callback'
+      preLoaderRoute: typeof AuthenticatedOauthSlackCallbackRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/oauth/external-mcp/callback': {
       id: '/_authenticated/oauth/external-mcp/callback'
@@ -3210,6 +3230,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
   AuthenticatedOauthCliAuthorizeRoute: typeof AuthenticatedOauthCliAuthorizeRoute
   AuthenticatedOauthExternalMcpCallbackRoute: typeof AuthenticatedOauthExternalMcpCallbackRoute
+  AuthenticatedOauthSlackCallbackRoute: typeof AuthenticatedOauthSlackCallbackRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -3222,6 +3243,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedOauthCliAuthorizeRoute: AuthenticatedOauthCliAuthorizeRoute,
   AuthenticatedOauthExternalMcpCallbackRoute:
     AuthenticatedOauthExternalMcpCallbackRoute,
+  AuthenticatedOauthSlackCallbackRoute: AuthenticatedOauthSlackCallbackRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

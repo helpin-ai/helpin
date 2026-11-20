@@ -36,7 +36,8 @@ const TONE_CLASS = { muted: 'text-muted-foreground', warning: 'text-amber-700 da
 
 /** Connected Telegram bots: each feeds its chosen inbox. */
 export function SupportChannels({ workspaceId, editable }: { workspaceId: string; editable: boolean }) {
-  const { data: accounts, isLoading, error } = useSupportChannels(workspaceId)
+  const { data: allAccounts, isLoading, error } = useSupportChannels(workspaceId)
+  const accounts = allAccounts?.filter(account => account.provider === 'telegram');
   const { data: scopes } = useInboxScopes(workspaceId)
   const connect = useConnectChannel(workspaceId)
   const update = useUpdateChannel(workspaceId)
@@ -79,7 +80,7 @@ export function SupportChannels({ workspaceId, editable }: { workspaceId: string
 
       {!accounts || accounts.length === 0 ? (
         <QuietEmptyState
-          title="No channels connected"
+          title="No Telegram bots connected"
           description="Create a bot with @BotFather in Telegram, then connect it here with its token."
           action={editable ? <Button size="sm" variant="outline" onClick={() => setConnectOpen(true)}>Connect a bot</Button> : undefined}
         />

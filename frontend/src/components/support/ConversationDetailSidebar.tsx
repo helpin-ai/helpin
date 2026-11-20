@@ -9,7 +9,7 @@ import { formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, ArrowUpRight01Icon, Cancel01Icon, CheckmarkCircle02Icon, Copy01Icon, Mail01Icon, Message01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, TelegramIcon, UserIcon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, ArrowUpRight01Icon, Cancel01Icon, CheckmarkCircle02Icon, Copy01Icon, Mail01Icon, Message01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, SlackIcon, TelegramIcon, UserIcon } from '@/lib/icons';
 import { EmptyState } from './EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -593,7 +593,7 @@ export function ConversationDetailSidebar({
                 </Tooltip>
               </div>
             )}
-            {conversation.channel_handle && (
+            {conversation.channel === 'slack' && conversation.provider_channel_name ? <div className={customerEmailDisplayRowClassName}><SlackIcon className="col-start-1 h-3 w-3 justify-self-center" /><span className="col-start-2 truncate">#{conversation.provider_channel_name}</span></div> : conversation.channel_handle && (
               <div className={customerEmailDisplayRowClassName}>
                 <TelegramIcon className="col-start-1 h-3 w-3 justify-self-center" />
                 <span className="col-start-2 min-w-0 truncate">Telegram · via @{conversation.channel_handle}</span>

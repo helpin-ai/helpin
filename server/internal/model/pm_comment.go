@@ -1,28 +1,41 @@
 package model
 
-import "time"
+import (
+	"gorm.io/gorm"
+	"time"
+)
 
 // PMComment represents comments for tasks/epics/docs.
 type PMComment struct {
-	ID         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	EntityType string     `json:"entity_type" gorm:"not null"`
-	EntityID   string     `json:"entity_id" gorm:"type:uuid;not null;index"`
-	AuthorID   string     `json:"author_id" gorm:"type:uuid;not null;index"`
-	AgentID    *string    `json:"agent_id,omitempty" gorm:"type:uuid;index"`
-	AgentName  string     `json:"agent_name,omitempty"`
-	AgentRunID *string    `json:"agent_run_id,omitempty" gorm:"type:uuid;index"`
-	Body       string     `json:"body" gorm:"not null"`
-	ParentID   *string    `json:"parent_id" gorm:"type:uuid;index"`
-	BlockID    *string    `json:"block_id,omitempty" gorm:"type:uuid;index"`
-	Range      JSONB      `json:"range,omitempty" gorm:"column:block_range;type:jsonb"`
-	AnchorText string     `json:"anchor_text,omitempty"`
-	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
-	ResolvedBy *string    `json:"resolved_by,omitempty" gorm:"type:uuid"`
-	CreatedAt  time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	SlackDiscussionChannel *string    `json:"slack_discussion_channel,omitempty" gorm:"->"`
+	SlackSourceKey         *string    `json:"-" gorm:"<-:create"`
+	ID                     string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	EntityType             string     `json:"entity_type" gorm:"not null"`
+	EntityID               string     `json:"entity_id" gorm:"type:uuid;not null;index"`
+	AuthorID               string     `json:"author_id" gorm:"type:uuid;not null;index"`
+	AgentID                *string    `json:"agent_id,omitempty" gorm:"type:uuid;index"`
+	AgentName              string     `json:"agent_name,omitempty"`
+	AgentRunID             *string    `json:"agent_run_id,omitempty" gorm:"type:uuid;index"`
+	Body                   string     `json:"body" gorm:"not null"`
+	ParentID               *string    `json:"parent_id" gorm:"type:uuid;index"`
+	BlockID                *string    `json:"block_id,omitempty" gorm:"type:uuid;index"`
+	Range                  JSONB      `json:"range,omitempty" gorm:"column:block_range;type:jsonb"`
+	AnchorText             string     `json:"anchor_text,omitempty"`
+	ResolvedAt             *time.Time `json:"resolved_at,omitempty"`
+	ResolvedBy             *string    `json:"resolved_by,omitempty" gorm:"type:uuid"`
+	CreatedAt              time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMComment) TableName() string { return "pm_comments" }
+
+// Ordinary comments also come from bulk imports and older schemas.
+func (comment *PMComment) BeforeCreate(tx *gorm.DB) error {
+	if comment.SlackSourceKey == nil {
+		tx.Statement.Omits = append(tx.Statement.Omits, "SlackSourceKey")
+	}
+	return nil
+}
 
 // PMCommentReaction represents an emoji reaction on a comment.
 type PMCommentReaction struct {
@@ -44,17 +57,18 @@ type ReactionSummary struct {
 
 // CreateCommentRequest is the payload for creating comments.
 type CreateCommentRequest struct {
-	EntityType    string   `json:"entity_type"`
-	EntityID      string   `json:"entity_id"`
-	Body          string   `json:"body"`
-	ParentID      *string  `json:"parent_id"`
-	BlockID       *string  `json:"block_id,omitempty"`
-	Range         JSONB    `json:"range,omitempty"`
-	AnchorText    string   `json:"anchor_text,omitempty"`
-	AttachmentIDs []string `json:"attachment_ids,omitempty"`
-	AgentID       *string  `json:"-"`
-	AgentName     string   `json:"-"`
-	AgentRunID    *string  `json:"-"`
+	SlackSourceKey *string  `json:"-"`
+	EntityType     string   `json:"entity_type"`
+	EntityID       string   `json:"entity_id"`
+	Body           string   `json:"body"`
+	ParentID       *string  `json:"parent_id"`
+	BlockID        *string  `json:"block_id,omitempty"`
+	Range          JSONB    `json:"range,omitempty"`
+	AnchorText     string   `json:"anchor_text,omitempty"`
+	AttachmentIDs  []string `json:"attachment_ids,omitempty"`
+	AgentID        *string  `json:"-"`
+	AgentName      string   `json:"-"`
+	AgentRunID     *string  `json:"-"`
 }
 
 // UpdateCommentRequest is the payload for updating comments.

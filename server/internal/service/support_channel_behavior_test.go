@@ -214,7 +214,7 @@ func TestSupportChannelMatrixFollowUpChannels(t *testing.T) {
 
 func TestSupportChannelMatrixSetupEvidence(t *testing.T) {
 	// Telegram joins the channels that already counted toward activation.
-	want := []string{"widget", "email", "api", "telegram"}
+	want := []string{"widget", "email", "api", "telegram", "slack"}
 	if got := model.SupportSetupEvidenceChannels(); !slices.Equal(got, want) {
 		t.Fatalf("setup evidence channels = %v, want %v", got, want)
 	}

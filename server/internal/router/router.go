@@ -128,6 +128,7 @@ type Handlers struct {
 	RequestTypes        *handler.SupportRequestTypeHandler
 	CRMFieldDefinitions *handler.CustomFieldHandler
 	SupportWebhooks     *handler.SupportWebhookHandler
+	Slack               *handler.SlackHandler
 	SupportChannels     *handler.SupportChannelHandler
 	SupportImports      *handler.SupportImportHandler
 	SupportActions      *handler.SupportConversationActionsHandler
@@ -467,6 +468,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 		if h.CRMMeeting != nil {
 			r.Post("/webhooks/meeting-capture/{provider}", h.CRMMeeting.Webhook)
+		}
+		if h.Slack != nil {
+			r.Post("/slack/events", h.Slack.Event)
+			r.Post("/slack/actions", h.Slack.Action)
 		}
 		if h.SupportChannels != nil {
 			r.Post("/webhooks/channels/{provider}/{accountId}", h.SupportChannels.Webhook)
@@ -1051,6 +1056,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(middleware.RequireWorkspaceID, wsActive, requirePerm(authorization.PermWorkspaceInvitesManage)).Delete("/{id}", h.Invite.Revoke)
 			})
 
+			if h.Slack != nil {
+				r.Route("/slack", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.With(requirePerm(authorization.PermWorkspaceRead)).Post("/link", h.Slack.Link)
+					r.Group(func(r chi.Router) {
+						r.Use(requirePerm(authorization.PermSettingsManage))
+						r.Get("/", h.Slack.Settings)
+						r.Patch("/", h.Slack.SetAI)
+						r.Post("/install", h.Slack.Start)
+						r.Post("/complete", h.Slack.Finish)
+						r.Get("/channels", h.Slack.Channels)
+						r.Put("/routes", h.Slack.Configure)
+						r.Delete("/routes/{channel}", h.Slack.Remove)
+						r.Delete("/", h.Slack.Disconnect)
+					})
+				})
+			}
 			// Git integrations
 			r.Route("/git", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)

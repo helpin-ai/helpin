@@ -52,6 +52,7 @@ type SupportChannelConfig struct {
 
 // SupportChannelService connects provider accounts and accepts their webhooks.
 type SupportChannelService struct {
+	slack    *SlackService
 	accounts *repository.SupportChannelAccountRepository
 	jobs     *repository.SupportInboundJobRepository
 	adapters *channels.Registry
@@ -144,6 +145,13 @@ func (s *SupportChannelService) Connect(ctx context.Context, workspaceID, actorI
 
 // Update changes an account's default mailbox or AI replies switch.
 func (s *SupportChannelService) Update(ctx context.Context, workspaceID, id string, req model.UpdateSupportChannelRequest) (*model.SupportChannelAccount, error) {
+	account, err := s.accounts.Get(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	if account == nil || account.Provider == "slack" {
+		return nil, ErrChannelInvalid
+	}
 	updates := map[string]any{}
 	if req.MailboxID != nil {
 		mailboxID, err := s.mailboxSelection(ctx, workspaceID, req.MailboxID)
@@ -291,7 +299,6 @@ func (s *SupportChannelService) AcceptWebhook(ctx context.Context, provider, acc
 	}
 	return nil
 }
-
 
 // liveAccount loads a connected account with its adapter and decrypted token.
 func (s *SupportChannelService) liveAccount(ctx context.Context, workspaceID, id string) (*model.SupportChannelAccount, channels.Adapter, string, error) {

@@ -1710,6 +1710,8 @@ func main() {
 			// Telegram requires HTTPS webhooks; only a local Bot API fake runs without.
 			RequireHTTPS: cfg.TelegramAPIBaseURL == "",
 		}).SetInboxService(supportInboxService)
+	slackService := service.NewSlackService(supportChannelService, repository.NewSlackRepository(db), service.SlackConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret, SigningSecret: cfg.SlackSigningSecret, RedirectURL: strings.TrimRight(cfg.AppBaseURL, "/") + "/oauth/slack/callback"})
+	slackService.SetPM(pmTaskService, pmCommentService, authzService, pmTriageService, pmTaskInsightsService, cfg.AppBaseURL)
 	channelOutbox := repository.NewSupportChannelOutboxRepository(db)
 	supportChannelService.SetOutboxRepository(channelOutbox)
 	supportInboxService.SetChannelOutbox(channelOutbox)
@@ -2130,6 +2132,7 @@ func main() {
 		RequestTypes:        handler.NewSupportRequestTypeHandler(supportRequestTypeService),
 		CRMFieldDefinitions: handler.NewCRMFieldDefinitionHandler(customFieldService),
 		SupportWebhooks:     handler.NewSupportWebhookHandler(webhookService),
+		Slack:               handler.NewSlackHandler(slackService),
 		SupportChannels:     handler.NewSupportChannelHandler(supportChannelService),
 		SupportImports:      handler.NewSupportImportHandler(supportImportService),
 		SupportActions:      handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
@@ -2448,6 +2451,9 @@ func main() {
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelEvent)
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
+	go supportChannelService.StartWorker(inboundCtx, "slack_shortcut")
+	go supportChannelService.StartWorker(inboundCtx, service.SlackPMDeliveryJob)
+	go supportChannelService.StartWorker(inboundCtx, service.SlackEventJob)
 	go supportChannelService.RunOutbox(inboundCtx, 2*time.Second)
 	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics, appEmailClient, cfg.OpsAlertEmails)
 	// Start email fallback workers only when both Redis and Postmark are available.

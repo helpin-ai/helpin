@@ -1,15 +1,16 @@
 import { Button } from "@/components/ui/button";
 import { QuietDropdown } from "@/components/design-system/quiet-dropdown";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
-import { ArrowDown01Icon, BubbleChatIcon, Mail01Icon } from "@/lib/icons";
+import { ArrowDown01Icon, BubbleChatIcon, Mail01Icon, SlackIcon } from "@/lib/icons";
 import type { SupportReplyDeliveryMode } from "@/lib/pmTypes";
 import { REPLY_DELIVERY_LABELS } from "./replyDelivery";
 
-function DeliveryIcons({ mode }: { mode: SupportReplyDeliveryMode }) {
+function DeliveryIcons({ mode, slack }: { mode: SupportReplyDeliveryMode; slack: boolean }) {
+  const ChatIcon = slack ? SlackIcon : BubbleChatIcon;
   return (
     <>
       {mode !== "email_only" && (
-        <BubbleChatIcon aria-hidden="true" className="size-3.5" />
+        <ChatIcon aria-hidden="true" className="size-3.5" />
       )}
       {mode !== "chat_only" && (
         <Mail01Icon aria-hidden="true" className="size-3.5" />
@@ -19,11 +20,12 @@ function DeliveryIcons({ mode }: { mode: SupportReplyDeliveryMode }) {
 }
 
 function DeliveryOptionLabel({ mode, chatName }: { mode: SupportReplyDeliveryMode; chatName: string }) {
+  const ChannelIcon = chatName === "Slack" ? SlackIcon : BubbleChatIcon;
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       {mode !== "email_only" && (
         <span className="inline-flex items-center gap-1.5">
-          <BubbleChatIcon aria-hidden="true" className="size-3.5" />
+          <ChannelIcon aria-hidden="true" className="size-3.5" />
           {mode === "chat_only" ? `${chatName} only` : chatName}
         </span>
       )}
@@ -46,7 +48,7 @@ export function ReplyDeliverySelector({
   emailUnavailableReason,
   chatUnavailableReason,
   portal = false,
-  channel,
+  channel, destination,
 }: {
   mode: SupportReplyDeliveryMode;
   onChange: (mode: SupportReplyDeliveryMode) => void;
@@ -56,7 +58,7 @@ export function ReplyDeliverySelector({
   chatUnavailableReason?: string;
   portal?: boolean;
   /** A messaging app (Telegram) that carries "chat" replies. */
-  channel?: string;
+  channel?: string; destination?: string;
 }) {
   const chatName = channel ?? (portal ? "Portal" : "Chat");
   const labels: Record<SupportReplyDeliveryMode, string> = channel || portal ? {
@@ -98,7 +100,7 @@ export function ReplyDeliverySelector({
           aria-label={`Sending options: ${labels[mode]}`}
           className="h-7 gap-1 rounded-l-full rounded-r-none border-r border-primary-foreground/25 px-2 text-xs"
         >
-          <DeliveryIcons mode={mode} />
+          {destination && mode !== "email_only" && <span>Reply to #{destination}</span>}<DeliveryIcons mode={mode} slack={channel === "Slack"} />
           <ArrowDown01Icon aria-hidden="true" className="size-3 opacity-70" />
         </Button>
       }

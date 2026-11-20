@@ -1,6 +1,6 @@
 # Two-way Slack integration for PM and Support
 
-**Product direction · November 20, 2026.** This document records the intended first release of `@Helpin`. Customers can get support in a Slack Connect thread, teammates can create and follow PM work from Slack, and support owners can bring an engineering outcome back to the customer. The behavior below is planned.
+**Product direction · November 20, 2026.** This document records the intended first release of `@Helpin`. Customers can get support in a Slack Connect thread, teammates can create and follow PM work from Slack, and support owners can bring an engineering outcome back to the customer. The sections below describe the product contract. Implementation coverage and remaining release checks are recorded at the end.
 
 ## Installation and intake
 
@@ -43,7 +43,7 @@ A support-to-task link records the relationship. It gives the support owner a ro
 
 - **“Summarize this conversation.”** For an authorized teammate, summarize the customer’s report, troubleshooting, commitments, owner, and next action from the Support record. Return the full summary privately by default. Allow sharing to an internal channel only when the audience is authorized.
 - **“Give me an update on PAY-142.”** Resolve the task key, link, or current thread. Read status, owner, and due date from Helpin. Summarize recent progress, blockers, and the next step when recorded. Include an accessible source link. Ask which record the requester means when the reference is ambiguous.
-- **Customer asks “Any update?”** In their own support thread, answer immediately from the latest published customer-visible information. If there is nothing new, say so and notify the support owner once. Proposed deduplication rule: repeated asks in the same thread share one owner notification until a new customer-facing update is published.
+- **Customer asks “Any update?”** In their own support thread, answer immediately from the latest published customer-visible information. If there is nothing new, say so and notify the support owner once. Repeated asks in the same thread share one owner notification until a new customer-facing update is published.
 
 Use a fast LLM for natural-language requests, drafting, and summarization when enabled. Resolve records, check the requester and audience, and select permissible evidence before invoking the model. Apply existing AI usage checks. Manual task creation, factual published updates, message routing, and human replies must keep working when AI is disabled or usage is exhausted. [AI usage metering](../ai-usage-metering.md)
 
@@ -59,7 +59,27 @@ Reuse the Support channel registry, inbound event deduplication, attachment jobs
 - A teammate without access to a task asks for its status in a shared channel. Neither the reply nor a preview discloses its contents. A permitted teammate can review an AI draft privately, change its fields, and create or link the work.
 - With AI unavailable, a customer can still reach support, an agent can reply, and a teammate can create a task manually.
 
-Before implementation, verify Slack Connect behavior in both host-owned and customer-owned channels, including file access and reconnecting an installation. Specify edit and deletion handling, the authorized audience check for shared summaries, and how a changed source thread affects an open draft. Keep those decisions here as they are resolved.
+## Implementation and operator setup
+
+Settings → Channels is the installation point for both modules. The Support inbox uses its existing conversation list, details, reply composer, note action, and delivery receipt. The PM task uses its existing threaded comments. The Slack mark identifies the source and the thread destination. Six mockups follow one checkout issue through these surfaces. [Helpin mockup gallery](../../.mockups/slack/index.html)
+
+1. Create a Slack app using the [manifest template](../../integrations/slack/manifest.yaml). Replace the example OAuth URL with the public Helpin app origin followed by `/oauth/slack/callback`. Set the events and interactivity URLs to the public API origin followed by `/api/slack/events` and `/api/slack/actions` when the API is mounted at `/api`.
+2. Configure `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`, and the public `APP_BASE_URL`. Bot token encryption uses a 32-byte hex `CHANNEL_ENCRYPTION_KEY`, with the existing `CRM_ENCRYPTION_KEY` fallback. Run the application migrations, then start the API with these settings. [Environment example](../../server/.env.example)
+3. Connect the Slack workspace in Channels, invite `@Helpin` to each participating channel, and select its purpose and destination. A teammate links their own Helpin account the first time they request private information or use a PM action. Enable **AI drafts and summaries** to allow metered assistance. Manual drafting and factual status remain available. Reconnecting the same pair of workspaces preserves thread history and asks the admin to select channels again.
+4. In an internal project thread, choose **Create task**, **Link existing task**, or ask `@Helpin` for a task update. In a configured customer thread, use the inbox to send a public reply or write an internal note. Merged conversations with multiple provider destinations require the agent to select the original thread.
+
+The PostgreSQL and Slack API fixtures cover OAuth state replay, signed event intake, thread isolation, delivery to the original thread, reconnect, note privacy, merged destinations, team-specific task review, completion handoffs, and the audience check for sharing. [Integration checks](../../server/internal/service/slack_postgres_test.go)
+
+### Coverage and remaining release checks
+
+| Area | Current behavior or release check |
+| --- | --- |
+| Task review | Slack exposes related work, title, description, team, epic, type, and priority. The usual team workflow supplies initial status. After choosing a team, **More options** exposes status, assignees, sprint, labels, and template. Team-specific controls refresh when the creator changes teams. Each Slack selector currently offers up to 100 options. |
+| AI and history | Support escalations reuse the inbox task-draft service. Scoped questions use the fast completion route and normal usage metering. Task answers fall back to record fields when AI is unavailable. PM-only drafting uses available thread history or the selected message. |
+| Sharing | Full Support summaries and task answers go privately to the linked requester. A teammate can explicitly ask `@Helpin share summary` with a Helpin conversation link or task key in a project channel. Detailed shared answers, PM cards, and linked replies require a private internal channel where every member can read the record. Public channels allow private answers and task creation. |
+| Edits and retention | New messages and file shares sync. Slack message edits and deletions are outside this implementation. A Support draft checks the source conversation again before submission. PM-only review uses the captured thread excerpt. |
+| Database setup | The Slack migration and its channel dependencies applied to a disposable PostgreSQL database. A separate fresh-instance bootstrap stopped in the earlier CRM migration `202604170001` on a missing `pm_tasks.owner_member_id` column. |
+| Slack Connect pilot | Verify installation, file access in both directions, reconnect, and channel membership changes with one host-owned and one customer-owned Slack Connect channel. Automated checks use a local provider fixture. |
 
 ## Research behind the design
 

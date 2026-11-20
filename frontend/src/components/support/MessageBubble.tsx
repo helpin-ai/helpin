@@ -405,7 +405,7 @@ export const MessageBubble = memo(function MessageBubble({
     // Telegram may already have the unconfirmed reply; sending again could duplicate it.
     if (message.channel_delivery?.status === 'unconfirmed' && !(await confirm({
       title: 'Send this reply again?',
-      description: 'Telegram did not confirm the first attempt. If it did arrive, the customer will get it twice.',
+      description: 'The messaging provider did not confirm the first attempt. If it did arrive, the customer will get it twice.',
       confirmText: 'Send again',
     }))) return;
     const { error } = await api.post(`/support/inbox/messages/${message.id}/channel-retry?workspace_id=${encodeURIComponent(message.workspace_id)}`, {});

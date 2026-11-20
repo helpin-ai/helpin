@@ -72,7 +72,7 @@ describe('SupportChannels', () => {
   it('explains how to start when nothing is connected', () => {
     accounts = []
     render()
-    expect(container.textContent).toContain('No channels connected')
+    expect(container.textContent).toContain('No Telegram bots connected')
     expect(container.textContent).toContain('@BotFather')
     render(false)
     expect(button('Connect Telegram bot')).toBeUndefined()

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Helpin · Slack mockups</title>
+<style>
+:root {color-scheme:light;font:15px/1.5 system-ui,sans-serif;color:#191919;background:#f6f6f4}
+body {margin:0}.gallery {max-width:1400px;margin:auto;padding:clamp(18px,3vw,44px)}
+header {display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}h1 {font-size:clamp(21px,3vw,30px);letter-spacing:-.04em;margin:0}
+p {margin:0;color:#5d5d59}nav{display:flex;flex-wrap:wrap;gap:5px;margin:20px 0 14px}
+nav a{color:#333;text-decoration:none;border-radius:5px;padding:6px 11px}nav a:hover{background:#e9e9e5}nav a[aria-current]{background:#202020;color:white}
+img {display:block;width:100%;height:auto;border-radius:8px;border:1px solid #dfdfdc;background:white}figure{margin:0}figcaption{margin-top:12px}
+</style></head>
+<body><main class="gallery">
+<header><h1>Slack in Helpin</h1><p>Northstar workspace · Mock data</p></header>
+<nav aria-label="Mockups"><a href="#channels">Channels</a><a href="#routing">Support routing</a><a href="#project-routing">PM defaults</a><a href="#list">Inbox list</a><a href="#inbox">Conversation</a><a href="#task">Linked task</a></nav>
+<figure><a id="full" href="channels.png"><img id="screen" src="channels.png" width="1280" height="760" alt="Channel settings for the Northstar workspace"></a><figcaption id="caption" aria-live="polite"></figcaption></figure>
+</main><script>
+const captions={
+  channels:'The Channels page shows Chat, Email, Slack, and Telegram. One Slack installation serves Support and PM.',
+  routing:'Each customer thread in #acme-support opens a conversation in the Customer support inbox.',
+  'project-routing':'Tasks created from #payments start with the Payments team and the Checkout reliability epic. The creator can change them during review.',
+  list:'Lena’s Slack conversation appears in the same inbox as email and chat. The channel icon identifies its source.',
+  inbox:'Sam can reply to the original #acme-support thread, add a private internal note, or open the linked task.',
+  task:'PAY-142 has a discussion linked to #payments. Replies in that discussion return to the internal engineering thread.'
+}
+function show() {
+  const key=location.hash.slice(1);const id=Object.hasOwn(captions,key)?key:'channels'
+  for (const link of document.querySelectorAll('nav a')) {
+    if(link.hash==='#'+id)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')
+  }
+  document.querySelector('#screen').src=id+'.png';document.querySelector('#screen').alt=captions[id]
+  document.querySelector('#full').href=id+'.png';document.querySelector('#caption').textContent=captions[id]
+}
+window.addEventListener('hashchange',show);show()
+</script></body></html>

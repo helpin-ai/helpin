@@ -76,6 +76,7 @@ import { getClipboardImageFiles } from '@/lib/clipboardAttachments';
 import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './draftAttachments';
 import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
+import { QuietSelect } from '@/components/design-system/quiet-select';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
 import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
 import { hasChatTransport, providerChannelLabel, supportChannel } from '@/lib/supportChannels';
@@ -882,7 +883,11 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
 	// A messaging-app conversation (Telegram), or a merged group holding one,
 	// carries "chat" replies through that app.
-	const providerChannel = providerChannelLabel(conversation);
+	const [chosenOrigin, setChosenOrigin] = useState('');
+  const destinations = conversation?.provider_destinations ?? [];
+  const origin = destinations.length === 1 ? destinations[0] : destinations.find(d => d.id === chosenOrigin);
+  const providerChannel = origin ? supportChannel(origin.provider)?.label : providerChannelLabel(conversation);
+  const originNeeded = destinations.length > 1 && !origin;
 	const providerOnly = Boolean(conversation && supportChannel(conversation.channel)?.transport === 'provider');
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
@@ -894,7 +899,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   });
   const deliveryMode = hiddenPortalIntake ? 'email_only' : providerOnly ? 'chat_only' : selectedDeliveryMode;
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface && !providerChannel
+  const chatUnavailableReason = originNeeded ? 'Choose a channel thread for this reply' : conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface && !providerChannel
     ? hiddenPortalIntake ? 'This request is hidden from the portal; reply by email' : 'No chat session available' : undefined;
   const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
@@ -1698,7 +1703,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     if (!isInternal) {
       restoreReplyDelivery(workspaceId, conversationId, deliveryMode);
     }
-    const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, normalizedCC]);
+    const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, origin?.id, normalizedCC]);
     if (translatedSendRef.current?.fingerprint !== fingerprint) translatedSendRef.current = { fingerprint, id: crypto.randomUUID() };
     const translating = !sendOriginal && !isInternal && outgoingTranslation.enabled && !!markdown;
     if (translating) editor.setEditable(false);
@@ -1713,7 +1718,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         ...(!isInternal ? { client_message_id: translatedSendRef.current!.id, ...(sendOriginal ? { send_original: true } : {}) } : {}),
         is_internal: isInternal,
         ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
-        ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
+        ...(!isInternal ? { delivery_mode: deliveryMode, ...(origin && deliveryMode !== 'email_only' ? { provider_origin_id: origin.id } : {}), channels: replyDeliveryChannels(deliveryMode) } : {}),
         ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
         ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
       });
@@ -1744,7 +1749,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       setPendingMacro(null);
       if (macroTextPresent(sentText, macro.marker)) void runMacro(macro.shortcut);
     }
-  }, [runMacro, setPendingMacro, editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
+  }, [runMacro, setPendingMacro, editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, origin, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async (sendOriginal = false) => {
     if (inactive || !editor || !editor.isEditable || attachmentsPending || updateNoteMutation.isPending) return;
@@ -2482,6 +2487,10 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
           </kbd>
           {editingNote && <Button size="sm" variant="ghost" className="h-7 px-3 text-xs" disabled={updateNoteMutation.isPending} onClick={() => onFinishEdit?.(editingNote.id)}>Cancel</Button>}
           <div className="inline-flex shrink-0 items-center">
+            {!isNote && deliveryMode !== 'email_only' && destinations.length > 1 && (
+              <QuietSelect label="Reply thread" placeholder="Choose thread" value={origin?.id ?? ''} onChange={setChosenOrigin}
+                options={destinations.map(d => ({ value: d.id, label: `${d.name} · Conversation ${d.display_id}` }))} />
+            )}
             {!isNote && <ReplyDeliverySelector
               mode={deliveryMode}
               onChange={selectDeliveryMode}
@@ -2490,7 +2499,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
               portal={portalReplySurface && !hasChatSession}
-              channel={providerChannel}
+              channel={providerChannel} destination={origin ? origin.provider === 'slack' ? origin.name.replace(/^#/, '') : undefined : conversation?.provider_channel_name}
             />}
             <Button
               size="sm"

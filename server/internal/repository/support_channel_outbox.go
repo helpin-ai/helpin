@@ -112,7 +112,7 @@ func (r *SupportChannelOutboxRepository) ListByMessageIDs(ctx context.Context, w
 	if len(messageIDs) == 0 {
 		return rows, nil
 	}
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND message_id IN ?", workspaceID, messageIDs).Find(&rows).Error
+	err := r.db.WithContext(ctx).Select("support_channel_outbox.*, a.provider").Joins("JOIN support_channel_accounts a ON a.id=support_channel_outbox.channel_account_id").Where("support_channel_outbox.workspace_id = ? AND message_id IN ?", workspaceID, messageIDs).Find(&rows).Error
 	return rows, err
 }
 

@@ -1583,6 +1583,7 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if len(group) > 1 {
+			ticket.ProviderDestinations = mergedProviderDestinations(group)
 			ticket.MergeEmailRecipients = model.SupportMergeEmailAudience(group)
 			for _, c := range group {
 				if c.AnonymousID != nil || model.SupportChannelHasChatSession(c.Source) {
@@ -2184,6 +2185,17 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 	// Any request the customer sees in the portal (portal intake, or an email
 	// thread claimed after sign-in) can receive replies there.
+	if !req.IsInternal && messageType == "reply" && req.DeliveryMode != model.SupportDeliveryEmailOnly && len(deliveryConversation.ProviderDestinations) > 0 {
+		destinations := deliveryConversation.ProviderDestinations
+		if len(destinations) == 1 && req.ProviderOriginID == "" {
+			req.ProviderOriginID = destinations[0].ID
+		}
+		if !slices.ContainsFunc(destinations, func(d model.SupportProviderDestination) bool { return d.ID == req.ProviderOriginID }) {
+			return nil, fmt.Errorf("choose the original channel thread for this reply")
+		}
+	} else {
+		req.ProviderOriginID = ""
+	}
 	portalReplySurface := supportConversationPortalReplySurface(conv)
 	// A provider-channel conversation (Telegram), or a merged group holding
 	// one, delivers "chat" replies through the channel outbox.
@@ -2331,10 +2343,13 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
-	if req.AIAssisted || clientMessageID != "" || translation != nil {
+	if req.AIAssisted || clientMessageID != "" || translation != nil || req.ProviderOriginID != "" {
 		metadata := map[string]any{}
 		if strings.TrimSpace(msg.Metadata) != "" {
 			_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
+		}
+		if req.ProviderOriginID != "" {
+			metadata["provider_origin_id"] = req.ProviderOriginID
 		}
 		if translation != nil {
 			metadata["translated"] = true
@@ -2674,6 +2689,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	}
 	requesterMemberID := trimOptionalPtr(req.RequesterMemberID)
 	createReq := model.CreateTaskRequest{
+		SlackThread:       req.SlackThread,
 		WorkspaceID:       workspaceID,
 		Name:              firstNonEmptyString(trimPtrValue(req.Name), draft.Title),
 		Description:       description,

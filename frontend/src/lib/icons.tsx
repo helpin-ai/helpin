@@ -212,6 +212,7 @@ import {
   ZoomOutAreaIcon as _ZoomOutAreaIcon,
   ThumbsDownIcon as _ThumbsDownIcon,
   ThumbsUpIcon as _ThumbsUpIcon,
+  SlackIcon as _SlackIcon,
   TelegramIcon as _TelegramIcon,
 } from '@hugeicons/core-free-icons';
 
@@ -352,6 +353,7 @@ export const CursorPointer01Icon = /* @__PURE__ */ hi(_CursorPointer01Icon);
 export const TextIcon = /* @__PURE__ */ hi(_TextIcon);
 export const ArrowMoveUpRightIcon = /* @__PURE__ */ hi(_ArrowMoveUpRightIcon);
 export const BubbleChatIcon = /* @__PURE__ */ hi(_BubbleChatIcon);
+export const SlackIcon = /* @__PURE__ */ hi(_SlackIcon);
 export const TelegramIcon = /* @__PURE__ */ hi(_TelegramIcon);
 export const Clock01Icon = /* @__PURE__ */ hi(_Clock01Icon);
 export const Clock02Icon = /* @__PURE__ */ hi(_Clock02Icon);

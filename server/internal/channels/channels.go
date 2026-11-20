@@ -36,7 +36,11 @@ type Event struct {
 	// ExternalUserID identifies the customer within the connected account.
 	ExternalUserID string
 	// ExternalChatID is where replies go.
-	ExternalChatID string
+	ExternalChatID     string
+	ThreadKey          string
+	ChannelName        string
+	ExistingThreadOnly bool
+	Teammate           bool
 	// ExternalMessageKey identifies the message within the connected account.
 	ExternalMessageKey string
 	DisplayName        string
