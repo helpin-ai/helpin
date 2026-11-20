@@ -15,7 +15,7 @@ import type {
   DiscoveredAIModel,
 } from "@/lib/services/aiConnectionService";
 import type { AIProfile } from "@/lib/services/aiProfileService";
-import { catalogLabel, chatGPTAccountLabel, modelCatalogFor, providerLabel } from "@/lib/aiProviders";
+import { catalogLabel, chatGPTAccountLabel, modelCatalogFor, providerLabel, providerShortLabel } from "@/lib/aiProviders";
 import {
   Dialog,
   DialogContent,
@@ -165,7 +165,7 @@ export function AIConnectionModelsDialog({
         <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[780px]">
           <DialogHeader className="border-b px-6 py-4 text-left">
             <Button size="sm" variant="ghost" className="w-fit" disabled={busy} onClick={onBack}><ArrowLeft01Icon className="size-4" />Connections</Button>
-            <DialogTitle>{connection.name} models</DialogTitle>
+            <DialogTitle>{connection.funding === "managed" ? providerShortLabel(connection.provider) : connection.name} models</DialogTitle>
             <DialogDescription>{chatGPTAccountLabel(connection) ?? (connection.funding === "managed" ? "Helpin-managed" : providerLabel(connection.provider))}</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 px-6 py-3">
