@@ -18,6 +18,7 @@ import {
   modelNameWithThinking,
   connectionStatusInfo,
   providerLabel,
+  providerShortLabel,
 } from "@/lib/aiProviders";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
 import type { AIProfile, AISettings } from "@/lib/services/aiProfileService";
@@ -54,6 +55,10 @@ export function AIModelTableRow({
   const visibility = useSetAIModelVisibility(workspaceId);
   const sharing = useSetAgentSharing(workspaceId);
   const [accessChange, setAccessChange] = useState<{ profile: AIProfile; shared: boolean } | null>(null);
+  const managed = connection?.funding === "managed";
+  const connectionName = managed
+    ? providerShortLabel(connection.provider)
+    : connection?.name ?? profile.subscription_name ?? providerLabel(profile.primary.model.provider);
   const accessLabel = profile.scope === "workspace" || profile.agent_grant_id ? "Workspace-wide" : "Personal";
   const busy = sharing.isPending ||
     personalDefault.isPending ||
@@ -142,9 +147,10 @@ export function AIModelTableRow({
             provider={connection?.provider ?? profile.primary.model.provider}
             className="size-4 shrink-0"
           />
-          <span className="truncate text-sm" title={connection?.name}>
-            {connection?.name ?? profile.subscription_name ?? providerLabel(profile.primary.model.provider)}
-          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm" title={connection?.name}>{connectionName}</p>
+            {managed && <p className="text-xs text-muted-foreground">Managed</p>}
+          </div>
         </div>
       </TableCell>
       <TableCell className="whitespace-nowrap text-sm">
