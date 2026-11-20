@@ -84,7 +84,7 @@ export function SelfServiceScene() {
           <div className="cp-ask-q">How do I add our VAT number to invoices?</div>
           <div className="cp-ask-a">
             <p>Open <b>Billing → Company details</b> and enter your VAT number. It appears on every invoice created after you save it.</p>
-            <span className="cp-source"><FileText size={12} />Add your VAT number to invoices<ArrowUpRight size={11} /></span>
+            <span className="cp-source"><FileText size={12} />Add your VAT number to invoices<ArrowUpRight size={11} aria-hidden="true" /></span>
             <span className="cp-ask-actions"><ThumbsUp size={12} aria-label="Helpful" /><ThumbsDown size={12} aria-label="Not helpful" /><span>Contact support</span></span>
           </div>
         </div> : <div className="sd-form">

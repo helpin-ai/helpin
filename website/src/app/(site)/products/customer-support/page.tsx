@@ -114,7 +114,7 @@ const FAQS = [
 ] as const;
 
 function Actions() {
-  return <div className="cta-row"><a className="btn btn-primary" href={SIGNUP_URL}>Start free trial <ArrowRight size={16} aria-hidden="true" /></a><a className="btn btn-secondary" href={DEMO_URL}>Book a demo <ArrowRight size={16} aria-hidden="true" /></a></div>;
+  return <div className="cta-row"><a className="btn btn-primary" href={SIGNUP_URL}>Start free trial</a><a className="btn btn-secondary" href={DEMO_URL}>Book a demo</a></div>;
 }
 
 export default function CustomerSupportPage() {
@@ -230,7 +230,7 @@ export default function CustomerSupportPage() {
               <article><h3>Intercom</h3><p>Conversations and the Help Center, from the data region you use and from the date you choose. Articles keep their Intercom status or come in as drafts.</p></article>
               <article><h3>Other help centers</h3><p>Copy a public Intercom help center from its address, with no token. Import HelpScout Docs or a Nextra site with images and redirects.</p></article>
             </div>
-            <Link prefetch={false} className="btn-link" href="/compare/intercom">See how Helpin compares with Intercom →</Link>
+            <Link prefetch={false} className="btn-link" href="/compare/intercom">See how Helpin compares with Intercom <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
           <ImportScene />
         </div>

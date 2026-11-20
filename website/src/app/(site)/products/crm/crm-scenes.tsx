@@ -634,7 +634,7 @@ export function CRMSignals() {
           >
             <Icon size={18} />
             <span>{label}</span>
-            <ArrowRight size={16} />
+            <ArrowRight size={16} aria-hidden="true" />
           </button>
         ))}
 

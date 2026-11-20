@@ -112,7 +112,7 @@ export function MergedPrDocsScene() {
           <div className="dp-result"><div className="dp-result-head"><FileText size={14} /><b>Open a CSV export in Excel</b><span className="dp-pill">Checked · no change</span></div></div>
           <div className="dp-result"><div className="dp-result-head"><FileText size={14} /><b>Import contacts from a CSV</b><span className="dp-pill">Checked · no change</span></div></div>
         </div>}
-        {phase >= 7 && <div className="dp-review"><span>1 change waiting for review · nothing published</span><span className="dp-review-btn">Review change<ArrowUpRight size={12} /></span></div>}
+        {phase >= 7 && <div className="dp-review"><span>1 change waiting for review · nothing published</span><span className="dp-review-btn">Review change<ArrowUpRight size={12} aria-hidden="true" /></span></div>}
       </div>
     </Frame>
     <Playback paused={paused} onToggle={() => setPaused(value => !value)} />

@@ -168,7 +168,7 @@ function Details({ stage, viewing }: { stage: number; viewing: 'maya' | 'alex' }
   if (viewing === 'alex') return <aside className="hs-details"><div className="hs-head"><strong>Details</strong></div><div className="hs-contact"><Initials text="AM" tone={2} size={46} /><strong>Alex Morgan</strong><span><Mail size={12} />alex@harborlane.example</span><em>Customer <ChevronDown size={11} /></em></div></aside>;
   return <aside className="hs-details">
     <div className="hs-head"><strong>Details</strong></div>
-    <div className="hs-contact"><Photo src={MAYA} size={46} /><strong>Maya Chen</strong><span><Mail size={12} />maya@northstarlabs.example</span><em>Customer <ChevronDown size={11} /></em><a>View CRM Contact <ArrowUpRight size={11} /></a></div>
+    <div className="hs-contact"><Photo src={MAYA} size={46} /><strong>Maya Chen</strong><span><Mail size={12} />maya@northstarlabs.example</span><em>Customer <ChevronDown size={11} /></em><a>View CRM Contact <ArrowUpRight size={11} aria-hidden="true" /></a></div>
     <div className="hs-field"><b>Assignee</b>{stage >= 6 ? <span className="hs-in-inline"><Photo src={SAM} size={20} />Sam Rivera<ChevronDown size={12} /></span> : <span><AIMark size={20} />AI handling<ChevronDown size={12} /></span>}</div>
     <div className="hs-field"><b>Priority</b>{stage >= 5 ? <span className="hs-pill hs-in-inline"><BarChart3 size={12} className="hs-high" />High<ChevronsUpDown size={12} /></span> : <span className="hs-pill"><span className="hs-dim">No priority</span><ChevronsUpDown size={12} /></span>}</div>
     <div className="hs-field hs-sla-field"><div><b>SLA</b>{sla && <SLA label={sla.label} tone={sla.tone} />}</div>
@@ -176,7 +176,7 @@ function Details({ stage, viewing }: { stage: number; viewing: 'maya' | 'alex' }
     </div>
     <div className="hs-field hs-tags-field"><div><b>Tags</b><Settings size={13} /></div><div>{stage >= 5 && <span className="hs-in-inline"><TagPill name="bug" /><TagPill name="exports" /></span>}<span className="hs-add"><Tag size={11} />Add</span></div></div>
     <div className="hs-field"><b>Company details</b><ChevronDown size={13} /></div>
-    <dl className="hs-company"><div><dt>Company</dt><dd className="hs-link">Northstar Labs <ArrowUpRight size={11} /></dd></div><div><dt>Domain</dt><dd>northstarlabs.example</dd></div><div><dt>SLA tier</dt><dd>Standard</dd></div></dl>
+    <dl className="hs-company"><div><dt>Company</dt><dd className="hs-link">Northstar Labs <ArrowUpRight size={11} aria-hidden="true" /></dd></div><div><dt>Domain</dt><dd>northstarlabs.example</dd></div><div><dt>SLA tier</dt><dd>Standard</dd></div></dl>
     <div className="hs-field"><b>Tasks</b>{stage >= 6 ? <span className="hs-count">1</span> : <Plus size={13} />}</div>
     {stage >= 6 && <div className="hs-task hs-in-inline"><CircleCheck size={13} /><span><b>EXP-142</b>Complete exports beyond 10,000 rows</span></div>}
   </aside>;

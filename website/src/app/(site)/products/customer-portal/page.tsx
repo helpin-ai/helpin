@@ -48,7 +48,7 @@ const FAQS = [
 ] as const;
 
 function Actions() {
-  return <div className="cta-row"><a className="btn btn-primary" href={SIGNUP_URL}>Start free trial <ArrowRight size={16} aria-hidden="true" /></a><a className="btn btn-secondary" href={DEMO_URL}>Book a demo <ArrowRight size={16} aria-hidden="true" /></a></div>;
+  return <div className="cta-row"><a className="btn btn-primary" href={SIGNUP_URL}>Start free trial</a><a className="btn btn-secondary" href={DEMO_URL}>Book a demo</a></div>;
 }
 
 export default function CustomerPortalPage() {

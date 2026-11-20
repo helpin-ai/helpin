@@ -12,7 +12,7 @@ import { SupportStory } from './_components/support-story/SupportStory';
 import { HostingDiagram } from './_components/HostingDiagram';
 import { AgentControlArt } from './_components/AgentControlArt';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
-import { CtaRow, GithubIcon, SectionHead, GITHUB_URL, SIGNUP_URL } from './_components/ui';
+import { CtaRow, GithubIcon, SectionHead, GITHUB_URL, SIGNUP_URL, LinkArrow } from './_components/ui';
 import { DOCS } from './_components/docsLinks';
 import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import { JsonLd, organization, softwareApplication, website } from '@/lib/structured-data';
@@ -100,12 +100,12 @@ export default function HomePage() {
               <span className="developer-feature-icon"><DoorOpen size={22} aria-hidden="true" /></span>
               <h3>A portal for your customers.</h3>
               <p>Customers sign in to follow their requests, search their history, and read help written for them.</p>
-              <Link prefetch={false} className="inline-link" href="/products/customer-portal">Explore the portal →</Link>
+              <Link prefetch={false} className="inline-link" href="/products/customer-portal">Explore the portal<LinkArrow /></Link>
             </article>
           </div>
           <div className="home-section-actions">
-            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</Link>
-            <Link prefetch={false} className="btn-link" href="/products/customer-support">Explore customer support →</Link>
+            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL}>Start free trial</Link>
+            <Link prefetch={false} className="btn-link" href="/products/customer-support">Explore customer support<LinkArrow /></Link>
           </div>
         </div>
       </section>
@@ -165,7 +165,7 @@ export default function HomePage() {
             </article>
           </div>
           <div className="home-section-actions">
-            <Link prefetch={false} className="btn-link" href="/products/knowledge">Explore knowledge and docs →</Link>
+            <Link prefetch={false} className="btn-link" href="/products/knowledge">Explore knowledge and docs<LinkArrow /></Link>
           </div>
         </div>
       </section>
@@ -199,7 +199,7 @@ export default function HomePage() {
             </article>
           </div>
           <div className="home-section-actions">
-            <Link prefetch={false} className="btn-link" href="/products/ai-agents">Explore agents and approvals →</Link>
+            <Link prefetch={false} className="btn-link" href="/products/ai-agents">Explore agents and approvals<LinkArrow /></Link>
           </div>
         </div>
       </section>
@@ -215,7 +215,7 @@ export default function HomePage() {
               <article><h3>Other help centers</h3><p>Copy a public Intercom help center from its address, with no token. Import HelpScout Docs or a Nextra site with images and redirects.</p></article>
               <article><h3>The rest of your stack</h3><p>Contacts from HubSpot or a CSV file, and tasks, epics, and workflows from Shortcut.</p></article>
             </div>
-            <Link prefetch={false} className="btn-link" href="/compare/intercom">See how Helpin compares with Intercom →</Link>
+            <Link prefetch={false} className="btn-link" href="/compare/intercom">See how Helpin compares with Intercom<LinkArrow /></Link>
           </div>
           <ImportScene />
         </div>
@@ -228,21 +228,21 @@ export default function HomePage() {
             <div>
               <SectionHead eyebrow="Open source" title="We can host Helpin for you, or you can run it yourself."
                 lede="Choose Helpin Cloud if you want us to manage the hosting, with AI usage included. Choose the open-source Community edition if you want to run Helpin on your own servers and connect your own AI providers." />
-              <div className="links"><a className="btn btn-primary" href={DOCS.selfHosting}>Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
+              <div className="links"><a className="btn btn-primary" href={DOCS.selfHosting}>Self-host Helpin</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code<LinkArrow external /></a></div>
               <p className="self-host-license">AGPL-3.0 · Community 0.2 beta</p>
             </div>
             <HostingDiagram />
           </div>
           <div className="self-host-features">
-            <article><SquareTerminal size={23} aria-hidden="true" /><h3>Install and manage it from your terminal.</h3><p>The Helpin CLI installs the self-hosted version, checks that its services are running, and shows the logs when something needs attention. <a className="inline-link" href={DOCS.selfHostingInstall}>Explore the CLI →</a></p></article>
+            <article><SquareTerminal size={23} aria-hidden="true" /><h3>Install and manage it from your terminal.</h3><p>The Helpin CLI installs the self-hosted version, checks that its services are running, and shows the logs when something needs attention. <a className="inline-link" href={DOCS.selfHostingInstall}>Explore the CLI<LinkArrow /></a></p></article>
             <article><Database size={23} aria-hidden="true" /><h3>Control your data and backups.</h3><p>Keep your customer records and files on the servers you manage, and choose how you back them up.</p></article>
             <article><SlidersHorizontal size={23} aria-hidden="true" /><h3>Choose your AI provider.</h3><p>When you self-host, you can connect a supported AI provider and choose the models your agents use.</p></article>
           </div>
           <div className="self-host-build">
             <p className="self-host-build-title">Build with Helpin</p>
             <div className="self-host-features self-host-build-grid">
-              <article><Braces size={23} aria-hidden="true" /><h3>Add support chat with customer context.</h3><p>Use Helpin’s APIs and SDKs to add support chat and share customer details from your app, so customers don’t have to explain who they are each time. <a className="inline-link" href={DOCS.widgetSdk}>Explore the SDK →</a></p></article>
-              <article><Plug size={23} aria-hidden="true" /><h3>Connect your AI tools through MCP.</h3><p>Claude Code, Codex, Cursor, and other compatible clients can read conversations, create tasks, and update docs with the permissions you grant. <a className="inline-link" href={DOCS.mcpServer}>Set up Helpin MCP →</a></p></article>
+              <article><Braces size={23} aria-hidden="true" /><h3>Add support chat with customer context.</h3><p>Use Helpin’s APIs and SDKs to add support chat and share customer details from your app, so customers don’t have to explain who they are each time. <a className="inline-link" href={DOCS.widgetSdk}>Explore the SDK<LinkArrow /></a></p></article>
+              <article><Plug size={23} aria-hidden="true" /><h3>Connect your AI tools through MCP.</h3><p>Claude Code, Codex, Cursor, and other compatible clients can read conversations, create tasks, and update docs with the permissions you grant. <a className="inline-link" href={DOCS.mcpServer}>Set up Helpin MCP<LinkArrow /></a></p></article>
             </div>
           </div>
         </div>
