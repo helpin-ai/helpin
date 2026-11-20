@@ -97,9 +97,26 @@ func buildClaudeMessageRequest(req ChatRequest) agentcontract.CreateMessageReque
 			Type: "tool",
 			Name: claudeJSONToolName,
 		}
+		if claudeRejectsForcedToolChoice(req.Model) {
+			// These models return 400 for a forced tool; steer from the prompt instead.
+			// A text-only reply still parses because extraction falls back to text.
+			apiReq.ToolChoice = &agentcontract.ToolChoice{Type: "auto"}
+			apiReq.System = strings.TrimSpace(apiReq.System + "\n\nRespond only by calling the " + claudeJSONToolName + " tool.")
+		}
 	}
 
 	return apiReq
+}
+
+// claudeRejectsForcedToolChoice reports models that refuse tool_choice "tool" and "any".
+func claudeRejectsForcedToolChoice(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	for _, prefix := range []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2", "claude-mythos-5-1", "claude-mythos-5-2"} {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultClaudeJSONSchema() map[string]any {

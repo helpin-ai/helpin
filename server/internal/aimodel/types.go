@@ -23,6 +23,8 @@ type ModelDefinition struct {
 	Aliases        []string `json:"aliases,omitempty"`
 	Tier           Tier     `json:"tier"`
 	Enabled        bool     `json:"enabled"`
+	// Legacy models still resolve for saved routes but are hidden from pickers and tier fallback.
+	Legacy bool `json:"legacy,omitempty"`
 }
 
 // RouteDefinition is one exact provider route eligible for execution.
@@ -47,6 +49,7 @@ type PublicModel struct {
 	Label          string `json:"label"`
 	Tier           Tier   `json:"tier"`
 	Enabled        bool   `json:"enabled"`
+	Legacy         bool   `json:"legacy,omitempty"`
 }
 
 // TierDefinition preserves legacy size labels while agents migrate to profiles.

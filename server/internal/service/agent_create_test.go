@@ -75,7 +75,7 @@ func TestCreateAgentModelTierResolvesInternalExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent returned error: %v", err)
 	}
-	if created.ModelTier != "medium" || derefString(created.Provider) != "openrouter" || derefString(created.Model) != "google/gemini-3.8-flash" {
+	if created.ModelTier != "medium" || derefString(created.Provider) != "openrouter" || derefString(created.Model) != "openai/gpt-6.1-terra" {
 		t.Fatalf("resolved execution = %#v", created)
 	}
 	if created.RuntimeKind != "native_sdk" {
@@ -117,7 +117,7 @@ func TestCustomAgentVersionCanChangeModelTierWithoutMutatingPriorSnapshot(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if original.ModelTier != "small" || created.ModelTier != "large" || derefString(created.Provider) != "openai" || derefString(created.Model) != "gpt-5.6-terra" {
+	if original.ModelTier != "small" || created.ModelTier != "large" || derefString(created.Provider) != "openai" || derefString(created.Model) != "gpt-6.2-sol" {
 		t.Fatalf("original=%#v created=%#v", original, created)
 	}
 	activated, err := svc.ActivateAgentVersion(context.Background(), agent.WorkspaceID, agent.ID, created.ID, "user-1")
@@ -597,7 +597,7 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	for _, agent := range agents {
 		if agent.IsSystem {
 			systemPresets = append(systemPresets, agent.PresetKey)
-			wantProvider, wantModel := model.AgentModelProviderOpenAI, "gpt-5.6-terra"
+			wantProvider, wantModel := model.AgentModelProviderOpenAI, "gpt-6.2-sol"
 			switch agent.PresetKey {
 			case model.AgentPresetEpicPlanner:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAtlasAgentModel
@@ -649,8 +649,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if forge.Provider == nil || *forge.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected forge provider openai, got %+v", forge.Provider)
 	}
-	if forge.Model == nil || *forge.Model != "gpt-5.6-terra" {
-		t.Fatalf("expected forge model gpt-5.6-terra, got %+v", forge.Model)
+	if forge.Model == nil || *forge.Model != "gpt-6.2-sol" {
+		t.Fatalf("expected forge model gpt-6.2-sol, got %+v", forge.Model)
 	}
 	lens, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetReviewAgent)
 	if err != nil {
@@ -665,8 +665,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if lens.Provider == nil || *lens.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected lens provider openai, got %+v", lens.Provider)
 	}
-	if lens.Model == nil || *lens.Model != "gpt-5.6-terra" {
-		t.Fatalf("expected lens model gpt-5.6-terra, got %+v", lens.Model)
+	if lens.Model == nil || *lens.Model != "gpt-6.2-sol" {
+		t.Fatalf("expected lens model gpt-6.2-sol, got %+v", lens.Model)
 	}
 	supportAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetSupportAgent)
 	if err != nil {
@@ -823,27 +823,31 @@ func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
 	}
 }
 
-func TestEnsureBuiltInAgent_UpgradesLegacyDefaultModelToGPT56Terra(t *testing.T) {
-	db := newAgentServiceTestDB(t)
-	agentRepo := repository.NewAgentRepository(db)
-	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key")
+func TestEnsureBuiltInAgent_UpgradesLegacyDefaultModels(t *testing.T) {
+	for _, legacyModel := range []string{"gpt-5.5", legacyOpenAIAgentModel} {
+		t.Run(legacyModel, func(t *testing.T) {
+			db := newAgentServiceTestDB(t)
+			agentRepo := repository.NewAgentRepository(db)
+			svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key")
 
-	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
-	if err != nil {
-		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
-	}
-	legacyModel := "gpt-5.5"
-	systemAgent.Model = &legacyModel
-	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
-		t.Fatalf("persist legacy model: %v", err)
-	}
+			systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			stale := legacyModel
+			systemAgent.Model = &stale
+			if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+				t.Fatalf("persist legacy model: %v", err)
+			}
 
-	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
-	if err != nil {
-		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
-	}
-	if reconciled.Model == nil || *reconciled.Model != "gpt-5.6-terra" {
-		t.Fatalf("expected reconciled model gpt-5.6-terra, got %+v", reconciled.Model)
+			reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			if reconciled.Model == nil || *reconciled.Model != "gpt-6.2-sol" {
+				t.Fatalf("expected reconciled model gpt-6.2-sol, got %+v", reconciled.Model)
+			}
+		})
 	}
 }
 
@@ -974,7 +978,7 @@ func TestEnsureBuiltInAgent_UpgradesManagedCommandAgentDefaultToDeepSeek(t *test
 		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
 	}
 	legacyProvider := model.AgentModelProviderOpenAI
-	legacyModel := defaultOpenAIAgentModel
+	legacyModel := legacyOpenAIAgentModel
 	systemAgent.Provider = &legacyProvider
 	systemAgent.Model = &legacyModel
 	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
@@ -994,7 +998,7 @@ func TestEnsureBuiltInAgent_UpgradesManagedCommandAgentDefaultToDeepSeek(t *test
 }
 
 func TestEnsureBuiltInAgent_UpgradesLegacyQuillDefaultRouting(t *testing.T) {
-	legacyModels := []string{"gpt-5.5", defaultOpenAIAgentModel}
+	legacyModels := []string{"gpt-5.5", legacyOpenAIAgentModel}
 	for _, legacyModel := range legacyModels {
 		t.Run(legacyModel, func(t *testing.T) {
 			db := newAgentServiceTestDB(t)
@@ -1031,7 +1035,7 @@ func TestEnsureBuiltInAgent_UpgradesLegacyQuillDefaultRouting(t *testing.T) {
 }
 
 func TestEnsureBuiltInAgent_UpgradesLegacyAtlasDefaultRouting(t *testing.T) {
-	legacyModels := []string{"gpt-5.5", defaultOpenAIAgentModel}
+	legacyModels := []string{"gpt-5.5", legacyOpenAIAgentModel}
 	for _, legacyModel := range legacyModels {
 		t.Run(legacyModel, func(t *testing.T) {
 			db := newAgentServiceTestDB(t)
@@ -1462,7 +1466,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.VersionKey == "" || version.VersionKey == defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
 		t.Fatalf("expected a new custom version key, got %q", version.VersionKey)
 	}
-	if version.Model == nil || *version.Model != "gpt-5.6-terra" || derefString(version.Provider) != "openai" || version.ModelTier != "large" {
+	if version.Model == nil || *version.Model != "gpt-6.2-sol" || derefString(version.Provider) != "openai" || version.ModelTier != "large" {
 		t.Fatalf("expected copied preset to reset to Large, got %+v", version)
 	}
 	if strings.TrimSpace(string(version.ExecutionConfig)) != `{}` {
@@ -1514,7 +1518,7 @@ func TestCreateWorkspacePresetVersion_BlankModelUsesFamilyDefault(t *testing.T) 
 	if version.Model == nil {
 		t.Fatal("expected the family default model")
 	}
-	if *version.Model != "gpt-5.6-terra" || derefString(version.Provider) != "openai" || version.ModelTier != "large" {
+	if *version.Model != "gpt-6.2-sol" || derefString(version.Provider) != "openai" || version.ModelTier != "large" {
 		t.Fatalf("expected Large default, got %+v", version)
 	}
 
@@ -1523,7 +1527,7 @@ func TestCreateWorkspacePresetVersion_BlankModelUsesFamilyDefault(t *testing.T) 
 		if preset.VersionKey != version.VersionKey {
 			continue
 		}
-		if preset.Model == nil || *preset.Model != "gpt-5.6-terra" || derefString(preset.Provider) != "openai" {
+		if preset.Model == nil || *preset.Model != "gpt-6.2-sol" || derefString(preset.Provider) != "openai" {
 			t.Fatalf("expected listed workspace preset to use family default, got %+v", preset.Model)
 		}
 		return

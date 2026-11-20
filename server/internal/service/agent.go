@@ -1295,8 +1295,10 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		}
 		if presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
-			strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5" &&
-			strings.TrimSpace(derefString(preset.Model)) == "gpt-5.6-terra" {
+			(strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5" ||
+				strings.TrimSpace(derefString(existing.Model)) == legacyOpenAIAgentModel) &&
+			strings.TrimSpace(derefString(preset.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(preset.Model)) == defaultOpenAIAgentModel {
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
@@ -1304,7 +1306,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		// (flash-tier model); upgrade rows still on the untouched old default.
 		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetSupportAgent) &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
-			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			strings.TrimSpace(derefString(existing.Model)) == legacyOpenAIAgentModel {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
@@ -1315,7 +1317,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		if presetKey == model.AgentPresetCommandAgent &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
-			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			strings.TrimSpace(derefString(existing.Model)) == legacyOpenAIAgentModel {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
@@ -1364,7 +1366,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetDocumentationAgent) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
-			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||
+			(strings.TrimSpace(derefString(existing.Model)) == legacyOpenAIAgentModel ||
 				strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5") {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)

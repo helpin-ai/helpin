@@ -239,7 +239,7 @@ func (c *Catalog) PublicSnapshot() PublicPricing {
 		}
 		pricing.Models = append(pricing.Models, PublicModel{
 			Provider: definition.Provider, CanonicalModel: definition.CanonicalModel,
-			SelectionModel: selectionModel, Label: definition.Label, Tier: definition.Tier, Enabled: definition.Enabled,
+			SelectionModel: selectionModel, Label: definition.Label, Tier: definition.Tier, Enabled: definition.Enabled, Legacy: definition.Legacy,
 		})
 	}
 	for _, tool := range c.Tools {

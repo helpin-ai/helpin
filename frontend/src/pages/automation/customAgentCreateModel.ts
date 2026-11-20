@@ -16,9 +16,9 @@ import type {
 } from '@/lib/pmTypes';
 
 const FALLBACK_DEFAULT_MODELS: Record<AgentModelProvider, string> = {
-  anthropic: 'claude-opus-4-8',
-  openai: 'gpt-5.6-terra',
-  openrouter: 'openai/gpt-5.6-terra',
+  anthropic: 'claude-opus-5-5',
+  openai: 'gpt-6.2-sol',
+  openrouter: 'openai/gpt-6.2-sol',
 };
 
 export function defaultModelForAgentProvider(

@@ -120,7 +120,7 @@ func coverageChatAction(key, label string) Action {
 		Category: CategorySupportAI, Origin: "coverage", Modality: ModalityChat,
 		DefaultProvider: "anthropic", DefaultModel: "claude-sonnet-4-6",
 		AllowedModels: defaultChatModels(),
-		Fallbacks:     []Route{{Provider: "openrouter", Model: "openai/gpt-5.6-luna"}},
+		Fallbacks:     []Route{{Provider: "openrouter", Model: "openai/gpt-6-luna"}},
 		Timeout:       45 * time.Second, MaxInputTokens: 32000, MaxOutputTokens: 4000,
 		MaxReasoningTokens: 0, RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
 		DataClass: DataClassCustomerContent, Chargeable: true,
@@ -167,9 +167,9 @@ func seededAction(seed featureSeed) Action {
 
 func defaultChatModels() map[string][]string {
 	return map[string][]string{
-		"anthropic":  {"claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8"},
-		"openai":     {"gpt-5-mini", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-terra"},
-		"openrouter": {"openai/gpt-oss-120b", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017", "deepseek/deepseek-v4.1-flash-1017:nitro", "z-ai/glm-5.3-flash:exacto", "deepseek/deepseek-v4-flash-0731", "openai/gpt-5.6-luna", "openai/gpt-6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
+		"anthropic":  {"claude-haiku-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"},
+		"openai":     {"gpt-6-luna", "gpt-6.1-terra", "gpt-6.2-sol", "gpt-6.2-astra"},
+		"openrouter": {"openai/gpt-oss-120b", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017", "deepseek/deepseek-v4.1-flash-1017:nitro", "z-ai/glm-5.3-flash:exacto", "deepseek/deepseek-v4-flash-0731", "openai/gpt-6-luna", "openai/gpt-6.1-terra", "openai/gpt-6.2-sol", "openai/gpt-6.2-astra"},
 	}
 }
 

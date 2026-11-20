@@ -86,7 +86,7 @@ func TestAICompletionServiceRetriesDeclaredFallbackAfterRetryableProviderFailure
 	if response.Content != "ok" || len(provider.requests) != 2 {
 		t.Fatalf("response=%#v requests=%#v", response, provider.requests)
 	}
-	if provider.requests[1].Model != "openai/gpt-5.6-luna" {
+	if provider.requests[1].Model != "openai/gpt-6-luna" {
 		t.Fatalf("fallback model = %q", provider.requests[1].Model)
 	}
 	if store.releasedID == "" {

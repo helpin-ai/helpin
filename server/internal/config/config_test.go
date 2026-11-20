@@ -11,7 +11,7 @@ func setRequiredConfigEnv(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret")
 }
 
-func TestLoadDefaultsCommandRouterToOpenRouterGeminiFlashLite(t *testing.T) {
+func TestLoadDefaultsCommandRouterToOpenRouterGPT6Luna(t *testing.T) {
 	setRequiredConfigEnv(t)
 
 	cfg, err := Load()
@@ -21,7 +21,7 @@ func TestLoadDefaultsCommandRouterToOpenRouterGeminiFlashLite(t *testing.T) {
 	if cfg.CommandRouterLLMProvider != "openrouter" {
 		t.Fatalf("unexpected command router provider: %q", cfg.CommandRouterLLMProvider)
 	}
-	if cfg.CommandRouterLLMModel != "openai/gpt-5.6-luna" {
+	if cfg.CommandRouterLLMModel != "openai/gpt-6-luna" {
 		t.Fatalf("unexpected command router model: %q", cfg.CommandRouterLLMModel)
 	}
 	if string(cfg.CommandRouterOpenRouterProviderOptions) != `{"order":["google-vertex/global"],"allow_fallbacks":false}` {
@@ -29,7 +29,7 @@ func TestLoadDefaultsCommandRouterToOpenRouterGeminiFlashLite(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsQueryExpansionToGPT56Luna(t *testing.T) {
+func TestLoadDefaultsQueryExpansionToGPT6Luna(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("QUERY_EXPANSION_MODEL", "")
 	t.Setenv("QUERY_EXPANSION_PROVIDER", "")
@@ -41,7 +41,7 @@ func TestLoadDefaultsQueryExpansionToGPT56Luna(t *testing.T) {
 	if cfg.QueryExpansionProvider != "openai" {
 		t.Fatalf("unexpected query expansion provider: %q", cfg.QueryExpansionProvider)
 	}
-	if cfg.QueryExpansionModel != "gpt-5.6-luna" {
+	if cfg.QueryExpansionModel != "gpt-6-luna" {
 		t.Fatalf("unexpected query expansion model: %q", cfg.QueryExpansionModel)
 	}
 	if cfg.QueryExpansionTimeoutMS != 10000 {
