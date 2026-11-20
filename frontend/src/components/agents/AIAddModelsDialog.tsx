@@ -149,7 +149,7 @@ export function AIAddModelsDialog({
     >
       <DialogContent
         aria-describedby={undefined}
-        className="max-h-[85vh] overflow-y-auto sm:max-w-[780px]"
+        className="max-h-[85vh] overflow-y-auto sm:max-w-xl"
       >
         <DialogHeader className="text-left">
           <DialogTitle>
