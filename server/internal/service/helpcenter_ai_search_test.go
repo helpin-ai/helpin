@@ -195,7 +195,7 @@ func TestResolveHelpcenterAnswerRouting(t *testing.T) {
 			explicitProvider: "anthropic",
 			anthropic:        true,
 			wantProvider:     "anthropic",
-			wantModel:        "claude-haiku-4-5",
+			wantModel:        "claude-haiku-5-5",
 		},
 		{
 			name:         "openrouter key preferred",
@@ -210,13 +210,13 @@ func TestResolveHelpcenterAnswerRouting(t *testing.T) {
 			openai:       true,
 			anthropic:    true,
 			wantProvider: "openai",
-			wantModel:    "gpt-5-mini",
+			wantModel:    "gpt-6-luna",
 		},
 		{
 			name:         "anthropic key last",
 			anthropic:    true,
 			wantProvider: "anthropic",
-			wantModel:    "claude-haiku-4-5",
+			wantModel:    "claude-haiku-5-5",
 		},
 		{
 			name: "no keys disables generation",

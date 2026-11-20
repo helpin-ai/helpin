@@ -17,7 +17,7 @@ func TestGovernedLLMProviderRejectsMissingCoverageActionBeforeProvider(t *testin
 		WorkspaceID: "ws-1", FeatureKey: BillingFeatureCoverageGapAnalysis,
 		IdempotencyKey: "coverage-1",
 	}))
-	_, err := provider.ChatCompletion(ctx, llm.ChatRequest{Provider: "openai", Model: "gpt-5.5", MaxTokens: 100})
+	_, err := provider.ChatCompletion(ctx, llm.ChatRequest{Provider: "openai", Model: "gpt-6.2-astra", MaxTokens: 100})
 	if !errors.Is(err, aipolicy.ErrActionRequired) {
 		t.Fatalf("ChatCompletion() error = %v, want ErrActionRequired", err)
 	}
@@ -47,7 +47,7 @@ func TestGovernedLLMProviderRejectsDisallowedRouteBeforeProvider(t *testing.T) {
 
 func TestGovernedLLMProviderAuditsSuccessfulCoverageCall(t *testing.T) {
 	base := &gatewayFakeProvider{response: &llm.ChatResponse{
-		Content: "{}", Provider: "openai", Model: "gpt-5.5",
+		Content: "{}", Provider: "openai", Model: "gpt-6.2-astra",
 		TokensUsed: llm.TokenUsage{InputTokens: 12, OutputTokens: 4},
 	}}
 	audit := &gatewayFakeAudit{}
@@ -57,7 +57,7 @@ func TestGovernedLLMProviderAuditsSuccessfulCoverageCall(t *testing.T) {
 		ActionKey: aipolicy.ActionSupportCoverageAnalyze, IdempotencyKey: "coverage-3", Attempt: 2,
 	}))
 	if _, err := provider.ChatCompletion(ctx, llm.ChatRequest{
-		Provider: "openai", Model: "gpt-5.5", MaxTokens: 100,
+		Provider: "openai", Model: "gpt-6.2-astra", MaxTokens: 100,
 	}); err != nil {
 		t.Fatalf("ChatCompletion() error = %v", err)
 	}

@@ -13,7 +13,8 @@ export const AI_MODELS = {
       "selection_model": "openai/gpt-5.6-luna",
       "label": "GPT-5.6 Luna",
       "tier": "small",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openai",
@@ -21,7 +22,8 @@ export const AI_MODELS = {
       "selection_model": "gpt-5.6-luna",
       "label": "GPT-5.6 Luna",
       "tier": "small",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -53,7 +55,8 @@ export const AI_MODELS = {
       "selection_model": "deepseek/deepseek-v4.1-flash",
       "label": "DeepSeek V4.1 Flash",
       "tier": "small",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -61,7 +64,8 @@ export const AI_MODELS = {
       "selection_model": "deepseek/deepseek-v4-flash-0731",
       "label": "DeepSeek V4 Flash",
       "tier": "small",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -69,7 +73,8 @@ export const AI_MODELS = {
       "selection_model": "google/gemini-3.7-flash",
       "label": "Gemini 3.7 Flash",
       "tier": "medium",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -77,7 +82,8 @@ export const AI_MODELS = {
       "selection_model": "google/gemini-3.8-flash",
       "label": "Gemini 3.8 Flash",
       "tier": "medium",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openai",
@@ -85,7 +91,8 @@ export const AI_MODELS = {
       "selection_model": "gpt-5-mini",
       "label": "GPT-5 mini",
       "tier": "medium",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -93,7 +100,8 @@ export const AI_MODELS = {
       "selection_model": "openai/gpt-5-mini",
       "label": "GPT-5 mini",
       "tier": "medium",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -117,7 +125,8 @@ export const AI_MODELS = {
       "selection_model": "claude-haiku-4-5",
       "label": "Claude Haiku 4.5",
       "tier": "large",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -133,7 +142,8 @@ export const AI_MODELS = {
       "selection_model": "gpt-5.6-terra",
       "label": "GPT-5.6 Terra",
       "tier": "large",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -141,7 +151,8 @@ export const AI_MODELS = {
       "selection_model": "openai/gpt-5.6-terra",
       "label": "GPT-5.6 Terra",
       "tier": "large",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openai",
@@ -149,7 +160,8 @@ export const AI_MODELS = {
       "selection_model": "gpt-5.5",
       "label": "GPT-5.5",
       "tier": "flagship",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -157,7 +169,8 @@ export const AI_MODELS = {
       "selection_model": "openai/gpt-5.5",
       "label": "GPT-5.5",
       "tier": "flagship",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "anthropic",
@@ -165,7 +178,8 @@ export const AI_MODELS = {
       "selection_model": "claude-sonnet-5",
       "label": "Claude Sonnet 5",
       "tier": "flagship",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openrouter",
@@ -173,7 +187,8 @@ export const AI_MODELS = {
       "selection_model": "anthropic/claude-sonnet-5",
       "label": "Claude Sonnet 5",
       "tier": "flagship",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "anthropic",
@@ -181,7 +196,8 @@ export const AI_MODELS = {
       "selection_model": "claude-opus-4-8",
       "label": "Claude Opus 4.8",
       "tier": "flagship",
-      "enabled": true
+      "enabled": true,
+      "legacy": true
     },
     {
       "provider": "openai",
@@ -205,6 +221,94 @@ export const AI_MODELS = {
       "selection_model": "qwen/qwen3.8-omni-flash",
       "label": "Qwen3.8 Omni Flash",
       "tier": "small",
+      "enabled": true
+    },
+    {
+      "provider": "openai",
+      "canonical_model": "gpt-6-luna",
+      "selection_model": "gpt-6-luna",
+      "label": "GPT-6 Luna",
+      "tier": "small",
+      "enabled": true
+    },
+    {
+      "provider": "anthropic",
+      "canonical_model": "claude-haiku-5-5",
+      "selection_model": "claude-haiku-5-5",
+      "label": "Claude Haiku 5.5",
+      "tier": "medium",
+      "enabled": true
+    },
+    {
+      "provider": "openai",
+      "canonical_model": "gpt-6.1-terra",
+      "selection_model": "gpt-6.1-terra",
+      "label": "GPT-6.1 Terra",
+      "tier": "medium",
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "gpt-6.1-terra",
+      "selection_model": "openai/gpt-6.1-terra",
+      "label": "GPT-6.1 Terra",
+      "tier": "medium",
+      "enabled": true
+    },
+    {
+      "provider": "openai",
+      "canonical_model": "gpt-6.2-sol",
+      "selection_model": "gpt-6.2-sol",
+      "label": "GPT-6.2 Sol",
+      "tier": "large",
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "gpt-6.2-sol",
+      "selection_model": "openai/gpt-6.2-sol",
+      "label": "GPT-6.2 Sol",
+      "tier": "large",
+      "enabled": true
+    },
+    {
+      "provider": "anthropic",
+      "canonical_model": "claude-sonnet-5-5",
+      "selection_model": "claude-sonnet-5-5",
+      "label": "Claude Sonnet 5.5",
+      "tier": "large",
+      "enabled": true
+    },
+    {
+      "provider": "anthropic",
+      "canonical_model": "claude-opus-5-5",
+      "selection_model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5",
+      "tier": "flagship",
+      "enabled": true
+    },
+    {
+      "provider": "anthropic",
+      "canonical_model": "claude-fable-5-2",
+      "selection_model": "claude-fable-5-2",
+      "label": "Claude Fable 5.2",
+      "tier": "flagship",
+      "enabled": true
+    },
+    {
+      "provider": "openai",
+      "canonical_model": "gpt-6.2-astra",
+      "selection_model": "gpt-6.2-astra",
+      "label": "GPT-6.2 Astra",
+      "tier": "flagship",
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "gpt-6.2-astra",
+      "selection_model": "openai/gpt-6.2-astra",
+      "label": "GPT-6.2 Astra",
+      "tier": "flagship",
       "enabled": true
     }
   ],
