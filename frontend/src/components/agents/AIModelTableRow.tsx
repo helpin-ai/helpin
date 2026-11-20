@@ -93,12 +93,6 @@ export function AIModelTableRow({
     catalogLabel(profile.primary.model.provider, profile.primary.model.model) ??
     profile.primary.model.model;
   const displayName = modelNameWithThinking(modelName, profile.primary.model.controls.reasoning_effort);
-  const normalizedName = (name: string) =>
-    name.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const hasCustomName =
-    normalizedName(profile.name) !== normalizedName(modelName) &&
-    normalizedName(profile.name) !==
-      normalizedName(profile.primary.model.model);
   async function update(action: () => Promise<unknown>, message: string) {
     try {
       await action();
@@ -113,8 +107,8 @@ export function AIModelTableRow({
     <TableRow>
       <TableCell className="min-w-[180px] max-w-[300px] py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium" title={displayName}>
-            {displayName}
+          <span className="truncate text-sm font-medium" title={profile.name}>
+            {profile.name}
           </span>
           {isDefault && (
             <QuickTooltip
@@ -137,14 +131,9 @@ export function AIModelTableRow({
             </QuickTooltip>
           )}
         </div>
-        {hasCustomName && (
-          <p
-            className="mt-0.5 truncate text-xs text-muted-foreground"
-            title={profile.name}
-          >
-            {profile.name}
-          </p>
-        )}
+        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={profile.primary.model.model}>
+          {displayName}
+        </p>
         {profile.fallback && (
           <span className="sr-only">Fallback configured</span>
         )}
