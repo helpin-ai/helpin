@@ -37,13 +37,11 @@ export function AIAddModelsDialog({
   onConnect,
   onReconnect,
   onDisconnect,
-  onManage,
 }: {
   connections: AIConnection[];
   models: AIConnectionModel[];
   canManageWorkspace: boolean;
   startWithProviders: boolean;
-  onManage: () => void;
   onClose: () => void;
   onModels: (connection: AIConnection) => void;
   onConnect: (provider: AIProviderKey) => void;
@@ -128,6 +126,11 @@ export function AIAddModelsDialog({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {connection.status === "connected" && connection.endpoint?.auth_mode !== "none" && (
+                  <DropdownMenuItem onSelect={() => onReconnect(connection)}>
+                    {connection.provider === "openai_chatgpt" ? "Reconnect" : "Replace API key"}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={() => onDisconnect(connection)}
@@ -204,18 +207,11 @@ export function AIAddModelsDialog({
                 )
               );
             })}
+            <Button variant="outline" size="sm" className="w-fit" onClick={() => setChooseProvider(true)}>
+              <PlusSignIcon className="size-4" />
+              Connect a provider
+            </Button>
           </>
-        )}
-        {(!chooseProvider || !connections.length) && (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {!chooseProvider && (
-              <Button variant="outline" size="sm" onClick={() => setChooseProvider(true)}>
-                <PlusSignIcon className="size-4" />
-                Connect a provider
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={onManage}>Manage connections</Button>
-          </div>
         )}
       </DialogContent>
     </Dialog>

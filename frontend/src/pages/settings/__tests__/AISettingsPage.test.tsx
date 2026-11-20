@@ -76,10 +76,10 @@ async function render(scope: 'personal' | 'workspace') {
   for (let i = 0; i < 10; i++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
 
-async function openManageConnections() {
+async function openConnectionList() {
   expect(document.querySelector('[aria-label="AI model settings actions"]')).toBeNull();
   await act(async () => Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Add models')!.click());
-  await act(async () => Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Manage connections')!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Manage connections');
 }
 
 it('asks for configuration when the deployment has no AI connection support', async () => {
@@ -142,6 +142,10 @@ it('keeps existing configurations reachable when their connection is unavailable
   await render('workspace');
   expect(document.body.textContent).toContain('Legacy variant');
   expect(document.body.textContent).toContain('Connection missing');
+  const actions = document.querySelector<HTMLButtonElement>('[aria-label="Actions for Legacy variant"]')!;
+  await act(async () => actions.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',bubbles:true})));
+  await act(async () => Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(item => item.textContent === 'Model settings')!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Edit “Legacy variant”');
 });
 
 it('retries the provider when an automatic refresh returns a cached list with a warning', async () => {
@@ -153,7 +157,7 @@ it('retries the provider when an automatic refresh returns a cached list with a 
     .mockResolvedValueOnce({ data: { models: [], source: 'provider', stale: true, warning: 'Could not refresh models.' }, error: null })
     .mockResolvedValueOnce({ data: { models: [{ id: 'new-id', name: 'Fresh model' }], source: 'provider', stale: false }, error: null });
   await render('personal');
-  await openManageConnections();
+  await openConnectionList();
   await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Models for Refresh key"]')?.click());
   for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   expect(document.body.textContent).toContain('Could not refresh models.');
@@ -170,7 +174,7 @@ it('lets a ChatGPT connection add a model by its exact runtime ID', async () => 
   vi.mocked(aiConnectionService.models).mockResolvedValue({ data: { models: [], source: 'catalog', stale: false }, error: null });
   vi.mocked(aiProfileService.enableModel).mockResolvedValue({ data: null, error: null });
   await render('personal');
-  await openManageConnections();
+  await openConnectionList();
   await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Models for My ChatGPT"]')?.click());
   for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   const input = document.querySelector<HTMLInputElement>('[aria-label="Model ID"]');
@@ -186,19 +190,20 @@ it('lets a ChatGPT connection add a model by its exact runtime ID', async () => 
   });
 });
 
-it('opens Manage connections without automatically opening a connection tooltip', async () => {
+it.each([
+  ['openai', 'Replace API key'],
+  ['openai_chatgpt', 'Reconnect'],
+])('opens credential settings for a connected %s account', async (provider, action) => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [
-    { id: 'team', name: 'Team key', provider: 'openai', scope: 'workspace', user_id: null, status: 'connected' },
+    { id: 'mine', name: 'My account', provider, scope: 'personal', user_id: 'me', status: 'connected' },
   ], models: [] }, error: null });
-  await render('workspace');
-  await openManageConnections();
-  expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
-  const details = document.querySelector<HTMLButtonElement>('[aria-label="Connection details for Team key"]');
-  await act(async () => details?.focus());
-  expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+  await render('personal');
+  await openConnectionList();
+  const menu = document.querySelector<HTMLButtonElement>('[aria-label="Connection actions for My account"]')!;
+  await act(async () => menu.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',bubbles:true})));
+  await act(async () => Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(item => item.textContent === action)!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Reconnect “My account”');
 });
-
 
 it.each([false, true])('labels workspace and personal defaults for members, including overlapping defaults (%s)', async (sameModel) => {
   frame.permissions = new Set();
@@ -242,7 +247,7 @@ it('puts recent discoveries before saved models and older choices, without marki
     { id: 'gpt-latest', name: 'Latest discovery', discovered_at: new Date(now - 1000).toISOString() },
   ], source: 'provider', stale: false }, error: null });
   await render('workspace');
-  await openManageConnections();
+  await openConnectionList();
   await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Models for Discovery key"]')?.click());
   for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   const dialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(el => el.textContent?.includes('Discovery key models'))!;
@@ -272,7 +277,7 @@ it('shows common pricing below the model table without repeating usage tooltips 
   expect(document.querySelector('table')!.compareDocumentPosition(usage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(document.body.textContent?.split(expected)).toHaveLength(2);
   expect(document.querySelector('[aria-label="Usage details for My model"]')).toBeNull();
-  await openManageConnections();
+  await openConnectionList();
   expect(document.querySelector('[aria-label="Usage details"]')).toBeNull();
 });
 
@@ -331,7 +336,7 @@ it('confirms the affected shared model before disconnecting the selected subscri
   async function disconnect() {
     const menu=document.querySelector<HTMLButtonElement>('[aria-label="Connection actions for Personal account"]')!;
     await act(async () => menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})));
-    await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+    await act(async () => Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(item => item.textContent === 'Disconnect')!.click());
   }
   await disconnect();
   expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Planner model (Workspace-wide)'));
