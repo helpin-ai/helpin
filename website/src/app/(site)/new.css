@@ -1373,10 +1373,10 @@
 /* Copy review: readable category, common actions and compact comparison surfaces. */
 .hp3 .cta-note { color: inherit; opacity: .78; font-size: 13px; line-height: 1.7; margin-top: 16px; }
 .hp3 .hero-replaces { max-width: 680px; margin: 24px auto 0; color: var(--t2); font-size: 14px; line-height: 1.8; }
-.hp3 .hero-proof { margin: 28px auto 12px; color: var(--t2); font-size: 12px; }
+.hp3 .hero-proof { margin: 28px auto 12px; color: var(--t3); font-size: 12px; }
 .hp3 .hero-proof ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; list-style: none; padding: 0; margin: 12px 0 0; }
-.hp3 .hero-proof li { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap; }
-.hp3 .hero-proof img { width: 24px; height: 24px; object-fit: contain; flex: none; }
+.hp3 .hero-proof li { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--t3); font-size: 15px; font-weight: 500; white-space: nowrap; }
+.hp3 .hero-proof img { width: 32px; height: 32px; object-fit: contain; flex: none; filter: grayscale(1) contrast(.9); opacity: .55; }
 .hp3 .faq-more { color: var(--em); text-decoration: underline; text-underline-offset: 3px; white-space: normal; }
 .hp3 .included-table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
 .hp3 .included-table { width: 100%; border-collapse: collapse; text-align: left; min-width: 620px; font-size: 14px; }
@@ -1390,7 +1390,7 @@
 @media (max-width: 700px) {
   .hp3 .hero-proof ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 16px; max-width: 360px; margin: 20px auto 0; }
   .hp3 .hero-proof li { justify-content: flex-start; gap: 8px; font-size: 13px; }
-  .hp3 .hero-proof img { width: 20px; height: 20px; }
+  .hp3 .hero-proof img { width: 26px; height: 26px; }
 }
 
 /* 404 */
