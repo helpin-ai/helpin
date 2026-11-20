@@ -1,11 +1,10 @@
 import { AIModelsPricingContext, sharedAIModelsPricing } from "@/components/agents/AIModelsPricingContext";
 import { aiUsagePricingText } from "@edition/ai";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   AIConnectionDialog,
   type AIConnectionDialogMode,
 } from "@/components/agents/AIConnectionDialog";
-import { AIConnectionRow } from "@/components/agents/AIConnectionRow";
 import { AIConnectionModelsDialog } from "@/components/agents/AIConnectionModelsDialog";
 import { AIAddModelsDialog } from "@/components/agents/AIAddModelsDialog";
 import { RemoveAIModelDialog } from "@/components/agents/RemoveAIModelDialog";
@@ -27,16 +26,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { useConfirmAIConnectionDisconnect } from "@/hooks/useConfirmAIConnectionDisconnect";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreHorizontalIcon, AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
+import { AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
 import { SettingsPageFrame } from "./SettingsPageFrame";
 
 // Retain legacy routes; both now land on the same model list.
@@ -62,9 +53,6 @@ function AISettingsContent({
   canManageWorkspace: boolean;
 }) {
   const [adding, setAdding] = useState<"connections" | "providers" | null>(null);
-  const [modelOrigin, setModelOrigin] = useState<"connections" | "manage">("connections");
-  const [managing, setManaging] = useState(false);
-  const connectionsDialogRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<AIConnectionDialogMode | null>(null);
   const [modelsFor, setModelsFor] = useState<AIConnection | null>(null);
   const [removing, setRemoving] = useState<AIProfile | null>(null);
@@ -87,14 +75,11 @@ function AISettingsContent({
     if (connections.isStale && !connections.isFetching) void connections.refetch();
   }
   function openModels(connection: AIConnection) {
-    setModelOrigin(managing ? "manage" : "connections");
     setAdding(null);
-    setManaging(false);
     setModelsFor(connection);
   }
   function reconnect(connection: AIConnection) {
     setAdding(null);
-    setManaging(false);
     setDialog({
       kind: "reconnect",
       connection,
@@ -152,16 +137,10 @@ function AISettingsContent({
             ? ` · ${models.length}`
             : ""}
         </span>
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={openAddModels}>
-            <PlusSignIcon className="size-4" />
-            Add models
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" className="size-8" aria-label="AI model settings actions"><MoreHorizontalIcon className="size-4" /></Button></DropdownMenuTrigger>
-            <DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setManaging(true)}>Manage connections</DropdownMenuItem></DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <Button size="sm" onClick={openAddModels}>
+          <PlusSignIcon className="size-4" />
+          Add models
+        </Button>
       </div>
       {settings.isError && (
         <Alert variant="destructive">
@@ -287,100 +266,6 @@ function AISettingsContent({
           }}
         />
       )}
-      {managing && (
-        <Dialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setManaging(false);
-          }}
-        >
-          <DialogContent
-            ref={connectionsDialogRef}
-            className="max-h-[85vh] overflow-y-auto sm:max-w-3xl"
-            onOpenAutoFocus={(event) => {
-              // Announce the dialog without opening the first row's help tooltip.
-              event.preventDefault();
-              connectionsDialogRef.current?.focus();
-            }}
-          >
-            <DialogHeader className="text-left">
-              <DialogTitle>Manage connections</DialogTitle>
-              <DialogDescription>
-                Manage provider access and the models available through each connection.
-              </DialogDescription>
-            </DialogHeader>
-            {all.length ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Connection</TableHead>
-                      <TableHead>Access</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Models</TableHead>
-                      <TableHead>
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {all.map((connection) => (
-                      <AIConnectionRow
-                        key={connection.id}
-                        workspaceId={workspaceId}
-                        connection={connection}
-                        canManage={editable(connection.scope)}
-                        onReconnect={reconnect}
-                        onContinueLogin={reconnect}
-                        onModels={() => openModels(connection)}
-                        profiles={models}
-                        modelCount={
-                          profiles.data?.filter(
-                            (p) =>
-                              p.primary.connection_id === connection.id,
-                          ).length
-                        }
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <p className="py-4 text-sm text-muted-foreground">
-                No connections yet.
-              </p>
-            )}
-            {(profiles.data ?? [])
-              .filter((p) => !p.agent_grant_id && !all.some((c) => c.id === p.primary.connection_id))
-              .map((profile) => (
-                <Button
-                  key={profile.id}
-                  variant="outline"
-                  size="sm"
-                  disabled={!editable(profile.scope)}
-                  onClick={() => {
-                    setManaging(false);
-                    setEditing(profile);
-                  }}
-                >
-                  Repair {profile.name}
-                </Button>
-              ))}
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-fit"
-              onClick={() => {
-                setManaging(false);
-                setAdding("providers");
-              }}
-            >
-              <PlusSignIcon className="size-4" />
-              Add connection
-            </Button>
-          </DialogContent>
-        </Dialog>
-      )}
       {dialog && (
         <AIConnectionDialog
           workspaceId={workspaceId}
@@ -397,7 +282,6 @@ function AISettingsContent({
           onBack={() => { setDialog(null); setAdding("providers"); }}
           onConnected={(connection) => {
             setDialog(null);
-            setModelOrigin("connections");
             setModelsFor(connection);
           }}
         />
@@ -411,8 +295,7 @@ function AISettingsContent({
           onRemove={setRemoving}
           onBack={() => {
             setModelsFor(null);
-            if (modelOrigin === "manage") setManaging(true);
-            else setAdding("connections");
+            setAdding("connections");
           }}
           onClose={() => setModelsFor(null)}
         />

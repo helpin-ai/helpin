@@ -126,6 +126,11 @@ export function AIAddModelsDialog({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {connection.status === "connected" && connection.endpoint?.auth_mode !== "none" && (
+                  <DropdownMenuItem onSelect={() => onReconnect(connection)}>
+                    {connection.provider === "openai_chatgpt" ? "Reconnect" : "Replace API key"}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={() => onDisconnect(connection)}
@@ -149,7 +154,7 @@ export function AIAddModelsDialog({
     >
       <DialogContent
         aria-describedby={undefined}
-        className="max-h-[85vh] overflow-y-auto sm:max-w-[780px]"
+        className="max-h-[85vh] overflow-y-auto sm:max-w-xl"
       >
         <DialogHeader className="text-left">
           <DialogTitle>
@@ -202,12 +207,7 @@ export function AIAddModelsDialog({
                 )
               );
             })}
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-fit"
-              onClick={() => setChooseProvider(true)}
-            >
+            <Button variant="outline" size="sm" className="w-fit" onClick={() => setChooseProvider(true)}>
               <PlusSignIcon className="size-4" />
               Connect a provider
             </Button>

@@ -195,17 +195,18 @@ export function AIConnectionDialog({
           <DialogTitle>
             {reconnecting ? `Reconnect “${reconnecting.name}”` : "Add connection"}
           </DialogTitle>
-          <div className="flex items-center gap-1">
-            <DialogDescription>
-              {isChatGPT ? "Your ChatGPT subscription" : scope === "personal" ? "Personal connection · Only you" : "Workspace connection · Shared with members"}
-            </DialogDescription>
-            <ConnectionHelp label={reconnecting ? "About reconnecting" : "Who can use this connection"} description={reconnecting
-              ? "Replace the stored credential. Runs already accepted keep their route."
-              : isChatGPT ? "You manage this sign-in. Choose which saved models are available to workspace agents in AI Models."
-              : scope === "personal"
-                ? "Only you can use this connection, for your manual runs and chats."
-                : "Members can select this connection. Shared models can be used for automation."} />
-          </div>
+          {reconnecting || isChatGPT ? (
+            <div className="flex items-center gap-1">
+              <DialogDescription>
+                {isChatGPT ? "Your ChatGPT subscription" : scope === "personal" ? "Personal connection · Only you" : "Workspace connection · Shared with members"}
+              </DialogDescription>
+              <ConnectionHelp label={reconnecting ? "About reconnecting" : "Who can use this connection"} description={reconnecting
+                ? "Replace the stored credential. Runs already accepted keep their route."
+                : "You manage this sign-in. Choose which saved models are available to workspace agents in AI Models."} />
+            </div>
+          ) : (
+            <DialogDescription className="sr-only">Connect a provider to add its models.</DialogDescription>
+          )}
         </DialogHeader>
 
         <div className="min-h-0 max-h-[calc(88vh-8.5rem)] space-y-4 overflow-y-auto px-6 py-5">
