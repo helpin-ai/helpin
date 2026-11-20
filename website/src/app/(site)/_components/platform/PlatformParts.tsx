@@ -1,11 +1,11 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { ConnectedWorkspace } from '../ConnectedWorkspace';
 import { CtaRow, CtaNote, FAQList, type FAQItem, GITHUB_URL } from '../ui';
 
 export const REPO = `${GITHUB_URL}/blob/develop`;
 export function DocLink({href,children}:{href:string;children:React.ReactNode}) {
   const external = /^https?:\/\//.test(href);
-  return <a className="platform-text-link" href={href} {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>{children}<ArrowRight size={15}/></a>;
+  return <a className="platform-text-link" href={href} {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>{children}{external ? <ArrowUpRight size={15} aria-hidden="true" /> : <ArrowRight size={15} aria-hidden="true" />}</a>;
 }
 export function PlatformFAQ({items}:{items:readonly FAQItem[]}) {
   return <FAQList items={items} className="platform-faqs" />;

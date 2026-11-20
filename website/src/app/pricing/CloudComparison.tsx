@@ -68,7 +68,7 @@ export function CloudComparison() {
               <th scope="col">
                 <span className="pricing-table-plan">Self-hosted</span>
                 <span className="pricing-table-price">Free · your servers</span>
-                <a className="btn btn-secondary" href="/self-hosting" aria-label="Explore self-hosted Helpin">Self-host<ArrowRight size={14} aria-hidden="true" /></a>
+                <a className="btn btn-secondary" href="/self-hosting" aria-label="Explore self-hosted Helpin">Self-host</a>
               </th>
               {PLANS.map((plan) => (
                 <th scope="col" key={plan.key} data-featured={plan.popular}>

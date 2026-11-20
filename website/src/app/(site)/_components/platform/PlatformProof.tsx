@@ -31,7 +31,7 @@ export function CommunityShowcase({ initial = 'Support' }: { initial?: (typeof P
     {PRODUCTS.map((product, index) => <div id={`${id}-${index}`} key={product.preview} hidden={active !== index}>
       {visited.has(index) && <>
         <div className="community-product-stage"><ProductPreview product={product.preview} theme="light" /></div>
-        <div className="community-product-caption"><div><h3>{product.title}</h3><p>{product.body}</p></div><Link prefetch={false} className="platform-text-link" href={product.href}>Explore {product.name === 'Agents' ? 'AI Agents' : product.name}<ArrowRight size={15}/></Link></div>
+        <div className="community-product-caption"><div><h3>{product.title}</h3><p>{product.body}</p></div><Link prefetch={false} className="platform-text-link" href={product.href}>Explore {product.name === 'Agents' ? 'AI Agents' : product.name}<ArrowRight size={15} aria-hidden="true" /></Link></div>
       </>}
     </div>)}
   </div>;

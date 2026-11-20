@@ -4,16 +4,17 @@ import { memo, useState } from 'react';
 import { useBentoPlayback } from './useBentoPlayback';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowRight, BookOpen, Bot, Building2, ChevronRight, FileText, Kanban, MessagesSquare, Pause, Play, UserRound, Video } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, Building2, ChevronRight, DoorOpen, FileText, Kanban, MessagesSquare, Pause, Play, UserRound, Video } from 'lucide-react';
 import './products-menu.css';
 
 export const PRODUCTS = [
   { label: 'Support', description: 'Answer customer questions with full context.', href: '/products/customer-support', icon: MessagesSquare },
-  { label: 'Meetings', description: 'Turn customer calls into clear next steps.', href: '/products/meetings', icon: Video },
+  { label: 'Customer portal', description: 'A place for customers to follow their requests.', href: '/products/customer-portal', icon: DoorOpen },
+  { label: 'Knowledge', description: 'Docs and guides your team and agents can trust.', href: '/products/knowledge', icon: BookOpen },
+  { label: 'AI Agents', description: 'Specialist agents that answer, plan, and act.', href: '/products/ai-agents', icon: Bot },
   { label: 'Projects', description: 'Plan, build, and ship what customers need.', href: '/products/projects', icon: Kanban },
   { label: 'CRM', description: 'Manage relationships with the work behind them.', href: '/products/crm', icon: Building2 },
-  { label: 'AI Agents', description: 'Specialist agents that answer, plan, and act.', href: '/products/ai-agents', icon: Bot },
-  { label: 'Knowledge', description: 'Docs and guides your team and agents can trust.', href: '/products/knowledge', icon: BookOpen },
+  { label: 'Meetings', description: 'Turn customer calls into clear next steps.', href: '/products/meetings', icon: Video },
 ];
 
 export function ProductLink({ item }: { item: typeof PRODUCTS[number] }) {

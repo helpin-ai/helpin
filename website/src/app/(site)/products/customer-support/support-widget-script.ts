@@ -4,9 +4,12 @@ export const DEMO_DURATION = 32000;
 export const DEMO_CONFIG: WidgetConfig = {
   workspaceId: 'website-orbitdesk-demo',
   workspaceName: 'OrbitDesk',
+  // Each workspace names its assistant and sets its avatar (Settings → Chat → Widget identity).
+  aiDisplayName: 'Orbit AI',
   visitorName: 'Maya Chen',
   branding: {
     primaryColor: '#0f7a50',
+    avatarUrl: '/new/home/orbit-ai.svg',
     welcomeMessage: 'Hi Maya. How can we help?',
     widgetPosition: 'bottom-right',
     showBranding: true,
@@ -22,13 +25,13 @@ export const DEMO_CONFIG: WidgetConfig = {
 
 const SCRIPT: Omit<Message, 'conversationId' | 'isInternal' | 'createdAt'>[] = [
   { id: 'question', role: 'customer', content: 'Our export is still incomplete. Any progress since yesterday?' },
-  { id: 'answer', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'I found yesterday’s report. I’ll check the export logs.', aiReplyKind: 'answer' },
+  { id: 'answer', role: 'ai', senderAvatar: '/new/home/orbit-ai.svg', content: 'I found yesterday’s report. I’ll check the export logs.', aiReplyKind: 'answer' },
   { id: 'followup', role: 'customer', content: 'The smaller report worked, but we still need the full list.' },
-  { id: 'handoff', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'The logs show a pagination issue. I’m passing the findings to Sam.' },
+  { id: 'handoff', role: 'ai', senderAvatar: '/new/home/orbit-ai.svg', content: 'The logs show a pagination issue. I’m passing the findings to Sam.' },
   { id: 'joined', role: 'system', content: 'Sam Rivera joined the conversation', systemEventType: 'teammate_joined', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
   { id: 'teammate', role: 'agent', content: 'Hi Maya, I’ve linked the report to engineering. We’ll update you here.', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
   { id: 'released', role: 'system', senderName: 'Release status', content: 'After the team confirms the release' },
-  { id: 'resolved', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'The fix is live, Maya. Please try the full export again.' },
+  { id: 'resolved', role: 'ai', senderAvatar: '/new/home/orbit-ai.svg', content: 'The fix is live, Maya. Please try the full export again.' },
 ];
 
 export const DEMO_MESSAGES: Message[] = SCRIPT.map(message => ({
@@ -46,7 +49,9 @@ export function demoFrame(elapsed: number, createdAt: string) {
     const message = DEMO_MESSAGES[index];
     const streaming = elapsed < ends[index];
     if (streaming) stream = { id: message.id, duration: ends[index] - starts[index], elapsed: elapsed - starts[index] };
-    messages.push({ ...message, createdAt, isStreaming: streaming, sources: streaming ? undefined : message.sources });
+    // The widget orders by createdAt, then id; one shared time would sort the script alphabetically.
+    const at = new Date(Date.parse(createdAt) + index * 1000).toISOString();
+    messages.push({ ...message, createdAt: at, isStreaming: streaming, sources: streaming ? undefined : message.sources });
   }
   return {
     messages,

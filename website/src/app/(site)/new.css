@@ -418,7 +418,7 @@
 .hp3 .hero-inner { gap: 18px; max-width: 760px; }
 .hp3 .hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.5rem); }
 /* Give the homepage introduction room above the copy and before the workflow. */
-.hp3 section.homepage-hero { padding-top: clamp(80px, 9vw, 128px); }
+.hp3 section.homepage-hero { padding-top: clamp(56px, 6vw, 88px); }
 .hp3 .homepage-hero .hero-inner { max-width: 1040px; }
 .hp3 .homepage-hero .hero-inner > .eyebrow {
   padding: 6px 14px;
@@ -448,9 +448,14 @@
 .hp3 .homepage-hero .hero-workflow { margin-top: clamp(96px, 11.12vw, 160px); }
 .hp3 .hero h1 > span { display: block; text-wrap: balance; }
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
+/* Homepage hero reads at a glance: a larger headline and a two-line lede. */
+.hp3 .homepage-hero h1 { font-size: clamp(2.5rem, 4.8vw, 4.25rem); }
+.hp3 .homepage-hero .lede { font-size: clamp(18px, 1.45vw, 21px); line-height: 1.5; max-width: 44ch; color: var(--t2); }
 .hp3 .hero-workflow { margin: 72px 0 0; position: relative; z-index: 1; }
 .hp3 .hero-workflow .wire { margin-top: 0; }
 .hp3 .homepage-hero .hero-film { margin-top: clamp(40px, 5vw, 72px); }
+/* Let the product scene break out of the text column, toward the page edges. */
+.hp3 .homepage-hero .hero-film { --hero-film-w: min(1360px, calc(100vw - 48px)); width: var(--hero-film-w); margin-inline: calc((100% - var(--hero-film-w)) / 2); }
 .hp3 .hero-film video {
   display: block;
   width: 100%;
@@ -733,6 +738,32 @@
 .hp3 .developer-cli-copy .btn-link { color: var(--em); }
 .hp3 .developer-features { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; margin-top: 20px; }
 .hp3 .developer-features article { padding: 26px; border: 1px solid var(--border); border-radius: 16px; background: #fafcfb; }
+.hp3 .developer-features-six { grid-template-columns: repeat(3,minmax(0,1fr)); }
+@media (max-width: 1040px) { .hp3 .developer-features-six { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 700px) { .hp3 .developer-features-six { grid-template-columns: 1fr; } }
+/* "Built in" strip under the bug story (dark section). */
+.hp3 .built-in { margin-top: 44px; padding-top: 28px; border-top: 1px solid var(--d-line-2, rgba(255,255,255,.12)); }
+.hp3 .built-in-title { margin-bottom: 18px; color: #b4b6b3; font-size: 14px; }
+.hp3 .built-in-items { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.hp3 .built-in-items a { display: flex; gap: 12px; align-items: flex-start; padding: 18px 20px; border: 1px solid var(--d-line-2, rgba(255,255,255,.12)); border-radius: 14px; color: #b4b6b3; font-size: 14.5px; line-height: 1.55; text-decoration: none; transition: border-color .2s ease; }
+.hp3 .built-in-items a:hover { border-color: rgba(63, 191, 131, .45); }
+.hp3 .built-in-items a:focus-visible { outline: 2px solid #72dfad; outline-offset: 3px; }
+.hp3 .built-in-items svg { flex: none; margin-top: 2px; color: #72dfad; }
+.hp3 .built-in-items b { display: block; margin-bottom: 2px; color: var(--d-fg, #f2f5f3); font-weight: 600; }
+@media (max-width: 800px) { .hp3 .built-in-items { grid-template-columns: 1fr; } }
+/* Switching from Intercom. */
+.hp3 .switch-section { background: #f8faf9; }
+.hp3 .switch-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+.hp3 .switch-sources { display: grid; gap: 18px; margin-bottom: 26px; }
+.hp3 .switch-sources h3 { margin-bottom: 4px; font-size: 17px; }
+.hp3 .switch-sources p { color: var(--t2); font-size: 15px; line-height: 1.6; }
+@media (max-width: 900px) { .hp3 .switch-grid { grid-template-columns: 1fr; } }
+/* Build with Helpin row inside the open-source section. */
+.hp3 .self-host-build { margin-top: 44px; }
+.hp3 .self-host-build-title { color: var(--t3); font-size: 14px; }
+.hp3 .self-host-features.self-host-build-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 18px; }
+.hp3 .self-host-features .inline-link { display: inline-block; margin-top: 6px; color: var(--em); }
+@media (max-width: 760px) { .hp3 .self-host-features.self-host-build-grid { grid-template-columns: 1fr; } }
 .hp3 .developer-feature-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: #eaf4ee; border: 1px solid #dcece2; color: var(--em); border-radius: 11px; margin-bottom: 22px; }
 .hp3 .developer-features p { margin-bottom: 20px; }
 .hp3 .developer-features .developer-availability { font-size: 12px; color: var(--em); }
@@ -756,6 +787,17 @@
   .hp3 .self-host-features { margin-top: 32px; }
 }
 @media (prefers-reduced-motion: reduce) { .hp3 .hosting-art[data-playing="true"] .hosting-flow { animation: none; } }
+/* docs paths */
+.hp3 .docs-paths-section { background: #f8faf9; }
+.hp3 .docs-paths { display: grid; gap: 28px; }
+.hp3 .docs-path { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(28px, 4vw, 56px); align-items: center; padding: clamp(24px, 3vw, 40px); border: 1px solid var(--border); border-radius: 20px; background: #fff; }
+.hp3 .docs-path-flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+.hp3 .docs-path-flip .docs-path-copy { order: 2; }
+.hp3 .docs-path h3 { font-size: clamp(22px, 2.2vw, 28px); line-height: 1.15; letter-spacing: -.015em; margin-bottom: 12px; }
+.hp3 .docs-path-copy p { color: var(--t2); font-size: 16px; line-height: 1.65; margin: 0 0 14px; }
+.hp3 .docs-path-copy p:last-child { margin-bottom: 0; }
+.hp3 .docs-path-copy p b { color: var(--ink); font-weight: 600; }
+@media (max-width: 900px) { .hp3 .docs-path, .hp3 .docs-path-flip { grid-template-columns: 1fr; padding: 20px; } .hp3 .docs-path-flip .docs-path-copy { order: 0; } }
 /* 06 control */
 .hp3 #control > .wrap { max-width: 1200px; }
 .hp3 #control > .wrap > .sec-head { margin-inline: auto; text-align: center; }
@@ -1331,10 +1373,10 @@
 /* Copy review: readable category, common actions and compact comparison surfaces. */
 .hp3 .cta-note { color: inherit; opacity: .78; font-size: 13px; line-height: 1.7; margin-top: 16px; }
 .hp3 .hero-replaces { max-width: 680px; margin: 24px auto 0; color: var(--t2); font-size: 14px; line-height: 1.8; }
-.hp3 .hero-proof { margin: 28px auto 12px; color: var(--t2); font-size: 12px; }
+.hp3 .hero-proof { margin: 28px auto 12px; color: var(--t3); font-size: 12px; }
 .hp3 .hero-proof ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; list-style: none; padding: 0; margin: 12px 0 0; }
-.hp3 .hero-proof li { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap; }
-.hp3 .hero-proof img { width: 24px; height: 24px; object-fit: contain; flex: none; }
+.hp3 .hero-proof li { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--t3); font-size: 15px; font-weight: 500; white-space: nowrap; }
+.hp3 .hero-proof img { width: 32px; height: 32px; object-fit: contain; flex: none; filter: grayscale(1) contrast(.9); opacity: .55; }
 .hp3 .faq-more { color: var(--em); text-decoration: underline; text-underline-offset: 3px; white-space: normal; }
 .hp3 .included-table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
 .hp3 .included-table { width: 100%; border-collapse: collapse; text-align: left; min-width: 620px; font-size: 14px; }
@@ -1348,7 +1390,7 @@
 @media (max-width: 700px) {
   .hp3 .hero-proof ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 16px; max-width: 360px; margin: 20px auto 0; }
   .hp3 .hero-proof li { justify-content: flex-start; gap: 8px; font-size: 13px; }
-  .hp3 .hero-proof img { width: 20px; height: 20px; }
+  .hp3 .hero-proof img { width: 26px; height: 26px; }
 }
 
 /* 404 */
@@ -1380,3 +1422,8 @@
 
 /* Tool selection and scheduled work reveal the change at the point of action. */
 .hp3 .control-art .ca-choice-focus{animation:none;opacity:0}.hp3 .control-art .ca-choice-focus[data-active=true]{opacity:1;fill:#eef7f1}.hp3 .ca-step-node{animation:ca-step-arrive .35s ease both}.hp3 .ca-choice-cursor{animation:ca-choice-pointer 1.1s ease both}.hp3 .ca-choice-ripple{animation:ca-choice-ring 1.1s ease both}.hp3 .control-art[data-playing=false] :is(.ca-choice-cursor,.ca-choice-ripple,.ca-step-node){animation-play-state:paused}@keyframes ca-step-arrive{from{opacity:0}to{opacity:1}}@keyframes ca-choice-pointer{0%{opacity:0;transform:translate(22px,18px)}35%,80%{opacity:1;transform:translate(0,0)}60%{transform:scale(.85)}100%{opacity:0}}@keyframes ca-choice-ring{0%,45%{opacity:0;transform:scale(.2)}60%{opacity:1}100%{opacity:0;transform:scale(2.3)}}@media(prefers-reduced-motion:reduce){.hp3 .ca-choice-cursor{display:none}.hp3 .ca-step-node{animation:none}}
+
+/* Text-link arrows: → within the site, ↗ to another site. Buttons carry none. */
+/* The attribute selector outranks card rules such as `.self-host-features svg` that space feature icons. */
+.hp3 .link-arrow[aria-hidden] { display: inline-block; flex: none; margin: 0 0 0 .3em; color: inherit; vertical-align: -.14em; }
+.hp3 :is(.btn-link, .platform-text-link) .link-arrow[aria-hidden] { margin-left: 0; }

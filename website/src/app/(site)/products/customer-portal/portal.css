@@ -1,0 +1,10 @@
+/* Customer portal page. Section and hero tokens come from ../customer-support/support.css. */
+.hp3 .portal-hero .hero-inner { max-width: 780px; margin: 0 auto; text-align: center; justify-items: center; }
+.hp3 .portal-hero .cta-row { justify-content: center; }
+.hp3 .portal-hero .lede { max-width: 620px; }
+.hp3 .portal-hero h1 { max-width: 760px; }
+.hp3 .portal-hero .cp-figure { max-width: 1080px; margin: 56px auto 0; }
+.hp3 .support-page section.portal-domain-section { background: #fff; text-align: center; }
+.hp3 .portal-domain-section .sec-head { max-width: 720px; margin: 0 auto; text-align: center; }
+.hp3 .portal-domain-section .sec-head .lede { margin-inline: auto; }
+@media (max-width: 760px) { .hp3 .portal-hero .cp-figure { margin-top: 36px; } }

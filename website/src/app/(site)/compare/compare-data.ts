@@ -376,12 +376,12 @@ export const COMPETITORS: Competitor[] = [
     switching: {
       title: 'Moving from Intercom.',
       lede: 'Start with part of your support, then move the rest when you’re ready.',
-      take: ['Conversations, as CSV or through the API', 'Contacts and companies', 'Help center articles', 'Saved replies and tags you want to keep'],
+      take: ['Past conversations, with replies, notes, and tags', 'Help Center articles and collections', 'Contacts and companies', 'Saved replies you want to keep'],
       setUp: SUPPORT_SETUP,
       steps: [
         RUN_ALONGSIDE('Intercom'),
         REBUILD_DOCS,
-        { title: 'Import conversations and contacts', status: 'Coming soon', body: 'An Intercom importer is coming soon. Until then, Intercom exports conversations as CSV or through its API.' },
+        { title: 'Import your Help Center and conversations', status: 'Available now', body: 'Connect Intercom with an access token and import your Help Center and past conversations, with their replies, notes, and tags. Choose your data region and the date to start from. A public Intercom help center can also be copied from its address.' },
       ],
     },
     faqs: [
@@ -395,7 +395,7 @@ export const COMPETITORS: Competitor[] = [
       ],
       [
         "Can Helpin import my Intercom data?",
-        "An Intercom importer is coming soon. You can export conversations from Intercom today and start Helpin alongside it while you move over."
+        "Yes. Helpin imports your Intercom Help Center and past conversations, with their replies, notes, and tags. You can also copy a public Intercom help center from its address without a token, and run Helpin alongside Intercom while you move over."
       ],
       [
         "Can we run Helpin alongside Intercom?",
@@ -2355,9 +2355,9 @@ export const COMPETITORS: Competitor[] = [
       title: 'Moving from Linear.',
       lede: 'Start with one project or support inbox, then move more work when your team is ready.',
       take: ['Issues, as CSV or through the API', 'Projects and cycles you want to plan in Helpin', 'Specs and docs'],
-      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Linear connection for agents, through MCP (beta)'],
+      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Linear connection for agents, through MCP'],
       steps: [
-        { title: 'Keep Linear, connect it through MCP', status: 'Beta', body: 'Helpin’s agents can use Linear’s tools through MCP, so engineering can stay in Linear while support runs in Helpin.' },
+        { title: 'Keep Linear, connect it through MCP', status: 'Available now', body: 'Helpin’s agents can use Linear’s tools through MCP, so engineering can stay in Linear while support runs in Helpin.' },
         { title: 'Plan new work in Helpin Projects', status: 'Available now', body: 'Roadmaps, sprints and objectives, with the customer conversation attached to each task.' },
         { title: 'Import Linear issues', status: 'Not yet', body: 'There is no Linear importer yet. Linear exports issues to CSV and through its API. Helpin imports projects from Shortcut today.' },
       ],
@@ -2680,9 +2680,9 @@ export const COMPETITORS: Competitor[] = [
       title: 'Moving from Plane.',
       lede: 'Start with one project or support inbox, then move more work when your team is ready.',
       take: ['Work items, as CSV, Excel or JSON', 'Pages you want to keep as docs', 'Cycles and modules you want to plan in Helpin'],
-      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Plane connection for agents, through MCP (beta)'],
+      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Plane connection for agents, through MCP'],
       steps: [
-        { title: 'Keep Plane, connect it through MCP', status: 'Beta', body: 'Helpin’s agents can use Plane Cloud’s tools through its hosted MCP server, so engineering can stay in Plane while support runs in Helpin.' },
+        { title: 'Keep Plane, connect it through MCP', status: 'Available now', body: 'Helpin’s agents can use Plane Cloud’s tools through its hosted MCP server, so engineering can stay in Plane while support runs in Helpin.' },
         { title: 'Plan new work in Helpin Projects', status: 'Available now', body: 'Roadmaps, sprints and objectives, with the customer conversation attached to each task.' },
         { title: 'Import Plane work items', status: 'Not yet', body: 'There is no Plane importer yet. Plane exports work items as CSV, Excel or JSON, and Helpin imports projects from Shortcut today.' },
       ],
@@ -3061,9 +3061,9 @@ export const COMPETITORS: Competitor[] = [
       title: 'Moving from Jira.',
       lede: 'Start with one project or support inbox, then move more work when your team is ready.',
       take: ['Work items, as CSV, Excel or XML', 'Projects and sprints you want to plan in Helpin', 'Confluence pages you want to keep as docs'],
-      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Jira connection for agents, through MCP (beta)'],
+      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Jira connection for agents, through MCP'],
       steps: [
-        { title: 'Keep Jira, connect it through MCP', status: 'Beta', body: 'Helpin’s agents can use Jira’s tools through Atlassian’s Rovo MCP Server, so engineering can stay in Jira while support runs in Helpin. Your Atlassian admin may need to allow Helpin’s domain.' },
+        { title: 'Keep Jira, connect it through MCP', status: 'Available now', body: 'Helpin’s agents can use Jira’s tools through Atlassian’s Rovo MCP Server, so engineering can stay in Jira while support runs in Helpin. Your Atlassian admin may need to allow Helpin’s domain.' },
         { title: 'Plan new work in Helpin Projects', status: 'Available now', body: 'Roadmaps, sprints and objectives, with the customer conversation attached to each task.' },
         { title: 'Import Jira work items', status: 'Not yet', body: 'There is no Jira importer yet. Jira exports work items as CSV, Excel or XML, and Helpin imports projects from Shortcut today.' },
       ],
@@ -3131,3 +3131,6 @@ export const COMPETITORS: Competitor[] = [
     ],
   },
 ];
+
+// Top-level navigation lists support tools only; project-tool pages stay reachable by URL.
+export const SUPPORT_COMPETITORS = COMPETITORS.filter(competitor => competitor.group === 'Customer support');

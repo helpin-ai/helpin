@@ -5,12 +5,12 @@ import { useBentoPlayback } from './useBentoPlayback';
 import './hero-headline.css';
 
 const phrases = [
-  'answer support tickets.',
+  'answer your customers.',
   'keep help docs up to date.',
-  'follow up with sales leads.',
-  'keep customer records updated.',
-  'turn meetings into tasks.',
-  'write code for review.',
+  'follow up with customers.',
+  'hand over with the findings.',
+  'turn bug reports into fixes.',
+  'tell customers when it ships.',
 ];
 
 export function HeroHeadline() {
@@ -35,8 +35,8 @@ export function HeroHeadline() {
   const active = playing ? index : 0;
   return (
     <div ref={container} className="hero-headline" data-playing={playing}>
-      <h1 aria-label={`AI agents that ${phrases[0]}`}>
-        <span aria-hidden="true">AI agents that</span>
+      <h1 aria-label={`AI support agents that ${phrases[0]}`}>
+        <span aria-hidden="true">AI support agents that</span>
         <span className="hero-headline-phrases" aria-hidden="true">
           {phrases.map((phrase, i) => (
             <span
