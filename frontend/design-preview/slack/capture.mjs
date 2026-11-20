@@ -1,0 +1,80 @@
+// From frontend, after building the app: node design-preview/slack/capture.mjs <output-directory>
+import { mkdir, stat } from 'node:fs/promises'
+import { resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { chromium } from '@playwright/test'
+import { CONVERSATION_ID, installSupportAppMocks } from '../../e2e/support/fixtures/supportE2E.ts'
+import { now, responseFor, taskId, workspace } from './fixtures.mjs'
+
+const dist = fileURLToPath(new URL('../../dist', import.meta.url))
+const output = resolve(process.argv[2])
+await stat(resolve(dist, 'index.html'))
+await mkdir(output, { recursive: true })
+const browser = await chromium.launch()
+try {
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1.5, timezoneId: 'UTC',
+    locale: 'en-US', colorScheme: 'light', reducedMotion: 'reduce', serviceWorkers: 'block',
+  })
+  const origin = 'http://localhost:8080'
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url())
+    if (url.origin !== origin) return route.abort()
+    const file = resolve(dist, url.pathname.startsWith('/w/') ? 'index.html' : '.' + decodeURIComponent(url.pathname))
+    if (!file.startsWith(dist + sep) || !(await stat(file).catch(() => null))?.isFile()) return route.fulfill({ status: 404, body: '' })
+    return route.fulfill({ path: file })
+  })
+  await installSupportAppMocks(page, { pmAccess: true })
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (process.env.DEBUG_SHOTS) console.log(route.request().method(), path)
+    return route.fulfill({ json: responseFor(path) })
+  })
+  await page.clock.setFixedTime(new Date(now))
+  page.setDefaultTimeout(9000)
+  if (process.env.DEBUG_SHOTS) page.on('console', msg => { if (msg.type() === 'error') console.error(msg.text()) })
+  const errors = []
+  page.on('pageerror', e => { errors.push(e.message); console.error(e) })
+  async function go(path) {
+    await page.goto(origin + '/w/' + workspace.slug + '/' + path)
+  }
+  async function shot(file) {
+    await page.waitForLoadState('networkidle')
+    await page.evaluate(() => document.fonts.ready)
+    await page.mouse.move(0, 0)
+    if (await page.getByText('This part of Helpin couldn’t load').count()) throw new Error('App error boundary on ' + file)
+    if (errors.length) throw new Error(errors.join('\n'))
+    await page.screenshot({ path: resolve(output, file + '.png'), animations: 'disabled' })
+    console.log('Captured', file)
+  }
+  try {
+    await go('settings/support-channels')
+    await page.getByRole('button', { name: /#acme-support/ }).waitFor()
+    await shot('channels')
+    await page.getByRole('button', { name: /#acme-support/ }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByText('Customer support', { exact: true }).first().waitFor()
+    await shot('routing')
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await page.getByRole('button', { name: /#payments/ }).click()
+    await dialog.getByText('Checkout reliability', { exact: true }).waitFor()
+    await shot('project-routing')
+    await page.setViewportSize({ width: 430, height: 870 })
+    await go('support?view=team&team_inbox=support')
+    await page.getByText('Mia Chen', { exact: true }).first().waitFor()
+    await shot('list')
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await go('support/' + CONVERSATION_ID + '?view=team&team_inbox=support')
+    await page.getByText('Reply to #acme-support', { exact: true }).waitFor()
+    await page.locator('[contenteditable="true"].tiptap').fill('Lena, we found the issue with FALL20. The fix is in review. I’ll let you know as soon as it’s live.')
+    await shot('inbox')
+    await go('pm/tasks/' + taskId)
+    await page.getByText('#payments', { exact: true }).waitFor()
+    await shot('task')
+  } catch (error) {
+    console.error(page.url(), (await page.locator('body').innerText()).slice(0, 6500))
+    throw error
+  }
+} finally {
+  await browser.close()
+}

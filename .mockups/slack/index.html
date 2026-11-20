@@ -1,34 +1,74 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Helpin · Slack mockups</title>
-<style>
-:root {color-scheme:light;font:15px/1.5 system-ui,sans-serif;color:#191919;background:#f6f6f4}
-body {margin:0}.gallery {max-width:1400px;margin:auto;padding:clamp(18px,3vw,44px)}
-header {display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}h1 {font-size:clamp(21px,3vw,30px);letter-spacing:-.04em;margin:0}
-p {margin:0;color:#5d5d59}nav{display:flex;flex-wrap:wrap;gap:5px;margin:20px 0 14px}
-nav a{color:#333;text-decoration:none;border-radius:5px;padding:6px 11px}nav a:hover{background:#e9e9e5}nav a[aria-current]{background:#202020;color:white}
-img {display:block;width:100%;height:auto;border-radius:8px;border:1px solid #dfdfdc;background:white}figure{margin:0}figcaption{margin-top:12px}
-</style></head>
-<body><main class="gallery">
-<header><h1>Slack in Helpin</h1><p>Northstar workspace · Mock data</p></header>
-<nav aria-label="Mockups"><a href="#channels">Channels</a><a href="#routing">Support routing</a><a href="#project-routing">PM defaults</a><a href="#list">Inbox list</a><a href="#inbox">Conversation</a><a href="#task">Linked task</a></nav>
-<figure><a id="full" href="channels.png"><img id="screen" src="channels.png" width="1280" height="760" alt="Channel settings for the Northstar workspace"></a><figcaption id="caption" aria-live="polite"></figcaption></figure>
-</main><script>
-const captions={
-  channels:'The Channels page shows Chat, Email, Slack, and Telegram. One Slack installation serves Support and PM.',
-  routing:'Each customer thread in #acme-support opens a conversation in the Customer support inbox.',
-  'project-routing':'Tasks created from #payments start with the Payments team and the Checkout reliability epic. The creator can change them during review.',
-  list:'Lena’s Slack conversation appears in the same inbox as email and chat. The channel icon identifies its source.',
-  inbox:'Sam can reply to the original #acme-support thread, add a private internal note, or open the linked task.',
-  task:'PAY-142 has a discussion linked to #payments. Replies in that discussion return to the internal engineering thread.'
-}
-function show() {
-  const key=location.hash.slice(1);const id=Object.hasOwn(captions,key)?key:'channels'
-  for (const link of document.querySelectorAll('nav a')) {
-    if(link.hash==='#'+id)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slack in Helpin · Product screenshots</title>
+  <style>
+    :root { color-scheme:light; font:14px/1.45 system-ui,sans-serif; color:#202124; background:#f6f7f8 }
+    * { box-sizing:border-box }
+    body { margin:0 }
+    main { max-width:1680px; margin:auto; padding:12px clamp(10px,1.6vw,26px) 16px }
+    header, nav, .heading { display:flex; align-items:center; flex-wrap:wrap }
+    header { justify-content:space-between; gap:8px 20px; margin-bottom:10px }
+    .heading { gap:4px 10px }
+    h1 { margin:0; font-size:17px; letter-spacing:-.035em }
+    .heading span, figcaption { color:#5c626a; font-size:13px }
+    nav { gap:2px }
+    nav a { color:inherit; text-decoration:none; padding:6px 9px; border-radius:5px; font-size:13px }
+    nav a:hover { background:#e6e8eb }
+    nav a[aria-current] { background:#22262c; color:white }
+    figure { margin:0 }
+    figure a { display:block; width:fit-content; max-width:100%; margin:auto }
+    img { display:block; width:auto; height:auto; max-width:100%; max-height:calc(100dvh - 94px); border:1px solid #d9dde2; background:white; cursor:zoom-in }
+    figcaption { text-align:center; margin:8px auto 0; max-width:75ch }
+    @media (max-width:650px) {
+      main { padding:10px 8px }
+      nav { gap:0 }
+      nav a { padding:6px 7px }
+      img { max-height:calc(100dvh - 165px) }
+    }
+  </style>
+</head>
+<body><main>
+  <header>
+    <div class="heading"><h1>Slack in Helpin</h1><span>Northstar · Fictional workspace</span></div>
+    <nav aria-label="Screenshots">
+      <a href="#inbox">Conversation</a><a href="#list">Inbox list</a><a href="#task">Linked task</a>
+      <a href="#channels">Channels</a><a href="#routing">Support routing</a><a href="#project-routing">PM defaults</a>
+    </nav>
+  </header>
+  <figure>
+    <a id="full" href="inbox.png?v=2" title="Open full-resolution screenshot">
+      <img id="screen" src="inbox.png?v=2" alt="Helpin support inbox showing Lena’s Slack thread and its linked task.">
+    </a>
+    <figcaption id="caption" aria-live="polite"></figcaption>
+  </figure>
+</main>
+<script>
+  const captions = {
+    inbox: 'Lena’s conversation in #acme-support, with the reply destination in the composer and PAY-142 in the details panel.',
+    list: 'The Customer support inbox on a narrow screen. Slack, email, and chat conversations share the same queue.',
+    task: 'The Payments team reviews PAY-142. The Slack mark on Ana’s update identifies the linked #payments discussion.',
+    channels: 'Northstar’s Slack connection in Settings → Channels, alongside Chat, Email, and Telegram.',
+    routing: 'Customer threads in #acme-support go to the Customer support inbox.',
+    'project-routing': 'Tasks drafted from #payments start with the Payments team and the Checkout reliability epic.'
   }
-  document.querySelector('#screen').src=id+'.png';document.querySelector('#screen').alt=captions[id]
-  document.querySelector('#full').href=id+'.png';document.querySelector('#caption').textContent=captions[id]
-}
-window.addEventListener('hashchange',show);show()
-</script></body></html>
+  function show() {
+    const hash = location.hash.slice(1)
+    const id = Object.hasOwn(captions, hash) ? hash : 'inbox'
+    for (const link of document.querySelectorAll('nav a')) {
+      if (link.hash === '#' + id) link.setAttribute('aria-current', 'page')
+      else link.removeAttribute('aria-current')
+    }
+    const file = id + '.png?v=2'
+    document.getElementById('screen').src = file
+    document.getElementById('screen').alt = captions[id]
+    document.getElementById('full').href = file
+    document.getElementById('caption').textContent = captions[id]
+  }
+  window.addEventListener('hashchange', show)
+  show()
+</script>
+</body>
+</html>

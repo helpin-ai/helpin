@@ -61,7 +61,7 @@ Reuse the Support channel registry, inbound event deduplication, attachment jobs
 
 ## Implementation and operator setup
 
-Settings → Channels is the installation point for both modules. The Support inbox uses its existing conversation list, details, reply composer, note action, and delivery receipt. The PM task uses its existing threaded comments. The Slack mark identifies the source and the thread destination. Six mockups follow one checkout issue through these surfaces. [Helpin mockup gallery](../../.mockups/slack/index.html)
+Settings → Channels is the installation point for both modules. The Support inbox uses its existing conversation list, details, reply composer, note action, and delivery receipt. The PM task uses its existing threaded comments. The Slack mark identifies the source and the thread destination. Six browser screenshots follow one fictional checkout issue through the actual Helpin app, including the narrow-screen inbox list. [Helpin screenshot gallery](../../.mockups/slack/index.html)
 
 1. Create a Slack app using the [manifest template](../../integrations/slack/manifest.yaml). Replace the example OAuth URL with the public Helpin app origin followed by `/oauth/slack/callback`. Set the events and interactivity URLs to the public API origin followed by `/api/slack/events` and `/api/slack/actions` when the API is mounted at `/api`.
 2. Configure `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`, and the public `APP_BASE_URL`. Bot token encryption uses a 32-byte hex `CHANNEL_ENCRYPTION_KEY`, with the existing `CRM_ENCRYPTION_KEY` fallback. Run the application migrations, then start the API with these settings. [Environment example](../../server/.env.example)
