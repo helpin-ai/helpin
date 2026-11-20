@@ -77,10 +77,9 @@ async function render(scope: 'personal' | 'workspace') {
 }
 
 async function openManageConnections() {
-  const trigger = document.querySelector<HTMLButtonElement>('[aria-label="AI model settings actions"]')!;
-  await act(async () => trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
-  const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(el => el.textContent === 'Manage connections')!;
-  await act(async () => item.click());
+  expect(document.querySelector('[aria-label="AI model settings actions"]')).toBeNull();
+  await act(async () => Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Add models')!.click());
+  await act(async () => Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Manage connections')!.click());
 }
 
 it('asks for configuration when the deployment has no AI connection support', async () => {

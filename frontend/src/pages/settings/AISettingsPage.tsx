@@ -35,8 +35,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useConfirmAIConnectionDisconnect } from "@/hooks/useConfirmAIConnectionDisconnect";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreHorizontalIcon, AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
+import { AiNetworkIcon, PlusSignIcon } from "@/lib/icons";
 import { SettingsPageFrame } from "./SettingsPageFrame";
 
 // Retain legacy routes; both now land on the same model list.
@@ -152,16 +151,10 @@ function AISettingsContent({
             ? ` · ${models.length}`
             : ""}
         </span>
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={openAddModels}>
-            <PlusSignIcon className="size-4" />
-            Add models
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" className="size-8" aria-label="AI model settings actions"><MoreHorizontalIcon className="size-4" /></Button></DropdownMenuTrigger>
-            <DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setManaging(true)}>Manage connections</DropdownMenuItem></DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <Button size="sm" onClick={openAddModels}>
+          <PlusSignIcon className="size-4" />
+          Add models
+        </Button>
       </div>
       {settings.isError && (
         <Alert variant="destructive">
@@ -277,6 +270,7 @@ function AISettingsContent({
           models={connections.data.models}
           canManageWorkspace={canManageWorkspace}
           startWithProviders={adding === "providers"}
+          onManage={() => { setAdding(null); setManaging(true); }}
           onDisconnect={requestDisconnect}
           onClose={() => setAdding(null)}
           onModels={openModels}
