@@ -214,6 +214,7 @@ function AISettingsContent({
                     />
                   </span>
                 </TableHead>
+                <TableHead>Defaults</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>
                   <span className="sr-only">Actions</span>

@@ -214,7 +214,7 @@ it.each([false, true])('labels workspace and personal defaults for members, incl
   ],error:null});
   vi.mocked(aiProfileService.settings).mockResolvedValue({data:{default_profile_id:'team-model',personal_default_profile_id:sameModel ? 'team-model' : 'my-model'},error:null});
   await render('workspace');
-  expect(Array.from(document.querySelectorAll('thead th')).map(el=>el.textContent)).toEqual(['Model','Connection','Access','Status','Actions']);
+  expect(Array.from(document.querySelectorAll('thead th')).map(el=>el.textContent)).toEqual(['Model','Connection','Access','Defaults','Status','Actions']);
   expect(document.body.textContent).toContain('Shared model');
   expect(document.body.textContent).toContain('My model');
   expect(document.body.textContent).toContain('Hidden model');
@@ -223,9 +223,9 @@ it.each([false, true])('labels workspace and personal defaults for members, incl
   expect(document.body.textContent).toContain('Workspace-wide');
   const row=Array.from(document.querySelectorAll('tbody tr')).find(el=>el.textContent?.includes('My model'));
   const teamRow = Array.from(document.querySelectorAll('tbody tr')).find(el => el.textContent?.includes('Shared model'));
-  expect(teamRow?.querySelector('td')?.textContent).toContain('Workspace default');
-  expect(teamRow?.querySelector('td')?.textContent?.includes('Your default')).toBe(sameModel);
-  expect(row?.querySelector('td')?.textContent?.includes('Your default')).toBe(!sameModel);
+  expect(teamRow?.querySelector('td:nth-child(4)')?.textContent).toContain('Workspace default');
+  expect(teamRow?.querySelector('td:nth-child(4)')?.textContent?.includes('Your default')).toBe(sameModel);
+  expect(row?.querySelector('td:nth-child(4)')?.textContent?.includes('Your default')).toBe(!sameModel);
 });
 
 it('puts recent discoveries before saved models and older choices, without marking the baseline or expired discoveries new', async () => {

@@ -106,23 +106,7 @@ export function AIModelTableRow({
   return (
     <TableRow>
       <TableCell className="min-w-[180px] max-w-[300px] py-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium" title={profile.name}>
-            {profile.name}
-          </span>
-          {isPersonalDefault && (
-            <QuickTooltip label="Your default for new Ask Agent chats in this workspace.">
-              <Badge variant="secondary" tabIndex={0}>Your default</Badge>
-            </QuickTooltip>
-          )}
-          {isWorkspaceDefault && (
-            <QuickTooltip label="Shared default for workspace members without a personal choice, and agents without an explicit model.">
-              <Badge variant="secondary" tabIndex={0}>
-                Workspace default
-              </Badge>
-            </QuickTooltip>
-          )}
-        </div>
+        <p className="truncate text-sm font-medium" title={profile.name}>{profile.name}</p>
         <p className="mt-0.5 truncate text-xs text-muted-foreground" title={profile.primary.model.model}>
           {displayName}
         </p>
@@ -156,6 +140,22 @@ export function AIModelTableRow({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : accessLabel}
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-col items-start gap-1">
+          {isPersonalDefault && (
+            <QuickTooltip label="Your default for new Ask Agent chats in this workspace.">
+              <Badge variant="secondary" tabIndex={0}>Your default</Badge>
+            </QuickTooltip>
+          )}
+          {isWorkspaceDefault && (
+            <QuickTooltip label="Shared default for workspace members without a personal choice, and agents without an explicit model.">
+              <Badge variant="secondary" tabIndex={0}>
+                Workspace default
+              </Badge>
+            </QuickTooltip>
+          )}
+        </div>
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1 whitespace-nowrap">
