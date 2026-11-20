@@ -18,13 +18,13 @@ func TestDocsImportAIRequestTimeoutAllowsLongArticleFormatting(t *testing.T) {
 	}
 }
 
-func TestDocsImportAIConversionDefaultsToGPT56Luna(t *testing.T) {
+func TestDocsImportAIConversionDefaultsToGPT6Luna(t *testing.T) {
 	config := (DocsImportAIConversionConfig{}).withDefaults()
 	if config.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter", config.Provider)
 	}
-	if config.Model != "openai/gpt-5.6-luna" {
-		t.Fatalf("model = %q, want openai/gpt-5.6-luna", config.Model)
+	if config.Model != "openai/gpt-6-luna" {
+		t.Fatalf("model = %q, want openai/gpt-6-luna", config.Model)
 	}
 }
 

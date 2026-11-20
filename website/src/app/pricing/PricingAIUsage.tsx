@@ -14,7 +14,7 @@ const usd = (microusd: number) => new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', maximumFractionDigits: 4,
 }).format(microusd / 1_000_000);
 
-const modelsFor = (tier: string) => [...new Set(AI_PRICING.models.filter(model => model.tier === tier && model.enabled).map(model => model.label))];
+const modelsFor = (tier: string) => [...new Set(AI_PRICING.models.filter(model => model.tier === tier && model.enabled && !('legacy' in model && model.legacy)).map(model => model.label))];
 
 export function AIUsage() {
   return (

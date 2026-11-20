@@ -416,9 +416,9 @@ matches the version exactly and an unmapped version would silently go quiet.
 | `GMAIL_OAUTH_REDIRECT_URL` | Yes (if Gmail) | OAuth redirect URL |
 | `CRM_LLM_PROVIDER` / `CRM_LLM_MODEL` | No | Optional CRM primary-route override; empty preserves OpenRouter GLM 5.3 Flash Exacto |
 | `CRM_LLM_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the primary route |
-| `CRM_LLM_FALLBACK_PROVIDER` / `CRM_LLM_FALLBACK_MODEL` | No | Optional general CRM fallback override; empty preserves OpenRouter GPT-5.6 Luna |
+| `CRM_LLM_FALLBACK_PROVIDER` / `CRM_LLM_FALLBACK_MODEL` | No | Optional general CRM fallback override; empty preserves OpenRouter GPT-6 Luna |
 | `CRM_LLM_FALLBACK_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the general fallback |
-| `CRM_MEETING_LLM_FALLBACK_PROVIDER` / `CRM_MEETING_LLM_FALLBACK_MODEL` | No | Optional meeting fallback override; empty preserves OpenRouter Gemini 3.7 Flash |
+| `CRM_MEETING_LLM_FALLBACK_PROVIDER` / `CRM_MEETING_LLM_FALLBACK_MODEL` | No | Optional meeting fallback override; empty preserves OpenRouter Gemini 3.8 Flash |
 | `CRM_MEETING_LLM_FALLBACK_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the meeting fallback |
 
 ### Agents And Automation Model

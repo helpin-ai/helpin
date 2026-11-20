@@ -110,9 +110,9 @@ describe('custom agent create model', () => {
   });
 
   it('uses explicit provider defaults for model routing', () => {
-    expect(defaultModelForAgentProvider('openai')).toBe('gpt-5.6-terra');
-    expect(defaultModelForAgentProvider('openrouter')).toBe('openai/gpt-5.6-terra');
-    expect(defaultModelForAgentProvider('anthropic')).toBe('claude-opus-4-8');
+    expect(defaultModelForAgentProvider('openai')).toBe('gpt-6.2-sol');
+    expect(defaultModelForAgentProvider('openrouter')).toBe('openai/gpt-6.2-sol');
+    expect(defaultModelForAgentProvider('anthropic')).toBe('claude-opus-5-5');
     expect(defaultModelForAgentProvider('openai', [{
       value: 'openai',
       label: 'OpenAI',

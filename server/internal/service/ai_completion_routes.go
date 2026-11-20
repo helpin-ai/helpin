@@ -17,7 +17,7 @@ var (
 		ServiceTier: defaultAICompletionServiceTier,
 	}
 	openRouterLunaRoute = AICompletionRoute{
-		Provider: "openrouter", Model: "openai/gpt-5.6-luna",
+		Provider: "openrouter", Model: "openai/gpt-6-luna",
 		ServiceTier: defaultAICompletionServiceTier,
 	}
 	openRouterGreetingLunaRoute = AICompletionRoute{
@@ -25,7 +25,7 @@ var (
 		ServiceTier: defaultAICompletionServiceTier,
 	}
 	openRouterGeminiFlashRoute = AICompletionRoute{
-		Provider: "openrouter", Model: "google/gemini-3.7-flash",
+		Provider: "openrouter", Model: "google/gemini-3.8-flash",
 		ServiceTier: defaultAICompletionServiceTier,
 	}
 )

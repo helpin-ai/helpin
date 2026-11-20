@@ -74,7 +74,7 @@ func (s *AIConnectionService) Models() []aimodel.PublicModel {
 		if _, err := s.catalog.ResolveDefault(m.Provider, m.SelectionModel, "standard"); err != nil {
 			continue
 		}
-		if !m.Enabled {
+		if !m.Enabled || m.Legacy {
 			continue
 		}
 		switch m.Provider {

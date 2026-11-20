@@ -136,7 +136,7 @@ const (
 	// defaults aligned with the curated pricing catalog so preflight cannot
 	// reject grammar rewrites before the provider call is made.
 	supportSmallTierProvider = "openai"
-	supportSmallTierModel    = "gpt-5.6-luna"
+	supportSmallTierModel    = "gpt-6-luna"
 	supportRewriteProvider   = supportSmallTierProvider
 	supportRewriteModel      = supportSmallTierModel
 	supportRewriteExpand     = "expand"

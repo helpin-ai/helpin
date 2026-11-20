@@ -52,7 +52,7 @@ func TestAIConnectionTestSucceedsWithSmallestCatalogModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.OK || result.Model != "gpt-5.6-luna" || result.Error != "" || result.LatencyMS < 0 {
+	if !result.OK || result.Model != "gpt-6-luna" || result.Error != "" || result.LatencyMS < 0 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	if len(fake.requests) != 1 || fake.requests[0].MaxTokens != aiConnectionTestMaxTokens || fake.requests[0].Provider != "openai" {
@@ -177,7 +177,7 @@ func TestAIConnectionTestAgainstOpenAICompatibleServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sawKey != "Bearer sk-private-key" || sawModel != "openai/gpt-5.6-luna" {
+	if sawKey != "Bearer sk-private-key" || sawModel != "openai/gpt-6-luna" {
 		t.Fatalf("provider request: key sent=%t model=%q", sawKey != "", sawModel)
 	}
 	if result.OK || strings.Contains(result.Error, "sk-private-key") || !strings.Contains(result.Error, "HTTP 401") {

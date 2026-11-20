@@ -138,33 +138,32 @@ export type AIModelSuggestionGroup = {
   models: Array<{ selectionModel: string; canonicalModel: string; label: string }>;
 };
 
-const GPT_6_ASTRA = { selectionModel: "gpt-6-astra", canonicalModel: "gpt-6-astra", label: "GPT-6 Astra" };
-const GPT_5_6_SOL = { selectionModel: "gpt-5.6-sol", canonicalModel: "gpt-5.6-sol", label: "GPT-5.6 Sol" };
+const GPT_6_2_ASTRA = { selectionModel: "gpt-6.2-astra", canonicalModel: "gpt-6.2-astra", label: "GPT-6.2 Astra" };
+const GPT_6_2_SOL = { selectionModel: "gpt-6.2-sol", canonicalModel: "gpt-6.2-sol", label: "GPT-6.2 Sol" };
 
 const CHATGPT_MODELS = [
-  GPT_6_ASTRA,
-  { selectionModel: "gpt-6-sol", canonicalModel: "gpt-6-sol", label: "GPT-6 Sol" },
-  GPT_5_6_SOL,
-  { selectionModel: "gpt-5.6-terra", canonicalModel: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
-  { selectionModel: "gpt-5.6-luna", canonicalModel: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+  GPT_6_2_ASTRA,
+  GPT_6_2_SOL,
+  { selectionModel: "gpt-6.1-terra", canonicalModel: "gpt-6.1-terra", label: "GPT-6.1 Terra" },
+  { selectionModel: "gpt-6-luna", canonicalModel: "gpt-6-luna", label: "GPT-6 Luna" },
 ];
 
 // Profile suggestions are independent of Helpin-funded routing and pricing.
-// Verified 2026-09-18 against the provider catalogs:
-// https://developers.openai.com/api/docs/models/all
-// https://platform.claude.com/docs/en/models/overview
+// Verified 2026-11-20 against the provider catalogs:
+// https://developers.openai.com/api/docs/models
+// https://platform.claude.com/docs/en/about-claude/models/overview
 // https://openrouter.ai/api/v1/models
 const LATEST_PROVIDER_MODELS: Record<string, AIModelSuggestionGroup["models"]> = {
-  openai: [GPT_6_ASTRA, GPT_5_6_SOL],
+  openai: [GPT_6_2_ASTRA, GPT_6_2_SOL],
   anthropic: [
-    { selectionModel: "claude-fable-5-1", canonicalModel: "claude-fable-5-1", label: "Claude Fable 5.1" },
-    { selectionModel: "claude-opus-5", canonicalModel: "claude-opus-5", label: "Claude Opus 5" },
+    { selectionModel: "claude-fable-5-2", canonicalModel: "claude-fable-5-2", label: "Claude Fable 5.2" },
+    { selectionModel: "claude-opus-5-5", canonicalModel: "claude-opus-5-5", label: "Claude Opus 5.5" },
   ],
   openrouter: [
-    { selectionModel: "openai/gpt-6-astra", canonicalModel: "gpt-6-astra", label: "GPT-6 Astra" },
-    { selectionModel: "openai/gpt-5.6-sol", canonicalModel: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
-    { selectionModel: "anthropic/claude-fable-5.1", canonicalModel: "claude-fable-5-1", label: "Claude Fable 5.1" },
-    { selectionModel: "anthropic/claude-opus-5", canonicalModel: "claude-opus-5", label: "Claude Opus 5" },
+    { selectionModel: "openai/gpt-6.2-astra", canonicalModel: "gpt-6.2-astra", label: "GPT-6.2 Astra" },
+    { selectionModel: "openai/gpt-6.2-sol", canonicalModel: "gpt-6.2-sol", label: "GPT-6.2 Sol" },
+    { selectionModel: "anthropic/claude-fable-5.2", canonicalModel: "claude-fable-5-2", label: "Claude Fable 5.2" },
+    { selectionModel: "anthropic/claude-opus-5.5", canonicalModel: "claude-opus-5-5", label: "Claude Opus 5.5" },
   ],
 };
 
@@ -184,7 +183,7 @@ export function modelCatalogFor(provider: string): AIModelSuggestionGroup[] {
       label: tier.label,
       description: tier.description,
       models: AI_MODELS.models
-        .filter((model) => model.enabled && model.provider === catalogProvider && model.tier === tier.key && !latestIds.has(model.selection_model))
+        .filter((model) => model.enabled && !('legacy' in model && model.legacy) && model.provider === catalogProvider && model.tier === tier.key && !latestIds.has(model.selection_model))
         .map((model) => ({
           selectionModel: model.selection_model,
           canonicalModel: model.canonical_model,

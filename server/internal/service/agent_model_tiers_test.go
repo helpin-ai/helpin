@@ -18,9 +18,9 @@ func TestAgentModelTierResolverResolvesSelectableTiers(t *testing.T) {
 	})
 	want := map[aimodel.Tier]struct{ provider, model string }{
 		aimodel.TierSmall:    {"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"},
-		aimodel.TierMedium:   {"openrouter", "google/gemini-3.8-flash"},
-		aimodel.TierLarge:    {"openai", "gpt-5.6-terra"},
-		aimodel.TierFlagship: {"anthropic", "claude-sonnet-5"},
+		aimodel.TierMedium:   {"openrouter", "openai/gpt-6.1-terra"},
+		aimodel.TierLarge:    {"openai", "gpt-6.2-sol"},
+		aimodel.TierFlagship: {"anthropic", "claude-opus-5-5"},
 	}
 	for tier, route := range want {
 		snapshot, err := resolver.ResolveCustom(tier)
@@ -175,9 +175,9 @@ func TestStandardRouteForTierFollowsConnectedProviders(t *testing.T) {
 	type route struct{ provider, model string }
 	fixed := map[string]route{
 		"small":    {"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"},
-		"medium":   {"openrouter", "google/gemini-3.8-flash"},
-		"large":    {"openai", "gpt-5.6-terra"},
-		"flagship": {"anthropic", "claude-sonnet-5"},
+		"medium":   {"openrouter", "openai/gpt-6.1-terra"},
+		"large":    {"openai", "gpt-6.2-sol"},
+		"flagship": {"anthropic", "claude-opus-5-5"},
 	}
 	tests := []struct {
 		name      string
@@ -189,31 +189,31 @@ func TestStandardRouteForTierFollowsConnectedProviders(t *testing.T) {
 		{name: "only openrouter", connected: []string{"openrouter"}, want: map[string]route{
 			"small":    fixed["small"],
 			"medium":   fixed["medium"],
-			"large":    {"openrouter", "openai/gpt-5.6-terra"},
-			"flagship": {"openrouter", "anthropic/claude-sonnet-5"},
+			"large":    {"openrouter", "openai/gpt-6.2-sol"},
+			"flagship": {"openrouter", "openai/gpt-6.2-astra"},
 		}},
 		{name: "only openai", connected: []string{"openai"}, want: map[string]route{
-			"small":    {"openai", "gpt-5.6-luna"},
-			"medium":   {"openai", "gpt-5-mini"},
+			"small":    {"openai", "gpt-6-luna"},
+			"medium":   {"openai", "gpt-6.1-terra"},
 			"large":    fixed["large"],
-			"flagship": {"openai", "gpt-5.5"},
+			"flagship": {"openai", "gpt-6.2-astra"},
 		}},
 		{name: "only anthropic uses the nearest available size", connected: []string{"anthropic"}, want: map[string]route{
-			"small":    {"anthropic", "claude-haiku-4-5"},
-			"medium":   {"anthropic", "claude-haiku-4-5"},
-			"large":    {"anthropic", "claude-haiku-4-5"},
+			"small":    {"anthropic", "claude-haiku-5-5"},
+			"medium":   {"anthropic", "claude-haiku-5-5"},
+			"large":    {"anthropic", "claude-sonnet-5-5"},
 			"flagship": fixed["flagship"],
 		}},
 		{name: "openai and anthropic", connected: []string{"openai", "anthropic"}, want: map[string]route{
-			"small":    {"openai", "gpt-5.6-luna"},
-			"medium":   {"openai", "gpt-5-mini"},
+			"small":    {"openai", "gpt-6-luna"},
+			"medium":   {"openai", "gpt-6.1-terra"},
 			"large":    fixed["large"],
 			"flagship": fixed["flagship"],
 		}},
 		{name: "openrouter and anthropic prefer openrouter for large", connected: []string{"openrouter", "anthropic"}, want: map[string]route{
 			"small":    fixed["small"],
 			"medium":   fixed["medium"],
-			"large":    {"openrouter", "openai/gpt-5.6-terra"},
+			"large":    {"openrouter", "openai/gpt-6.2-sol"},
 			"flagship": fixed["flagship"],
 		}},
 	}

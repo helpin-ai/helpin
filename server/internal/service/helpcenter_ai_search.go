@@ -52,8 +52,8 @@ const (
 	defaultHelpcenterAnswerProvider = "openrouter"
 	defaultHelpcenterAnswerModel    = "z-ai/glm-5.3-flash:exacto"
 	// Cheap-tier fallbacks when only one provider key is configured.
-	fallbackOpenAIAnswerModel    = "gpt-5-mini"
-	fallbackAnthropicAnswerModel = "claude-haiku-4-5"
+	fallbackOpenAIAnswerModel    = "gpt-6-luna"
+	fallbackAnthropicAnswerModel = "claude-haiku-5-5"
 )
 
 // ResolveHelpcenterAnswerRouting picks the chat provider/model for public
