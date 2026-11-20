@@ -4,9 +4,10 @@ Use this reference for editorial direction, not release facts. The central story
 
 ## What Helpin leads with
 
-These are owner-confirmed messages as of September 2026. Check the product-truth record before reusing a qualifier, because plans and releases change.
+These are owner-confirmed messages. Support-first was decided on 2026-11-20; the rest date from September 2026. Check the product-truth record before reusing a qualifier, because plans and releases change.
 
-1. **One customer history, with agents that act on it.** Support, Projects, CRM, Meetings, and Knowledge share one history, and AI agents use it to answer, plan, and follow up.
+1. **Support first.** Helpin is open-source customer support software for software teams: support chat, a shared inbox, a help center, and AI agents. The homepage, README, and site-wide metadata lead with support. The headline is Helpin's own claim; “alternative to Intercom” is a supporting line (eyebrow, meta description, comparison pages) for people who search that way, never the hero. Projects, CRM, and Meetings are introduced by the support job they do: the bug behind the ticket, who the customer is, and what was agreed. Their own product and comparison pages still present them in full.
+   - Self-hosting lets a team choose where its data lives. State a hosting region for Helpin Cloud only from a verified product-truth claim, and never say “sovereign” or “GDPR compliant” without one.
 2. **Open source, on Helpin Cloud or your own servers.** Name both editions wherever hosting, pricing, trust, or comparisons come up: Helpin Cloud, hosted by Helpin, and the self-hosted Community edition under AGPL-3.0. Don't mention one without the other.
 3. **For support buyers, four advantages lead:**
    - **No per-seat or per-resolution fees.** One price per workspace with unlimited teammates; every Cloud plan includes an AI usage allowance, and overage is metered only if a paid plan turns it on. Self-hosting has no license fee.

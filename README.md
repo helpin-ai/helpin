@@ -1,21 +1,25 @@
 # Helpin
 
-**An open-source alternative to Intercom and Linear.**
+**Open-source customer support, with AI agents that do more than answer.**
 
-### AI agents that do more than answer.
+Helpin gives a software team support chat, a shared inbox, a help center, and
+AI agents that answer from your docs and hand over to your team. Self-host it
+with your own AI providers, where your data has to live, or use Helpin Cloud.
 
-Helpin brings support, projects, CRM, meetings, and docs into one connected
-workspace. Your team and AI agents use a shared customer history to answer
-questions, plan work, and follow up—with approvals where you need them.
+When a conversation turns out to be a bug or an account question, the task and
+the customer record are already next to the reply: Projects and CRM are built
+in, so nothing is lost at the handoff.
+
+Coming from Intercom? See [how Helpin compares](https://helpin.ai/compare/intercom).
 
 [Website](https://helpin.ai) · [Open Helpin Cloud](https://app.helpin.ai) ·
 [Get started](#get-started) · [Contribute](CONTRIBUTING.md)
 
-![Helpin support inbox: Maya’s CSV export conversation with an investigation note, the linked EXP-142 task, a drafted reply waiting for review, and her customer details.](docs/images/helpin-support-inbox.webp)
+![Helpin support inbox: Maya’s CSV export conversation, classified as a bug and tagged, with the AI’s escalation and handoff notes, the linked EXP-142 task, Sam’s reply inside the response target, and her customer details.](docs/images/helpin-support-inbox.webp)
 
-*Product preview with fictional data. The conversation, the existing task, and
-the customer record stay in view, and the drafted reply waits for your team.
-Available modules depend on your deployment.*
+*Product preview with fictional data. The AI answered two questions, escalated
+the third with what it had checked, and a teammate replied inside the response
+target. Available modules depend on your deployment.*
 
 ## Get started
 
@@ -71,51 +75,52 @@ process data outside it and charge for usage. Before public hosting, configure
 
 ## Why Helpin?
 
-A customer asks a question. Support investigates. Product decides what to build.
-Engineering delivers the change. Someone still needs to tell the customer what
-happened.
+A customer asks a question. The AI answers what it can from your docs and asks
+for a moment when it needs to look something up. When the question needs a
+person, it hands over with what it checked and what is still open.
 
-That is one piece of work, even when several teams take part.
-
-Helpin keeps the conversations, decisions, and related work connected. The next
-teammate or agent can see what was asked, what was tried, and what still needs
-attention.
+Your teammate replies without asking the customer to repeat themselves. If the
+question turns out to be a bug, the task, the fix, and the follow-up stay
+attached to the conversation.
 
 **The earlier conversation should change the next action—not disappear at the handoff.**
 
 ## What you can do
 
-This is the broader Helpin workspace. Community 0.2 enables Support, Docs,
-Projects, CRM, automation, and agents by default; Cloud plans and configured
-integrations determine which additional capabilities you can use.
+Support is the product. The rest is there for when a conversation needs it.
 
-| Product | What it gives your team |
-| --- | --- |
-| **Support** | Chat and email in a shared inbox, with customer history, agent assistance, and linked work. Email delivery needs a configured provider. |
-| **Projects** | Tasks, epics, sprints, roadmaps, dependencies, and objectives for product development and internal work. |
-| **CRM** | Contacts, companies, and deals alongside the conversations and work behind the relationship. |
-| **Meetings** | Meeting records, decisions, and next steps connected to the relevant work. |
-| **Knowledge** | Customer-facing guides and internal docs, with selected sources available to agents. |
-| **AI agents** | Help with investigation, planning, code changes, documentation, and follow-up through configured tools. |
-
-Projects also supports maintenance, infrastructure, and internal initiatives.
-Link customer context when it is relevant.
+- **One inbox for every channel.** Chat, email, and Telegram conversations in
+  one shared inbox, sorted into team inboxes, with tags and customer history.
+  Support email needs a configured email provider.
+- **SLAs your team can see.** First- and next-response targets per policy, a
+  timer on every conversation, and a warning before a target is missed.
+- **A customer portal.** Customers sign in to follow their requests, search
+  their history, and read customer-only help.
+- **AI agents that follow up.** Agents answer from your docs, start a research
+  agent when they need more, classify and tag the conversation, and hand over
+  to a teammate with their findings.
+- **Ask Agent before you reply.** Ask why something happened and get the cause,
+  with evidence from the conversation, the linked task, and connected tools.
+- **A help center that stays current.** From support, coverage gaps group
+  unanswered questions and failed searches, and an agent drafts the missing
+  guide. After a release, an agent finds guides that fell behind and prepares
+  updated steps and screenshots. Nothing is published without your team.
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="docs/images/helpin-projects-delivery.webp"><img src="docs/images/helpin-projects-delivery.webp" alt="Helpin Projects: the PRJ-214 task for an admin-only SSO pilot, with the plan reviewed, coding and code-review agents completed, and Sam Rivera reviewing the change before merge."></a>
-      <br><sub><b>Projects</b> · Agents prepare and review the change. A teammate approves the merge.</sub>
+      <a href="docs/images/helpin-support-ai-research.webp"><img src="docs/images/helpin-support-ai-research.webp" alt="Helpin inbox: the AI answers a custom-fields question, tells Maya it is checking how Excel reads CSV files, and answers with Excel import steps after a research agent checked two pages on support.microsoft.com."></a>
+      <br><sub><b>AI answers</b> · A research agent looks it up while the customer waits.</sub>
     </td>
     <td width="50%" valign="top">
-      <a href="docs/images/helpin-crm-contacts.webp"><img src="docs/images/helpin-crm-contacts.webp" alt="Helpin CRM: a contacts list with each contact’s lifecycle stage, status, and owner."></a>
-      <br><sub><b>CRM</b> · Contacts, companies, and deals next to the conversations behind them.</sub>
+      <a href="docs/images/helpin-support-sla-warning.webp"><img src="docs/images/helpin-support-sla-warning.webp" alt="Helpin inbox: an “SLA due soon in #142” notification over another conversation, with an Open conversation button, and an amber next-response timer on Maya’s conversation in the list."></a>
+      <br><sub><b>SLAs</b> · A warning before a response target is missed.</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="docs/images/helpin-meetings-review.webp"><img src="docs/images/helpin-meetings-review.webp" alt="Helpin Meetings: an SSO rollout review with a transcript summary, the recording, a quoted commitment, next steps, and links to the contact, company, deal, epic, and task."></a>
-      <br><sub><b>Meetings</b> · Commitments from the call become linked next steps.</sub>
+      <a href="docs/images/helpin-support-ask-agent.webp"><img src="docs/images/helpin-support-ask-agent.webp" alt="Helpin Ask Agent next to Maya’s conversation: why her export stops at 10,000 rows, evidence from the export logs, the EXP-142 task, and the conversation, and what the teammate can tell her, with Insert as draft."></a>
+      <br><sub><b>Ask Agent</b> · The cause and what to tell the customer, before you reply.</sub>
     </td>
     <td width="50%" valign="top">
       <a href="docs/images/helpin-knowledge-help-center.webp"><img src="docs/images/helpin-knowledge-help-center.webp" alt="Helpin Knowledge: a help-center space with collections, an API reference entry point, and recently updated guides."></a>
@@ -125,6 +130,15 @@ Link customer context when it is relevant.
 </table>
 
 *Product previews with fictional data.*
+
+**Built in, for when support needs it:** Projects turns the bug behind a
+conversation into a task, CRM keeps contacts, companies, and deals next to
+their conversations, and Meetings records decisions and next steps.
+
+Community 0.2 enables Support, Docs, Projects, CRM, automation, and agents by
+default; set `HELPIN_ENABLED_MODULES=support,docs,agents` for support only.
+Cloud plans and configured integrations determine which additional
+capabilities you can use.
 
 ## See the difference in one request
 
@@ -225,4 +239,4 @@ trademark terms.
 
 ---
 
-**One customer history. A shared workspace for your team and AI agents.**
+**Open-source customer support, with AI agents that do more than answer.**

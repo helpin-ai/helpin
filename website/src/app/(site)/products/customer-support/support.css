@@ -30,29 +30,11 @@
 .hp3 .support-inbox-section .sec-head { max-width: 780px; margin: 0 auto; text-align: center; }
 .hp3 .support-inbox-section .sec-head .eyebrow { justify-content: center; }
 .hp3 .support-inbox-section .sec-head .lede { max-width: 720px; margin-inline: auto; }
-.hp3 .support-page section.support-workflow-section { background: #f5f7f5; color: var(--ink); position: relative; }
-.hp3 .support-workflow-section .sec-head { text-align: center; margin: 0 auto 52px; max-width: 730px; }
-.hp3 .support-workflow-section .eyebrow { color: var(--em); }
-.hp3 .support-workflow-section .sec-head .lede { color: var(--t2); max-width: 580px; margin-inline: auto; }
-.hp3 .support-workflow-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-.hp3 .support-workflow-grid article { border: 1px solid #e0e7e1; border-radius: 14px; background: #fff; overflow: hidden; display: flex; flex-direction: column; }
-.hp3 .support-step-copy { padding: 28px 26px 24px; }
-.hp3 .support-step-number { font-family: var(--mono); font-size: 10px; letter-spacing: .07em; color: #55775f; }
-.hp3 .support-step-copy h3 { font-size: 22px; line-height: 1.3; margin: 14px 0 12px; letter-spacing: -.025em; }
-.hp3 .support-step-copy p { font-size: 14px; line-height: 1.75; color: var(--t2); }
 .hp3 .support-features { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0 48px; }
 .hp3 .support-features article { padding: 28px 0; border-top: 1px solid var(--border); }
 .hp3 .support-features svg { color: var(--em); margin-bottom: 17px; }
 .hp3 .support-features h3 { font-size: 18px; margin-bottom: 10px; line-height: 1.4; }
 .hp3 .support-features p { font-size: 14px; color: var(--t2); line-height: 1.8; }
-.hp3 .support-page section.support-connected-section { background: #fff; }
-.hp3 .support-connected-grid { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.4fr); align-items: center; gap: 48px; }
-.hp3 .support-connected-grid .sec-head { margin-bottom: 25px; max-width: 400px; }
-.hp3 .support-connected-preview { min-width: 0; padding: 20px 16px 24px; border: 1px solid #e2ebe4; border-radius: 18px; background: radial-gradient(ellipse at 75% 20%, #f6faf7, transparent 70%), #edf4ef; }
-@media (max-width: 1000px) {
-  .hp3 .support-connected-grid { grid-template-columns: 1fr; gap: 40px; }
-  .hp3 .support-connected-grid .sec-head { max-width: 680px; }
-}
 .hp3 .support-faq-grid { align-items: start; display: grid; grid-template-columns: .8fr 1.2fr; gap: 90px; }
 .hp3 .support-faqs details { border-bottom: 1px solid var(--border); padding: 21px 0; }
 .hp3 .support-faqs details:first-child { padding-top: 0; }
@@ -66,10 +48,6 @@
 }
 @media (max-width: 960px) {
   .hp3 .support-page section { padding-block: 72px; }
-  .hp3 .support-connected-grid { gap: 35px; }
-  .hp3 .support-workflow-grid { gap: 12px; }
-  .hp3 .support-step-copy { padding: 20px 18px; }
-  .hp3 .support-step-copy h3 { font-size: 20px; }
   .hp3 .support-features { gap: 0 25px; }
   .hp3 .support-faq-grid { gap: 40px; }
 }
@@ -82,19 +60,15 @@
   .hp3 .support-hero .lede { font-size: 16px; }
   .hp3 .support-page-nav .wrap { justify-content: flex-start; gap: 24px; overflow-x: auto; min-height: 55px; font-size: 12px; }
   .hp3 .support-page-nav span { display: none; }
-  .hp3 .support-connected-grid, .hp3 .support-faq-grid { grid-template-columns: 1fr; gap: 30px; }
+  .hp3 .support-faq-grid { grid-template-columns: 1fr; gap: 30px; }
   .hp3 .support-page .sec-head { margin-bottom: 30px; }
   .hp3 .support-faq-grid .sec-head { margin-bottom: 0; }
-  .hp3 .support-workflow-grid { grid-template-columns: 1fr; gap: 20px; max-width: 490px; margin-inline: auto; }
-  .hp3 .support-step-copy { padding: 26px; }
-  .hp3 .support-step-copy h3 { font-size: 25px; }
   .hp3 .support-features { grid-template-columns: 1fr 1fr; gap: 0 25px; }
 }
 @media (max-width: 400px) {
   .hp3 .support-page .btn { font-size: 12px; padding-inline: 12px; }
   .hp3 .support-features { grid-template-columns: 1fr; }
 }
-
 
 /* Focused hero illustration: live text stays readable beside the page copy. */
 .hp3 .support-hero-art { min-width: 0; }
@@ -136,11 +110,6 @@
 .hp3 .support-faqs summary::-webkit-details-marker { display: none; }
 .hp3 .support-faqs summary::after { content: '+'; color: var(--em); font-size: 23px; font-weight: 400; flex: none; line-height: 1; }
 .hp3 .support-faqs details[open] summary::after { content: '−'; }
-@media (min-width: 761px) and (max-width: 1000px) {
-  .hp3 .support-workflow-grid { grid-template-columns: 1fr; gap: 18px; }
-  .hp3 .support-workflow-grid article { display: grid; grid-template-columns: .95fr 1.05fr; align-items: center; }
-  .hp3 .support-step-copy { padding: 28px; }
-}
 @media (max-width: 960px) {
   .hp3 .support-hero-grid { gap: 44px; }
   .hp3 .support-hero .hero-inner { max-width: 640px; }
@@ -154,7 +123,6 @@
   .hp3 .support-hero-art-label { font-size: 8px; }
   .hp3 .support-hero-art-caption { line-height: 1.7; }
   .hp3 .support-hero .cta-row { gap: 10px; }
-  .hp3 .support-step-copy h3 { font-size: 23px; }
 }
 @media (max-width: 400px) {
   .hp3 .support-hero .cta-row { width: 100%; }
@@ -171,21 +139,24 @@
 .hp3 .support-controls-section .sec-head { max-width: 720px; }
 .hp3 .support-hero .eyebrow svg { flex: none; }
 
-/* Captions keep the illustrative workflow separate from live product actions. */
-.hp3 .support-page .support-demo-caption { margin: 18px 0 0; font-size: 12px; line-height: 1.8; color: var(--t3); text-align: center; }
 .hp3 .support-page .support-demo-heading { margin: 0 0 18px; font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--t2); }
-
-/* Leave room for the previous attempt and investigation in the inbox transcript. */
-.hp3 #support-inbox .swi-shell { height: 710px; }
-@container support-workspace (max-width:1050px) { .hp3 #support-inbox .swi-shell { height: 750px; } }
-@container support-workspace (max-width:520px) { .hp3 #support-inbox .swi-shell { height: 865px; } }
-@container support-workspace (max-width:290px) { .hp3 #support-inbox .swi-shell { height: 965px; } }
-@media(max-width:600px) { .hp3 #support-connected .swi-agent-step { margin-top: 13px; } }
 
 /* Identity now lives in the controls section; details link to Developers. */
 .hp3 .support-controls-link { margin-top: 32px; text-align: center; }
 
-/* Keep the coverage example close to the problem it explains. */
-.hp3 .support-knowledge-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:64px;align-items:center}
-.hp3 .support-knowledge-grid .sec-head{margin-bottom:0}
-@media(max-width:960px){.hp3 .support-knowledge-grid{grid-template-columns:1fr;gap:32px}}
+
+/* Two-column feature sections: SLAs, portal, coverage gaps, reports, follow-up. */
+.hp3 .support-page section.support-desk-section { background: #fff; }
+.hp3 .support-page section.support-desk-section-tint { background: #f6f8f7; }
+.hp3 .support-desk-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+.hp3 .support-desk-grid-flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+.hp3 .support-desk-grid-flip .support-desk-copy { order: 2; }
+.hp3 .support-desk-copy .sec-head { margin-bottom: 18px; }
+.hp3 .support-desk-copy > p { margin: 0 0 14px; color: var(--t2); font-size: 15px; line-height: 1.75; }
+.hp3 .support-desk-copy > p b { color: var(--ink); font-weight: 600; }
+.hp3 .support-desk-copy > .btn-link { display: inline-flex; margin-top: 8px; }
+.hp3 .support-desk-followup { max-width: 460px; justify-self: center; width: 100%; }
+@media (max-width: 960px) {
+  .hp3 .support-desk-grid, .hp3 .support-desk-grid-flip { grid-template-columns: 1fr; gap: 32px; }
+  .hp3 .support-desk-grid-flip .support-desk-copy { order: 0; }
+}
