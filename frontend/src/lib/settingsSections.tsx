@@ -102,7 +102,7 @@ export type SettingsSection =
   | 'system-status'
   | 'server'
   | 'mcp'
-  | 'external-mcp'
+  | 'external-tools'
   | 'external-agents'
   | 'billing'
   | 'repositories'
@@ -298,12 +298,12 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Integrations & data',
   },
   {
-    id: 'external-mcp',
-    label: 'External tools (MCP)',
-    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
+    id: 'external-tools',
+    label: 'External tools',
+    description: 'Connect workspace apps and MCP servers.',
+    keywords: ['Slack', 'MCP servers', 'agent tools'],
     icon: ExternalMCP,
     group: 'Integrations & data',
-    requiredPermission: 'settings.read',
   },
   {
     id: 'external-agents',
@@ -529,6 +529,17 @@ export function buildSettingsRoutePath(workspaceSlug: string, section: SettingsR
   return `/w/${workspaceSlug}/settings/${section}`;
 }
 
+export function externalToolsAccess(canManageSettings: boolean, canReadSettings: boolean, modules?: readonly WorkspaceModule[]) {
+  return {
+    apps: canManageSettings && (!modules || modules.includes('pm') || modules.includes('support')),
+    mcp: canReadSettings && (!modules || modules.includes('agents')),
+  };
+}
+
+export function buildExternalMCPSettingsPath(slug: string): string {
+  return buildSettingsRoutePath(slug, 'external-tools') + '?tab=mcp';
+}
+
 export type SettingsSidebarGroup = {
   label: string;
   icon?: IconComponent;
@@ -540,7 +551,11 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
     const module = workspaceSurface(buildSettingsRoutePath('workspace', section.id));
-    if (section.id === 'support-channels' && modules && !modules.includes('pm') && !modules.includes('support')) continue;
+    if (section.id === 'support-channels' && modules && !modules.includes('support')) continue;
+    if (section.id === 'external-tools') {
+      const access = externalToolsAccess(canManageSettings, !!permissionSet?.has('settings.read'), modules);
+      if (!access.apps && !access.mcp) continue;
+    }
     if (modules && module && !modules.includes(module)) {
       continue;
     }

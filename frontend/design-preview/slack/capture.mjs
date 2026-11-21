@@ -49,8 +49,11 @@ try {
   }
   try {
     await go('settings/support-channels')
-    await page.getByRole('button', { name: /#acme-support/ }).waitFor()
+    const slackShortcut = page.getByRole('link', { name: 'Manage Slack' })
+    await slackShortcut.waitFor()
     await shot('channels')
+    await slackShortcut.click()
+    await page.getByRole('button', { name: /#acme-support/ }).waitFor()
     await page.getByRole('button', { name: /#acme-support/ }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByText('Customer support', { exact: true }).first().waitFor()

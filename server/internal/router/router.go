@@ -751,6 +751,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Route("/external-mcp", func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceID)
 					r.Use(wsActive)
+					r.Use(requireModule(model.ModuleAgents))
 					r.With(requirePerm(authorization.PermSettingsRead)).Get("/providers", h.ExternalMCP.Providers)
 					r.With(requirePerm(authorization.PermSettingsRead)).Get("/servers", h.ExternalMCP.ListServers)
 					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers", h.ExternalMCP.CreateServer)

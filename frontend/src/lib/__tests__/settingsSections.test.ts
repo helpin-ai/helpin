@@ -49,8 +49,8 @@ describe('getSettingsSidebarGroups', () => {
 
     const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
     expect(sections).toContain('mcp');
-    expect(sections.indexOf('external-mcp')).toBe(sections.indexOf('repositories') + 1);
-    expect(sections.indexOf('external-agents')).toBe(sections.indexOf('external-mcp') + 1);
+    expect(sections.indexOf('external-tools')).toBe(sections.indexOf('repositories') + 1);
+    expect(sections.indexOf('external-agents')).toBe(sections.indexOf('external-tools') + 1);
     expect(sections.indexOf('mcp')).toBe(sections.indexOf('external-agents') + 1);
   });
 
@@ -68,14 +68,16 @@ describe('getSettingsSidebarGroups', () => {
     expect(sections).not.toContain('mcp');
   });
 
-  it('exposes outbound MCP only with settings read permission', () => {
-    const withoutSettingsRead = getSettingsSidebarGroups(true, new Set(['workspace.read']))
-      .flatMap((group) => group.sections.map((section) => section.id));
-    const withSettingsRead = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read']))
-      .flatMap((group) => group.sections.map((section) => section.id));
-
-    expect(withoutSettingsRead).not.toContain('external-mcp');
-    expect(withSettingsRead).toContain('external-mcp');
+  it.each([
+    [['pm'], true, [], true],
+    [['support'], true, [], true],
+    [['pm'], false, ['settings.read'], false],
+    [['agents'], false, ['settings.read'], true],
+    [['agents'], true, [], false],
+    [['docs'], true, ['settings.read'], false],
+  ] as const)('shows External tools only with an available tab (%j, manage %s, permissions %j)', (modules, manage, permissions, visible) => {
+    const ids = getSettingsSidebarGroups(manage, new Set(permissions), modules).flatMap(group => group.sections.map(section => section.id));
+    expect(ids.includes('external-tools')).toBe(visible);
   });
 
   it('exposes external agents only with settings read permission, in the agents module', () => {

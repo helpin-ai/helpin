@@ -8,8 +8,8 @@ import { GapDataSourceNotice } from '../GapDataSourceNotice'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, params, children }: { to: string; params: { slug: string }; children: React.ReactNode }) => (
-    <a href={to.replace('$slug', params.slug)}>{children}</a>
+  Link: ({ to, params, search, children }: { to: string; search: Record<string, string>; params: { slug: string }; children: React.ReactNode }) => (
+    <a href={to.replace('$slug', params.slug) + '?' + new URLSearchParams(search)}>{children}</a>
   ),
 }))
 
@@ -34,7 +34,7 @@ describe('GapDataSourceNotice', () => {
     const link = view.querySelector('a')
     expect(view.textContent).toContain('The AI lacked the customer or account data needed to answer this.')
     expect(link?.textContent).toBe('Connect a tool')
-    expect(link?.getAttribute('href')).toBe('/w/acme/settings/external-mcp')
+    expect(link?.getAttribute('href')).toBe('/w/acme/settings/external-tools?tab=mcp')
   })
 
   it.each([

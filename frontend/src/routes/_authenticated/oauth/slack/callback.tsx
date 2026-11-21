@@ -25,7 +25,7 @@ function SlackCallback() {
       )
       if (!pending?.workspaceId || !query.get('code'))
         throw new Error(
-          'Connection cancelled or expired. Return to Channels to try again.',
+          'Connection cancelled or expired. Return to External tools to try again.',
         )
       await slackService.complete(
         pending.workspaceId,
@@ -34,7 +34,7 @@ function SlackCallback() {
       )
       sessionStorage.removeItem('slack-install')
       window.location.replace(
-        '/w/' + encodeURIComponent(pending.slug) + '/settings/support-channels',
+        '/w/' + encodeURIComponent(pending.slug) + '/settings/external-tools?tab=apps',
       )
     }
     void finish().catch((e) =>

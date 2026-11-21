@@ -40,10 +40,10 @@
     </nav>
   </header>
   <figure>
-    <a id="full" href="inbox.png?v=4" title="Open full-resolution screenshot">
-      <img id="screen" src="inbox.png?v=4" alt="Helpin support inbox showing Lena’s Slack thread and its linked task.">
+    <a id="full" href="inbox.png?v=5" title="Open full-resolution screenshot">
+      <img id="screen" src="inbox.png?v=5" alt="Helpin support inbox showing Lena’s Slack thread and its linked task.">
     </a>
-    <figcaption aria-live="polite"><span id="caption"></span><a id="incoming" href="incoming-detail.png?v=4" hidden>Enlarge message</a><a id="detail" hidden></a></figcaption>
+    <figcaption aria-live="polite"><span id="caption"></span><a id="incoming" href="incoming-detail.png?v=5" hidden>Enlarge message</a><a id="detail" hidden></a></figcaption>
   </figure>
 </main>
 <script>
@@ -51,7 +51,7 @@
     inbox: 'Lena’s messages link to their originals in Slack. Sam’s draft goes to #acme-support.',
     list: 'The Customer support inbox on a narrow screen. Slack, email, and chat conversations share the same queue.',
     task: 'Ana’s update on PAY-142 shows where replies will sync in Slack.',
-    channels: 'Northstar’s Slack connection in Settings → Channels, alongside Chat, Email, and Telegram.',
+    channels: 'Slack’s Manage shortcut opens External tools → Apps. Chat, Email, and Telegram are also available here.',
     routing: 'Customer threads in #acme-support go to the Customer support inbox.',
     'project-routing': 'Tasks drafted from #payments start with the Payments team and the Checkout reliability epic.'
   }
@@ -62,7 +62,7 @@
       if (link.hash === '#' + id) link.setAttribute('aria-current', 'page')
       else link.removeAttribute('aria-current')
     }
-    const file = id + '.png?v=4'
+    const file = id + '.png?v=5'
     document.getElementById('screen').src = file
     document.getElementById('screen').alt = captions[id]
     document.getElementById('full').href = file
@@ -72,7 +72,7 @@
     const detailName = { inbox: 'composer', task: 'comment' }[id]
     detail.hidden = !detailName
     if (detailName) {
-      detail.href = detailName + '-detail.png?v=4'
+      detail.href = detailName + '-detail.png?v=5'
       detail.textContent = 'Enlarge ' + detailName
     }
   }

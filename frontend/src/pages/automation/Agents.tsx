@@ -55,7 +55,7 @@ import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
 import { AIProfileLabel } from '@/components/agents/AIProfileLabel';
 import { AIProfilePicker } from '@/components/agents/AIProfilePicker';
-import { buildSettingsRoutePath } from '@/lib/settingsSections';
+import { buildExternalMCPSettingsPath, buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import type {
@@ -2446,7 +2446,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
-  const toolConnectionsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'external-mcp') : undefined;
+  const toolConnectionsHref = workspace?.slug ? buildExternalMCPSettingsPath(workspace.slug) : undefined;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');

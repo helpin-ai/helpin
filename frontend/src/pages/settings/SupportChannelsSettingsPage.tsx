@@ -1,8 +1,8 @@
 import { SupportChannels } from '@/components/settings/channels/SupportChannels'
-import { SlackChannels } from '@/components/settings/channels/SlackChannels'
+import { Navigate } from '@tanstack/react-router'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { Button } from '@/components/ui/button'
-import { Mail01Icon, Message01Icon } from '@/lib/icons'
+import { Mail01Icon, Message01Icon, SlackIcon } from '@/lib/icons'
 import { SettingsPageFrame } from './SettingsPageFrame'
 
 export function SupportChannelsSettingsPage() {
@@ -37,6 +37,9 @@ export function WorkspaceChannelSettings({
   hasPM?: boolean
   manageSupport: boolean
 }) {
+  if (!hasSupport && hasPM && manageSlack) {
+    return <Navigate to="/w/$slug/settings/external-tools" params={{ slug }} search={{ tab: 'apps' }} replace />
+  }
   return (
     <div className="space-y-4">
       {hasSupport && (
@@ -48,26 +51,19 @@ export function WorkspaceChannelSettings({
               icon: Mail01Icon,
               section: 'inboxes-routing?tab=email',
             },
+            ...(manageSlack ? [{ label: 'Slack', icon: SlackIcon, section: 'external-tools?tab=apps' }] : []),
           ].map(({ label, icon: Icon, section }) => (
             <div key={label} className="flex items-center gap-3 px-4 py-3">
               <Icon className="size-5" />
               <span className="flex-1 text-sm font-semibold">{label}</span>
               <Button size="sm" variant="ghost" asChild>
-                <a href={`/w/${encodeURIComponent(slug)}/settings/${section}`}>
+                <a aria-label={`Manage ${label}`} href={`/w/${encodeURIComponent(slug)}/settings/${section}`}>
                   Manage
                 </a>
               </Button>
             </div>
           ))}
         </div>
-      )}
-      {(hasSupport || hasPM) && manageSlack && (
-        <SlackChannels
-          workspaceId={workspaceId}
-          slug={slug}
-          hasSupport={hasSupport}
-          hasPM={hasPM}
-        />
       )}
       {hasSupport && (
         <SettingsSection title="Telegram">

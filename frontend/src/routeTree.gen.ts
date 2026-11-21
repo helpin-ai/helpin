@@ -84,6 +84,7 @@ import { Route as AuthenticatedWSlugSettingsInboxesRoutingRouteImport } from './
 import { Route as AuthenticatedWSlugSettingsImportRouteImport } from './routes/_authenticated/w/$slug/settings/import'
 import { Route as AuthenticatedWSlugSettingsHelpcenterRouteImport } from './routes/_authenticated/w/$slug/settings/helpcenter'
 import { Route as AuthenticatedWSlugSettingsGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/general'
+import { Route as AuthenticatedWSlugSettingsExternalToolsRouteImport } from './routes/_authenticated/w/$slug/settings/external-tools'
 import { Route as AuthenticatedWSlugSettingsExternalMcpRouteImport } from './routes/_authenticated/w/$slug/settings/external-mcp'
 import { Route as AuthenticatedWSlugSettingsExternalAgentsRouteImport } from './routes/_authenticated/w/$slug/settings/external-agents'
 import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes/_authenticated/w/$slug/settings/delivery'
@@ -568,6 +569,12 @@ const AuthenticatedWSlugSettingsGeneralRoute =
   AuthenticatedWSlugSettingsGeneralRouteImport.update({
     id: '/settings/general',
     path: '/settings/general',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsExternalToolsRoute =
+  AuthenticatedWSlugSettingsExternalToolsRouteImport.update({
+    id: '/settings/external-tools',
+    path: '/settings/external-tools',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsExternalMcpRoute =
@@ -1063,6 +1070,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
+  '/w/$slug/settings/external-tools': typeof AuthenticatedWSlugSettingsExternalToolsRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
@@ -1200,6 +1208,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
+  '/w/$slug/settings/external-tools': typeof AuthenticatedWSlugSettingsExternalToolsRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
@@ -1344,6 +1353,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/_authenticated/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/_authenticated/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
+  '/_authenticated/w/$slug/settings/external-tools': typeof AuthenticatedWSlugSettingsExternalToolsRoute
   '/_authenticated/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/_authenticated/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/_authenticated/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
@@ -1490,6 +1500,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/delivery'
     | '/w/$slug/settings/external-agents'
     | '/w/$slug/settings/external-mcp'
+    | '/w/$slug/settings/external-tools'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
@@ -1627,6 +1638,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/delivery'
     | '/w/$slug/settings/external-agents'
     | '/w/$slug/settings/external-mcp'
+    | '/w/$slug/settings/external-tools'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
@@ -1770,6 +1782,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/delivery'
     | '/_authenticated/w/$slug/settings/external-agents'
     | '/_authenticated/w/$slug/settings/external-mcp'
+    | '/_authenticated/w/$slug/settings/external-tools'
     | '/_authenticated/w/$slug/settings/general'
     | '/_authenticated/w/$slug/settings/helpcenter'
     | '/_authenticated/w/$slug/settings/import'
@@ -2374,6 +2387,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/general'
       fullPath: '/w/$slug/settings/general'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsGeneralRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/external-tools': {
+      id: '/_authenticated/w/$slug/settings/external-tools'
+      path: '/settings/external-tools'
+      fullPath: '/w/$slug/settings/external-tools'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsExternalToolsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/external-mcp': {
@@ -3067,6 +3087,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsDeliveryRoute: typeof AuthenticatedWSlugSettingsDeliveryRoute
   AuthenticatedWSlugSettingsExternalAgentsRoute: typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   AuthenticatedWSlugSettingsExternalMcpRoute: typeof AuthenticatedWSlugSettingsExternalMcpRoute
+  AuthenticatedWSlugSettingsExternalToolsRoute: typeof AuthenticatedWSlugSettingsExternalToolsRoute
   AuthenticatedWSlugSettingsGeneralRoute: typeof AuthenticatedWSlugSettingsGeneralRoute
   AuthenticatedWSlugSettingsHelpcenterRoute: typeof AuthenticatedWSlugSettingsHelpcenterRoute
   AuthenticatedWSlugSettingsImportRoute: typeof AuthenticatedWSlugSettingsImportRoute
@@ -3159,6 +3180,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsExternalAgentsRoute,
   AuthenticatedWSlugSettingsExternalMcpRoute:
     AuthenticatedWSlugSettingsExternalMcpRoute,
+  AuthenticatedWSlugSettingsExternalToolsRoute:
+    AuthenticatedWSlugSettingsExternalToolsRoute,
   AuthenticatedWSlugSettingsGeneralRoute:
     AuthenticatedWSlugSettingsGeneralRoute,
   AuthenticatedWSlugSettingsHelpcenterRoute:

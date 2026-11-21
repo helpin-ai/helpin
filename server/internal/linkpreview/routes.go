@@ -112,7 +112,7 @@ func Resolve(path, rawQuery string) Target {
 		rel = dest
 	}
 	if rel == "/settings/mcp" && q.Get("tab") == "external" {
-		rel = "/settings/external-mcp"
+		rel = "/settings/external-tools"
 	}
 	t.Path = "/w/" + t.Slug + strings.TrimSuffix(rel, "/")
 	t.Fallback = workspacePage(rel)
