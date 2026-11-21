@@ -7,7 +7,7 @@ describe('desktop alert navigation', () => {
     expect(desktopNotificationTarget(event({ entity_type: 'support_conversation', entity_id: 'c1' }), 'acme')).toEqual({ path: '/w/acme/support/c1' })
     expect(desktopNotificationTarget(event({ entity_type: 'task', entity_id: 't1', run_id: 'r1' }), 'acme')).toEqual({ path: '/w/acme/pm/tasks/t1', search: { run: 'r1' } })
     expect(desktopNotificationTarget(event({ entity_type: 'doc', entity_id: 'd1' }), 'acme')).toEqual({ path: '/w/acme/docs/documents/d1' })
-    expect(desktopNotificationTarget(event({ entity_type: 'external_mcp_server', entity_id: 's1' }), 'acme')).toEqual({ path: '/w/acme/settings/external-mcp' })
+    expect(desktopNotificationTarget(event({ entity_type: 'external_mcp_server', entity_id: 's1' }), 'acme')).toEqual({ path: '/w/acme/settings/external-tools', search: { tab: 'mcp' } })
   })
   it('preserves dock and task-run routing', () => {
     expect(desktopNotificationTarget(event({ entity_type: 'agent_run', entity_id: 'r1', dock_chat_id: 'chat1', parent_task_id: 't1' }), 'acme')).toEqual({ dock: { chatId: 'chat1' } })

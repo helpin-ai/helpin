@@ -136,17 +136,18 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	}
 
 	comment := &model.PMComment{
-		EntityType: req.EntityType,
-		EntityID:   req.EntityID,
-		AuthorID:   authorID,
-		AgentID:    req.AgentID,
-		AgentName:  strings.TrimSpace(req.AgentName),
-		AgentRunID: req.AgentRunID,
-		Body:       strings.TrimSpace(req.Body),
-		ParentID:   req.ParentID,
-		BlockID:    req.BlockID,
-		Range:      req.Range,
-		AnchorText: strings.TrimSpace(req.AnchorText),
+		SlackSourceKey: req.SlackSourceKey,
+		EntityType:     req.EntityType,
+		EntityID:       req.EntityID,
+		AuthorID:       authorID,
+		AgentID:        req.AgentID,
+		AgentName:      strings.TrimSpace(req.AgentName),
+		AgentRunID:     req.AgentRunID,
+		Body:           strings.TrimSpace(req.Body),
+		ParentID:       req.ParentID,
+		BlockID:        req.BlockID,
+		Range:          req.Range,
+		AnchorText:     strings.TrimSpace(req.AnchorText),
 	}
 	if s.attachmentRepo != nil {
 		if err := s.commentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {

@@ -215,7 +215,7 @@ export function NotificationCenter() {
     const settingsRoute = getSettingsNotificationTarget(notification, slug)
     if (settingsRoute) {
       setOpen(false)
-      navigate({ to: settingsRoute })
+      navigate({ href: settingsRoute })
       return
     }
     const taskRunTarget = getNotificationTaskRunTarget(notification)

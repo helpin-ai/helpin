@@ -1,0 +1,47 @@
+display_information:
+  name: Helpin
+  description: Create tasks, collaborate on support conversations, and get updates from Helpin.
+features:
+  bot_user:
+    display_name: Helpin
+    always_online: false
+  shortcuts:
+    - name: Create support conversation
+      type: message
+      callback_id: create_support
+      description: Send this thread to the configured Helpin inbox.
+    - name: Create task
+      type: message
+      callback_id: create_task
+      description: Review a Helpin task from this thread.
+    - name: Link existing task
+      type: message
+      callback_id: link_task
+      description: Link this thread to a Helpin task.
+oauth_config:
+  redirect_urls:
+    - https://app.helpin.ai/oauth/slack/callback
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:read
+      - groups:read
+      - channels:history
+      - groups:history
+      - chat:write
+      - files:read
+      - files:write
+      - users:read
+      - commands
+settings:
+  event_subscriptions:
+    request_url: https://api.helpin.ai/api/slack/events
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - channel_id_changed
+      - app_uninstalled
+  interactivity:
+    is_enabled: true
+    request_url: https://api.helpin.ai/api/slack/actions

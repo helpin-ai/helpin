@@ -296,6 +296,20 @@ func TestSupportExplicitEmailReconciliationRecoversOldReadResolvedReply(t *testi
 	}
 }
 
+func TestExplicitReplyTransportRejectsConflictingDestinations(t *testing.T) {
+	for _, req := range []model.CreateMessageRequest{
+		{ReplyTransport: "widget", DeliveryMode: "chat_only", ProviderOriginID: "slack-origin"},
+		{ReplyTransport: "slack", DeliveryMode: "email_only", ProviderOriginID: "slack-origin"},
+		{ReplyTransport: "telegram", DeliveryMode: "chat_and_email"},
+		{ReplyTransport: "widget", DeliveryMode: "chat_only", IsInternal: true},
+		{ReplyTransport: "other", DeliveryMode: "chat_only"},
+	} {
+		if err := validateSupportDeliveryMode(&req, "user"); err == nil {
+			t.Errorf("accepted incompatible delivery request: %+v", req)
+		}
+	}
+}
+
 func TestSupportExplicitChatRequiresWidgetSession(t *testing.T) {
 	for _, mode := range []string{"chat_only", "chat_and_email"} {
 		t.Run(mode, func(t *testing.T) {

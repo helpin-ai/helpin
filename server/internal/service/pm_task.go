@@ -474,6 +474,11 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 				return err
 			}
 		}
+		if req.SlackThread != nil {
+			if err := tasks.BindSlackTask(ctx, *req.SlackThread, newTask.ID, actorID); err != nil {
+				return err
+			}
+		}
 		return tasks.UpdateStartedCompleted(ctx, newTask.ID)
 	}); err != nil {
 		return nil, err

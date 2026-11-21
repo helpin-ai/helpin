@@ -3,8 +3,6 @@ package repository
 import (
 	"context"
 	"strings"
-
-	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // PortalSearchMatch is a request that matches a portal search: by subject,
@@ -73,7 +71,7 @@ func (r *CustomerPortalRepository) SearchPortalRequests(ctx context.Context, wor
 			WHERE grant_row.workspace_id = msg.workspace_id AND grant_row.conversation_id = conv.id AND grant_row.message_id = msg.id))`).
 		Where("conv.workspace_id = ? AND conv.id IN ?", workspaceID, conversationIDs).
 		Where("msg.deleted_at IS NULL AND msg.is_internal = false AND msg.message_type = 'reply' AND msg.sender_type IN ('customer', 'user', 'agent', 'ai')").
-		Where(supportDeliveryModeSQL(r.db, "msg")+" <> ?", model.SupportDeliveryEmailOnly).
+		Where(supportChatDeliveryVisibleSQL(r.db, "msg")).
 		Where(`NOT EXISTS (SELECT 1 FROM support_conversations AS origin
 			WHERE origin.id = COALESCE(msg.origin_conversation_id, msg.conversation_id) AND origin.anonymized_at IS NOT NULL)`).
 		Where(messageSQL, messageArgs...).

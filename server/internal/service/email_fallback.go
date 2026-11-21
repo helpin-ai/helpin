@@ -2258,7 +2258,7 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 		return fmt.Errorf("email recipient count exceeds provider limit")
 	}
 	chatLink, _ := s.buildChatLink(ctx, conv)
-	if pending[len(pending)-1].DeliveryMode() == model.SupportDeliveryEmailOnly {
+	if !pending[len(pending)-1].CustomerChatVisible() {
 		chatLink = ""
 	}
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)

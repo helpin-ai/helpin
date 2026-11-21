@@ -87,6 +87,8 @@ func (SupportChannelIdentity) TableName() string { return "support_channel_ident
 // SupportChannelOutbox is one reply queued for provider delivery. Rows are
 // written by the support_channel_outbox_enqueue trigger (202611140002).
 type SupportChannelOutbox struct {
+	Provider           string     `json:"-" gorm:"->;-:migration"`
+	ProviderOriginID   *string    `json:"-" gorm:"->;type:uuid"`
 	ID                 string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID        string     `json:"workspace_id" gorm:"type:uuid"`
 	ChannelAccountID   string     `json:"channel_account_id" gorm:"type:uuid"`
@@ -113,6 +115,7 @@ func (SupportChannelOutbox) TableName() string { return "support_channel_outbox"
 // SupportChannelDelivery is a reply's delivery state through a provider
 // channel, for the message bubble.
 type SupportChannelDelivery struct {
+	Provider string `json:"provider,omitempty"`
 	// Status is sending, sent, failed, unconfirmed or cancelled.
 	Status    string `json:"status"`
 	ErrorCode string `json:"error_code,omitempty"`

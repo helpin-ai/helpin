@@ -27,7 +27,7 @@ function notification(entityType: string): Notification {
 describe('settings notification navigation', () => {
   it('opens External MCP workspace settings', () => {
     expect(getSettingsNotificationTarget(notification('external_mcp_server'), 'acme'))
-      .toBe('/w/acme/settings/external-mcp');
+      .toBe('/w/acme/settings/external-tools?tab=mcp');
   });
 
   it('ignores unrelated notification entities', () => {

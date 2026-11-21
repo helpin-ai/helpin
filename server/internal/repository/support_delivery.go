@@ -12,6 +12,11 @@ func supportDeliveryModeSQL(db *gorm.DB, alias string) string {
 	return supportMetadataStringSQL(db, alias, "delivery_mode")
 }
 
+// Mirrors SupportMessage.CustomerChatVisible for summaries, unread counts and search.
+func supportChatDeliveryVisibleSQL(db *gorm.DB, alias string) string {
+	return "(" + supportDeliveryModeSQL(db, alias) + " <> 'email_only' AND " + supportMetadataStringSQL(db, alias, "reply_transport") + " IN ('', 'widget', 'portal'))"
+}
+
 func supportMetadataStringSQL(db *gorm.DB, alias, key string) string {
 	return "COALESCE(" + supportMetadataValueSQL(db, alias, key) + ", '')"
 }

@@ -240,7 +240,7 @@ func (r *SupportAttachmentRepository) Delete(ctx context.Context, id string) err
 func (r *SupportAttachmentRepository) CompleteInbound(ctx context.Context, a *model.SupportAttachment) error {
 	result := r.db.WithContext(ctx).Model(&model.SupportAttachment{}).
 		Where("id = ? AND workspace_id = ? AND message_id = ?", a.ID, a.WorkspaceID, a.MessageID).
-		Updates(map[string]any{"storage_key": a.StorageKey, "public_url": a.PublicURL, "file_size": a.FileSize, "content_type": a.ContentType, "is_uploaded": true, "processing_status": "", "processing_error": ""})
+		Updates(map[string]any{"file_name": gorm.Expr("COALESCE(NULLIF(?, ''), file_name)", a.FileName), "storage_key": a.StorageKey, "public_url": a.PublicURL, "file_size": a.FileSize, "content_type": a.ContentType, "is_uploaded": true, "processing_status": "", "processing_error": ""})
 	if result.Error != nil {
 		return result.Error
 	}

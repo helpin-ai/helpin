@@ -507,7 +507,7 @@ func (r *CustomerPortalRepository) lastPortalVisibleMessageSQL() string {
 			WHERE grant_row.workspace_id = msg.workspace_id AND grant_row.conversation_id = conv.id AND grant_row.message_id = msg.id))
 		AND msg.workspace_id = conv.workspace_id AND msg.deleted_at IS NULL AND msg.is_internal = false
 		AND msg.message_type = 'reply' AND msg.sender_type IN ('customer', 'user', 'agent', 'ai')
-		AND ` + supportDeliveryModeSQL(r.db, "msg") + ` <> '` + model.SupportDeliveryEmailOnly + `'
+		AND ` + supportChatDeliveryVisibleSQL(r.db, "msg") + `
 		AND NOT EXISTS (SELECT 1 FROM support_conversations AS origin
 			WHERE origin.id = COALESCE(msg.origin_conversation_id, msg.conversation_id) AND origin.anonymized_at IS NOT NULL)
 		ORDER BY msg.created_at DESC, msg.id DESC LIMIT 1)`

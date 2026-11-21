@@ -235,6 +235,7 @@ export const queryKeys = {
     /** Nested under the messages key so every message refresh also refreshes it. */
     conversationSharedItems: (wsId: string, id: string) =>
       ['support', wsId, 'conversations', id, 'messages', 'shared-items'] as const,
+    messageSlackSource: (wsId: string, messageId: string) => ['support', wsId, 'messages', messageId, 'slack-source'] as const,
     messageEmail: (wsId: string, messageId: string) => ['support', wsId, 'messages', messageId, 'email'] as const,
     messageInfo: (wsId: string, conversationId: string, messageId: string) =>
       ['support', wsId, 'conversations', conversationId, 'messages', messageId, 'info'] as const,

@@ -1,11 +1,11 @@
 import type { SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { isExternalSupportEmailReply, type SupportReceiptStatus } from './helpers';
-import { getReplyDeliveryMode } from './replyDelivery';
+import { getReplyDestination, getReplyDeliveryMode } from './replyDelivery';
 import { hasChatTransport } from '@/lib/supportChannels';
 
 export type DeliveryState = 'sent' | 'delivered' | 'read' | 'queued' | 'sending' | 'failed' | 'unknown' | 'external';
 export interface ChannelDelivery {
-  channel: 'chat' | 'email' | 'telegram';
+  channel: 'chat' | 'email' | 'telegram' | 'slack';
   state: DeliveryState;
   description: string;
 }
@@ -42,16 +42,16 @@ const CHANNEL_DELIVERY_REASONS: Record<string, string> = {
   too_large: 'a file is too large for Telegram',
 }
 
-/** A reply sent through a messaging app (Telegram) has one delivery: that app. */
-function providerDelivery(delivery: NonNullable<SupportMessage['channel_delivery']>): MessageDelivery {
-  const reason = delivery.error_code ? CHANNEL_DELIVERY_REASONS[delivery.error_code] : undefined
-  const entry = (state: DeliveryState, description: string): MessageDelivery => ({ channels: [{ channel: 'telegram', state, description }], state })
+function providerDelivery(delivery: NonNullable<SupportMessage['channel_delivery']>, provider: 'telegram' | 'slack'): ChannelDelivery {
+  const name = provider === 'slack' ? 'Slack' : 'Telegram'
+  const reason = delivery.error_code ? CHANNEL_DELIVERY_REASONS[delivery.error_code] ?.replaceAll('Telegram', name) : undefined
+  const entry = (state: DeliveryState, description: string): ChannelDelivery => ({ channel: provider, state, description })
   switch (delivery.status) {
-    case 'sent': return entry('sent', 'Sent to Telegram')
-    case 'sending': return entry('sending', 'Sending to Telegram')
-    case 'unconfirmed': return entry('failed', 'Telegram did not confirm delivery')
+    case 'sent': return entry('sent', `Sent to ${name}`)
+    case 'sending': return entry('sending', `Sending to ${name}`)
+    case 'unconfirmed': return entry('failed', `${name} did not confirm delivery`)
     case 'cancelled': return entry('failed', `Not sent${reason ? `: ${reason}` : ''}`)
-    default: return entry('failed', `Not delivered to Telegram${reason ? `: ${reason}` : ''}`)
+    default: return entry('failed', `Not delivered to ${name}${reason ? `: ${reason}` : ''}`)
   }
 }
 
@@ -65,20 +65,25 @@ export function getMessageDelivery(
   } = {},
 ): MessageDelivery | null {
   if (message.sender_type === 'customer' || message.is_internal || (message.message_type && message.message_type !== 'reply') || message.pending_send) return null;
-  if (message.channel_delivery) return providerDelivery(message.channel_delivery);
   if (isExternalSupportEmailReply(message.metadata) || receiptStatus === 'sent_outside_helpin') {
     return { channels: [{ channel: 'email', state: 'external', description: 'Email sent outside Helpin · Delivery tracking unavailable' }], state: 'external' };
   }
   const mode = getReplyDeliveryMode(message.metadata);
   const email = emailDelivery(message, receiptStatus);
   const hasEmail = mode ? mode !== 'chat_only' : (
-    message.via_channel === 'email' || source === 'email' || !!message.cancellable_until || email.state !== 'unknown'
+    !message.channel_delivery && (message.via_channel === 'email' || source === 'email' || !!message.cancellable_until || email.state !== 'unknown')
   );
   const hasChat = mode ? mode !== 'email_only' : (
     hasChatTransport(source) || hasChatTransport(message.via_channel) || receiptStatus === 'read' || receiptStatus === 'sent' || receiptStatus === 'delivered'
   );
   const channels: ChannelDelivery[] = [];
-  if (hasChat) {
+  const transport = getReplyDestination(message.metadata).reply_transport;
+  if (message.channel_delivery) {
+    const provider = message.channel_delivery.provider ?? message.via_channel ?? source;
+    channels.push(providerDelivery(message.channel_delivery, provider === 'slack' ? 'slack' : 'telegram'));
+  } else if (transport === 'slack' || transport === 'telegram') {
+    channels.push(providerDelivery({ status: 'sending', retryable: false }, transport));
+  } else if (hasChat) {
     const seen = receiptStatus === 'read' || (hasChatTransport(source) && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
     // Persisted in the conversation means sent; only a visitor read cursor confirms seen.
     const state = message.id.startsWith('optimistic-') ? 'sending' : seen ? 'read' : 'sent';

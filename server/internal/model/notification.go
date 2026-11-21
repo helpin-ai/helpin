@@ -192,11 +192,12 @@ var EventTypeToCategory = map[string]string{
 	"task.blocked":        NotifCategoryStatusChanges,
 	"task.updated":        NotifCategoryStatusChanges,
 
-	"comment.created":   NotifCategoryComments,
-	"task.comment":      NotifCategoryComments,
-	"objective.comment": NotifCategoryComments,
-	"epic.comment":      NotifCategoryComments,
-	"sprint.comment":    NotifCategoryComments,
+	"comment.created":              NotifCategoryComments,
+	"task.comment":                 NotifCategoryComments,
+	"task.comment_delivery_failed": NotifCategoryComments,
+	"objective.comment":            NotifCategoryComments,
+	"epic.comment":                 NotifCategoryComments,
+	"sprint.comment":               NotifCategoryComments,
 
 	"task.mention":      NotifCategoryMentions,
 	"comment.mention":   NotifCategoryMentions,
@@ -206,8 +207,9 @@ var EventTypeToCategory = map[string]string{
 	"sprint.mention":    NotifCategoryMentions,
 	"doc.mention":       NotifCategoryMentions,
 
-	"support_conversation.customer_reply": NotifCategorySupportReplies,
-	"support_conversation.mentioned":      NotifCategorySupportMentions,
+	"support_conversation.customer_reply":        NotifCategorySupportReplies,
+	"support_conversation.linked_task_completed": NotifCategorySupportReplies,
+	"support_conversation.mentioned":             NotifCategorySupportMentions,
 
 	"epic.created":      NotifCategorySubscriptions,
 	"epic.updated":      NotifCategorySubscriptions,

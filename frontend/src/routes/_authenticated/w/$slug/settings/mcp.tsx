@@ -7,6 +7,7 @@ type LegacyMCPSettingsSearch = {
   external_mcp_oauth?: 'connected' | 'failed';
   external_mcp_server_id?: string;
   external_mcp_resume?: 'failed';
+  external_mcp_popup?: '1';
 };
 
 function optionalString(value: unknown) {
@@ -20,6 +21,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/mcp')({
       ? search.external_mcp_oauth
       : undefined,
     external_mcp_server_id: optionalString(search.external_mcp_server_id),
+    external_mcp_popup: search.external_mcp_popup === '1' ? '1' : undefined,
     external_mcp_resume: search.external_mcp_resume === 'failed' ? 'failed' : undefined,
   }),
   component: MCPSettingsRoute,
@@ -32,12 +34,14 @@ function MCPSettingsRoute() {
   if (search.tab === 'external') {
     return (
       <Navigate
-        to="/w/$slug/settings/external-mcp"
+        to="/w/$slug/settings/external-tools"
         params={{ slug }}
         search={{
+          tab: 'mcp',
           external_mcp_oauth: search.external_mcp_oauth,
           external_mcp_server_id: search.external_mcp_server_id,
           external_mcp_resume: search.external_mcp_resume,
+          external_mcp_popup: search.external_mcp_popup,
         }}
         replace
       />

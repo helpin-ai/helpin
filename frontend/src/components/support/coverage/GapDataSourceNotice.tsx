@@ -13,7 +13,7 @@ export function GapDataSourceNotice({ gap, wsSlug }: { gap: SupportCoverageGapDe
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/50 px-5 py-3 text-sm sm:px-7">
       <span className="text-muted-foreground">{coverageDiagnosis(gap)}</span>
       <QuietTextAction asChild className="underline underline-offset-4">
-        <Link to="/w/$slug/settings/external-mcp" params={{ slug: wsSlug }}>Connect a tool</Link>
+        <Link to="/w/$slug/settings/external-tools" params={{ slug: wsSlug }} search={{ tab: 'mcp' }}>Connect a tool</Link>
       </QuietTextAction>
     </div>
   );

@@ -21,7 +21,8 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { SETTINGS_ROUTE_SECTIONS } from '@/lib/settingsSections';
+import { getSettingsSidebarGroups } from '@/lib/settingsSections';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import {
   searchService,
   type SearchResponse,
@@ -50,6 +51,8 @@ export function SearchCommandPalette({
 }) {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const { data: access } = useWorkspaceAccess(workspace?.id ?? '');
+  const permissions = usePermissions(access);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResponse>(EMPTY);
   const [searching, setSearching] = useState(false);
@@ -108,9 +111,9 @@ export function SearchCommandPalette({
     { label: 'Docs', icon: File01Icon, path: `/w/${slug}/docs` },
   ];
 
-  const settingsNavItems = SETTINGS_ROUTE_SECTIONS.filter(
-    (s) => s.sidebar !== false,
-  ).map((s) => ({
+  const settingsNavItems = getSettingsSidebarGroups(
+    permissions.canManageSettings, permissions.permissionSet, permissions.modules,
+  ).flatMap(group => group.sections).map((s) => ({
     label: s.label,
     icon: s.icon,
     path: `/w/${slug}/settings/${s.id}`,

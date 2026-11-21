@@ -431,6 +431,9 @@ export const supportService = {
   sendViewingPresence: (workspaceId: string, conversationId: string, viewing: boolean) =>
     api.post(`/support/inbox/conversations/${conversationId}/viewing${qs(workspaceId)}`, { viewing }),
 
+  getMessageSlackSource: (workspaceId: string, messageId: string) =>
+    api.get<{ permalink: string }>(`/support/inbox/messages/${messageId}/slack-source${qs(workspaceId)}`),
+
   // Email details for an individual message (only when via_channel === 'email').
   getMessageEmailDetail: (workspaceId: string, messageId: string) =>
     api.get<SupportMessageEmailDetail>(`/support/inbox/messages/${messageId}/email${qs(workspaceId)}`),
