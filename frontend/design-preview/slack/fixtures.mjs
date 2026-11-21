@@ -59,6 +59,7 @@ const rows = [
 const conversations = rows.map(([name, subject, source, preview, at], i) => ({
   ...buildConversation([0, 1, 0, 1, 0, 1, 0, 0][i]), id: i ? 'conversation-' + i : CONVERSATION_ID,
   display_id: 1042 - i, customer_name: name, customer_email: name.split(' ')[0].toLowerCase() + (i ? '@customer.example' : '@acme.example'),
+  anonymous_id: source === 'widget' ? 'visitor-' + i : null,
   provider_destinations: source === 'slack' ? [{ provider: source, id: i ? 'conversation-' + i : CONVERSATION_ID, display_id: 1042 - i, name: i ? '#partner-support' : '#acme-support' }] : undefined,
   subject, source, channel: source, flow_state: i % 3 === 0 ? 'assigned_to_human' : 'queued_for_human', human_takeover: true, assigned_user_id: i % 3 === 0 ? 'sam' : undefined, priority: i ? 'medium' : 'high',
   mailbox_id: mailbox.id, mailbox_name: mailbox.name, last_message: preview, list_last_message_preview: preview,

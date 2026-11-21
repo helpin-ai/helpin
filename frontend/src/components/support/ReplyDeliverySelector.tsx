@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { QuietDropdown } from "@/components/design-system/quiet-dropdown";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { ArrowDown01Icon, BubbleChatIcon, Mail01Icon, type IconComponent } from "@/lib/icons";
-import type { SupportReplyDeliveryMode } from "@/lib/pmTypes";
+import type { SupportReplyDeliveryMode, SupportReplyTransport } from "@/lib/pmTypes";
 import { supportChannel } from "@/lib/supportChannels";
 
 function DeliveryIcons({ mode, ChatIcon }: { mode: SupportReplyDeliveryMode; ChatIcon: IconComponent }) {
@@ -47,43 +47,43 @@ export function ReplyDeliverySelector({
   chatUnavailableReason,
   portal = false,
   channel,
-  providers,
+  transports,
   unavailableProvider,
   onOpen,
 }: {
   mode: SupportReplyDeliveryMode;
-  onChange: (mode: SupportReplyDeliveryMode, provider?: string) => void;
+  onChange: (mode: SupportReplyDeliveryMode, transport?: SupportReplyTransport) => void;
   disabled: boolean;
   email: string;
   emailUnavailableReason?: string;
   chatUnavailableReason?: string;
   portal?: boolean;
   channel?: string;
-  providers: string[];
+  transports: SupportReplyTransport[];
   unavailableProvider: boolean;
   onOpen?: () => void;
 }) {
-  const choices: { mode: SupportReplyDeliveryMode; provider?: string }[] = [];
-  const chatProviders = providers.length ? providers : unavailableProvider ? [] : [undefined];
-  for (const provider of chatProviders) {
-    choices.push({ mode: "chat_only", provider }, { mode: "chat_and_email", provider });
+  const choices: { mode: SupportReplyDeliveryMode; transport?: SupportReplyTransport }[] = [];
+  const available = transports.length ? transports : unavailableProvider ? [] : [undefined];
+  for (const transport of available) {
+    choices.push({ mode: "chat_only", transport }, { mode: "chat_and_email", transport });
   }
   choices.push({ mode: "email_only" });
   const options = choices.map(choice => {
-    const spec = supportChannel(choice.provider);
+    const spec = choice.transport === "widget" || choice.transport === "portal" ? undefined : supportChannel(choice.transport);
     const chatName = spec?.label ?? (portal ? "Portal" : "Chat");
     const ChannelIcon = spec?.inbox?.icon ?? BubbleChatIcon;
     const label = choice.mode === "chat_only" ? `${chatName} only` : choice.mode === "chat_and_email" ? `${chatName} + email` : "Email only";
     const reason = choice.mode === "chat_only" ? chatUnavailableReason : choice.mode === "email_only" ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
     return {
-      ...choice, value: choice.provider ? `${choice.provider}-${choice.mode}` : choice.mode,
+      ...choice, value: choice.transport ? `${choice.transport}-${choice.mode}` : choice.mode,
       label, disabled: !!reason, tooltip: reason, chatName, ChannelIcon,
       content: <DeliveryOptionLabel mode={choice.mode} chatName={chatName} ChannelIcon={ChannelIcon} />,
     };
   });
-  const current = options.find(option => option.mode === mode && (mode === "email_only" || option.provider === channel));
+  const current = options.find(option => option.mode === mode && (mode === "email_only" || option.transport === channel));
   const description = current?.tooltip ?? (!current ? 'Choose a delivery channel' : mode === "chat_only"
-    ? channel ? `Sent to the customer in ${current.chatName}.` : portal ? "Visible in the customer portal without an email notification." : "Only visible in the customer’s chat widget."
+    ? channel && channel !== "widget" && channel !== "portal" ? `Sent to the customer in ${current.chatName}.` : portal ? "Visible in the customer portal without an email notification." : "Only visible in the customer’s chat widget."
     : `${current.label} to ${email}.`);
   return (
     <QuietDropdown
@@ -93,7 +93,7 @@ export function ReplyDeliverySelector({
       selected={current ? [current.value] : []}
       onSelect={value => {
         const choice = options.find(option => option.value === value);
-        if (choice) onChange(choice.mode, choice.provider);
+        if (choice) onChange(choice.mode, choice.transport);
       }}
       disabled={disabled}
       contentClassName="w-60"

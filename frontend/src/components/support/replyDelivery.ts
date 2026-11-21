@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { supportChannel } from "@/lib/supportChannels";
 import { useEffect } from "react";
-import type { SupportReplyDeliveryMode } from "@/lib/pmTypes";
+import type { CreateMessageRequest, SupportReplyDeliveryMode } from "@/lib/pmTypes";
 
 export const REPLY_DELIVERY_LABELS: Record<SupportReplyDeliveryMode, string> = {
   chat_only: "Chat only",
@@ -100,6 +100,27 @@ function useDraftValue(key: string) {
   return useDeliveryDrafts((state) => key in state ? state[key] : loadDraftValue(key));
 }
 
+export type ReplyDestination = Pick<CreateMessageRequest, 'reply_transport' | 'provider_origin_id'>;
+
+export function getReplyDestination(metadata?: string): ReplyDestination {
+  try {
+    const { reply_transport, provider_origin_id } = JSON.parse(metadata ?? '{}');
+    if (reply_transport === 'widget' || reply_transport === 'portal') return { reply_transport };
+    if (reply_transport === 'slack' || reply_transport === 'telegram') {
+      return { reply_transport, provider_origin_id };
+    }
+  } catch { /* Older drafts may have no destination. */ }
+  return {};
+}
+
+export function useReplyDestination(workspaceId: string, conversationId: string) {
+  return getReplyDestination(useDraftValue(`${draftKey(workspaceId, conversationId)}:destination`));
+}
+
+export function saveReplyDestination(workspaceId: string, conversationId: string, destination?: ReplyDestination) {
+  saveDraftValue(`${draftKey(workspaceId, conversationId)}:destination`, destination?.reply_transport ? JSON.stringify(destination) : undefined);
+}
+
 function automaticDraftKey(workspaceId: string, conversationId: string) {
   return `${draftKey(workspaceId, conversationId)}:automatic`;
 }
@@ -146,6 +167,7 @@ export function clearAutomaticReplyDelivery(workspaceId: string, conversationId:
 // Call only after a successful send. Failed retries and undo keep their destination.
 export function clearReplyDeliveryDraft(workspaceId: string, conversationId: string) {
   saveDraftValue(manualDraftKey(workspaceId, conversationId));
+  saveReplyDestination(workspaceId, conversationId);
   clearAutomaticReplyDelivery(workspaceId, conversationId);
 }
 

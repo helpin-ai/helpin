@@ -21,6 +21,23 @@ func validateSupportDeliveryMode(req *model.CreateMessageRequest, senderType str
 	if err := validateSupportEmailSubject(req, senderType); err != nil {
 		return err
 	}
+	if req.ReplyTransport != "" {
+		if req.DeliveryMode != model.SupportDeliveryChatOnly && req.DeliveryMode != model.SupportDeliveryChatAndEmail {
+			return fmt.Errorf("a reply destination requires chat delivery")
+		}
+		switch req.ReplyTransport {
+		case "widget", "portal":
+			if req.ProviderOriginID != "" {
+				return fmt.Errorf("a %s reply cannot target a messaging thread", req.ReplyTransport)
+			}
+		case "slack", "telegram":
+			if req.ProviderOriginID == "" {
+				return fmt.Errorf("choose the original channel thread for this reply")
+			}
+		default:
+			return fmt.Errorf("unknown reply destination")
+		}
+	}
 	if req.DeliveryMode == "" {
 		return nil
 	}

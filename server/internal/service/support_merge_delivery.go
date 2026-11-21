@@ -35,22 +35,25 @@ func mergedDeliveryConversation(ctx context.Context, repo *repository.SupportCon
 	return &result, nil
 }
 
-// Offer an explicit thread choice when a merge includes Slack.
+// A widget/provider merge can have a reachable DM even before another inbound message arrives.
 func mergedProviderDestinations(group []model.SupportConversation) []model.SupportProviderDestination {
 	var result []model.SupportProviderDestination
-	hasSlack := false
+	mixedDestination := false
 	for _, c := range group {
+		if c.AnonymizedAt == nil && (c.AnonymousID != nil || model.SupportChannelHasChatSession(c.Source)) {
+			mixedDestination = true
+		}
 		if c.ChannelIdentityID == nil || c.AnonymizedAt != nil {
 			continue
 		}
 		name := derefString(c.CustomerName)
 		if c.Channel == "slack" {
-			hasSlack = true
+			mixedDestination = true
 			name = "#" + derefString(c.ProviderChannelName)
 		}
 		result = append(result, model.SupportProviderDestination{ID: c.ID, Provider: c.Channel, Name: name, DisplayID: c.DisplayID})
 	}
-	if !hasSlack {
+	if !mixedDestination {
 		return nil
 	}
 	return result

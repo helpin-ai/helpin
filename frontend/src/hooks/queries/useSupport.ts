@@ -139,8 +139,8 @@ export function buildOptimisticSupportMessage({
     content: payload.content.trim() || ' ',
     message_type: 'reply',
     is_internal: Boolean(payload.is_internal),
-    via_channel: payload.delivery_mode ? (payload.delivery_mode === 'email_only' ? 'email' : 'widget') : payload.channels?.includes('email') ? 'email' : 'widget',
-    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode, ...(payload.email_subject !== undefined ? { email_subject: payload.email_subject } : {}) }) } : {}),
+    via_channel: payload.delivery_mode ? (payload.delivery_mode === 'email_only' ? 'email' : payload.reply_transport ?? 'widget') : payload.channels?.includes('email') ? 'email' : 'widget',
+    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode, reply_transport: payload.reply_transport, provider_origin_id: payload.provider_origin_id, ...(payload.email_subject !== undefined ? { email_subject: payload.email_subject } : {}) }) } : {}),
     created_at: now,
     updated_at: now,
   };

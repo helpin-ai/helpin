@@ -19,7 +19,7 @@ func (r *SupportMessageRepository) createTeammateJoined(ctx context.Context, rep
 	err := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
 		Where("workspace_id = ? AND conversation_id = ? AND sender_user_id = ? AND sender_type = 'user' AND is_internal = false", reply.WorkspaceID, reply.ConversationID, *reply.SenderUserID).
 		Where("message_type = 'reply' OR system_event_type = ?", model.SystemEventTeammateJoined).
-		Where(supportDeliveryModeSQL(r.db, "support_messages")+" <> 'email_only'").
+		Where(supportChatDeliveryVisibleSQL(r.db, "support_messages")).
 		Limit(1).Pluck("id", &prior).Error
 	if err != nil || len(prior) > 0 {
 		return err

@@ -78,7 +78,7 @@ import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { QuietSelect } from '@/components/design-system/quiet-select';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
-import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
+import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery, saveReplyDestination, useReplyDestination, type ReplyDestination } from './replyDelivery';
 import { hasChatTransport, supportChannel, supportChannelLabel } from '@/lib/supportChannels';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -881,16 +881,21 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 		&& conversation?.channel !== 'internal' && conversation?.source !== 'internal';
 	const hasChatSession = Boolean(conversation?.anonymous_id) || hasChatTransport(conversation?.source) || Boolean(conversation?.merge_has_widget);
 	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
-	// A messaging-app conversation (Telegram), or a merged group holding one,
-	// carries "chat" replies through that app.
-  const [replyOrigin, setReplyOrigin] = useState({ provider: '', id: '' });
+  const draftDestination = useReplyDestination(workspaceId, conversationId);
   const destinations = conversation?.provider_destinations ?? [];
-  const providers = [...new Set(destinations.map(d => d.provider))];
-  const selectedProvider = providers.includes(replyOrigin.provider) ? replyOrigin.provider : providers.length === 1 ? providers[0] : undefined;
-  const threads = selectedProvider ? destinations.filter(d => d.provider === selectedProvider) : destinations;
-  const origin = replyOrigin.id ? threads.find(d => d.id === replyOrigin.id) : threads.length === 1 ? threads[0] : undefined;
-  const originNeeded = destinations.length > 0 && !origin;
-  const providerChannel = selectedProvider ? supportChannelLabel(selectedProvider) : undefined;
+  const transports: NonNullable<ReplyDestination['reply_transport']>[] = [...new Set(destinations.map(d => d.provider))];
+  if (hasChatSession) transports.unshift('widget');
+  else if (!transports.length && portalReplySurface) transports.push('portal');
+  const selectedTransport = draftDestination.reply_transport ?? (transports.length === 1 ? transports[0] : undefined);
+  const selectedProvider = selectedTransport === 'slack' || selectedTransport === 'telegram' ? selectedTransport : undefined;
+  const threads = selectedProvider ? destinations.filter(d => d.provider === selectedProvider) : [];
+  const origin = draftDestination.provider_origin_id
+    ? threads.find(d => d.id === draftDestination.provider_origin_id)
+    : threads.length === 1 ? threads[0] : undefined;
+  const originNeeded = !!selectedProvider && threads.length > 0 && !origin;
+  const destinationUnavailable = !!selectedTransport && !transports.includes(selectedTransport);
+  const needsTransport = !selectedTransport && transports.length > 1;
+  const providerChannel = selectedProvider && !destinationUnavailable ? supportChannelLabel(selectedProvider) : undefined;
   const providerConversation = supportChannel(conversation?.channel)?.transport === 'provider' || !!conversation?.merge_has_channel;
   const unavailableProvider = providerConversation && !destinations.length && !hasChatSession && !portalReplySurface;
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
@@ -901,12 +906,15 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     active: !editingNote && !inactive && replyMode !== 'note',
     hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
-  const deliveryMode = hiddenPortalIntake ? 'email_only' : selectedDeliveryMode;
+  const deliveryMode = hiddenPortalIntake && !transports.length ? 'email_only' : selectedDeliveryMode;
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = unavailableProvider ? 'The original messaging channel is unavailable' : conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface && !destinations.length
+  const chatUnavailableReason = unavailableProvider ? 'The original messaging channel is unavailable' : conversation && !hasChatSession && !portalReplySurface && !destinations.length
     ? hiddenPortalIntake ? 'This request is hidden from the portal; reply by email' : 'No chat session available' : undefined;
-  const deliveryUnavailableReason = originNeeded && deliveryMode !== 'email_only' ? 'Choose a thread for this reply' : deliveryMode === 'chat_only' ? chatUnavailableReason
-    : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
+  const destinationError = destinationUnavailable ? 'The selected channel is unavailable. Choose another channel.'
+    : needsTransport ? 'Choose a delivery channel' : originNeeded ? 'Choose a thread for this reply' : chatUnavailableReason;
+  const deliveryUnavailableReason = deliveryMode === 'email_only' ? emailUnavailableReason
+    : destinationError || (deliveryMode === 'chat_and_email' ? emailUnavailableReason : undefined);
+  const widgetTyping = hasChatSession && selectedTransport === 'widget' && deliveryMode !== 'email_only';
   const sendsEmail = deliveryMode !== 'chat_only';
   const deliveryRecipientEmails = normalizeRecipientEmails([primaryRecipientEmail, ...(conversation?.merge_email_recipients ?? [])]);
   const ccRecipients = normalizeRecipientEmails(conversation?.email_cc ?? [], deliveryRecipientEmails);
@@ -1190,7 +1198,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
   // Typing indicator
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
-    if (!wsSend || !wsConnected || (typing && (isNoteRef.current || inactive || deliveryMode === 'email_only'))) return;
+    if (!wsSend || !wsConnected || (typing && (isNoteRef.current || inactive || !widgetTyping))) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -1209,17 +1217,22 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       conversation_id: conversationId,
       content: typingContent ?? '',
     });
-  }, [conversationId, deliveryMode, wsSend, wsConnected, inactive]);
+  }, [conversationId, widgetTyping, wsSend, wsConnected, inactive]);
 
   useEffect(() => {
-    if (inactive || isNote || deliveryMode === 'email_only') sendTyping(false);
-  }, [deliveryMode, inactive, isNote, sendTyping]);
+    if (inactive || isNote || !widgetTyping) sendTyping(false);
+  }, [widgetTyping, inactive, isNote, sendTyping]);
 
   const handleTyping = useCallback((typingContent: string) => {
+    if (!isNoteRef.current && !inactive && deliveryMode !== 'email_only' && selectedTransport &&
+        !draftDestination.reply_transport && (!selectedProvider || origin)) {
+      saveReplyDestination(workspaceId, conversationId, { reply_transport: selectedTransport, provider_origin_id: origin?.id });
+    }
+    if (!widgetTyping) return;
     sendTyping(true, typingContent);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => sendTyping(false), 5000);
-  }, [sendTyping]);
+  }, [conversationId, deliveryMode, draftDestination.reply_transport, inactive, origin, selectedProvider, selectedTransport, sendTyping, widgetTyping, workspaceId]);
 
   // Clean up typing indicator on unmount or conversation change
   useEffect(() => {
@@ -1621,6 +1634,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         markdown?: string;
         attachments?: SupportAttachmentPayload[];
         deliveryMode?: SupportReplyDeliveryMode;
+        destination?: ReplyDestination;
       }>).detail;
       if (detail?.conversationId !== conversationId) return;
       if (detail.pendingSend && (getEditorMarkdown(editor).trim() || pendingAttachments.length>0)) return;
@@ -1632,6 +1646,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       }
       sendTyping(false);
       setReplyMode('reply');
+      saveReplyDestination(workspaceId, conversationId, detail.destination);
       restoreReplyDelivery(workspaceId, conversationId, isReplyDeliveryMode(detail.deliveryMode) ? detail.deliveryMode : undefined);
       setDraft(conversationId, markdown);
       setDraftHasContent(!!markdown.trim());
@@ -1704,10 +1719,15 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
     // Freeze the submitted intent in the shared draft so a presence update in
     // either mounted composer cannot change the destination of a failed retry.
+    const destination: ReplyDestination = deliveryMode === 'email_only' ? {} : {
+      reply_transport: selectedTransport,
+      ...(origin ? { provider_origin_id: origin.id } : {}),
+    };
     if (!isInternal) {
+      saveReplyDestination(workspaceId, conversationId, destination);
       restoreReplyDelivery(workspaceId, conversationId, deliveryMode);
     }
-    const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, origin?.id, normalizedCC]);
+    const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, selectedTransport, origin?.id, normalizedCC]);
     if (translatedSendRef.current?.fingerprint !== fingerprint) translatedSendRef.current = { fingerprint, id: crypto.randomUUID() };
     const translating = !sendOriginal && !isInternal && outgoingTranslation.enabled && !!markdown;
     if (translating) editor.setEditable(false);
@@ -1722,7 +1742,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         ...(!isInternal ? { client_message_id: translatedSendRef.current!.id, ...(sendOriginal ? { send_original: true } : {}) } : {}),
         is_internal: isInternal,
         ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
-        ...(!isInternal ? { delivery_mode: deliveryMode, ...(origin && deliveryMode !== 'email_only' ? { provider_origin_id: origin.id } : {}), channels: replyDeliveryChannels(deliveryMode) } : {}),
+        ...(!isInternal ? { delivery_mode: deliveryMode, ...destination, channels: replyDeliveryChannels(deliveryMode) } : {}),
         ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
         ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
       });
@@ -1753,7 +1773,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       setPendingMacro(null);
       if (macroTextPresent(sentText, macro.marker)) void runMacro(macro.shortcut);
     }
-  }, [runMacro, setPendingMacro, editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, origin, pendingAttachments, workspaceId, sendMutation, sendTyping]);
+  }, [runMacro, setPendingMacro, editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, selectedTransport, origin, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async (sendOriginal = false) => {
     if (inactive || !editor || !editor.isEditable || attachmentsPending || updateNoteMutation.isPending) return;
@@ -1987,7 +2007,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
                     value={origin?.id ?? ''}
                     onChange={id => {
                       const thread = destinations.find(d => d.id === id);
-                      if (thread) setReplyOrigin({ provider: thread.provider, id });
+                      if (thread) saveReplyDestination(workspaceId, conversationId, { reply_transport: thread.provider, provider_origin_id: id });
                     }}
                     options={threads.map(d => ({ value: d.id, label: `${!selectedProvider ? supportChannelLabel(d.provider) + ' · ' : ''}${d.name || 'Direct message'} · Conversation ${d.display_id}` }))}
                   />
@@ -2522,11 +2542,12 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
           <div className="inline-flex shrink-0 items-center">
             {!isNote && <ReplyDeliverySelector
               mode={deliveryMode}
-              onChange={(mode, provider) => {
-                if (provider && provider !== selectedProvider) {
-                  const choices = destinations.filter(d => d.provider === provider);
-                  setReplyOrigin({ provider, id: choices.length === 1 ? choices[0].id : '' });
-                }
+              onChange={(mode, transport) => {
+                const choices = destinations.filter(d => d.provider === transport);
+                saveReplyDestination(workspaceId, conversationId, {
+                  reply_transport: transport,
+                  provider_origin_id: transport === selectedProvider && origin ? origin.id : choices.length === 1 ? choices[0].id : undefined,
+                });
                 selectDeliveryMode(mode);
               }}
               disabled={isRewriting || sendMutation.isPending}
@@ -2534,8 +2555,8 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
               portal={portalReplySurface && !hasChatSession}
-              channel={selectedProvider}
-              providers={providers}
+              channel={selectedTransport}
+              transports={transports}
               unavailableProvider={unavailableProvider}
               onOpen={providerConversation || destinations.length ? () => { void refreshConversation(); } : undefined}
             />}

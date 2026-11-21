@@ -1,6 +1,6 @@
 import type { SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { isExternalSupportEmailReply, type SupportReceiptStatus } from './helpers';
-import { getReplyDeliveryMode } from './replyDelivery';
+import { getReplyDestination, getReplyDeliveryMode } from './replyDelivery';
 import { hasChatTransport } from '@/lib/supportChannels';
 
 export type DeliveryState = 'sent' | 'delivered' | 'read' | 'queued' | 'sending' | 'failed' | 'unknown' | 'external';
@@ -77,9 +77,12 @@ export function getMessageDelivery(
     hasChatTransport(source) || hasChatTransport(message.via_channel) || receiptStatus === 'read' || receiptStatus === 'sent' || receiptStatus === 'delivered'
   );
   const channels: ChannelDelivery[] = [];
+  const transport = getReplyDestination(message.metadata).reply_transport;
   if (message.channel_delivery) {
     const provider = message.channel_delivery.provider ?? message.via_channel ?? source;
     channels.push(providerDelivery(message.channel_delivery, provider === 'slack' ? 'slack' : 'telegram'));
+  } else if (transport === 'slack' || transport === 'telegram') {
+    channels.push(providerDelivery({ status: 'sending', retryable: false }, transport));
   } else if (hasChat) {
     const seen = receiptStatus === 'read' || (hasChatTransport(source) && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
     // Persisted in the conversation means sent; only a visitor read cursor confirms seen.

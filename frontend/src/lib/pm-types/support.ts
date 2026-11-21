@@ -44,7 +44,7 @@ export interface SupportConversation {
   /** A merged member came from a messaging app, including disconnected accounts. */
   merge_has_channel?: boolean;
   /** Live messaging destinations for this conversation, checked against its account and Support route. */
-  provider_destinations?: { id: string; provider: string; name: string; display_id: number }[];
+  provider_destinations?: { id: string; provider: 'slack' | 'telegram'; name: string; display_id: number }[];
   /** The connected bot's handle, for Telegram conversations. */
   channel_handle?: string;
   provider_channel_name?: string;
@@ -1261,6 +1261,7 @@ export interface CreateConversationRequest {
   source?: TicketSource;
 }
 
+export type SupportReplyTransport = 'widget' | 'portal' | 'slack' | 'telegram';
 export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
 
 export interface CreateMessageRequest {
@@ -1272,6 +1273,7 @@ export interface CreateMessageRequest {
   client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
+  reply_transport?: SupportReplyTransport;
   provider_origin_id?: string;
   delivery_mode?: SupportReplyDeliveryMode;
   email_subject?: string;

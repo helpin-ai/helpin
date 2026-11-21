@@ -54,6 +54,8 @@ func TestPublicWidgetMessagesRejectPrivateAndRoutingMessages(t *testing.T) {
 	input := []SupportMessage{
 		{ID: "public", Content: "Hello"}, {ID: "note", IsInternal: true, Content: "Private note"},
 		{ID: "email", Metadata: `{"delivery_mode":"email_only"}`},
+		{ID: "slack", Metadata: `{"delivery_mode":"chat_only","reply_transport":"slack"}`},
+		{ID: "telegram", Metadata: `{"delivery_mode":"chat_and_email","reply_transport":"telegram"}`},
 		{ID: "routing", SystemEventType: &assigned}, {ID: "unknown", SystemEventType: &unknown},
 		{ID: "delayed", SystemEventType: &delayed, MessageType: "system"},
 	}

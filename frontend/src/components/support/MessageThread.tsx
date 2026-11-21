@@ -8,7 +8,7 @@ import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
 import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
 import { LiveTranslateBar } from './LiveTranslateBar';
 import { SupportCreateTaskModal } from './SupportCreateTaskModal';
-import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
+import { getReplyDestination, getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { useCallback, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -496,7 +496,7 @@ export function MessageThread({
       const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
       if (result.markdown) {
         window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [], deliveryMode: getReplyDeliveryMode(latest.metadata), emailSubject: getReplyEmailSubject(latest.metadata) },
+          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [], deliveryMode: getReplyDeliveryMode(latest.metadata), destination: getReplyDestination(latest.metadata), emailSubject: getReplyEmailSubject(latest.metadata) },
         }));
       }
     };

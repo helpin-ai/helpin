@@ -195,7 +195,7 @@ func TestSlackMergedThreadAndTaskHandoffPostgres(t *testing.T) {
 		t.Helper()
 		msg := model.SupportMessage{WorkspaceID: f.workspace, ConversationID: root, MessageType: "reply", SenderType: "user", Content: "Public reply", Metadata: "{}"}
 		if origin != "" {
-			msg.Metadata = fmt.Sprintf(`{"provider_origin_id":%q}`, origin)
+			msg.Metadata = fmt.Sprintf(`{"reply_transport":"slack","delivery_mode":"chat_and_email","provider_origin_id":%q}`, origin)
 		}
 		if err := f.db.Create(&msg).Error; err != nil {
 			t.Fatal(err)

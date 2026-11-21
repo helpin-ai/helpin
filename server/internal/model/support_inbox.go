@@ -1072,6 +1072,7 @@ type CreateMessageRequest struct {
 	AttachmentIDs             []string `json:"attachment_ids,omitempty"`
 	Channels                  []string `json:"channels,omitempty"`
 	ProviderOriginID          string   `json:"provider_origin_id,omitempty"`
+	ReplyTransport            string   `json:"reply_transport,omitempty"`
 	DeliveryMode              string   `json:"delivery_mode,omitempty"`
 	EmailSubject              *string  `json:"email_subject,omitempty"`
 	CCEmails                  []string `json:"cc_emails,omitempty"`

@@ -22,6 +22,7 @@ export function PendingSendStatus({ message }: { message: SupportMessage }) {
       markdown: message.content,
       attachments: message.attachments || [],
       deliveryMode: message.pending_request?.delivery_mode,
+      destination: { reply_transport: message.pending_request?.reply_transport, provider_origin_id: message.pending_request?.provider_origin_id },
       pendingSend: true,
       restored: false,
     };
