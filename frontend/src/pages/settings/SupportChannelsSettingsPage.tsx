@@ -19,7 +19,7 @@ export function SupportChannelsSettingsPage() {
   )
 }
 
-export function WorkspaceChannelSettings({
+function WorkspaceChannelSettings({
   slug,
   manageSlack,
   manageSupport,
