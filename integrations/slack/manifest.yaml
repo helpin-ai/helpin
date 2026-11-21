@@ -20,7 +20,7 @@ features:
       description: Link this thread to a Helpin task.
 oauth_config:
   redirect_urls:
-    - https://helpin.example.com/oauth/slack/callback
+    - https://app.helpin.ai/oauth/slack/callback
   scopes:
     bot:
       - app_mentions:read
@@ -35,7 +35,7 @@ oauth_config:
       - commands
 settings:
   event_subscriptions:
-    request_url: https://helpin.example.com/api/slack/events
+    request_url: https://api.helpin.ai/api/slack/events
     bot_events:
       - app_mention
       - message.channels
@@ -44,4 +44,4 @@ settings:
       - app_uninstalled
   interactivity:
     is_enabled: true
-    request_url: https://helpin.example.com/api/slack/actions
+    request_url: https://api.helpin.ai/api/slack/actions

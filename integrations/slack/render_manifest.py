@@ -36,5 +36,5 @@ if args.bootstrap:
 else:
     app = https_url(args.app_origin, False)
     api = https_url(args.api_base or app + "/api", True)
-    print(template.replace("https://helpin.example.com/api/", api + "/")
-          .replace("https://helpin.example.com/oauth/", app + "/oauth/"), end="")
+    print(template.replace("https://api.helpin.ai/api/", api + "/")
+          .replace("https://app.helpin.ai/oauth/", app + "/oauth/"), end="")
