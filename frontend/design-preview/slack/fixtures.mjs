@@ -43,7 +43,7 @@ const thread = [
 const messages = thread.map(([at, name, content], i) => ({
   id: 'message-' + i, workspace_id: ws, conversation_id: CONVERSATION_ID, sender_type: i % 2 ? 'user' : 'customer',
   sender_display_name: name, sender_user_id: i % 2 ? 'sam' : undefined, content, is_internal: false,
-  via_channel: 'slack', channel_delivery: i % 2 ? { provider: 'slack', status: 'sent', retryable: false } : null,
+  message_type: 'reply', via_channel: 'slack', channel_delivery: i % 2 ? { provider: 'slack', status: 'sent', retryable: false } : null,
   created_at: time(at), updated_at: time(at),
 }))
 const rows = [
@@ -88,6 +88,8 @@ const fixtures = new Map(Object.entries({
   [inbox + '/attachments/policy']: { max_bytes: 10485760, content_types: ['image/png', 'application/pdf'] },
   [inbox + '/installations']: SUPPORT_INSTALLATION, [inbox + '/mailboxes/scopes']: { shared_inbox: sharedInbox, mailboxes: [mailbox] },
   [inbox + '/unread-stats']: counts, [inbox + '/conversations']: { ...paged(conversations), meta: { unread: counts } },
+  [inbox + '/messages/message-0/slack-source']: { permalink: 'https://northstar-example.slack.com/archives/CACME/p1795168920000001' },
+  [inbox + '/messages/message-2/slack-source']: { permalink: 'https://northstar-example.slack.com/archives/CACME/p1795169280000002?thread_ts=1795168920.000001&cid=CACME' },
   [conversation + '/visitor-context']: {
     device: null, location: null, contact: { id: 'lena', name: 'Lena Park', email: 'lena@acme.example', job_title: 'Operations lead', lifecycle_stage: 'customer', source: 'slack' },
     company: { id: 'acme', display_id: 'ACME', name: 'Acme', domain: 'acme.example', custom_properties: {}, updated_at: now }, company_context_status: 'ok',

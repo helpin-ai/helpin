@@ -2,7 +2,7 @@
 import { mkdir, stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '@playwright/test'
+import { chromium, expect } from '@playwright/test'
 import { CONVERSATION_ID, installSupportAppMocks } from '../../e2e/support/fixtures/supportE2E.ts'
 import { now, responseFor, taskId, workspace } from './fixtures.mjs'
 
@@ -68,7 +68,20 @@ try {
     await page.locator('[contenteditable="true"].tiptap').fill('Lena, we found the issue with FALL20. The fix is in review. I’ll let you know as soon as it’s live.')
     await page.locator('[data-support-delivery-notice]').getByText('#acme-support', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Send to #acme-support', exact: true }).waitFor()
+    const sources = page.getByRole('link', { name: /Received from Slack/ })
+    await expect(sources).toHaveCount(2)
+    const replySource = sources.last()
+    const replyURL = responseFor('/api/support/inbox/messages/message-2/slack-source').permalink
+    await expect(replySource).toHaveAttribute('href', replyURL)
     await shot('inbox')
+    const incoming = page.locator('[data-slot="support-message-bubble"]').filter({ hasText: 'Two orders so far' })
+    await incoming.screenshot({ path: resolve(output, 'incoming-detail.png'), animations: 'disabled' })
+    await page.context().route('https://northstar-example.slack.com/**', route => route.fulfill({ body: 'Fixture message' }))
+    const [sourceTab] = await Promise.all([page.waitForEvent('popup'), replySource.click()])
+    await expect(sourceTab).toHaveURL(replyURL)
+    await sourceTab.close()
+    await expect(page.locator('[contenteditable="true"].tiptap')).toContainText('The fix is in review.')
+    await page.mouse.move(0, 0)
     await page.locator('[data-support-reply-composer]').screenshot({ path: resolve(output, 'composer-detail.png'), animations: 'disabled' })
     await go('pm/tasks/' + taskId)
     await page.getByText('#payments', { exact: true }).waitFor()

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/channels"
 	"github.com/helpin-ai/helpin/server/internal/channels/slack"
@@ -369,5 +370,70 @@ func TestSlackTaskReviewOptionsPostgres(t *testing.T) {
 	}
 	if !foundLabel || !foundState {
 		t.Fatalf("missing team review fields: labels=%v status=%v", foundLabel, foundState)
+	}
+}
+
+func TestSlackMessageSourcePostgres(t *testing.T) {
+	f := newOutboxFixture(t)
+	ctx := context.Background()
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", f.account.ID)
+	f.account.Provider = "slack"
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
+	const permalink = "https://acme.slack.com/archives/C1/p1700000010000012?thread_ts=1700000000.000001&cid=C1"
+	calls := 0
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodGet || r.URL.Path != "/chat.getPermalink" || r.URL.Query().Get("channel") != "C1" || r.URL.Query().Get("message_ts") != "1700000010.000012" || r.Header.Get("Authorization") != "Bearer 424242:token" {
+			t.Error("permalink request lost the original message coordinates or installation")
+		}
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "permalink": permalink})
+	}))
+	defer fake.Close()
+	s.api.BaseURL = fake.URL + "/"
+	event := channels.Event{Kind: channels.EventMessage, ExternalUserID: "Ulena", ExternalChatID: "C1",
+		ExternalMessageKey: "C1:1700000000.000001", ThreadKey: "C1:1700000000.000001", ChannelName: "acme", Text: "First example"}
+	first, err := f.inbox.receiveChannelMessage(ctx, f.account, event, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := first.message.ConversationID
+	outbound := f.reply(t, origin, "user", "Customer update")
+	_, err = repository.NewSupportMergeRepository(f.db).Merge(ctx, f.workspace, f.conv, []string{origin}, f.userID, uuid.NewString(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.ExternalMessageKey, event.Text = "C1:1700000010.000012", "A second example"
+	received, err := f.inbox.receiveChannelMessage(ctx, f.account, event, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := received.message
+	if msg.ConversationID != f.conv || derefString(msg.OriginConversationID) != origin {
+		t.Fatal("reply was not routed through the merged conversation")
+	}
+	actor := &authorization.Actor{WorkspaceID: f.workspace, WorkspaceMemberID: f.userID, UserID: f.userID, Role: "member"}
+	member := authorization.WithActor(ctx, actor)
+	check := func(c context.Context, ws, id, want string) {
+		t.Helper()
+		actual, err := s.MessageSource(c, ws, id)
+		if err != nil || actual != want {
+			t.Fatalf("got %q, want %q: %v", actual, want, err)
+		}
+	}
+	check(member, f.workspace, msg.ID, permalink)
+	check(ctx, f.workspace, msg.ID, "")
+	check(member, f.userID, msg.ID, "")
+	check(member, f.workspace, outbound.ID, "")
+	private := model.SupportMailbox{WorkspaceID: f.workspace, Name: "Private", Handle: "private", CreatedByID: f.userID, Active: true}
+	if err := f.db.Create(&private).Error; err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", private.ID, f.conv)
+	check(member, f.workspace, msg.ID, "")
+	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", f.conv)
+	mustExec(t, f.db, "UPDATE support_conversations SET anonymized_at=now() WHERE id=?", origin)
+	check(member, f.workspace, msg.ID, "")
+	if calls != 1 {
+		t.Fatalf("looked up inaccessible sources: %d provider calls", calls)
 	}
 }

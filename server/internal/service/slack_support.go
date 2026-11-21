@@ -198,3 +198,42 @@ func (s *SlackService) SetAI(ctx context.Context, ws string, enabled bool) error
 	}
 	return s.channels.accounts.Update(ctx, ws, a.ID, map[string]any{"ai_replies_disabled": !enabled})
 }
+
+// MessageSource resolves the original inbound message, including when displayed in a merged inbox thread.
+func (s *SlackService) MessageSource(ctx context.Context, workspaceID, messageID string) (string, error) {
+	actor := supportActorFromContext(ctx, workspaceID)
+	if actor == nil || actor.WorkspaceMemberID == "" {
+		return "", nil
+	}
+	inbox := s.channels.inbox
+	msg, err := inbox.messageRepo.GetByID(ctx, messageID)
+	if err != nil || msg == nil || msg.WorkspaceID != workspaceID {
+		return "", err
+	}
+	if msg.SenderType != "customer" || msg.IsInternal || msg.MessageType != "reply" || derefString(msg.ViaChannel) != "slack" || msg.ChannelAccountID == nil {
+		return "", nil
+	}
+	channel, ts, ok := strings.Cut(derefString(msg.ExternalMessageKey), ":")
+	if !ok || channel == "" || ts == "" {
+		return "", nil
+	}
+	conv, err := inbox.loadConversationAccessible(ctx, workspaceID, msg.ConversationID)
+	if err != nil || conv == nil || conv.AnonymizedAt != nil {
+		return "", err
+	}
+	if origin := derefString(msg.OriginConversationID); origin != "" && origin != conv.ID {
+		original, err := inbox.loadConversationUnscoped(ctx, workspaceID, origin)
+		if err != nil || original == nil || original.AnonymizedAt != nil {
+			return "", err
+		}
+	}
+	account, err := s.repo.Installation(ctx, workspaceID)
+	if err != nil || account == nil || account.ID != *msg.ChannelAccountID || account.Status != model.SupportChannelAccountActive {
+		return "", err
+	}
+	token, err := s.channels.decryptToken(account)
+	if err != nil {
+		return "", err
+	}
+	return s.api.MessagePermalink(ctx, token, channel, ts)
+}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -112,4 +113,32 @@ func (c *Client) Get(ctx context.Context, token, method string, v url.Values, ou
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	return c.do(req, out)
+}
+
+// MessagePermalink returns Slack's archive link for an individual message, including thread context.
+func (c *Client) MessagePermalink(ctx context.Context, token, channel, ts string) (string, error) {
+	var out struct{ Permalink string }
+	err := c.Get(ctx, token, "chat.getPermalink", url.Values{"channel": {channel}, "message_ts": {ts}}, &out)
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.Code {
+			case "message_not_found", "channel_not_found", "not_in_channel", "team_access_not_granted", "invalid_auth", "token_revoked", "account_inactive":
+				return "", nil
+			}
+		}
+		return "", err
+	}
+	u, err := url.Parse(out.Permalink)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
+		return "", nil
+	}
+	host := u.Hostname()
+	if host != "slack.com" && !strings.HasSuffix(host, ".slack.com") && host != "slack-gov.com" && !strings.HasSuffix(host, ".slack-gov.com") {
+		return "", nil
+	}
+	if u.EscapedPath() != "/archives/"+channel+"/p"+strings.ReplaceAll(ts, ".", "") {
+		return "", nil
+	}
+	return out.Permalink, nil
 }

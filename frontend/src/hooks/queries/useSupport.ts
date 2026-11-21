@@ -1116,6 +1116,18 @@ export function useSendConversationTranscript(workspaceId: string) {
   });
 }
 
+export function useMessageSlackSource(workspaceId: string, messageId: string, visible: boolean) {
+  return useQuery({
+    queryKey: queryKeys.support.messageSlackSource(workspaceId, messageId),
+    queryFn: async () => unwrap(await supportService.getMessageSlackSource(workspaceId, messageId)),
+    enabled: visible && !!workspaceId && !!messageId,
+    staleTime: 30 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useMessageEmailDetail(workspaceId: string, messageId: string | null, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.messageEmail(workspaceId, messageId ?? ''),

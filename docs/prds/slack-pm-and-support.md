@@ -39,7 +39,7 @@ A support-linked Slack thread already has a Helpin conversation. Use its existin
 
 A support-to-task link records the relationship. It gives the support owner a route to the engineering outcome while preserving the two audiences. A customer thread must never receive private task titles, links, comments, or notes through that relationship.
 
-### Proposed customer message source link
+### Customer message source link
 
 Use the inbound email footer’s position and type size for a single **Received from Slack ↗** link beneath each incoming customer message. Open the exact message in Slack in a new tab so the agent keeps their Helpin draft. For threaded replies and merged conversations, resolve the permalink using the inbound message’s own channel ID and timestamp. Slack checks the agent’s access to the source conversation. When Helpin has no source link, show the same attribution as plain text. [Slack message permalinks](https://docs.slack.dev/reference/methods/chat.getPermalink/)
 

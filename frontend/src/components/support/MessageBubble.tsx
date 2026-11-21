@@ -8,6 +8,7 @@ import { getSupportAIActivity, getSupportCodeCheck } from './supportAIActivityMo
 import { SupportCodeCheckCard } from './SupportCodeCheckCard';
 import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
+import { SlackMessageSource } from './SlackMessageSource';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
@@ -960,7 +961,8 @@ export const MessageBubble = memo(function MessageBubble({
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';
   const showStandaloneEmailBadge = isCustomer && hasEmailBadge;
-  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge;
+  const showSlackSource = isCustomer && !message.is_internal && message.via_channel === 'slack';
+  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource;
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
@@ -1066,6 +1068,7 @@ export const MessageBubble = memo(function MessageBubble({
           {message.pending_send && <PendingSendStatus message={message}/>}
           {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
             <div className="mt-0.5">
+              {showSlackSource && <SlackMessageSource workspaceId={message.workspace_id} messageId={message.id} />}
               {showStandaloneEmailBadge && (
                 <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
                   <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>
