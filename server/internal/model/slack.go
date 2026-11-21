@@ -2,13 +2,14 @@ package model
 
 // SlackRoute maps an opted-in Slack channel to its Helpin destination.
 type SlackRoute struct {
-	AccountID   string  `json:"-" gorm:"primaryKey"`
-	ChannelID   string  `json:"channel_id" gorm:"primaryKey"`
-	ChannelName string  `json:"channel_name"`
-	Purpose     string  `json:"purpose"`
-	MailboxID   *string `json:"mailbox_id"`
-	TeamID      *string `json:"team_id"`
-	EpicID      *string `json:"epic_id"`
+	AccountID        string  `json:"-" gorm:"primaryKey"`
+	ChannelID        string  `json:"channel_id" gorm:"primaryKey"`
+	CurrentChannelID string  `json:"-" gorm:"->;-:migration"`
+	ChannelName      string  `json:"channel_name"`
+	Purpose          string  `json:"purpose"`
+	MailboxID        *string `json:"mailbox_id"`
+	TeamID           *string `json:"team_id"`
+	EpicID           *string `json:"epic_id"`
 }
 
 func (SlackRoute) TableName() string { return "slack_channel_routes" }

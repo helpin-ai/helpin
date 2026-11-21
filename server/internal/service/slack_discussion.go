@@ -137,7 +137,7 @@ func (s *SlackService) deliverDiscussion(ctx context.Context, j *model.SupportIn
 	if err != nil {
 		return err
 	}
-	ok, err := s.audienceCanRead(ctx, a, token, p.Channel, task)
+	ok, err := s.audienceCanRead(ctx, a, token, route.CurrentChannelID, task)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (s *SlackService) deliverDiscussion(ctx context.Context, j *model.SupportIn
 	if task.State != nil {
 		label += " · " + task.State.Name
 	}
-	post := map[string]any{"channel": p.Channel, "text": label, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false}
+	post := map[string]any{"channel": route.CurrentChannelID, "text": label, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false}
 	if p.Comment != "" {
 		comment, err := s.comments.Get(ctx, p.Comment)
 		if err != nil || comment == nil {
@@ -190,7 +190,7 @@ func (s *SlackService) deliverDiscussion(ctx context.Context, j *model.SupportIn
 		}
 	}
 	if p.Completed && task.Task.Completed {
-		return s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": p.Channel, "thread_ts": p.Root, "text": "Completed: " + task.Task.Name, "mrkdwn": false, "client_msg_id": j.ID}, nil)
+		return s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": route.CurrentChannelID, "thread_ts": p.Root, "text": "Completed: " + task.Task.Name, "mrkdwn": false, "client_msg_id": j.ID}, nil)
 	}
 	return nil
 }
@@ -222,5 +222,5 @@ func (s *SlackService) shareAnswer(ctx context.Context, a *model.SupportChannelA
 	if !allowed {
 		return s.private(ctx, token, m, "Only you can see this answer. Sharing requires a private internal channel where everyone can read the record.\n"+truncate(info, 2500))
 	}
-	return s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Channel, "thread_ts": m.Root(), "text": truncate(info, 2800), "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + m.Channel + m.TS + "share")}, nil)
+	return s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Destination(), "thread_ts": m.Root(), "text": truncate(info, 2800), "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + m.Channel + m.TS + "share")}, nil)
 }

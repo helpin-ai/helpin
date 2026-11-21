@@ -42,7 +42,7 @@ func (s *SlackService) LinkMember(ctx context.Context, workspace, user, raw stri
 }
 
 func (s *SlackService) private(ctx context.Context, token string, m slack.Message, text string, blocks ...any) error {
-	input := map[string]any{"channel": m.Channel, "user": m.User, "thread_ts": m.Root(), "text": text, "mrkdwn": false}
+	input := map[string]any{"channel": m.Destination(), "user": m.User, "thread_ts": m.Root(), "text": text, "mrkdwn": false}
 	if len(blocks) > 0 {
 		input["blocks"] = blocks
 	}
@@ -170,7 +170,7 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 			}
 		}
 		if slackCommand(m.Text) == "share" {
-			allowed, err := s.audienceCanRead(ctx, a, token, m.Channel, task)
+			allowed, err := s.audienceCanRead(ctx, a, token, m.Destination(), task)
 			if err != nil {
 				return err
 			}
@@ -344,7 +344,7 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 		return nil, err
 	}
 	if v.Type == "block_actions" {
-		if v.Actions[0].ID == "draft_task" && thread.Channel != v.Channel.ID {
+		if v.Actions[0].ID == "draft_task" && thread.Channel != v.Channel.ID && route.CurrentChannelID != v.Channel.ID {
 			return nil, ErrChannelInvalid
 		}
 		return map[string]any{}, s.openTask(ctx, token, v, draft, actor, meta)
@@ -499,6 +499,9 @@ func (s *SlackService) openTask(ctx context.Context, token string, v SlackAction
 		blocks = append(blocks, advanced...)
 	} else if draft.TeamID != nil {
 		blocks = append(blocks, slackButtons(map[string]any{"type": "button", "action_id": "draft_more", "text": slackText("More options")}))
+	}
+	if draft.HistoryNotice != "" {
+		blocks = append([]any{map[string]any{"type": "context", "elements": []any{slackText(draft.HistoryNotice)}}}, blocks...)
 	}
 	view := map[string]any{"type": "modal", "callback_id": "helpin_task", "private_metadata": meta, "title": slackText("Review task"), "submit": slackText("Save"), "close": slackText("Cancel"), "blocks": blocks}
 	if v.View.ID != "" {

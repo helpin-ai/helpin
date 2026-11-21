@@ -53,6 +53,9 @@ func (s *SlackService) Settings(ctx context.Context, workspace string) (map[stri
 		return result, err
 	}
 	routes, err := s.repo.Routes(ctx, a.ID)
+	for i := range routes {
+		routes[i].ChannelID = routes[i].CurrentChannelID
+	}
 	result["routes"] = routes
 	result["workspace_name"] = a.DisplayName
 	result["connected"] = true
@@ -206,6 +209,10 @@ func (s *SlackService) Configure(ctx context.Context, workspace string, row mode
 	}
 	if !allowed {
 		return fmt.Errorf("%w: this module is unavailable", ErrChannelInvalid)
+	}
+	row.ChannelID, err = s.repo.CurrentChannelID(ctx, a.ID, row.ChannelID)
+	if err != nil {
+		return err
 	}
 	var info struct{ Channel SlackChannel }
 	if err = s.api.Get(ctx, token, "conversations.info", url.Values{"channel": {row.ChannelID}}, &info); err != nil {

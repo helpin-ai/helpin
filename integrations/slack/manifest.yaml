@@ -40,6 +40,7 @@ settings:
       - app_mention
       - message.channels
       - message.groups
+      - channel_id_changed
       - app_uninstalled
   interactivity:
     is_enabled: true

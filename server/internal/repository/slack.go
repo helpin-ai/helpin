@@ -73,14 +73,22 @@ func (r *SlackRepository) Reactivate(ctx context.Context, a *model.SupportChanne
 // Routes lists the installation's enabled channels.
 func (r *SlackRepository) Routes(ctx context.Context, account string) ([]model.SlackRoute, error) {
 	var rows []model.SlackRoute
-	err := r.db.WithContext(ctx).Where("account_id=?", account).Order("channel_name").Find(&rows).Error
+	err := slackRoutes(r.db.WithContext(ctx), account).Order("r.channel_name").Scan(&rows).Error
 	return rows, err
+}
+
+func slackRoutes(db *gorm.DB, account string) *gorm.DB {
+	return db.Table("slack_channel_routes r").Select("r.*, COALESCE(ids.current_id,r.channel_id) AS current_channel_id").
+		Joins("LEFT JOIN slack_channel_ids ids ON ids.account_id=r.account_id AND ids.channel_id=r.channel_id").
+		Where("r.account_id=?", account)
 }
 
 // Route returns a channel's opt-in record.
 func (r *SlackRepository) Route(ctx context.Context, account, channel string) (*model.SlackRoute, error) {
 	var row model.SlackRoute
-	err := r.db.WithContext(ctx).Where("account_id=? AND channel_id=?", account, channel).Limit(1).Find(&row).Error
+	err := slackRoutes(r.db.WithContext(ctx), account).
+		Where("r.channel_id=COALESCE((SELECT routing_id FROM slack_channel_ids WHERE account_id=? AND channel_id=?),?)", account, channel, channel).
+		Limit(1).Scan(&row).Error
 	if row.AccountID == "" || err != nil {
 		return nil, err
 	}
@@ -89,12 +97,25 @@ func (r *SlackRepository) Route(ctx context.Context, account, channel string) (*
 
 // SetRoute updates the validated destination for one channel.
 func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute) error {
-	return r.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns([]string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"})}).Create(&row).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSlackInstallation(tx, row.AccountID); err != nil {
+			return err
+		}
+		if err := tx.Exec("INSERT INTO slack_channel_ids(account_id,channel_id,routing_id,current_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING", row.AccountID, row.ChannelID, row.ChannelID, row.ChannelID).Error; err != nil {
+			return err
+		}
+		id, err := lookupSlackChannelID(tx, row.AccountID, row.ChannelID)
+		if err != nil {
+			return err
+		}
+		row.ChannelID = id.RoutingID
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns([]string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"})}).Create(&row).Error
+	})
 }
 
 // RemoveRoute disables intake and delivery for a channel.
 func (r *SlackRepository) RemoveRoute(ctx context.Context, account, channel string) error {
-	return r.db.WithContext(ctx).Where("account_id=? AND channel_id=?", account, channel).Delete(&model.SlackRoute{}).Error
+	return r.db.WithContext(ctx).Where("account_id=? AND channel_id=COALESCE((SELECT routing_id FROM slack_channel_ids WHERE account_id=? AND channel_id=?),?)", account, account, channel, channel).Delete(&model.SlackRoute{}).Error
 }
 
 // Member finds a linked Helpin identity, scoped to this Slack installation.

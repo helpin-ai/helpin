@@ -72,7 +72,7 @@ func (s *SlackService) supportCommand(ctx context.Context, a *model.SupportChann
 				return true, err
 			}
 		}
-		return true, s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Channel, "thread_ts": m.Root(), "text": text, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + ":" + m.Channel + ":" + m.TS + ":status")}, nil)
+		return true, s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Destination(), "thread_ts": m.Root(), "text": text, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + ":" + m.Channel + ":" + m.TS + ":status")}, nil)
 	}
 	actor, err := s.linkedActor(ctx, a, m.User)
 	if err != nil {
@@ -171,7 +171,7 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 		return err
 	}
 	if route.Purpose == "pm" && slackCommand(m.Text) == "share" {
-		allowed, err := s.channelAudience(ctx, a, token, m.Channel, func(viewer *authorization.Actor) (bool, error) {
+		allowed, err := s.channelAudience(ctx, a, token, m.Destination(), func(viewer *authorization.Actor) (bool, error) {
 			ok, err := s.authz.CanAccessModule(ctx, viewer, model.ModuleSupport)
 			if err != nil || !ok || !s.authz.Can(viewer, authorization.PermSupportRead) {
 				return false, err
@@ -232,6 +232,10 @@ func (s *SlackService) MessageSource(ctx context.Context, workspaceID, messageID
 		return "", err
 	}
 	token, err := s.channels.decryptToken(account)
+	if err != nil {
+		return "", err
+	}
+	channel, err = s.repo.CurrentChannelID(ctx, account.ID, channel)
 	if err != nil {
 		return "", err
 	}

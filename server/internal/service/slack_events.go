@@ -38,6 +38,12 @@ func (s *SlackService) AcceptEvent(ctx context.Context, stamp, signature string,
 	if env.Event.Type == "app_uninstalled" {
 		return "", s.channels.accounts.Disconnect(ctx, a.WorkspaceID, a.ID, s.channels.now())
 	}
+	if env.Event.Type == "channel_id_changed" {
+		if env.Event.OldChannelID == "" || env.Event.NewChannelID == "" || env.Event.OldChannelID == env.Event.NewChannelID {
+			return "", ErrChannelWebhookInvalid
+		}
+		return "", s.repo.ChangeChannelID(ctx, a.ID, env.Event.OldChannelID, env.Event.NewChannelID)
+	}
 	if !env.Event.HumanMessage() {
 		return "", nil
 	}
@@ -45,6 +51,7 @@ func (s *SlackService) AcceptEvent(ctx context.Context, stamp, signature string,
 	if err != nil || route == nil {
 		return "", err
 	}
+	env.Event.Channel = route.ChannelID
 	subject := model.SupportChannelSubjectKey(a.ID, env.Event.User)
 	data, err := json.Marshal(env.Event)
 	if err != nil {
@@ -73,6 +80,7 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 	if err != nil {
 		return err
 	}
+	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
 	if route.Purpose == "pm" {
 		return s.processPM(ctx, a, token, route, m)
 	}
@@ -113,7 +121,7 @@ func (s *SlackService) receiveSupport(ctx context.Context, a *model.SupportChann
 	}
 	e := channels.Event{Kind: channels.EventMessage, ExternalUserID: m.User, ExternalChatID: m.Channel, ExternalMessageKey: m.Channel + ":" + m.TS, ThreadKey: m.Channel + ":" + m.Root(), ChannelName: route.ChannelName, Text: m.Text, DisplayName: name, Teammate: teammate, ExistingThreadOnly: !explicit && (route.Purpose == "mixed" || teammate)}
 	for _, f := range m.Files {
-		e.Files = append(e.Files, channels.InboundFile{FileID: f.ID, FileName: f.Name, ContentType: f.Mime, Size: f.Size})
+		e.Files = append(e.Files, channels.InboundFile{FileID: f.ID, FileName: firstNonEmptyString(f.Name, "Attachment"), ContentType: f.Mime, Size: f.Size})
 	}
 	a.MailboxID = route.MailboxID
 	receipt, err := s.channels.inbox.receiveChannelMessage(ctx, a, e, 25<<20)
@@ -146,7 +154,7 @@ func (s *SlackService) dispatchSlack(ctx context.Context, a *model.SupportChanne
 	if err != nil {
 		return dispatchOutcome{status: "retry", code: "credentials"}
 	}
-	return s.sendReply(ctx, token, channel, root, msg, row)
+	return s.sendReply(ctx, token, route.CurrentChannelID, root, msg, row)
 }
 
 func slackDeliveryError(err error) dispatchOutcome {

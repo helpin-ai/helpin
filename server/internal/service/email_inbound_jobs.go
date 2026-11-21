@@ -247,7 +247,7 @@ func (s *EmailFallbackService) processInboundAttachmentJob(ctx context.Context, 
 	}
 	return repository.NewSupportAttachmentRepository(s.convRepo.DB()).CompleteInbound(ctx, &model.SupportAttachment{
 		ID: req.AttachmentID, WorkspaceID: req.WorkspaceID, MessageID: &req.MessageID,
-		StorageKey: stored.FileKey, FileSize: stored.FileSize, ContentType: stored.FileType, PublicURL: stored.URL,
+		FileName: stored.FileName, StorageKey: stored.FileKey, FileSize: stored.FileSize, ContentType: stored.FileType, PublicURL: stored.URL,
 	})
 }
 

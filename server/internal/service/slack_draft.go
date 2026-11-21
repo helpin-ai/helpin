@@ -14,11 +14,11 @@ import (
 )
 
 type slackDraft struct {
-	Matches                                []model.PMTriageCandidateView
-	Thread                                 model.SlackThread
-	ConversationID, SourceHash             string
-	Title, Description, TaskType, Priority string
-	TeamID, EpicID                         *string
+	Matches                                   []model.PMTriageCandidateView
+	Thread                                    model.SlackThread
+	ConversationID, SourceHash, HistoryNotice string
+	Title, Description, TaskType, Priority    string
+	TeamID, EpicID                            *string
 }
 
 func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message, actor *authorization.Actor, conv *model.SupportConversation) error {
@@ -71,16 +71,7 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 		_, d.SourceHash = supportPMTriageEvidence(conv, history)
 		d.Title = conv.Subject
 	} else {
-		var data struct{ Messages []slack.Message }
-		err = s.api.Get(ctx, token, "conversations.replies", url.Values{"channel": {m.Channel}, "ts": {m.Root()}, "limit": {"50"}}, &data)
-		if err != nil || len(data.Messages) == 0 {
-			data.Messages = []slack.Message{m}
-		}
-		for _, msg := range data.Messages {
-			if msg.BotID == "" && msg.Text != "" {
-				history = append(history, model.SupportMessage{SenderType: "customer", MessageType: "reply", Content: msg.Text})
-			}
-		}
+		history, d.HistoryNotice = s.draftThreadHistory(ctx, token, m)
 		if len(history) > 0 {
 			d.Title = truncate(history[0].Content, 120)
 		}
@@ -92,7 +83,9 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 			text.WriteByte('\n')
 		}
 	}
-	d.Description = truncate(text.String(), 2800)
+	description := strings.TrimSpace(text.String())
+	d.Description = truncate(description, 2800)
+	manualExcerpt := d.Description != description
 	if !a.AIRepliesDisabled {
 		evidence := conv
 		if evidence == nil {
@@ -101,7 +94,11 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 		generated, err := s.channels.inbox.generateTaskDraftFromConversation(ctx, a.WorkspaceID, evidence, history)
 		if err == nil && generated != nil {
 			d.Title, d.Description, d.TaskType, d.Priority = generated.Title, generated.Description, generated.TaskType, generated.Priority
+			manualExcerpt = false
 		}
+	}
+	if conv == nil && manualExcerpt && d.HistoryNotice == "" {
+		d.HistoryNotice = "The thread was shortened to fit the description. Review it for missing details."
 	}
 	if s.triage != nil && !a.AIRepliesDisabled {
 		var match *model.PMTriageView
@@ -130,6 +127,59 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 		return err
 	}
 	return s.private(ctx, token, m, "Review a task for this thread.", slackButtons(map[string]any{"type": "button", "text": slackText("Review task"), "action_id": "draft_task", "value": id}))
+}
+
+// Bound Slack API calls made by a single review, including on repeated cursors.
+// Always retain the selected message when later parts of a thread are unavailable.
+func (s *SlackService) draftThreadHistory(ctx context.Context, token string, m slack.Message) ([]model.SupportMessage, string) {
+	const maxPages = 4
+	var history []model.SupportMessage
+	seen := map[string]bool{}
+	add := func(msg slack.Message) {
+		if msg.BotID != "" || strings.TrimSpace(msg.Text) == "" || seen[msg.TS] {
+			return
+		}
+		seen[msg.TS] = true
+		history = append(history, model.SupportMessage{SenderType: "customer", MessageType: "reply", Content: msg.Text})
+	}
+	cursor := ""
+	visited := map[string]bool{}
+	for range maxPages {
+		var page struct {
+			Messages []slack.Message
+			More     bool `json:"has_more"`
+			Metadata struct {
+				Next string `json:"next_cursor"`
+			} `json:"response_metadata"`
+		}
+		params := url.Values{"channel": {m.Destination()}, "ts": {m.Root()}, "limit": {"50"}}
+		if cursor != "" {
+			params.Set("cursor", cursor)
+		}
+		if err := s.api.Get(ctx, token, "conversations.replies", params, &page); err != nil {
+			break
+		}
+		for _, msg := range page.Messages {
+			add(msg)
+		}
+		cursor = page.Metadata.Next
+		if cursor == "" && !page.More && len(history) > 0 {
+			add(m)
+			return history, ""
+		}
+		if cursor == "" || visited[cursor] {
+			break
+		}
+		visited[cursor] = true
+	}
+	add(m)
+	if len(history) == 0 {
+		return history, "Slack provided no message text. Add the task details before saving."
+	}
+	if len(history) == 1 && seen[m.TS] {
+		return history, "Draft uses the selected message only. Slack thread history was unavailable."
+	}
+	return history, "Draft uses part of this thread. Review it for missing details."
 }
 
 func selectBlock(id, label string, options []map[string]any, initial string, optional bool) map[string]any {

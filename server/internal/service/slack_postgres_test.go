@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/channels/slack"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 )
 
 func TestSlackSupportThreadIsolationPostgres(t *testing.T) {
@@ -75,6 +77,11 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/conversations.info":
+			if r.URL.Query().Get("channel") != "C2" {
+				t.Error("settings used the old Slack channel ID")
+			}
+			io.WriteString(w, `{"ok":true,"channel":{"id":"C2","name":"acme","is_member":true}}`)
 		case "/oauth.v2.access":
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "access_token": "xoxb-fixture", "bot_user_id": "Ubot", "team": map[string]string{"id": team, "name": "Acme"}})
 		case "/users.info":
@@ -135,12 +142,40 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 		t.Fatalf("missing inbound thread: %v", err)
 	}
 	reply := f.reply(t, conv.ID, "user", "Checkout works again.")
+	accept := func(body string) {
+		t.Helper()
+		mac := hmac.New(sha256.New, []byte("signing"))
+		fmt.Fprintf(mac, "v0:%s:%s", stamp, body)
+		if _, err := s.AcceptEvent(ctx, stamp, "v0="+hex.EncodeToString(mac.Sum(nil)), []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	change := fmt.Sprintf(`{"type":"event_callback","team_id":%q,"event_id":"Ev2","event":{"type":"channel_id_changed","old_channel_id":"C1","new_channel_id":"C2"}}`, team)
+	accept(change)
+	accept(change)
+	s.authz = authorization.NewAuthzService(f.db, slackFixtureMember{f.userID}, nil)
+	owner := authorization.WithActor(ctx, &authorization.Actor{Role: "owner", UserID: f.userID, WorkspaceID: f.workspace})
+	if err := s.Configure(owner, f.workspace, model.SlackRoute{ChannelID: "C1", Purpose: "support"}); err != nil {
+		t.Fatalf("save settings opened before the channel ID change: %v", err)
+	}
+	routes, err := s.repo.Routes(ctx, account.ID)
+	if err != nil || len(routes) != 1 || routes[0].ChannelID != "C1" || routes[0].CurrentChannelID != "C2" {
+		t.Fatalf("settings created a new route for the same channel: %+v %v", routes, err)
+	}
+	accept(fmt.Sprintf(`{"type":"event_callback","team_id":%q,"event_id":"Ev3","event":{"type":"message","channel":"C2","ts":"10.2","thread_ts":"10.1","user":"Ucustomer","text":"Still here"}}`, team))
+	if ok, err := f.svc.processNextJob(ctx, SlackEventJob); err != nil || !ok {
+		t.Fatalf("reply after channel ID change: %v %v", ok, err)
+	}
+	var count int64
+	if err := f.db.Model(&model.SupportMessage{}).Where("conversation_id=? AND content=?", conv.ID, "Still here").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("lost conversation after channel change: %d / %v", count, err)
+	}
 	f.due(t)
 	if _, err = f.svc.ProcessOutbox(ctx); err != nil {
 		t.Fatal(err)
 	}
 	row := f.row(t, reply.ID)
-	if row == nil || row.DispatchStatus != "accepted" || len(sent) != 1 || sent[0]["thread_ts"] != "10.1" || sent[0]["channel"] != "C1" || sent[0]["text"] != "Checkout works again." {
+	if row == nil || row.DispatchStatus != "accepted" || len(sent) != 1 || sent[0]["thread_ts"] != "10.1" || sent[0]["channel"] != "C2" || sent[0]["text"] != "Checkout works again." {
 		t.Fatalf("unexpected delivery: %+v / %+v", row, sent)
 	}
 	if _, err = f.svc.ProcessOutbox(ctx); err != nil || len(sent) != 1 {
@@ -173,6 +208,59 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 		t.Fatalf("restored routing without opt-in: %v", err)
 	}
 
+}
+
+func TestSlackConnectAttachmentPostgres(t *testing.T) {
+	ctx := context.Background()
+	f := newOutboxFixture(t)
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", f.account.ID)
+	f.account.Provider = "slack"
+	const fileData = "Checkout failed at payment"
+	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil || r.Method != http.MethodPut || string(data) != fileData {
+			t.Errorf("unexpected object upload: method=%s bytes=%q err=%v", r.Method, data, err)
+		}
+	}))
+	defer store.Close()
+	attachments := repository.NewSupportAttachmentRepository(f.db)
+	f.inbox.SetAttachmentService(NewSupportAttachmentService(attachments, storage.NewS3Client("key", "secret", "bucket", "us-east-1", store.URL, "")))
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
+	s.api.HTTP.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body string
+		switch r.URL.Path {
+		case "/api/files.info":
+			if r.URL.Query().Get("file") != "F1" {
+				t.Fatal("wrong Slack file")
+			}
+			body = `{"ok":true,"file":{"id":"F1","name":"checkout.txt","mimetype":"text/plain","url_private_download":"https://files.slack.com/private"}}`
+		case "/private":
+			body = fileData
+		default:
+			t.Fatalf("unexpected Slack request: %s", r.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	event := channels.Event{Kind: channels.EventMessage, ExternalUserID: "U1", ExternalChatID: "C1", ExternalMessageKey: "C1:1", ThreadKey: "C1:1", Files: []channels.InboundFile{{FileID: "F1"}}}
+	receipt, err := f.inbox.receiveChannelMessage(ctx, f.account, event, 25<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var job model.SupportInboundJob
+	if err := f.db.Where("message_id=? AND kind=?", receipt.message.ID, SupportInboundKindChannelAttachment).First(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.processAttachmentJob(ctx, &job); err != nil {
+		t.Fatal(err)
+	}
+	messages := []model.SupportMessage{*receipt.message}
+	if err := f.inbox.attachmentService.HydrateMessages(ctx, messages); err != nil {
+		t.Fatal(err)
+	}
+	files := messages[0].Attachments
+	if len(files) != 1 || files[0].FileName != "checkout.txt" || files[0].FileType != "text/plain" || files[0].FileSize != int64(len(fileData)) || files[0].ProcessingStatus != "" || files[0].FileKey == "" {
+		t.Fatalf("inbox file after Slack Connect download: %+v", files)
+	}
 }
 
 func TestSlackMergedThreadAndTaskHandoffPostgres(t *testing.T) {
@@ -236,6 +324,19 @@ func TestSlackMergedThreadAndTaskHandoffPostgres(t *testing.T) {
 	d, err := repo.Discussion(ctx, a.ID, "C2", "1")
 	if err != nil || d.CommentID == "" {
 		t.Fatalf("missing linked discussion: %+v %v", d, err)
+	}
+	if err = repo.ChangeChannelID(ctx, a.ID, "C2", "Cshared"); err != nil {
+		t.Fatal(err)
+	}
+	for _, channel := range []string{"C2", "Cshared"} {
+		route, err := repo.Route(ctx, a.ID, channel)
+		if err != nil || route == nil || route.ChannelID != "C2" || route.CurrentChannelID != "Cshared" {
+			t.Fatalf("lost project channel route for %s: %+v %v", channel, route, err)
+		}
+		linked, err := repo.Discussion(ctx, a.ID, route.ChannelID, "1")
+		if err != nil || linked.TaskID != task.ID || linked.CommentID != d.CommentID {
+			t.Fatalf("lost task discussion after channel ID change: %+v %v", linked, err)
+		}
 	}
 	for _, item := range []struct{ parent, key *string }{{nil, nil}, {&d.CommentID, strPtr("from-slack")}, {&d.CommentID, nil}} {
 		comment := model.PMComment{AuthorID: f.userID, EntityType: "task", EntityID: task.ID, Body: "Test reply", ParentID: item.parent, SlackSourceKey: item.key}
@@ -330,8 +431,10 @@ func TestSlackTaskReviewOptionsPostgres(t *testing.T) {
 	var rendered struct {
 		View struct {
 			Blocks []struct {
-				ID      string `json:"block_id"`
-				Element struct {
+				ID       string `json:"block_id"`
+				Type     string
+				Elements []struct{ Text string }
+				Element  struct {
 					Type    string
 					Options []struct{ Value string }
 				}
@@ -354,11 +457,15 @@ func TestSlackTaskReviewOptionsPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(payload), &action); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.openTask(ctx, "token", action, slackDraft{Title: "Checkout fails", TeamID: &team.ID}, actor, "draft-id"); err != nil {
+	const notice = "Draft uses part of this thread. Review it for missing details."
+	if err := s.openTask(ctx, "token", action, slackDraft{Title: "Checkout fails", TeamID: &team.ID, HistoryNotice: notice}, actor, "draft-id"); err != nil {
 		t.Fatal(err)
 	}
-	var foundLabel, foundState bool
+	var foundLabel, foundState, foundNotice bool
 	for _, block := range rendered.View.Blocks {
+		if block.Type == "context" && len(block.Elements) == 1 && block.Elements[0].Text == notice {
+			foundNotice = true
+		}
 		for _, opt := range block.Element.Options {
 			if block.ID == "labels_"+team.ID && block.Element.Type == "multi_static_select" && opt.Value == label.ID {
 				foundLabel = true
@@ -368,8 +475,8 @@ func TestSlackTaskReviewOptionsPostgres(t *testing.T) {
 			}
 		}
 	}
-	if !foundLabel || !foundState {
-		t.Fatalf("missing team review fields: labels=%v status=%v", foundLabel, foundState)
+	if !foundLabel || !foundState || !foundNotice {
+		t.Fatalf("missing draft review content: labels=%v status=%v history notice=%v", foundLabel, foundState, foundNotice)
 	}
 }
 
@@ -379,11 +486,11 @@ func TestSlackMessageSourcePostgres(t *testing.T) {
 	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", f.account.ID)
 	f.account.Provider = "slack"
 	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
-	const permalink = "https://acme.slack.com/archives/C1/p1700000010000012?thread_ts=1700000000.000001&cid=C1"
+	const permalink = "https://acme.slack.com/archives/Cshared/p1700000010000012?thread_ts=1700000000.000001&cid=Cshared"
 	calls := 0
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.Method != http.MethodGet || r.URL.Path != "/chat.getPermalink" || r.URL.Query().Get("channel") != "C1" || r.URL.Query().Get("message_ts") != "1700000010.000012" || r.Header.Get("Authorization") != "Bearer 424242:token" {
+		if r.Method != http.MethodGet || r.URL.Path != "/chat.getPermalink" || r.URL.Query().Get("channel") != "Cshared" || r.URL.Query().Get("message_ts") != "1700000010.000012" || r.Header.Get("Authorization") != "Bearer 424242:token" {
 			t.Error("permalink request lost the original message coordinates or installation")
 		}
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "permalink": permalink})
@@ -419,6 +526,9 @@ func TestSlackMessageSourcePostgres(t *testing.T) {
 		if err != nil || actual != want {
 			t.Fatalf("got %q, want %q: %v", actual, want, err)
 		}
+	}
+	if err := s.repo.ChangeChannelID(ctx, f.account.ID, "C1", "Cshared"); err != nil {
+		t.Fatal(err)
 	}
 	check(member, f.workspace, msg.ID, permalink)
 	check(ctx, f.workspace, msg.ID, "")

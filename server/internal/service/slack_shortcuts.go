@@ -36,6 +36,7 @@ func (s *SlackService) acceptShortcut(ctx context.Context, v SlackAction) (any, 
 	if err != nil || route == nil {
 		return map[string]any{}, err
 	}
+	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
 	if v.Callback == "link_task" {
 		return s.linkView(ctx, a, v, route, m)
 	}
@@ -66,6 +67,7 @@ func (s *SlackService) shortcutJob(ctx context.Context, job *model.SupportInboun
 	if err != nil {
 		return err
 	}
+	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
 	request := m
 	request.User = payload.Requester
 	if payload.Command == "create_support" {

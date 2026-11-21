@@ -43,16 +43,19 @@ type Envelope struct {
 
 // Message carries the original Slack IDs as strings to preserve timestamp precision.
 type Message struct {
-	Type     string `json:"type"`
-	Subtype  string `json:"subtype"`
-	Channel  string `json:"channel"`
-	User     string `json:"user"`
-	Team     string `json:"team"`
-	BotID    string `json:"bot_id"`
-	TS       string `json:"ts"`
-	ThreadTS string `json:"thread_ts"`
-	Text     string `json:"text"`
-	Files    []File `json:"files"`
+	OldChannelID     string `json:"old_channel_id,omitempty"`
+	NewChannelID     string `json:"new_channel_id,omitempty"`
+	CurrentChannelID string `json:"-"`
+	Type             string `json:"type"`
+	Subtype          string `json:"subtype"`
+	Channel          string `json:"channel"`
+	User             string `json:"user"`
+	Team             string `json:"team"`
+	BotID            string `json:"bot_id"`
+	TS               string `json:"ts"`
+	ThreadTS         string `json:"thread_ts"`
+	Text             string `json:"text"`
+	Files            []File `json:"files"`
 }
 
 // File holds only the metadata required to schedule an authenticated download.
@@ -61,6 +64,14 @@ type File struct {
 	Name string `json:"name"`
 	Mime string `json:"mimetype"`
 	Size int64  `json:"size"`
+}
+
+// Destination is the current Slack API address, even for a job queued before a rename.
+func (m Message) Destination() string {
+	if m.CurrentChannelID != "" {
+		return m.CurrentChannelID
+	}
+	return m.Channel
 }
 
 // Root identifies the conversation independently of the individual sender.

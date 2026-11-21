@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/channels"
+	"github.com/helpin-ai/helpin/server/internal/channels/slack"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -132,29 +133,35 @@ func (s *SupportChannelService) processAttachmentJob(ctx context.Context, job *m
 	}
 	var data []byte
 	if account.Provider == "slack" {
-		data, err = s.slack.api.Download(ctx, token, payload.FileID, 25<<20)
+		var file slack.File
+		file, data, err = s.slack.api.DownloadFile(ctx, token, payload.FileID, 25<<20)
+		payload.FileName = firstNonEmptyString(file.Name, payload.FileName, "Attachment")
+		payload.ContentType = firstNonEmptyString(file.Mime, payload.ContentType)
+		if errors.Is(err, slack.ErrFileTooLarge) {
+			err = rejectSupportAttachment("%s exceeds the %s download limit.", payload.FileName, formatByteLimit(25<<20))
+		}
 	} else {
 		data, err = adapter.DownloadFile(ctx, token, payload.FileID, adapter.Capabilities().MaxDownloadSize)
 	}
-	if err != nil {
-		return err
+	var stored *model.SupportAttachmentPayload
+	if err == nil {
+		stored, err = s.inbox.attachmentService.StoreInboundAttachmentBytes(ctx, supportInboundEmailAttachmentRequest{
+			AttachmentID: payload.AttachmentID, WorkspaceID: payload.WorkspaceID, ConversationID: payload.ConversationID,
+			MessageID: payload.MessageID, FileName: payload.FileName, ContentType: payload.ContentType,
+		}, data)
 	}
-	stored, err := s.inbox.attachmentService.StoreInboundAttachmentBytes(ctx, supportInboundEmailAttachmentRequest{
-		AttachmentID: payload.AttachmentID, WorkspaceID: payload.WorkspaceID, ConversationID: payload.ConversationID,
-		MessageID: payload.MessageID, FileName: payload.FileName, ContentType: payload.ContentType,
-	}, data)
 	if message, rejected := IsSupportAttachmentRejected(err); rejected {
 		// A refused file is refused again on every retry, so finish the job.
 		return s.inbox.conversationRepo.DB().WithContext(ctx).Model(&model.SupportAttachment{}).
 			Where("id = ? AND workspace_id = ? AND is_uploaded = false", payload.AttachmentID, payload.WorkspaceID).
-			Updates(map[string]any{"processing_status": supportAttachmentStatusRejected, "processing_error": message}).Error
+			Updates(map[string]any{"processing_status": supportAttachmentStatusRejected, "processing_error": message, "file_name": payload.FileName}).Error
 	}
 	if err != nil {
 		return err
 	}
 	if err := repository.NewSupportAttachmentRepository(s.inbox.conversationRepo.DB()).CompleteInbound(ctx, &model.SupportAttachment{
 		ID: payload.AttachmentID, WorkspaceID: payload.WorkspaceID, MessageID: &payload.MessageID,
-		StorageKey: stored.FileKey, FileSize: stored.FileSize, ContentType: stored.FileType, PublicURL: stored.URL,
+		FileName: stored.FileName, StorageKey: stored.FileKey, FileSize: stored.FileSize, ContentType: stored.FileType, PublicURL: stored.URL,
 	}); err != nil {
 		return err
 	}

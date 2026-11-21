@@ -221,7 +221,7 @@ func enqueueChannelAttachments(ctx context.Context, tx *gorm.DB, account *model.
 		tooLarge := maxDownload > 0 && file.Size > maxDownload
 		if tooLarge {
 			attachment.ProcessingStatus = supportAttachmentStatusRejected
-			attachment.ProcessingError = fmt.Sprintf("%s is larger than Telegram lets bots download (%s). Ask the customer to send it another way.", file.FileName, formatByteLimit(maxDownload))
+			attachment.ProcessingError = fmt.Sprintf("%s exceeds the %s download limit. Ask the customer to send it another way.", file.FileName, formatByteLimit(maxDownload))
 		}
 		if err := tx.WithContext(ctx).Create(&attachment).Error; err != nil {
 			return err
