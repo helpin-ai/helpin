@@ -9,7 +9,7 @@ A workspace admin connects the Helpin Slack app once and configures each partici
 | Channel purpose | When work starts | Where it goes |
 | --- | --- | --- |
 | Dedicated customer support, including Slack Connect | A customer starts a top-level thread. Further replies and files join that conversation. | The configured Support inbox |
-| Mixed customer and account discussion | A person explicitly asks `@Helpin` for support or chooses **Create support conversation** on a message. | The configured Support inbox |
+| Mixed customer and account discussion | A person explicitly asks `@Helpin` for support or chooses **Create support request** on a message. | The configured Support inbox |
 | Internal project work | A teammate chooses **Create task** or **Link existing task**, or asks the bot to do so. | A PM task in a team the teammate can access |
 
 Start with channels and threads. Bot DMs as a separate support intake can follow later. A private response to the person invoking a command in a channel is part of the first release.
