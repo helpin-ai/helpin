@@ -33,7 +33,7 @@ A support-linked Slack thread already has a Helpin conversation. Use its existin
 | Where someone writes | Who receives it |
 | --- | --- |
 | Customer or teammate replies in the customer’s Slack thread | Participants see the reply in Slack. Helpin records it in the linked Support conversation with the correct author. |
-| Support agent chooses **Reply to #channel** in the inbox | The customer receives the reply and supported attachments in the original thread. **Internal note** stays within Helpin. |
+| Support agent reviews **Reply to #channel** and sends from the inbox | The customer receives the reply and supported attachments in the original thread. **Internal note** stays within Helpin. |
 | Teammate replies in the linked internal PM thread | The reply appears in a labeled Slack discussion on the task. A Helpin teammate can explicitly reply to that discussion. Ordinary task comments stay within PM. |
 | Engineering changes the linked task | Refresh the internal Slack task card. Post completion in the internal thread and notify the support owner. The owner can review a customer-facing update and send it to the original support thread. |
 
@@ -61,7 +61,7 @@ Reuse the Support channel registry, inbound event deduplication, attachment jobs
 
 ## Implementation and operator setup
 
-Settings → Channels is the installation point for both modules. The Support inbox uses its existing conversation list, details, reply composer, note action, and delivery receipt. The PM task uses its existing threaded comments. The Slack mark identifies the source and the thread destination. Six browser screenshots follow one fictional checkout issue through the actual Helpin app, including the narrow-screen inbox list. [Helpin screenshot gallery](../../.mockups/slack/index.html)
+Settings → Channels is the installation point for both modules. The Support inbox uses its existing conversation list, details, reply composer, note action, and delivery receipt. The PM task uses its existing threaded comments. While drafting, the recipient line shows the Slack channel in the same place as email recipients. A Slack-only reply has one send button with the full-color Slack mark. A linked PM comment shows where its replies sync beneath the comment body. Six browser screenshots follow one fictional checkout issue through the actual Helpin app, including the narrow-screen inbox list. [Helpin screenshot gallery](../../.mockups/slack/index.html)
 
 1. Create a Slack app using the [manifest template](../../integrations/slack/manifest.yaml). Replace the example OAuth URL with the public Helpin app origin followed by `/oauth/slack/callback`. Set the events and interactivity URLs to the public API origin followed by `/api/slack/events` and `/api/slack/actions` when the API is mounted at `/api`.
 2. Configure `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`, and the public `APP_BASE_URL`. Bot token encryption uses a 32-byte hex `CHANNEL_ENCRYPTION_KEY`, with the existing `CRM_ENCRYPTION_KEY` fallback. Run the application migrations, then start the API with these settings. [Environment example](../../server/.env.example)

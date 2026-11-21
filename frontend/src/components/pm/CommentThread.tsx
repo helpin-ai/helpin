@@ -1,6 +1,5 @@
-import { SlackIcon } from '@/lib/icons';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ArrowReloadHorizontalIcon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon, PlusSignCircleIcon, MinusSignIcon, BotIcon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon, PlusSignCircleIcon, MinusSignIcon, BotIcon, SlackIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -1083,11 +1082,6 @@ export function CommentThread({
                 )}
                 <div className="flex items-baseline gap-1.5 text-[13px] leading-tight">
                   <span className="font-semibold text-foreground">{authorName}</span>
-                  {entry.comment.slack_discussion_channel && (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <SlackIcon className="size-3.5" aria-label="Slack" />#{entry.comment.slack_discussion_channel}
-                    </span>
-                  )}
                   {hasAgentAttribution && (
                     <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" aria-label="AI agent comment">
                       <BotIcon className="h-3 w-3 self-center" />
@@ -1108,6 +1102,13 @@ export function CommentThread({
                     className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
                   />
                 </div>
+                {entry.comment.slack_discussion_channel && (
+                  <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
+                    <SlackIcon className="size-3 shrink-0" />
+                    <span className="shrink-0">Replies sync to<span className="sr-only"> Slack channel</span></span>
+                    <span className="truncate text-quiet-text-secondary" title={`#${entry.comment.slack_discussion_channel}`}>#{entry.comment.slack_discussion_channel}</span>
+                  </div>
+                )}
               </>
             )}
             {/* Attachments */}

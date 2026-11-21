@@ -48,7 +48,7 @@ export function ReplyDeliverySelector({
   emailUnavailableReason,
   chatUnavailableReason,
   portal = false,
-  channel, destination,
+  channel,
 }: {
   mode: SupportReplyDeliveryMode;
   onChange: (mode: SupportReplyDeliveryMode) => void;
@@ -58,7 +58,7 @@ export function ReplyDeliverySelector({
   chatUnavailableReason?: string;
   portal?: boolean;
   /** A messaging app (Telegram) that carries "chat" replies. */
-  channel?: string; destination?: string;
+  channel?: string;
 }) {
   const chatName = channel ?? (portal ? "Portal" : "Chat");
   const labels: Record<SupportReplyDeliveryMode, string> = channel || portal ? {
@@ -100,7 +100,7 @@ export function ReplyDeliverySelector({
           aria-label={`Sending options: ${labels[mode]}`}
           className="h-7 gap-1 rounded-l-full rounded-r-none border-r border-primary-foreground/25 px-2 text-xs"
         >
-          {destination && mode !== "email_only" && <span>Reply to #{destination}</span>}<DeliveryIcons mode={mode} slack={channel === "Slack"} />
+          <DeliveryIcons mode={mode} slack={channel === "Slack"} />
           <ArrowDown01Icon aria-hidden="true" className="size-3 opacity-70" />
         </Button>
       }

@@ -1,3 +1,4 @@
+import slackMark from '@/assets/slack-mark.svg';
 import type { FC, CSSProperties } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -212,7 +213,6 @@ import {
   ZoomOutAreaIcon as _ZoomOutAreaIcon,
   ThumbsDownIcon as _ThumbsDownIcon,
   ThumbsUpIcon as _ThumbsUpIcon,
-  SlackIcon as _SlackIcon,
   TelegramIcon as _TelegramIcon,
 } from '@hugeicons/core-free-icons';
 
@@ -353,7 +353,10 @@ export const CursorPointer01Icon = /* @__PURE__ */ hi(_CursorPointer01Icon);
 export const TextIcon = /* @__PURE__ */ hi(_TextIcon);
 export const ArrowMoveUpRightIcon = /* @__PURE__ */ hi(_ArrowMoveUpRightIcon);
 export const BubbleChatIcon = /* @__PURE__ */ hi(_BubbleChatIcon);
-export const SlackIcon = /* @__PURE__ */ hi(_SlackIcon);
+// Official full-color mark from Slack's media kit, served locally with the app.
+export const SlackIcon: IconComponent = ({ className, style }) => (
+  <img src={slackMark} alt="" width={16} height={16} className={className} style={style} />
+);
 export const TelegramIcon = /* @__PURE__ */ hi(_TelegramIcon);
 export const Clock01Icon = /* @__PURE__ */ hi(_Clock01Icon);
 export const Clock02Icon = /* @__PURE__ */ hi(_Clock02Icon);

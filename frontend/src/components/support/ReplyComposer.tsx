@@ -17,7 +17,7 @@ import {
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
   InformationCircleIcon, StickyNote01Icon, PencilEdit01Icon, Delete01Icon, ArrowLeft02Icon,
-  ZapIcon,
+  SlackIcon, ZapIcon,
 } from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -1879,7 +1879,16 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     || JSON.stringify(pendingAttachments.map(a => a.attachmentId).sort()) !== JSON.stringify((editingNote.attachments ?? []).map(a => a.id).sort());
   const content = editor.getText();
   const hasContent = content.trim().length > 0;
-  const showDeliveryNotice = hasContent || pendingAttachments.length > 0;
+  const showThreadPicker = deliveryMode !== 'email_only' && destinations.length > 1;
+  const sendsToSlack = deliveryMode !== 'email_only' && providerChannel === 'Slack';
+  const slackChannelName = (origin ? origin.name : conversation?.provider_channel_name)?.trim().replace(/^#+/, '');
+  const slackDestination = slackChannelName ? `#${slackChannelName}` : 'Slack';
+  const slackSendOnly = !isNote && sendsToSlack && providerOnly;
+  const slackSendLabel = sendMutation.isPending ? 'Sending…' : `Send to ${originNeeded ? 'Slack' : slackDestination}`;
+  const deliveryNoticeError = originNeeded && deliveryUnavailableReason === chatUnavailableReason ? undefined : deliveryUnavailableReason;
+  const sendLabel = editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes')
+    : isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send';
+  const showDeliveryNotice = showThreadPicker || hasContent || pendingAttachments.length > 0;
   const suggestedPrimaryEmail = conversation?.suggested_primary_recipient_email?.trim() || '';
   const canUseAITools = hasContent && !isRewriting && !sendMutation.isPending;
   const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDownIcon }> = [
@@ -1950,7 +1959,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
       {/* Rises into view once a reply is started. The grid-rows trick grows
           its height without measuring, so the composer's top edge lifts. */}
-      {sendsEmail && !isNote && (
+      {!isNote && (sendsEmail || sendsToSlack || showThreadPicker) && (
         <div
           className={cn(
             'grid transition-[grid-template-rows,opacity] duration-700 ease-in-out motion-reduce:transition-none',
@@ -1967,14 +1976,33 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
                 showDeliveryNotice ? 'translate-y-0' : 'translate-y-3',
               )}
             >
-              <p className="flex min-w-0 items-center gap-1 whitespace-nowrap" aria-live="polite">
-                <span className="shrink-0">{deliveryMode === 'email_only' ? 'Only' : 'Also'} emailed to</span>{' '}
-                {deliveryRecipientEmails.length > 0
-                  ? <EmailRecipientList emails={deliveryRecipientEmails} label="recipients" />
-                  : <span className="font-medium text-foreground">the customer</span>}
-                {ccRecipients.length > 0 && <>{' '}<span className="shrink-0">· Cc</span>{' '}<EmailRecipientList emails={ccRecipients} label="Cc" className="shrink-[3]" /></>}
-              </p>
-              {deliveryUnavailableReason && <p role="status" className="text-quiet-accent">{deliveryUnavailableReason}</p>}
+              {showThreadPicker ? (
+                <div className="flex min-w-0 items-center gap-1">
+                  <span className="shrink-0">Reply to</span>
+                  <QuietSelect
+                    label="Reply thread"
+                    placeholder="Choose thread"
+                    value={origin?.id ?? ''}
+                    onChange={setChosenOrigin}
+                    options={destinations.map(d => ({ value: d.id, label: `${d.name} · Conversation ${d.display_id}` }))}
+                  />
+                </div>
+              ) : sendsToSlack && (
+                <p className="flex min-w-0 items-baseline gap-1" aria-live="polite">
+                  <span className="shrink-0">Reply to</span>{' '}
+                  <span className="truncate font-medium text-foreground" title={slackDestination}>{slackDestination}</span>
+                </p>
+              )}
+              {sendsEmail && (
+                <p className="flex min-w-0 items-center gap-1 whitespace-nowrap" aria-live="polite">
+                  <span className="shrink-0">{deliveryMode === 'email_only' ? 'Only' : 'Also'} emailed to</span>{' '}
+                  {deliveryRecipientEmails.length > 0
+                    ? <EmailRecipientList emails={deliveryRecipientEmails} label="recipients" />
+                    : <span className="font-medium text-foreground">the customer</span>}
+                  {ccRecipients.length > 0 && <>{' '}<span className="shrink-0">· Cc</span>{' '}<EmailRecipientList emails={ccRecipients} label="Cc" className="shrink-[3]" /></>}
+                </p>
+              )}
+              {deliveryNoticeError && <p role="status" className="text-quiet-accent">{deliveryNoticeError}</p>}
             </div>
           </div>
         </div>
@@ -2487,11 +2515,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
           </kbd>
           {editingNote && <Button size="sm" variant="ghost" className="h-7 px-3 text-xs" disabled={updateNoteMutation.isPending} onClick={() => onFinishEdit?.(editingNote.id)}>Cancel</Button>}
           <div className="inline-flex shrink-0 items-center">
-            {!isNote && deliveryMode !== 'email_only' && destinations.length > 1 && (
-              <QuietSelect label="Reply thread" placeholder="Choose thread" value={origin?.id ?? ''} onChange={setChosenOrigin}
-                options={destinations.map(d => ({ value: d.id, label: `${d.name} · Conversation ${d.display_id}` }))} />
-            )}
-            {!isNote && <ReplyDeliverySelector
+            {!isNote && !slackSendOnly && <ReplyDeliverySelector
               mode={deliveryMode}
               onChange={selectDeliveryMode}
               disabled={isRewriting || sendMutation.isPending}
@@ -2499,19 +2523,27 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
               portal={portalReplySurface && !hasChatSession}
-              channel={providerChannel} destination={origin ? origin.provider === 'slack' ? origin.name.replace(/^#/, '') : undefined : conversation?.provider_channel_name}
+              channel={providerChannel}
             />}
             <Button
               size="sm"
               disabled={isRewriting || attachmentsPending || updateNoteMutation.isPending || !noteChanged || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
               onClick={() => void handleSend()}
+              aria-label={slackSendOnly ? slackSendLabel : undefined}
+              title={slackSendOnly ? slackSendLabel : undefined}
               className={cn(
-                'h-7 gap-1.5 rounded-full px-3 text-xs',
-                isNote ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'rounded-l-none'
+                'gap-1.5 rounded-full text-xs',
+                slackSendOnly ? 'h-[44px] w-[44px] px-0 sm:h-7 sm:w-9' : 'h-7 px-3',
+                isNote && 'bg-amber-500 hover:bg-amber-600 text-white',
+                !isNote && !slackSendOnly && 'rounded-l-none'
               )}
             >
               {isNote && !editingNote && <SentIcon className="h-3 w-3" />}
-              {editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes') : isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send'}
+              {slackSendOnly ? (
+                sendMutation.isPending
+                  ? <Loading01Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
+                  : <SlackIcon className="size-4 sm:size-3.5" />
+              ) : sendLabel}
             </Button>
           </div>
         </div>

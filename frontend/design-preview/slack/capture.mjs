@@ -65,12 +65,15 @@ try {
     await shot('list')
     await page.setViewportSize({ width: 1440, height: 900 })
     await go('support/' + CONVERSATION_ID + '?view=team&team_inbox=support')
-    await page.getByText('Reply to #acme-support', { exact: true }).waitFor()
     await page.locator('[contenteditable="true"].tiptap').fill('Lena, we found the issue with FALL20. The fix is in review. I’ll let you know as soon as it’s live.')
+    await page.locator('[data-support-delivery-notice]').getByText('#acme-support', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Send to #acme-support', exact: true }).waitFor()
     await shot('inbox')
+    await page.locator('[data-support-reply-composer]').screenshot({ path: resolve(output, 'composer-detail.png'), animations: 'disabled' })
     await go('pm/tasks/' + taskId)
     await page.getByText('#payments', { exact: true }).waitFor()
     await shot('task')
+    await page.locator('[data-comment-thread-id]').filter({ hasText: '#payments' }).screenshot({ path: resolve(output, 'comment-detail.png'), animations: 'disabled' })
   } catch (error) {
     console.error(page.url(), (await page.locator('body').innerText()).slice(0, 6500))
     throw error

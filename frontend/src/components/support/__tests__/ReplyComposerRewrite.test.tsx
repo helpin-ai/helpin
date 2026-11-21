@@ -183,6 +183,39 @@ describe('ReplyComposer AI loading state', () => {
     expect(notices[0].querySelector('button')?.getAttribute('aria-label')).toBe('More recipients: other@example.com');
   });
 
+  it('shows the Slack destination in the recipient notice and sends from the icon button', async () => {
+    setup();
+    mocks.conversation = { source: 'slack', channel: 'slack', provider_channel_name: 'acme-support' };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>); });
+
+    const notice = container.querySelector('[data-support-delivery-notice]');
+    expect(notice?.textContent).toBe('Reply to #acme-support');
+    expect(notice?.getAttribute('aria-hidden')).toBe('false');
+    const send = container.querySelector<HTMLButtonElement>('button[aria-label="Send to #acme-support"]')!;
+    expect(send.textContent).toBe('');
+    expect(send.disabled).toBe(false);
+    await act(async () => { send.click(); });
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ delivery_mode: 'chat_only', channels: ['chat'] }));
+
+    act(() => { useSupportInboxStore.setState({ replyMode: 'note' }); });
+    expect(container.querySelector('[data-support-delivery-notice]')).toBeNull();
+    expect(button('Add Note')).toBeDefined();
+  });
+
+  it('requires a thread in the recipient area when a merged Slack conversation has multiple destinations', () => {
+    setup();
+    mocks.conversation = {
+      source: 'slack', channel: 'slack', provider_channel_name: 'acme-support',
+      provider_destinations: [
+        { id: 'one', provider: 'slack', name: '#acme-support', display_id: 12 },
+        { id: 'two', provider: 'slack', name: '#partner-support', display_id: 13 },
+      ],
+    };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>); });
+    expect(container.querySelector('[data-support-delivery-notice] [aria-label="Reply thread"]')).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Send to Slack"]')?.disabled).toBe(true);
+  });
+
   it('lists a shared address only once after merging conversations from the same customer', () => {
     setup(true);
     mocks.conversation = { ...mocks.conversation, merge_email_recipients: ['customer@example.com', ' CUSTOMER@example.com '] };
