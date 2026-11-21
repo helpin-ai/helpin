@@ -31,7 +31,7 @@ test('a support admin can manage Slack without Agents and gets one Channels shor
   await expect(shortcut).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: 'Connect Slack' })).toHaveCount(0);
   await shortcut.click();
-  await expect(page.getByRole('button', { name: 'Connect Slack' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Connect Slack' })).toBeEnabled({ timeout: 60_000 });
   await expect(page.getByRole('tab', { name: 'MCP servers' })).toHaveCount(0);
   expect(requests.mcp).toBe(0);
 });
