@@ -58,6 +58,63 @@ async function setup(page: Page, email = "visitor@example.com", overrides: Recor
   return { composer, writes };
 }
 
+for (const [provider, label, recipient] of [['slack', 'Slack', '#acme-support'], ['telegram', 'Telegram', 'Lena Park']]) {
+  test(`the ${label} picker sends the displayed channel and email combination`, async ({ page }) => {
+    const { composer, writes } = await setup(page, 'visitor@example.com', {
+      source: provider, channel: provider, anonymous_id: null,
+      provider_destinations: [{ id: 'origin', provider, name: recipient, display_id: 42 }],
+    });
+    await composer.locator('[contenteditable="true"]').fill('An update for you');
+    await composer.getByRole('button', { name: `Sending options: ${label} only` }).click();
+    await expect(page.getByRole('option')).toHaveCount(3);
+    await page.getByRole('option', { name: `${label} + email`, exact: true }).click();
+    await expect(composer).toContainText(`Reply on ${label} to ${recipient}`);
+    await expect(composer).toContainText('Also emailed to visitor@example.com');
+    await composer.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0]).toMatchObject({ delivery_mode: 'chat_and_email', channels: ['chat', 'email'], provider_origin_id: 'origin' });
+  });
+}
+
+test('a disconnected bot offers only the email route for its historical conversation', async ({ page }) => {
+  const { composer } = await setup(page, 'visitor@example.com', { source: 'telegram', channel: 'telegram', anonymous_id: null, provider_destinations: [] });
+  await composer.getByRole('button', { name: 'Sending options: Choose channel' }).click();
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await page.getByRole('option', { name: 'Email only', exact: true }).click();
+  await expect(composer.getByRole('button', { name: 'Sending options: Email only' })).toBeVisible();
+});
+
+test('a merged conversation can choose between its configured Slack and Telegram origins', async ({ page }) => {
+  const { composer, writes } = await setup(page, 'visitor@example.com', {
+    channel: 'slack', source: 'slack', anonymous_id: null,
+    provider_destinations: [
+      { id: 's', provider: 'slack', name: '#billing', display_id: 42 },
+      { id: 't', provider: 'telegram', name: 'Lena', display_id: 43 },
+    ],
+  });
+  await composer.locator('[contenteditable="true"]').fill('Update');
+  await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  await composer.getByRole('button', { name: 'Sending options: Choose channel' }).click();
+  await page.getByRole('option', { name: 'Telegram only', exact: true }).click();
+  await expect(composer).toContainText('Reply on Telegram to Lena');
+  await composer.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0]).toMatchObject({ delivery_mode: 'chat_only', provider_origin_id: 't' });
+});
+
+test('opening the picker refreshes a Slack route removed during drafting', async ({ page }) => {
+  const thread = { ...buildConversation(), source: 'slack', channel: 'slack', anonymous_id: null };
+  const { composer } = await setup(page, 'visitor@example.com', {
+    ...thread, provider_destinations: [{ id: 's', provider: 'slack', name: '#support', display_id: 42 }],
+  });
+  await page.route(`**/api/support/inbox/conversations/${CONVERSATION_ID}?**`, route => route.fulfill({ json: thread }));
+  await composer.locator('[contenteditable="true"]').fill('Keep this draft');
+  await composer.getByRole('button', { name: 'Sending options: Slack only' }).click();
+  await expect(page.getByRole('option', { name: /Slack/ })).toHaveCount(0);
+  await expect(page.getByRole('option', { name: 'Email only', exact: true })).toBeVisible();
+  await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+});
+
 for (const width of [1440, 390]) {
   test(`reply send selector chooses real channels (${width}px)`, async ({
     page,

@@ -16,8 +16,8 @@ applies, and whether it counts as setup evidence. Add behavior to the registry,
 not to scattered `channel == "..."` checks.
 
 Telegram uses the `provider` transport: replies go out through a provider
-adapter. While drafting a private reply, the composer shows the recipient
-and a Telegram send button. AI follows the workspace's
+adapter. While drafting a private reply, the composer names Telegram and the recipient. The delivery picker lists Telegram
+when the bot can reach that conversation. Teammates use the standard **Send** button. AI follows the workspace's
 chat AI setting plus the bot's own **AI replies** switch.
 
 ## Tables

@@ -1605,6 +1605,10 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 			}
 		}
 	}
+	ticket.ProviderDestinations, err = s.conversationRepo.ReplyDestinations(ctx, ticket)
+	if err != nil {
+		return nil, err
+	}
 	if ticket.MergedIntoID != nil {
 		root, err := s.mergeRepository().Root(ctx, workspaceID, id)
 		if err != nil {
@@ -2183,8 +2187,32 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if err != nil {
 		return nil, err
 	}
-	// Any request the customer sees in the portal (portal intake, or an email
-	// thread claimed after sign-in) can receive replies there.
+	replyID := ""
+	if senderType == "user" && senderUserID != nil && !req.IsInternal && messageType == "reply" && clientMessageID != "" {
+		previous, lookupErr := s.messageRepo.FindTeammateReplyByClientID(ctx, workspaceID, ticketID, *senderUserID, clientMessageID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if previous != nil {
+			return previous, nil
+		}
+		replyID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("support-reply:"+workspaceID+":"+ticketID+":"+*senderUserID+":"+clientMessageID)).String()
+	}
+
+	// Recheck the live route in case a bot or channel was removed while drafting.
+	providerChannel := conv.ChannelIdentityID != nil || deliveryConversation.MergeHasChannel
+	explicitChat := req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail
+	if explicitChat && providerChannel {
+		destinations, err := s.conversationRepo.ReplyDestinations(ctx, deliveryConversation)
+		if err != nil {
+			return nil, err
+		}
+		deliveryConversation.ProviderDestinations = destinations
+		providerChannel = len(destinations) > 0
+	}
+	if explicitChat && !providerChannel && req.ProviderOriginID != "" {
+		return nil, fmt.Errorf("the selected messaging channel is no longer connected")
+	}
 	if !req.IsInternal && messageType == "reply" && req.DeliveryMode != model.SupportDeliveryEmailOnly && len(deliveryConversation.ProviderDestinations) > 0 {
 		destinations := deliveryConversation.ProviderDestinations
 		if len(destinations) == 1 && req.ProviderOriginID == "" {
@@ -2199,22 +2227,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	portalReplySurface := supportConversationPortalReplySurface(conv)
 	// A provider-channel conversation (Telegram), or a merged group holding
 	// one, delivers "chat" replies through the channel outbox.
-	providerChannel := conv.ChannelIdentityID != nil || deliveryConversation.MergeHasChannel
-	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
+	if explicitChat &&
 		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && !model.SupportChannelHasChatSession(conv.Source) && !deliveryConversation.MergeHasWidget && !portalReplySurface && !providerChannel {
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
-	}
-
-	replyID := ""
-	if senderType == "user" && senderUserID != nil && !req.IsInternal && messageType == "reply" && clientMessageID != "" {
-		previous, lookupErr := s.messageRepo.FindTeammateReplyByClientID(ctx, workspaceID, ticketID, *senderUserID, clientMessageID)
-		if lookupErr != nil {
-			return nil, lookupErr
-		}
-		if previous != nil {
-			return previous, nil
-		}
-		replyID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("support-reply:"+workspaceID+":"+ticketID+":"+*senderUserID+":"+clientMessageID)).String()
 	}
 
 	explicitEmail := req.DeliveryMode == model.SupportDeliveryEmailOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail

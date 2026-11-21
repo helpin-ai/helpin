@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { supportChannel } from "@/lib/supportChannels";
 import { useEffect } from "react";
 import type { SupportReplyDeliveryMode } from "@/lib/pmTypes";
 
@@ -45,6 +46,7 @@ export function nextAutomaticReplyDelivery(
   current: SupportReplyDeliveryMode | undefined,
   { source, portal, presence, emailEligible }: { source?: string; portal?: boolean; presence: ReplyPresence; emailEligible: boolean },
 ): SupportReplyDeliveryMode {
+  if (supportChannel(source)?.transport === 'provider') return 'chat_only';
   if (current && current !== 'chat_only') return current;
   // An email thread the customer also sees in the portal is answered in both.
   if (source === 'email') return portal && emailEligible ? 'chat_and_email' : 'email_only';

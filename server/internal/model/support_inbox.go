@@ -15,10 +15,10 @@ type SupportConversation struct {
 	MailboxAIRepliesDisabled bool     `json:"-" gorm:"-"`
 	MergeEmailRecipients     []string `json:"merge_email_recipients,omitempty" gorm:"-"`
 	MergeHasWidget           bool     `json:"merge_has_widget,omitempty" gorm:"-"`
-	// MergeHasChannel: a merged member came from a provider channel (Telegram),
-	// so replies in the group reach that customer there.
+	// The inbox returns only destinations available to this conversation.
 	ProviderDestinations []SupportProviderDestination `json:"provider_destinations,omitempty" gorm:"-"`
-	MergeHasChannel      bool                         `json:"merge_has_channel,omitempty" gorm:"-"`
+	// A merge may contain provider history even after its account is disconnected.
+	MergeHasChannel bool `json:"merge_has_channel,omitempty" gorm:"-"`
 	// ChannelHandle is the connected bot's handle (Telegram), for the sidebar.
 	ChannelHandle       string   `json:"channel_handle,omitempty" gorm:"-"`
 	MergeContinuationID *string  `json:"merge_continuation_id,omitempty" gorm:"-"`
@@ -1050,7 +1050,7 @@ type CreateConversationWithMessageResponse struct {
 	Message      *SupportMessage      `json:"message"`
 }
 
-// SupportProviderDestination identifies the original thread in a merged conversation.
+// SupportProviderDestination identifies an original provider conversation for a reply.
 type SupportProviderDestination struct {
 	ID        string `json:"id"`
 	Provider  string `json:"provider"`

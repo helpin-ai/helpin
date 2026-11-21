@@ -59,6 +59,7 @@ const rows = [
 const conversations = rows.map(([name, subject, source, preview, at], i) => ({
   ...buildConversation([0, 1, 0, 1, 0, 1, 0, 0][i]), id: i ? 'conversation-' + i : CONVERSATION_ID,
   display_id: 1042 - i, customer_name: name, customer_email: name.split(' ')[0].toLowerCase() + (i ? '@customer.example' : '@acme.example'),
+  provider_destinations: source === 'slack' ? [{ provider: source, id: i ? 'conversation-' + i : CONVERSATION_ID, display_id: 1042 - i, name: i ? '#partner-support' : '#acme-support' }] : undefined,
   subject, source, channel: source, flow_state: i % 3 === 0 ? 'assigned_to_human' : 'queued_for_human', human_takeover: true, assigned_user_id: i % 3 === 0 ? 'sam' : undefined, priority: i ? 'medium' : 'high',
   mailbox_id: mailbox.id, mailbox_name: mailbox.name, last_message: preview, list_last_message_preview: preview,
   list_last_message_at: time(at), list_last_activity_at: time(at), created_at: time(i ? '08:30' : '10:02'), updated_at: time(at),
@@ -86,7 +87,7 @@ const fixtures = new Map(Object.entries({
   '/api/support/channels': [{ provider: 'telegram', id: 'telegram-1', workspace_id: ws, handle: 'northstar_support_bot', display_name: 'Northstar Support', status: 'active', mailbox_id: mailbox.id, ai_replies_disabled: true, last_event_at: time('09:54') }],
   '/api/settings/module-access': { modules: [], grants: [] }, [inbox + '/mailboxes']: [mailbox], [inbox + '/routing-usage']: { triage_enabled: false, exhausted: false },
   [inbox + '/attachments/policy']: { max_bytes: 10485760, content_types: ['image/png', 'application/pdf'] },
-  [inbox + '/installations']: SUPPORT_INSTALLATION, [inbox + '/mailboxes/scopes']: { shared_inbox: sharedInbox, mailboxes: [mailbox] },
+  [inbox + '/installations']: { ...SUPPORT_INSTALLATION, settings: { ...SUPPORT_INSTALLATION.settings, email_fallback_enabled: true } }, [inbox + '/mailboxes/scopes']: { shared_inbox: sharedInbox, mailboxes: [mailbox] },
   [inbox + '/unread-stats']: counts, [inbox + '/conversations']: { ...paged(conversations), meta: { unread: counts } },
   [inbox + '/messages/message-0/slack-source']: { permalink: 'https://northstar-example.slack.com/archives/CACME/p1795168920000001' },
   [inbox + '/messages/message-2/slack-source']: { permalink: 'https://northstar-example.slack.com/archives/CACME/p1795169280000002?thread_ts=1795168920.000001&cid=CACME' },

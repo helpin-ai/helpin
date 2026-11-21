@@ -70,7 +70,7 @@ try {
     await go('support/' + CONVERSATION_ID + '?view=team&team_inbox=support')
     await page.locator('[contenteditable="true"].tiptap').fill('Lena, we found the issue with FALL20. The fix is in review. I’ll let you know as soon as it’s live.')
     await page.locator('[data-support-delivery-notice]').getByText('#acme-support', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Send to #acme-support', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Sending options: Slack only', exact: true }).waitFor()
     const sources = page.getByRole('link', { name: /Received from Slack/ })
     await expect(sources).toHaveCount(2)
     const replySource = sources.last()

@@ -45,19 +45,6 @@ export function supportChannelLabel(key: string): string {
   return supportChannel(key)?.label ?? key.charAt(0).toUpperCase() + key.slice(1)
 }
 
-/** The messaging app that carries a conversation's "chat" replies, if any. */
-export function providerChannelLabel(conversation: { channel?: string | null; merge_has_channel?: boolean; provider_destinations?: { provider: string }[] } | null | undefined): string | undefined {
-  const choices = conversation?.provider_destinations
-  if (choices?.length) {
-    const providers = new Set(choices.map(d => d.provider))
-    return providers.size === 1 ? supportChannelLabel(choices[0].provider) : 'Channel'
-  }
-  const spec = supportChannel(conversation?.channel)
-  if (spec?.transport === 'provider') return spec.label
-  // Earlier API responses only exposed this flag for Telegram.
-  return conversation?.merge_has_channel ? 'Telegram' : undefined
-}
-
 /** A conversation source with a live chat session (the widget). */
 export function hasChatTransport(source: string | null | undefined): boolean {
   return supportChannel(source)?.transport === 'chat'

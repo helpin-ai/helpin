@@ -41,8 +41,9 @@ export interface SupportConversation {
   merge_revision?: number;
   merge_email_recipients?: string[];
   merge_has_widget?: boolean;
-  /** A merged member came from a messaging app (Telegram); replies reach it there. */
+  /** A merged member came from a messaging app, including disconnected accounts. */
   merge_has_channel?: boolean;
+  /** Live messaging destinations for this conversation, checked against its account and Support route. */
   provider_destinations?: { id: string; provider: string; name: string; display_id: number }[];
   /** The connected bot's handle, for Telegram conversations. */
   channel_handle?: string;

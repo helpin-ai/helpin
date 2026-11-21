@@ -50,7 +50,7 @@ import type {
   SupportConversation,
   SupportMessagePage,
   SupportSharedItem,
-  SupportReplyDeliveryMode,
+  CreateMessageRequest,
   VisitorContextResponse,
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
@@ -105,23 +105,6 @@ export type SupportConversationFilters = {
 
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
-type SendMessagePayload = {
-  expected_merge_revision?: number;
-  send_original?: boolean;
-  auto_translate?: boolean;
-  translation_target_language?: string;
-  content: string;
-  client_message_id?: string;
-  is_internal?: boolean;
-  ai_assisted?: boolean;
-  delivery_mode?: SupportReplyDeliveryMode;
-  email_subject?: string;
-  channels?: Array<'chat' | 'email'>;
-  attachment_ids?: string[];
-  cc_emails?: string[];
-  bcc_emails?: string[];
-};
-
 type OptimisticSupportUser = {
   id?: string | null;
   full_name?: string | null;
@@ -139,7 +122,7 @@ export function buildOptimisticSupportMessage({
 }: {
   workspaceId: string;
   conversationId: string;
-  payload: SendMessagePayload;
+  payload: CreateMessageRequest;
   user: OptimisticSupportUser | null;
   now: string;
   optimisticId: string;
@@ -1170,7 +1153,7 @@ export function useVisitorContext(workspaceId: string, conversationId: string | 
 export function useSendMessage(workspaceId: string, conversationId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: SendMessagePayload) =>
+    mutationFn: (payload: CreateMessageRequest) =>
       (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : supportService.sendConversationReply(workspaceId, conversationId!, payload)).then((response) => {
         if (response.status === 422) throw new SupportTranslationSendError();
         return unwrap(response);
@@ -1211,7 +1194,10 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
-    onError: (error: Error, _payload, context) => {
+    onError: (error: Error, payload, context) => {
+      if (conversationId && payload.provider_origin_id) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId), exact: true });
+      }
       if (conversationId && context?.optimisticId) {
         queryClient.setQueryData<SupportMessagePages>(queryKeys.support.messages(workspaceId, conversationId), current => removeMessageFromPages(current, context.optimisticId));
       }

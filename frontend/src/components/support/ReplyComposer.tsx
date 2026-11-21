@@ -79,7 +79,7 @@ import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { QuietSelect } from '@/components/design-system/quiet-select';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
 import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
-import { hasChatTransport, providerChannelLabel, supportChannel } from '@/lib/supportChannels';
+import { hasChatTransport, supportChannel, supportChannelLabel } from '@/lib/supportChannels';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -860,7 +860,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
   const user = useAuthStore((s) => s.user);
   const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name ?? null);
-  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const { data: conversation, refetch: refreshConversation } = useConversation(workspaceId, conversationId);
   const selectDeliveryMode = useCallback((mode: SupportReplyDeliveryMode) => {
     saveReplyDelivery(workspaceId, conversationId, mode);
   }, [workspaceId, conversationId]);
@@ -883,25 +883,29 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
 	// A messaging-app conversation (Telegram), or a merged group holding one,
 	// carries "chat" replies through that app.
-	const [chosenOrigin, setChosenOrigin] = useState('');
+  const [replyOrigin, setReplyOrigin] = useState({ provider: '', id: '' });
   const destinations = conversation?.provider_destinations ?? [];
-  const origin = destinations.length === 1 ? destinations[0] : destinations.find(d => d.id === chosenOrigin);
-  const providerChannel = origin ? supportChannel(origin.provider)?.label : providerChannelLabel(conversation);
-  const originNeeded = destinations.length > 1 && !origin;
-	const providerOnly = Boolean(conversation && supportChannel(conversation.channel)?.transport === 'provider');
+  const providers = [...new Set(destinations.map(d => d.provider))];
+  const selectedProvider = providers.includes(replyOrigin.provider) ? replyOrigin.provider : providers.length === 1 ? providers[0] : undefined;
+  const threads = selectedProvider ? destinations.filter(d => d.provider === selectedProvider) : destinations;
+  const origin = replyOrigin.id ? threads.find(d => d.id === replyOrigin.id) : threads.length === 1 ? threads[0] : undefined;
+  const originNeeded = destinations.length > 0 && !origin;
+  const providerChannel = selectedProvider ? supportChannelLabel(selectedProvider) : undefined;
+  const providerConversation = supportChannel(conversation?.channel)?.transport === 'provider' || !!conversation?.merge_has_channel;
+  const unavailableProvider = providerConversation && !destinations.length && !hasChatSession && !portalReplySurface;
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
     portal: portalReplySurface,
-    presence,
+    presence: destinations.length ? 'unknown' : presence,
     emailEligible: !emailUnavailableReason,
     active: !editingNote && !inactive && replyMode !== 'note',
     hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
-  const deliveryMode = hiddenPortalIntake ? 'email_only' : providerOnly ? 'chat_only' : selectedDeliveryMode;
+  const deliveryMode = hiddenPortalIntake ? 'email_only' : selectedDeliveryMode;
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = originNeeded ? 'Choose a channel thread for this reply' : conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface && !providerChannel
+  const chatUnavailableReason = unavailableProvider ? 'The original messaging channel is unavailable' : conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface && !destinations.length
     ? hiddenPortalIntake ? 'This request is hidden from the portal; reply by email' : 'No chat session available' : undefined;
-  const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
+  const deliveryUnavailableReason = originNeeded && deliveryMode !== 'email_only' ? 'Choose a thread for this reply' : deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
   const sendsEmail = deliveryMode !== 'chat_only';
   const deliveryRecipientEmails = normalizeRecipientEmails([primaryRecipientEmail, ...(conversation?.merge_email_recipients ?? [])]);
@@ -1879,18 +1883,11 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     || JSON.stringify(pendingAttachments.map(a => a.attachmentId).sort()) !== JSON.stringify((editingNote.attachments ?? []).map(a => a.id).sort());
   const content = editor.getText();
   const hasContent = content.trim().length > 0;
-  const showThreadPicker = deliveryMode !== 'email_only' && destinations.length > 1;
-  const provider = supportChannel(providerChannel?.toLowerCase());
-  const SendChannelIcon = deliveryMode !== 'email_only' ? provider?.inbox?.icon : undefined;
-  const slackChannelName = (origin ? origin.name : conversation?.provider_channel_name)?.trim().replace(/^#+/, '');
-  // A Telegram-only merge can route to a different participant than the displayed customer.
-  const directDM = conversation?.channel === 'telegram' && !conversation.merge_revision && !conversation.merge_has_channel;
-  const dmRecipient = origin ? origin.name.trim() : directDM ? conversation.customer_name?.trim() : undefined;
-  const destination = provider?.key === 'telegram' ? dmRecipient || 'Telegram DM' : slackChannelName ? `#${slackChannelName}` : 'Slack';
-  const providerSendOnly = !isNote && providerOnly && !!SendChannelIcon;
-  const sendDestination = originNeeded ? providerChannel : provider?.key === 'telegram' && dmRecipient ? `${dmRecipient} on Telegram` : destination;
-  const providerSendLabel = sendMutation.isPending ? 'Sending…' : `Send to ${sendDestination}`;
-  const deliveryNoticeError = originNeeded && deliveryUnavailableReason === chatUnavailableReason ? undefined : deliveryUnavailableReason;
+  const showThreadPicker = deliveryMode !== 'email_only' && (threads.length > 1 || originNeeded);
+  const showProviderNotice = deliveryMode !== 'email_only' && !!providerChannel;
+  const recipient = origin?.name.trim();
+  const replyNotice = providerChannel ? `Reply on ${providerChannel}` : 'Reply';
+  const deliveryNoticeError = originNeeded && deliveryMode !== 'email_only' ? undefined : deliveryUnavailableReason;
   const sendLabel = editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes')
     : isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send';
   const showDeliveryNotice = showThreadPicker || hasContent || pendingAttachments.length > 0;
@@ -1964,7 +1961,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
       {/* Rises into view once a reply is started. The grid-rows trick grows
           its height without measuring, so the composer's top edge lifts. */}
-      {!isNote && (sendsEmail || SendChannelIcon || showThreadPicker) && (
+      {!isNote && (sendsEmail || showProviderNotice || showThreadPicker || unavailableProvider) && (
         <div
           className={cn(
             'grid transition-[grid-template-rows,opacity] duration-700 ease-in-out motion-reduce:transition-none',
@@ -1983,19 +1980,22 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
             >
               {showThreadPicker ? (
                 <div className="flex min-w-0 items-center gap-1">
-                  <span className="shrink-0">Reply to</span>
+                  <span className="shrink-0">{replyNotice} to</span>
                   <QuietSelect
                     label="Reply thread"
                     placeholder="Choose thread"
                     value={origin?.id ?? ''}
-                    onChange={setChosenOrigin}
-                    options={destinations.map(d => ({ value: d.id, label: `${d.name} · Conversation ${d.display_id}` }))}
+                    onChange={id => {
+                      const thread = destinations.find(d => d.id === id);
+                      if (thread) setReplyOrigin({ provider: thread.provider, id });
+                    }}
+                    options={threads.map(d => ({ value: d.id, label: `${!selectedProvider ? supportChannelLabel(d.provider) + ' · ' : ''}${d.name || 'Direct message'} · Conversation ${d.display_id}` }))}
                   />
                 </div>
-              ) : SendChannelIcon && (
+              ) : showProviderNotice && (
                 <p className="flex min-w-0 items-baseline gap-1" aria-live="polite">
-                  <span className="shrink-0">Reply to</span>{' '}
-                  <span className="truncate font-medium text-foreground" title={destination}>{destination}</span>
+                  <span className="shrink-0">{replyNotice}{recipient && ' to'}</span>{' '}
+                  {recipient && <span className="truncate font-medium text-foreground" title={recipient}>{recipient}</span>}
                 </p>
               )}
               {sendsEmail && (
@@ -2520,35 +2520,36 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
           </kbd>
           {editingNote && <Button size="sm" variant="ghost" className="h-7 px-3 text-xs" disabled={updateNoteMutation.isPending} onClick={() => onFinishEdit?.(editingNote.id)}>Cancel</Button>}
           <div className="inline-flex shrink-0 items-center">
-            {!isNote && !providerSendOnly && <ReplyDeliverySelector
+            {!isNote && <ReplyDeliverySelector
               mode={deliveryMode}
-              onChange={selectDeliveryMode}
+              onChange={(mode, provider) => {
+                if (provider && provider !== selectedProvider) {
+                  const choices = destinations.filter(d => d.provider === provider);
+                  setReplyOrigin({ provider, id: choices.length === 1 ? choices[0].id : '' });
+                }
+                selectDeliveryMode(mode);
+              }}
               disabled={isRewriting || sendMutation.isPending}
               email={primaryRecipientEmail}
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
               portal={portalReplySurface && !hasChatSession}
-              channel={providerChannel}
+              channel={selectedProvider}
+              providers={providers}
+              unavailableProvider={unavailableProvider}
+              onOpen={providerConversation || destinations.length ? () => { void refreshConversation(); } : undefined}
             />}
             <Button
               size="sm"
               disabled={isRewriting || attachmentsPending || updateNoteMutation.isPending || !noteChanged || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
               onClick={() => void handleSend()}
-              aria-label={providerSendOnly ? providerSendLabel : undefined}
-              title={providerSendOnly ? providerSendLabel : undefined}
               className={cn(
-                'gap-1.5 rounded-full text-xs',
-                providerSendOnly ? 'h-[44px] w-[44px] px-0 sm:h-7 sm:w-9' : 'h-7 px-3',
-                isNote && 'bg-amber-500 hover:bg-amber-600 text-white',
-                !isNote && !providerSendOnly && 'rounded-l-none'
+                'h-7 gap-1.5 rounded-full px-3 text-xs',
+                isNote ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'rounded-l-none'
               )}
             >
               {isNote && !editingNote && <SentIcon className="h-3 w-3" />}
-              {providerSendOnly ? (
-                sendMutation.isPending
-                  ? <Loading01Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
-                  : <SendChannelIcon className="size-4 sm:size-3.5" />
-              ) : sendLabel}
+              {sendLabel}
             </Button>
           </div>
         </div>

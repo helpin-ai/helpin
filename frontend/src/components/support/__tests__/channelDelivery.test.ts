@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import type { SupportMessage } from '@/lib/pmTypes'
-import { providerChannelLabel } from '@/lib/supportChannels'
 import { getMessageDelivery } from '../messageDelivery'
 
 function reply(channel_delivery: SupportMessage['channel_delivery']): SupportMessage {
@@ -16,6 +15,11 @@ describe('Telegram reply delivery', () => {
     expect(delivery).toEqual({ channels: [{ channel: 'telegram', state: 'sent', description: 'Sent to Telegram' }], state: 'sent' })
   })
 
+  it('shows both receipts for a combined reply', () => {
+    const message = { ...reply({ provider: 'slack', status: 'sent', retryable: false }), metadata: '{"delivery_mode":"chat_and_email","email_delivery_status":"failed"}' }
+    expect(getMessageDelivery(message)?.channels.map(c => [c.channel, c.state])).toEqual([['slack', 'sent'], ['email', 'failed']])
+  })
+
   it('explains failures in plain words', () => {
     expect(getMessageDelivery(reply({ status: 'failed', error_code: 'blocked', retryable: true }))?.channels[0].description)
       .toBe('Not delivered to Telegram: the customer blocked the bot')
@@ -26,10 +30,4 @@ describe('Telegram reply delivery', () => {
     expect(getMessageDelivery(reply({ status: 'sending', retryable: false }))?.state).toBe('sending')
   })
 
-  it('names the messaging app that carries chat replies', () => {
-    expect(providerChannelLabel({ channel: 'telegram' })).toBe('Telegram')
-    expect(providerChannelLabel({ channel: 'email', merge_has_channel: true })).toBe('Telegram')
-    expect(providerChannelLabel({ channel: 'widget' })).toBeUndefined()
-    expect(providerChannelLabel(null)).toBeUndefined()
-  })
 })

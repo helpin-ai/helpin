@@ -42,11 +42,10 @@ const CHANNEL_DELIVERY_REASONS: Record<string, string> = {
   too_large: 'a file is too large for Telegram',
 }
 
-/** A reply sent through a messaging app (Telegram) has one delivery: that app. */
-function providerDelivery(delivery: NonNullable<SupportMessage['channel_delivery']>, provider: 'telegram' | 'slack'): MessageDelivery {
+function providerDelivery(delivery: NonNullable<SupportMessage['channel_delivery']>, provider: 'telegram' | 'slack'): ChannelDelivery {
   const name = provider === 'slack' ? 'Slack' : 'Telegram'
   const reason = delivery.error_code ? CHANNEL_DELIVERY_REASONS[delivery.error_code] ?.replaceAll('Telegram', name) : undefined
-  const entry = (state: DeliveryState, description: string): MessageDelivery => ({ channels: [{ channel: provider, state, description }], state })
+  const entry = (state: DeliveryState, description: string): ChannelDelivery => ({ channel: provider, state, description })
   switch (delivery.status) {
     case 'sent': return entry('sent', `Sent to ${name}`)
     case 'sending': return entry('sending', `Sending to ${name}`)
@@ -66,20 +65,22 @@ export function getMessageDelivery(
   } = {},
 ): MessageDelivery | null {
   if (message.sender_type === 'customer' || message.is_internal || (message.message_type && message.message_type !== 'reply') || message.pending_send) return null;
-  if (message.channel_delivery) return providerDelivery(message.channel_delivery, (message.channel_delivery.provider ?? message.via_channel ?? source) === 'slack' ? 'slack' : 'telegram');
   if (isExternalSupportEmailReply(message.metadata) || receiptStatus === 'sent_outside_helpin') {
     return { channels: [{ channel: 'email', state: 'external', description: 'Email sent outside Helpin · Delivery tracking unavailable' }], state: 'external' };
   }
   const mode = getReplyDeliveryMode(message.metadata);
   const email = emailDelivery(message, receiptStatus);
   const hasEmail = mode ? mode !== 'chat_only' : (
-    message.via_channel === 'email' || source === 'email' || !!message.cancellable_until || email.state !== 'unknown'
+    !message.channel_delivery && (message.via_channel === 'email' || source === 'email' || !!message.cancellable_until || email.state !== 'unknown')
   );
   const hasChat = mode ? mode !== 'email_only' : (
     hasChatTransport(source) || hasChatTransport(message.via_channel) || receiptStatus === 'read' || receiptStatus === 'sent' || receiptStatus === 'delivered'
   );
   const channels: ChannelDelivery[] = [];
-  if (hasChat) {
+  if (message.channel_delivery) {
+    const provider = message.channel_delivery.provider ?? message.via_channel ?? source;
+    channels.push(providerDelivery(message.channel_delivery, provider === 'slack' ? 'slack' : 'telegram'));
+  } else if (hasChat) {
     const seen = receiptStatus === 'read' || (hasChatTransport(source) && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
     // Persisted in the conversation means sent; only a visitor read cursor confirms seen.
     const state = message.id.startsWith('optimistic-') ? 'sending' : seen ? 'read' : 'sent';
