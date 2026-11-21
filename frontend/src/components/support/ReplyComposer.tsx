@@ -900,6 +900,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const unavailableProvider = providerConversation && !destinations.length && !hasChatSession && !portalReplySurface;
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
+    isProviderSource: supportChannel(conversation?.source)?.transport === 'provider',
     portal: portalReplySurface,
     presence: destinations.length ? 'unknown' : presence,
     emailEligible: !emailUnavailableReason,

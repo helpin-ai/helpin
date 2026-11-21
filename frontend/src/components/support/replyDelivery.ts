@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { supportChannel } from "@/lib/supportChannels";
 import { useEffect } from "react";
 import type { CreateMessageRequest, SupportReplyDeliveryMode } from "@/lib/pmTypes";
 
@@ -42,11 +41,19 @@ export function replyDeliveryChannels(
 
 export type ReplyPresence = 'unknown' | 'online' | 'offline';
 
+interface ReplyDeliveryContext {
+  source?: string;
+  isProviderSource?: boolean;
+  portal?: boolean;
+  presence: ReplyPresence;
+  emailEligible: boolean;
+}
+
 export function nextAutomaticReplyDelivery(
   current: SupportReplyDeliveryMode | undefined,
-  { source, portal, presence, emailEligible }: { source?: string; portal?: boolean; presence: ReplyPresence; emailEligible: boolean },
+  { source, isProviderSource, portal, presence, emailEligible }: ReplyDeliveryContext,
 ): SupportReplyDeliveryMode {
-  if (supportChannel(source)?.transport === 'provider') return 'chat_only';
+  if (isProviderSource) return 'chat_only';
   if (current && current !== 'chat_only') return current;
   // An email thread the customer also sees in the portal is answered in both.
   if (source === 'email') return portal && emailEligible ? 'chat_and_email' : 'email_only';
@@ -128,7 +135,7 @@ function automaticDraftKey(workspaceId: string, conversationId: string) {
 export function useComposerDelivery(
   workspaceId: string,
   conversationId: string,
-  context: { source?: string; portal?: boolean; presence: ReplyPresence; emailEligible: boolean; active: boolean; hasDraft?: boolean },
+  context: ReplyDeliveryContext & { active: boolean; hasDraft?: boolean },
 ) {
   const choice = useReplyDelivery(workspaceId, conversationId);
   const legacyKey = draftKey(workspaceId, conversationId);
