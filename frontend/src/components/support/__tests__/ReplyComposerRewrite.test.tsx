@@ -192,7 +192,7 @@ describe('ReplyComposer AI loading state', () => {
     mocks.conversation = { source: provider, channel: provider, provider_destinations: [origin], customer_email: 'lena@example.com' };
     act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
     expect(container.querySelector('[data-support-delivery-notice]')?.textContent).toBe(`Reply on ${label} to ${name}`);
-    expect(container.querySelector(`button[aria-label="Sending options: ${label} only"]`)?.textContent).toContain(label);
+    expect(container.querySelector(`button[aria-label="Sending options: ${label} only"]`)?.textContent).toBe('');
     await act(async () => button('Send').click());
     expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ delivery_mode: 'chat_only', channels: ['chat'], provider_origin_id: 'origin' }));
     act(() => { useSupportInboxStore.setState({ replyMode: 'note' }); });

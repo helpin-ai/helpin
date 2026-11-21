@@ -18,13 +18,13 @@ function DeliveryIcons({ mode, ChatIcon }: { mode: SupportReplyDeliveryMode; Cha
   );
 }
 
-function DeliveryOptionLabel({ mode, chatName, ChannelIcon, compact = false }: { mode: SupportReplyDeliveryMode; chatName: string; ChannelIcon: IconComponent; compact?: boolean }) {
+function DeliveryOptionLabel({ mode, chatName, ChannelIcon }: { mode: SupportReplyDeliveryMode; chatName: string; ChannelIcon: IconComponent }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       {mode !== "email_only" && (
         <span className="inline-flex items-center gap-1.5">
           <ChannelIcon aria-hidden="true" className="size-3.5" />
-          {mode === "chat_only" && !compact ? `${chatName} only` : chatName}
+          {mode === "chat_only" ? `${chatName} only` : chatName}
         </span>
       )}
       {mode === "chat_and_email" && <span>+</span>}
@@ -109,9 +109,7 @@ export function ReplyDeliverySelector({
           aria-label={`Sending options: ${current?.label ?? "Choose channel"}`}
           className="h-7 gap-1 rounded-l-full rounded-r-none border-r border-primary-foreground/25 px-2 text-xs"
         >
-          {!current ? "Choose channel" : current.provider
-            ? <DeliveryOptionLabel mode={mode} chatName={current.chatName} ChannelIcon={current.ChannelIcon} compact />
-            : <DeliveryIcons mode={mode} ChatIcon={current.ChannelIcon} />}
+          {current ? <DeliveryIcons mode={mode} ChatIcon={current.ChannelIcon} /> : "Choose channel"}
           <ArrowDown01Icon aria-hidden="true" className="size-3 opacity-70" />
         </Button>
       }
