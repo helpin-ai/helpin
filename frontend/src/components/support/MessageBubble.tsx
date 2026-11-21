@@ -14,7 +14,7 @@ import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, UserIcon, ZapIcon, Timer01Icon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, TelegramIcon, UserIcon, ZapIcon, Timer01Icon } from '@/lib/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { EmailDetailModal } from './EmailDetailModal';
@@ -962,7 +962,8 @@ export const MessageBubble = memo(function MessageBubble({
     : 'Received via email';
   const showStandaloneEmailBadge = isCustomer && hasEmailBadge;
   const showSlackSource = isCustomer && !message.is_internal && message.via_channel === 'slack';
-  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource;
+  const showTelegramSource = isCustomer && !message.is_internal && message.via_channel === 'telegram';
+  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource || showTelegramSource;
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
@@ -1069,6 +1070,11 @@ export const MessageBubble = memo(function MessageBubble({
           {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
             <div className="mt-0.5">
               {showSlackSource && <SlackMessageSource workspaceId={message.workspace_id} messageId={message.id} />}
+              {showTelegramSource && (
+                <span className="mb-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <TelegramIcon className="size-3" />Received from Telegram
+                </span>
+              )}
               {showStandaloneEmailBadge && (
                 <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
                   <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>

@@ -1,16 +1,13 @@
-import { SupportChannels } from '@/components/settings/channels/SupportChannels'
 import { Navigate } from '@tanstack/react-router'
-import { SettingsSection } from '@/components/settings/SettingsSection'
 import { Button } from '@/components/ui/button'
-import { Mail01Icon, Message01Icon, SlackIcon } from '@/lib/icons'
+import { Mail01Icon, Message01Icon, SlackIcon, TelegramIcon } from '@/lib/icons'
 import { SettingsPageFrame } from './SettingsPageFrame'
 
 export function SupportChannelsSettingsPage() {
   return (
     <SettingsPageFrame section="support-channels">
-      {({ workspaceId, currentWorkspaceSlug, permissions }) => (
+      {({ currentWorkspaceSlug, permissions }) => (
         <WorkspaceChannelSettings
-          workspaceId={workspaceId}
           slug={currentWorkspaceSlug}
           hasSupport={permissions.canAccessModule('support')}
           hasPM={permissions.canAccessModule('pm')}
@@ -23,14 +20,12 @@ export function SupportChannelsSettingsPage() {
 }
 
 export function WorkspaceChannelSettings({
-  workspaceId,
   slug,
   manageSlack,
   manageSupport,
   hasSupport = true,
   hasPM = true,
 }: {
-  workspaceId: string
   slug: string
   manageSlack: boolean
   hasSupport?: boolean
@@ -52,6 +47,7 @@ export function WorkspaceChannelSettings({
               section: 'inboxes-routing?tab=email',
             },
             ...(manageSlack ? [{ label: 'Slack', icon: SlackIcon, section: 'external-tools?tab=apps' }] : []),
+            ...(manageSupport ? [{ label: 'Telegram', icon: TelegramIcon, section: 'external-tools?tab=apps#telegram' }] : []),
           ].map(({ label, icon: Icon, section }) => (
             <div key={label} className="flex items-center gap-3 px-4 py-3">
               <Icon className="size-5" />
@@ -64,16 +60,6 @@ export function WorkspaceChannelSettings({
             </div>
           ))}
         </div>
-      )}
-      {hasSupport && (
-        <SettingsSection title="Telegram">
-          <div className="pt-3">
-            <SupportChannels
-              workspaceId={workspaceId}
-              editable={manageSupport}
-            />
-          </div>
-        </SettingsSection>
       )}
     </div>
   )

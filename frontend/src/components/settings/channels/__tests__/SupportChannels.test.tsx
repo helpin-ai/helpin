@@ -72,10 +72,10 @@ describe('SupportChannels', () => {
   it('explains how to start when nothing is connected', () => {
     accounts = []
     render()
-    expect(container.textContent).toContain('No Telegram bots connected')
-    expect(container.textContent).toContain('@BotFather')
+    expect(container.textContent).toContain('private support messages')
+    expect(container.querySelectorAll('button')).toHaveLength(1)
     render(false)
-    expect(button('Connect Telegram bot')).toBeUndefined()
+    expect(button('Connect bot')).toBeUndefined()
   })
 
   it('shows each bot with its inbox, health and AI switch', () => {
@@ -92,7 +92,7 @@ describe('SupportChannels', () => {
     expect(rows[0].textContent).toContain('Last message 5 minutes ago')
     expect(rows[1].textContent).toContain('Main inbox')
     expect(rows[1].textContent).toContain('2 replies were not delivered')
-    expect(rows[2].textContent).toContain('Reconnect with a new token')
+    expect(rows[2].textContent).toContain('Replace bot token')
 
     const aiSwitch = container.querySelector('[aria-label="AI replies for @second_bot"]') as HTMLButtonElement
     expect(aiSwitch.getAttribute('aria-checked')).toBe('false')
@@ -104,15 +104,15 @@ describe('SupportChannels', () => {
     accounts = []
     connect.mockResolvedValue(account())
     render()
-    act(() => button('Connect Telegram bot')?.click())
+    act(() => button('Connect bot')?.click())
     const input = document.getElementById('channel-token') as HTMLInputElement
     act(() => setInput(input, '@acme_support_bot'))
-    await act(async () => button('Connect bot')?.click())
+    await act(async () => (document.querySelector('button[type=submit]') as HTMLButtonElement).click())
     expect(document.getElementById('channel-token-error')?.textContent).toContain('full token')
     expect(connect).not.toHaveBeenCalled()
 
     act(() => setInput(input, ' 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw '))
-    await act(async () => button('Connect bot')?.click())
+    await act(async () => (document.querySelector('button[type=submit]') as HTMLButtonElement).click())
     expect(connect).toHaveBeenCalledWith({ token: '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw', mailboxId: null })
   })
 

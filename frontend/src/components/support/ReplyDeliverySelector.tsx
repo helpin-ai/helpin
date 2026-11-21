@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { QuietDropdown } from "@/components/design-system/quiet-dropdown";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
-import { ArrowDown01Icon, BubbleChatIcon, Mail01Icon, SlackIcon } from "@/lib/icons";
+import { ArrowDown01Icon, BubbleChatIcon, Mail01Icon, type IconComponent } from "@/lib/icons";
 import type { SupportReplyDeliveryMode } from "@/lib/pmTypes";
+import { supportChannel } from "@/lib/supportChannels";
 import { REPLY_DELIVERY_LABELS } from "./replyDelivery";
 
-function DeliveryIcons({ mode, slack }: { mode: SupportReplyDeliveryMode; slack: boolean }) {
-  const ChatIcon = slack ? SlackIcon : BubbleChatIcon;
+function DeliveryIcons({ mode, ChatIcon }: { mode: SupportReplyDeliveryMode; ChatIcon: IconComponent }) {
   return (
     <>
       {mode !== "email_only" && (
@@ -19,8 +19,7 @@ function DeliveryIcons({ mode, slack }: { mode: SupportReplyDeliveryMode; slack:
   );
 }
 
-function DeliveryOptionLabel({ mode, chatName }: { mode: SupportReplyDeliveryMode; chatName: string }) {
-  const ChannelIcon = chatName === "Slack" ? SlackIcon : BubbleChatIcon;
+function DeliveryOptionLabel({ mode, chatName, ChannelIcon }: { mode: SupportReplyDeliveryMode; chatName: string; ChannelIcon: IconComponent }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       {mode !== "email_only" && (
@@ -61,6 +60,7 @@ export function ReplyDeliverySelector({
   channel?: string;
 }) {
   const chatName = channel ?? (portal ? "Portal" : "Chat");
+  const ChannelIcon = supportChannel(channel?.toLowerCase())?.inbox?.icon ?? BubbleChatIcon;
   const labels: Record<SupportReplyDeliveryMode, string> = channel || portal ? {
     chat_only: `${chatName} only`, chat_and_email: `${chatName} + email`, email_only: "Email only",
   } : REPLY_DELIVERY_LABELS;
@@ -100,7 +100,7 @@ export function ReplyDeliverySelector({
           aria-label={`Sending options: ${labels[mode]}`}
           className="h-7 gap-1 rounded-l-full rounded-r-none border-r border-primary-foreground/25 px-2 text-xs"
         >
-          <DeliveryIcons mode={mode} slack={channel === "Slack"} />
+          <DeliveryIcons mode={mode} ChatIcon={ChannelIcon} />
           <ArrowDown01Icon aria-hidden="true" className="size-3 opacity-70" />
         </Button>
       }
@@ -121,7 +121,7 @@ export function ReplyDeliverySelector({
               label: labels[value],
               disabled: !!reason,
               tooltip: reason,
-              content: <DeliveryOptionLabel mode={value} chatName={chatName} />,
+              content: <DeliveryOptionLabel mode={value} chatName={chatName} ChannelIcon={ChannelIcon} />,
             };
           }),
         },

@@ -62,6 +62,18 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it('attributes a private Telegram message to its own channel after a merge', () => {
+    const rendered = renderBubble({
+      id: 'telegram-dm', workspace_id: 'ws', conversation_id: 'merged', via_channel: 'telegram',
+      sender_type: 'customer', message_type: 'reply', is_internal: false, content: 'Hello',
+      created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z',
+    }, undefined, { source: 'email' });
+    try {
+      expect(rendered.container.textContent).toContain('Received from Telegram');
+      expect(rendered.container.querySelector('a[href]')).toBeNull();
+    } finally { rendered.cleanup(); }
+  });
+
   it.each([
     ['https://northstar.slack.com/archives/C123/p1700000123456789?thread_ts=1700000000.000001', true],
     ['', false],

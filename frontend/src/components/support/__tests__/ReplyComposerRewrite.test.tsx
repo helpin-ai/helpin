@@ -202,6 +202,25 @@ describe('ReplyComposer AI loading state', () => {
     expect(button('Add Note')).toBeDefined();
   });
 
+  it.each([
+    [{ source: 'telegram', channel: 'telegram', customer_name: 'Lena Park' }, 'Lena Park'],
+    [{ source: 'telegram', channel: 'telegram', customer_name: 'Lena Park', merge_revision: 2, merge_has_channel: true }, 'Telegram DM'],
+    [{ source: 'telegram', channel: 'telegram', customer_name: 'Another customer', provider_destinations: [{ id: 'old-dm', provider: 'telegram', name: 'Lena Park', display_id: 42 }] }, 'Lena Park'],
+  ])('identifies the Telegram destination and keeps the existing reply transport (%j)', async (conversation, destination) => {
+    setup();
+    mocks.conversation = conversation;
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>); });
+    expect(container.querySelector('[data-support-delivery-notice]')?.textContent).toBe('Reply to ' + destination);
+    if (destination === 'Telegram DM') {
+      act(() => button('Use current recipients').click());
+    }
+    const label = destination === 'Telegram DM' ? 'Send to Telegram DM' : 'Send to Lena Park on Telegram';
+    const send = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    expect(send.textContent).toBe('');
+    await act(async () => { send.click(); });
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ delivery_mode: 'chat_only', channels: ['chat'] }));
+  });
+
   it('requires a thread in the recipient area when a merged Slack conversation has multiple destinations', () => {
     setup();
     mocks.conversation = {

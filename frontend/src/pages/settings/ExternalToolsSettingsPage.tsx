@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Navigate } from '@tanstack/react-router';
+import { Navigate, useLocation } from '@tanstack/react-router';
 import { ExternalMCPAddButton, ExternalMCPConnections } from '@/components/automation/ExternalMCPConnections';
+import { SupportChannels } from '@/components/settings/channels/SupportChannels';
 import { SlackChannels } from '@/components/settings/channels/SlackChannels';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { externalToolsAccess } from '@/lib/settingsSections';
@@ -21,8 +22,9 @@ function ExternalToolsTabs({ workspaceId, currentWorkspaceSlug, permissions, req
   onTabChange: (tab: Tab) => void;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const telegramShortcut = useLocation({ select: location => location.hash === 'telegram' });
   const { canManageSettings } = permissions;
-  const available = externalToolsAccess(canManageSettings, permissions.has('settings.read'), permissions.modules);
+  const available = externalToolsAccess(canManageSettings, permissions.permissionSet, permissions.modules);
   if (!available.apps && !available.mcp) {
     return <p className="text-sm text-muted-foreground">You don’t have access to external tools in this workspace.</p>;
   }
@@ -31,6 +33,11 @@ function ExternalToolsTabs({ workspaceId, currentWorkspaceSlug, permissions, req
     return <Navigate to="/w/$slug/settings/external-tools" params={{ slug: currentWorkspaceSlug }} search={{ tab: defaultTab }} replace />;
   }
   const tab = requestedTab ?? defaultTab;
+  const slack = available.slack && (
+    <SlackChannels key="slack" workspaceId={workspaceId} slug={currentWorkspaceSlug}
+      hasSupport={permissions.canAccessModule('support')} hasPM={permissions.canAccessModule('pm')} />
+  );
+  const telegram = available.telegram && <SupportChannels key="telegram" workspaceId={workspaceId} editable />;
   return (
     <Tabs value={tab} onValueChange={value => onTabChange(value === 'mcp' ? 'mcp' : 'apps')}>
       <div className="flex items-center justify-between gap-3">
@@ -41,9 +48,8 @@ function ExternalToolsTabs({ workspaceId, currentWorkspaceSlug, permissions, req
         {tab === 'mcp' && canManageSettings && <ExternalMCPAddButton workspaceId={workspaceId} onAdd={() => setCreateOpen(true)} />}
       </div>
       {available.apps && (
-        <TabsContent value="apps" className="mt-4">
-          <SlackChannels workspaceId={workspaceId} slug={currentWorkspaceSlug}
-            hasSupport={permissions.canAccessModule('support')} hasPM={permissions.canAccessModule('pm')} />
+        <TabsContent value="apps" className="mt-4 space-y-4">
+          {telegramShortcut ? [telegram, slack] : [slack, telegram]}
         </TabsContent>
       )}
       {available.mcp && (

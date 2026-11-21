@@ -17,7 +17,7 @@ import {
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
   InformationCircleIcon, StickyNote01Icon, PencilEdit01Icon, Delete01Icon, ArrowLeft02Icon,
-  SlackIcon, ZapIcon,
+  ZapIcon,
 } from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -1880,11 +1880,16 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const content = editor.getText();
   const hasContent = content.trim().length > 0;
   const showThreadPicker = deliveryMode !== 'email_only' && destinations.length > 1;
-  const sendsToSlack = deliveryMode !== 'email_only' && providerChannel === 'Slack';
+  const provider = supportChannel(providerChannel?.toLowerCase());
+  const SendChannelIcon = deliveryMode !== 'email_only' ? provider?.inbox?.icon : undefined;
   const slackChannelName = (origin ? origin.name : conversation?.provider_channel_name)?.trim().replace(/^#+/, '');
-  const slackDestination = slackChannelName ? `#${slackChannelName}` : 'Slack';
-  const slackSendOnly = !isNote && sendsToSlack && providerOnly;
-  const slackSendLabel = sendMutation.isPending ? 'Sending…' : `Send to ${originNeeded ? 'Slack' : slackDestination}`;
+  // A Telegram-only merge can route to a different participant than the displayed customer.
+  const directDM = conversation?.channel === 'telegram' && !conversation.merge_revision && !conversation.merge_has_channel;
+  const dmRecipient = origin ? origin.name.trim() : directDM ? conversation.customer_name?.trim() : undefined;
+  const destination = provider?.key === 'telegram' ? dmRecipient || 'Telegram DM' : slackChannelName ? `#${slackChannelName}` : 'Slack';
+  const providerSendOnly = !isNote && providerOnly && !!SendChannelIcon;
+  const sendDestination = originNeeded ? providerChannel : provider?.key === 'telegram' && dmRecipient ? `${dmRecipient} on Telegram` : destination;
+  const providerSendLabel = sendMutation.isPending ? 'Sending…' : `Send to ${sendDestination}`;
   const deliveryNoticeError = originNeeded && deliveryUnavailableReason === chatUnavailableReason ? undefined : deliveryUnavailableReason;
   const sendLabel = editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes')
     : isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send';
@@ -1959,7 +1964,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
       {/* Rises into view once a reply is started. The grid-rows trick grows
           its height without measuring, so the composer's top edge lifts. */}
-      {!isNote && (sendsEmail || sendsToSlack || showThreadPicker) && (
+      {!isNote && (sendsEmail || SendChannelIcon || showThreadPicker) && (
         <div
           className={cn(
             'grid transition-[grid-template-rows,opacity] duration-700 ease-in-out motion-reduce:transition-none',
@@ -1987,10 +1992,10 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
                     options={destinations.map(d => ({ value: d.id, label: `${d.name} · Conversation ${d.display_id}` }))}
                   />
                 </div>
-              ) : sendsToSlack && (
+              ) : SendChannelIcon && (
                 <p className="flex min-w-0 items-baseline gap-1" aria-live="polite">
                   <span className="shrink-0">Reply to</span>{' '}
-                  <span className="truncate font-medium text-foreground" title={slackDestination}>{slackDestination}</span>
+                  <span className="truncate font-medium text-foreground" title={destination}>{destination}</span>
                 </p>
               )}
               {sendsEmail && (
@@ -2515,7 +2520,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
           </kbd>
           {editingNote && <Button size="sm" variant="ghost" className="h-7 px-3 text-xs" disabled={updateNoteMutation.isPending} onClick={() => onFinishEdit?.(editingNote.id)}>Cancel</Button>}
           <div className="inline-flex shrink-0 items-center">
-            {!isNote && !slackSendOnly && <ReplyDeliverySelector
+            {!isNote && !providerSendOnly && <ReplyDeliverySelector
               mode={deliveryMode}
               onChange={selectDeliveryMode}
               disabled={isRewriting || sendMutation.isPending}
@@ -2529,20 +2534,20 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               size="sm"
               disabled={isRewriting || attachmentsPending || updateNoteMutation.isPending || !noteChanged || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
               onClick={() => void handleSend()}
-              aria-label={slackSendOnly ? slackSendLabel : undefined}
-              title={slackSendOnly ? slackSendLabel : undefined}
+              aria-label={providerSendOnly ? providerSendLabel : undefined}
+              title={providerSendOnly ? providerSendLabel : undefined}
               className={cn(
                 'gap-1.5 rounded-full text-xs',
-                slackSendOnly ? 'h-[44px] w-[44px] px-0 sm:h-7 sm:w-9' : 'h-7 px-3',
+                providerSendOnly ? 'h-[44px] w-[44px] px-0 sm:h-7 sm:w-9' : 'h-7 px-3',
                 isNote && 'bg-amber-500 hover:bg-amber-600 text-white',
-                !isNote && !slackSendOnly && 'rounded-l-none'
+                !isNote && !providerSendOnly && 'rounded-l-none'
               )}
             >
               {isNote && !editingNote && <SentIcon className="h-3 w-3" />}
-              {slackSendOnly ? (
+              {providerSendOnly ? (
                 sendMutation.isPending
                   ? <Loading01Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
-                  : <SlackIcon className="size-4 sm:size-3.5" />
+                  : <SendChannelIcon className="size-4 sm:size-3.5" />
               ) : sendLabel}
             </Button>
           </div>

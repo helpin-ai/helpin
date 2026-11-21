@@ -301,7 +301,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
     id: 'external-tools',
     label: 'External tools',
     description: 'Connect workspace apps and MCP servers.',
-    keywords: ['Slack', 'MCP servers', 'agent tools'],
+    keywords: ['Slack', 'Telegram', 'MCP servers', 'agent tools'],
     icon: ExternalMCP,
     group: 'Integrations & data',
   },
@@ -529,10 +529,15 @@ export function buildSettingsRoutePath(workspaceSlug: string, section: SettingsR
   return `/w/${workspaceSlug}/settings/${section}`;
 }
 
-export function externalToolsAccess(canManageSettings: boolean, canReadSettings: boolean, modules?: readonly WorkspaceModule[]) {
+export function externalToolsAccess(canManageSettings: boolean, permissions?: ReadonlySet<string>, modules?: readonly WorkspaceModule[]) {
+  const hasSupport = !modules || modules.includes('support');
+  const slack = canManageSettings && (hasSupport || modules.includes('pm'));
+  const telegram = !!permissions?.has('support.admin') && hasSupport;
   return {
-    apps: canManageSettings && (!modules || modules.includes('pm') || modules.includes('support')),
-    mcp: canReadSettings && (!modules || modules.includes('agents')),
+    slack,
+    telegram,
+    apps: slack || telegram,
+    mcp: !!permissions?.has('settings.read') && (!modules || modules.includes('agents')),
   };
 }
 
@@ -553,7 +558,7 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
     const module = workspaceSurface(buildSettingsRoutePath('workspace', section.id));
     if (section.id === 'support-channels' && modules && !modules.includes('support')) continue;
     if (section.id === 'external-tools') {
-      const access = externalToolsAccess(canManageSettings, !!permissionSet?.has('settings.read'), modules);
+      const access = externalToolsAccess(canManageSettings, permissionSet, modules);
       if (!access.apps && !access.mcp) continue;
     }
     if (modules && module && !modules.includes(module)) {

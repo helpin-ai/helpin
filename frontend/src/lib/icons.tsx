@@ -1,4 +1,5 @@
 import slackMark from '@/assets/slack-mark.svg';
+import telegramMark from '@/assets/telegram-mark.svg';
 import type { FC, CSSProperties } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -213,7 +214,6 @@ import {
   ZoomOutAreaIcon as _ZoomOutAreaIcon,
   ThumbsDownIcon as _ThumbsDownIcon,
   ThumbsUpIcon as _ThumbsUpIcon,
-  TelegramIcon as _TelegramIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -357,7 +357,9 @@ export const BubbleChatIcon = /* @__PURE__ */ hi(_BubbleChatIcon);
 export const SlackIcon: IconComponent = ({ className, style }) => (
   <img src={slackMark} alt="" width={16} height={16} className={className} style={style} />
 );
-export const TelegramIcon = /* @__PURE__ */ hi(_TelegramIcon);
+export const TelegramIcon: IconComponent = ({ className, style }) => (
+  <img src={telegramMark} alt="" width={16} height={16} className={className} style={style} />
+);
 export const Clock01Icon = /* @__PURE__ */ hi(_Clock01Icon);
 export const Clock02Icon = /* @__PURE__ */ hi(_Clock02Icon);
 export const CodeIcon = /* @__PURE__ */ hi(_CodeIcon);

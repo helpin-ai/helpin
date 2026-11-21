@@ -72,6 +72,8 @@ describe('getSettingsSidebarGroups', () => {
     [['pm'], true, [], true],
     [['support'], true, [], true],
     [['pm'], false, ['settings.read'], false],
+    [['support'], false, ['support.admin'], true],
+    [['pm'], false, ['support.admin'], false],
     [['agents'], false, ['settings.read'], true],
     [['agents'], true, [], false],
     [['docs'], true, ['settings.read'], false],
