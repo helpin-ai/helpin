@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -191,10 +193,21 @@ func (h *SupportInboxHandler) GetConversation(w http.ResponseWriter, r *http.Req
 
 	conversation, err := h.supportService.GetConversation(r.Context(), workspaceID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeSupportConversationLookupError(r.Context(), w, workspaceID, id, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, conversation)
+}
+
+// writeSupportConversationLookupError answers missing and access-filtered
+// conversations with the same 404 and keeps unexpected failures generic.
+func writeSupportConversationLookupError(ctx context.Context, w http.ResponseWriter, workspaceID, id string, err error) {
+	if errors.Is(err, service.ErrSupportConversationUnavailable) || uuid.Validate(id) != nil {
+		writeError(w, http.StatusNotFound, "conversation not found")
+		return
+	}
+	slog.ErrorContext(ctx, "load support conversation", "error", err, "workspace_id", workspaceID, "conversation_id", id)
+	writeError(w, http.StatusInternalServerError, "could not load conversation")
 }
 
 // SendConversationTranscript handles POST /api/support/inbox/conversations/{id}/transcript.

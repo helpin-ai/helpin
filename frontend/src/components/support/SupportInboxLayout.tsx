@@ -9,12 +9,13 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { useMinWidth } from '@/hooks/use-min-width';
 import { supportInboxBuiltinViewKey, useSupportInboxStore } from '@/stores/supportInboxStore';
-import { useConversation, useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
+import { useConversation, useInboxScopes, useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
+import { isConversationUnavailableError } from '@/lib/supportConversationError';
 import { ConversationList, type SupportInboxEmptyState } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { buildSupportConversationPageContext } from './supportAgentContext';
 import { supportSidebarWidthClass } from './supportSidebarLayout';
-import { shouldClearConversationForMailbox } from './supportInboxSelection';
+import { mailboxContextForRoutedConversation, shouldClearConversationForMailbox } from './supportInboxSelection';
 import { NewConversationDialog } from './NewConversationDialog';
 import { SupportShortcutsDialog } from './SupportShortcutsDialog';
 import { useSupportInboxShortcuts } from '@/hooks/useSupportInboxShortcuts';
@@ -104,7 +105,11 @@ export function SupportInboxLayout() {
   } = useSupportInboxStore();
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
   const { data: routingUsage } = useSupportRoutingUsage(workspaceId);
-  const { data: selectedConversation } = useConversation(workspaceId, selectedConversationId);
+  const { data: inboxScopes, isFetched: inboxScopesFetched } = useInboxScopes(workspaceId);
+  const { data: selectedConversationData, error: selectedConversationError } = useConversation(workspaceId, selectedConversationId);
+  const selectedConversationUnavailable = isConversationUnavailableError(selectedConversationError);
+  // Never reveal cached detail for a conversation the viewer was just denied.
+  const selectedConversation = selectedConversationUnavailable ? undefined : selectedConversationData;
   const supportAgentContext = useMemo(
     () => buildSupportConversationPageContext(selectedConversation ?? (selectedConversationId ? { id: selectedConversationId } : null)),
     [selectedConversation, selectedConversationId],
@@ -119,7 +124,7 @@ export function SupportInboxLayout() {
   const routeConversationId = params.conversationId ?? null;
   const isMultiPanel = useMinWidth(768);
   useNotificationView(workspaceId, 'support_conversation', isMultiPanel ? selectedConversationId : routeConversationId);
-  const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId;
+  const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId && !selectedConversationUnavailable;
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
@@ -213,6 +218,13 @@ export function SupportInboxLayout() {
       search: supportRouteSearch,
       replace: true,
     });
+  }, [navigate, selectConversation, slug, supportRouteSearch]);
+
+  // Desktop recovery from an unavailable or failed thread.
+  const handleBackToInbox = useCallback(() => {
+    if (!slug) return;
+    selectConversation(null);
+    void navigate({ to: '/w/$slug/support', params: { slug }, search: supportRouteSearch });
   }, [navigate, selectConversation, slug, supportRouteSearch]);
 
   // Sync URL params → store on mount / URL change.
@@ -385,21 +397,53 @@ export function SupportInboxLayout() {
     }
   }, [isMultiPanel, routeConversationId, selectedConversationId, slug, supportRouteSearch, navigate]);
 
-  // A team inbox can become empty after its final conversation is moved or
-  // resolved. Do not leave a thread from a different mailbox selected beside
-  // that empty list.
+  // A routed conversation can live in another inbox than the URL hint or the
+  // selected team inbox (it moved, or the link carries a stale team_inbox).
+  // Keep the same conversation open and switch the inbox context to where it
+  // lives now, or to the general inbox when that mailbox is not selectable.
+  // Only the first resolution of a routed ID is corrected; a later mismatch
+  // (moved in-session, or an explicit inbox switch) keeps the old behaviour of
+  // closing the thread beside the selected inbox.
+  const routeReconcileRef = useRef<{ conversationId: string; pendingMailboxId: string | null } | null>(null);
   useEffect(() => {
-    if (!selectedConversationId || !selectedConversation) return;
-    if (!shouldClearConversationForMailbox(selectedMailboxId, selectedConversation.mailbox_id)) return;
+    if (!slug || !routeConversationId || !inboxScopesFetched) return;
+    // Read the store directly: the URL sync above may have just updated it.
+    const current = useSupportInboxStore.getState();
+    if (current.selectedConversationId !== routeConversationId) return;
+    if (!selectedConversation || selectedConversation.id !== routeConversationId) return;
+    const reconciled = routeReconcileRef.current;
+    if (reconciled?.conversationId === routeConversationId) {
+      // Wait until the correction's navigation has reached the store.
+      if (reconciled.pendingMailboxId !== null) {
+        if (current.selectedMailboxId !== reconciled.pendingMailboxId) return;
+        reconciled.pendingMailboxId = null;
+      }
+      if (!shouldClearConversationForMailbox(current.selectedMailboxId, selectedConversation.mailbox_id)) return;
+      selectConversation(null);
+      void navigate({ to: '/w/$slug/support', params: { slug }, search: supportRouteSearch, replace: true });
+      return;
+    }
+    const nextMailboxId = mailboxContextForRoutedConversation(
+      current.selectedMailboxId,
+      selectedConversation.mailbox_id,
+      inboxScopes?.mailboxes ?? [],
+    );
+    routeReconcileRef.current = { conversationId: routeConversationId, pendingMailboxId: nextMailboxId };
+    if (nextMailboxId === null) return;
 
-    selectConversation(null);
     void navigate({
-      to: '/w/$slug/support',
-      params: { slug },
-      search: supportRouteSearch,
+      to: '/w/$slug/support/$conversationId',
+      params: { slug, conversationId: routeConversationId },
+      search: buildSupportInboxSearch({
+        navFilter: 'inbox',
+        selectedMailboxId: nextMailboxId,
+        statusFilter: 'all',
+        searchQuery: '',
+        includeFilterParams: false,
+      }),
       replace: true,
     });
-  }, [navigate, selectConversation, selectedConversation, selectedConversationId, selectedMailboxId, slug, supportRouteSearch]);
+  }, [inboxScopes, inboxScopesFetched, navigate, routeConversationId, selectConversation, selectedConversation, selectedMailboxId, slug, supportRouteSearch]);
 
   if (!workspace) {
     return <p className="p-4 text-sm text-muted-foreground">Workspace not found.</p>;
@@ -462,6 +506,7 @@ export function SupportInboxLayout() {
           <MessageThread
             workspaceId={workspaceId}
             conversationId={selectedConversationId}
+            onBackToInbox={handleBackToInbox}
             inboxEmptyState={inboxEmptyState}
             onWidgetSettingsClick={handleWidgetSettingsClick}
             onCreateConversationClick={() => setCreateDialogOpen(true)}

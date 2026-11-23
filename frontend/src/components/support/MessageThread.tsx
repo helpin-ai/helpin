@@ -5,6 +5,7 @@ import { SupportSLABadge } from './SupportSLABadge';
 import { MergedConversationContinuation } from './ConversationMergeHistory';
 import { DaySeparator } from './SupportDaySeparator';
 import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
+import { isConversationUnavailableError } from '@/lib/supportConversationError';
 import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
 import { LiveTranslateBar } from './LiveTranslateBar';
 import { SupportCreateTaskModal } from './SupportCreateTaskModal';
@@ -266,6 +267,64 @@ const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton({
   );
 });
 
+function ThreadLoadProblem({
+  unavailable,
+  isMobileSheet,
+  onBackToInbox,
+  onRetry,
+  retrying,
+}: {
+  unavailable: boolean;
+  isMobileSheet: boolean;
+  onBackToInbox?: () => void;
+  onRetry?: () => void;
+  retrying: boolean;
+}) {
+  // Fixed copy: never reveal whether the conversation exists, moved, or was archived.
+  const title = unavailable ? 'Conversation unavailable' : "Couldn't load this conversation";
+  return (
+    <div data-support-message-thread role="alert" className="flex min-h-0 min-w-0 flex-1 flex-col bg-background dark:bg-sidebar">
+      {isMobileSheet ? (
+        <SupportInboxPanelHeader className="gap-1 px-1.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            onClick={onBackToInbox}
+            aria-label="Return to Inbox"
+          >
+            <ArrowLeft02Icon className="h-4 w-4" />
+          </Button>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">{title}</span>
+        </SupportInboxPanelHeader>
+      ) : null}
+      <EmptyState
+        icon={Message01Icon}
+        title={title}
+        subtitle={unavailable
+          ? 'You may not have access to this conversation, or it may no longer exist.'
+          : 'Something went wrong while loading it. Try again.'}
+        background="muted"
+        actions={(
+          <>
+            {onRetry ? (
+              <Button type="button" size="sm" variant="outline" disabled={retrying} onClick={onRetry}>
+                Retry
+              </Button>
+            ) : null}
+            {onBackToInbox ? (
+              <Button type="button" size="sm" variant={onRetry ? 'ghost' : 'outline'} onClick={onBackToInbox}>
+                Back to inbox
+              </Button>
+            ) : null}
+          </>
+        )}
+      />
+    </div>
+  );
+}
+
 export function MessageThread({
   workspaceId,
   conversationId,
@@ -293,10 +352,26 @@ export function MessageThread({
     messageCount: 0,
     lastMessageId: null,
   });
-  const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
+  const {
+    data: conversationData,
+    isFetched: conversationFetched,
+    error: conversationError,
+    isFetching: conversationFetching,
+    refetch: refetchConversation,
+  } = useConversation(workspaceId, conversationId);
+  // A rejected lookup hides any cached detail for this ID.
+  const conversationUnavailable = !!conversationId && (
+    isConversationUnavailableError(conversationError) ||
+    (conversationFetched && !conversationData && !conversationError && !conversationFetching)
+  );
+  const conversationLoadFailed = !!conversationId && !conversationUnavailable && !!conversationError && !conversationData;
+  const conversation = conversationUnavailable ? undefined : conversationData;
   const {
     data: messagePages,
     isLoading,
+    isError: messagesError,
+    isFetching: messagesFetching,
+    refetch: refetchMessages,
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
@@ -754,11 +829,19 @@ export function MessageThread({
     };
   }, [conversationId, fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage, messages, mergeHistory]);
 
-  // Treat a stale conversation id (e.g., previous selection that no longer
-  // matches the active filter, or a deleted conversation) the same as no
-  // selection. Wait until the fetch settled so we don't flash during load.
-  const noSelection = !conversationId || (conversationFetched && !conversation);
-  if (noSelection) {
+  if (conversationId && (conversationUnavailable || conversationLoadFailed)) {
+    return (
+      <ThreadLoadProblem
+        unavailable={conversationUnavailable}
+        isMobileSheet={isMobileSheet}
+        onBackToInbox={onBackToInbox}
+        onRetry={conversationUnavailable ? undefined : () => void refetchConversation()}
+        retrying={conversationFetching}
+      />
+    );
+  }
+
+  if (!conversationId) {
     if (celebration && celebration.scopeKey === clearScopeKey && !isMobileSheet) {
       return <InboxClearedCelebration celebration={celebration} />;
     }
@@ -780,34 +863,6 @@ export function MessageThread({
           subtitle="Nothing in the Inbox needs a reply right now. New conversations will show up here."
           background="muted"
         />
-      );
-    }
-
-    if (isMobileSheet) {
-      return (
-        <div data-support-message-thread className="flex min-h-0 min-w-0 flex-1 flex-col bg-background dark:bg-sidebar">
-          <SupportInboxPanelHeader className="gap-1 px-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 shrink-0"
-              onClick={onBackToInbox}
-              aria-label="Return to Inbox"
-            >
-              <ArrowLeft02Icon className="h-4 w-4" />
-            </Button>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
-              Conversation unavailable
-            </span>
-          </SupportInboxPanelHeader>
-          <EmptyState
-            icon={Message01Icon}
-            title="Conversation unavailable"
-            subtitle="It may have been moved or deleted. Return to the Inbox to continue."
-            background="muted"
-          />
-        </div>
       );
     }
 
@@ -1091,7 +1146,21 @@ export function MessageThread({
               </Button>
             </div>
           )}
-          {!isThreadLoading && messages.length === 0 && (
+          {!isThreadLoading && messagesError && messages.length === 0 && (
+            <div role="alert">
+              <EmptyState
+                icon={Message01Icon}
+                title="Couldn't load messages"
+                subtitle="The message history didn't load. Try again."
+                actions={(
+                  <Button type="button" size="sm" variant="outline" disabled={messagesFetching} onClick={() => void refetchMessages()}>
+                    Retry
+                  </Button>
+                )}
+              />
+            </div>
+          )}
+          {!isThreadLoading && !messagesError && messages.length === 0 && (
             <EmptyState
               icon={Message01Icon}
               title="No messages yet"
