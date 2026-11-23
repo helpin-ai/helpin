@@ -1555,6 +1555,11 @@ func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceI
 	return nil
 }
 
+// ErrSupportConversationUnavailable means the conversation is missing or the
+// actor cannot access it; callers must not distinguish the two.
+// The message keeps the legacy "ticket not found" text that callers match on.
+var ErrSupportConversationUnavailable = errors.New("ticket not found")
+
 // GetConversation returns a single conversation.
 func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
 	ticket, err := s.loadConversationAccessible(ctx, workspaceID, id)
@@ -1562,7 +1567,7 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 	if ticket == nil {
-		return nil, fmt.Errorf("ticket not found")
+		return nil, ErrSupportConversationUnavailable
 	}
 	if s.triageService != nil {
 		if err := s.triageService.HydrateConversation(ctx, ticket); err != nil {
