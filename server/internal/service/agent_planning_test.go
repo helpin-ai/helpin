@@ -472,3 +472,25 @@ func TestRenderPlannedStoryDescriptionRendersHTML(t *testing.T) {
 		t.Fatalf("expected markdown headings to be converted, got %q", html)
 	}
 }
+
+func TestRunWithoutUserFallsBackToWorkspaceOwner(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, owner_id) VALUES ('ws-owner', 'WS', 'ws-owner', 'user-owner')`).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	svc := &AgentService{workspaceRepo: repository.NewWorkspaceRepository(db)}
+
+	if got := svc.auditActorIDForRun(ctx, &model.AgentRun{ID: "run-1", WorkspaceID: "ws-owner", AgentID: "scribe"}); got != "user-owner" {
+		t.Fatalf("auditActorIDForRun = %q, want workspace owner", got)
+	}
+	if got, err := svc.documentAuthorFallback(ctx, "ws-owner", " "); err != nil || got != "user-owner" {
+		t.Fatalf("documentAuthorFallback = %q, %v; want workspace owner", got, err)
+	}
+	if got, err := svc.documentAuthorFallback(ctx, "ws-owner", "user-actor"); err != nil || got != "user-actor" {
+		t.Fatalf("documentAuthorFallback kept %q, %v; want explicit actor", got, err)
+	}
+	if _, err := svc.documentAuthorFallback(ctx, "ws-missing", ""); err == nil {
+		t.Fatal("documentAuthorFallback accepted an empty author for an unknown workspace")
+	}
+}
