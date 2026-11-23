@@ -1,4 +1,5 @@
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
+import { isConversationUnavailableError, SupportConversationLoadError } from '@/lib/supportConversationError';
 import type { CreateTaskFromConversationRequest, UpdateSupportNoteRequest } from '@/lib/pmTypes';
 import type { CustomerPortalCompanyRole, CustomerPortalContactAccessValue, CustomerPortalRole, WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
@@ -1052,8 +1053,14 @@ export function useDisableSupportEmailRoute(workspaceId: string) {
 export function useConversation(workspaceId: string, conversationId: string | null) {
   return useQuery({
     queryKey: queryKeys.support.conversation(workspaceId, conversationId ?? ''),
-    queryFn: async () => unwrap(await supportService.getConversation(workspaceId, conversationId!)),
+    queryFn: async () => {
+      const response = await supportService.getConversation(workspaceId, conversationId!);
+      if (response.error) throw new SupportConversationLoadError(response.error, response.status);
+      if (!response.data) throw new SupportConversationLoadError('conversation not found', 404);
+      return response.data;
+    },
     enabled: !!workspaceId && !!conversationId,
+    retry: (failureCount, error) => !isConversationUnavailableError(error) && failureCount < 1,
     staleTime: 30_000,
     refetchInterval: (query) => {
       const state = query.state.data?.ai_follow_up?.status;
