@@ -250,3 +250,35 @@ func TestDelayedTeamReplySavedDefault(t *testing.T) {
 		})
 	}
 }
+
+func TestDelayedTeamReplySweepSkipsMergedConversations(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	at := now.Add(-10 * time.Minute)
+	cr := repository.NewSupportConversationRepository(db)
+	mr := repository.NewSupportMessageRepository(db)
+	active := &model.SupportConversation{ID: "00000000-0000-0000-0000-000000000002", WorkspaceID: "delay-ws", Subject: "Active", Status: "open", Channel: "widget", AIEscalatedAt: &at, AIState: strPtr("escalated")}
+	merged := &model.SupportConversation{ID: "00000000-0000-0000-0000-000000000001", WorkspaceID: "delay-ws", Subject: "Merged", Status: "open", Channel: "widget", AIEscalatedAt: &at, AIState: strPtr("escalated"), MergedIntoID: &active.ID}
+	for _, conv := range []*model.SupportConversation{active, merged} {
+		if err := cr.Create(ctx, conv); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &SupportInboxService{conversationRepo: cr, messageRepo: mr}
+	if err := s.ProcessDelayedTeamReplies(ctx, now); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	for _, tc := range []struct {
+		id   string
+		want int64
+	}{{merged.ID, 0}, {active.ID, 1}} {
+		var count int64
+		if err := db.Model(&model.SupportMessage{}).Where("conversation_id = ? AND system_event_type = ?", tc.id, "delayed_team_reply").Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != tc.want {
+			t.Fatalf("conversation %s: %d delayed replies, want %d", tc.id, count, tc.want)
+		}
+	}
+}
