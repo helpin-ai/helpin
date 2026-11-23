@@ -617,6 +617,10 @@ func (s *AgentService) EnsureEpicSpecDocument(ctx context.Context, workspaceID, 
 	if epicWithStats == nil || epicWithStats.Epic.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("epic not found")
 	}
+	actorID, err = s.documentAuthorFallback(ctx, workspaceID, actorID)
+	if err != nil {
+		return nil, err
+	}
 	return s.ensureEpicSpecDocument(ctx, workspaceID, &epicWithStats.Epic, actorID)
 }
 
@@ -655,9 +659,6 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 	}
 
 	teamID := epic.TeamID
-	if teamID == nil {
-		teamID = strPtr(actorID)
-	}
 
 	doc, err := s.docsDocumentRepo.Create(ctx, &model.DocsDocument{
 		WorkspaceID: workspaceID,
@@ -706,7 +707,23 @@ func (s *AgentService) EnsureTaskPlanDocument(ctx context.Context, workspaceID, 
 			epic = &epicWithStats.Epic
 		}
 	}
+	actorID, err = s.documentAuthorFallback(ctx, workspaceID, actorID)
+	if err != nil {
+		return nil, err
+	}
 	return s.ensureTaskPlanDocument(ctx, workspaceID, task, epic, actorID)
+}
+
+// documentAuthorFallback attributes a canonical doc to the workspace owner when
+// the calling run carries no user (system agents started by built-in triggers).
+func (s *AgentService) documentAuthorFallback(ctx context.Context, workspaceID, actorID string) (string, error) {
+	if actorID = strings.TrimSpace(actorID); actorID != "" {
+		return actorID, nil
+	}
+	if ownerID := s.workspaceOwnerID(ctx, workspaceID); ownerID != "" {
+		return ownerID, nil
+	}
+	return "", fmt.Errorf("document author is required")
 }
 
 func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID string, task *model.PMTask, epic *model.PMEpic, actorID string) (*model.DocsDocument, error) {
@@ -746,9 +763,6 @@ func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID s
 	teamID := task.TeamID
 	if teamID == nil && epic != nil {
 		teamID = epic.TeamID
-	}
-	if teamID == nil {
-		teamID = strPtr(actorID)
 	}
 
 	title := strings.TrimSpace(task.Name) + " Plan"
