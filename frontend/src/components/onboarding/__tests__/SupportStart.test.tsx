@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   signUp: vi.fn(),
   streamPreview: vi.fn(),
   previewAnswer: vi.fn(),
+  mountWidget: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -20,6 +21,8 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/components/layout/PublicPageShell', () => ({
   PublicPageShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
+// The real chat widget draws itself; the tests read what it was given to show.
+vi.mock('@helpin-ai/widget-core', () => ({ mountWidget: state.mountWidget, unmountWidget: vi.fn() }));
 vi.mock('@/lib/services/supportQuickstartService', () => ({
   supportQuickstartService: { streamPreview: state.streamPreview, previewAnswer: state.previewAnswer },
 }));
@@ -97,6 +100,17 @@ function type(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+type WidgetMessage = { role: string; content: string; isStreaming?: boolean; sources?: { title: string }[] };
+
+/** What the chat widget is showing now. */
+function widget() {
+  return state.mountWidget.mock.lastCall![1] as { messages: WidgetMessage[]; isAIThinking: boolean; onSendMessage: (text: string) => void };
+}
+
+function reply() {
+  return widget().messages.at(-1)!;
+}
+
 async function settle() {
   for (let i = 0; i < 6; i++) {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
@@ -113,6 +127,7 @@ beforeEach(() => {
   state.streamPreview.mockReset();
   streamAll(events.site, events.helpCenter, events.articles, events.preview);
   state.previewAnswer.mockReset();
+  state.mountWidget.mockClear();
 });
 
 afterEach(() => {
@@ -191,37 +206,63 @@ describe('SupportStart', () => {
     expect(container?.querySelector('[inert] input[autocomplete="organization"]')).toBeNull();
   });
 
-  it('shows the agent’s answers with their sources, and the hand-off for a question with no article', async () => {
+  it('shows the agent’s answers with their sources in the chat widget, and the hand-off for a question with no article', async () => {
     render('acme.com');
     await settle();
 
-    expect(container?.textContent).toContain('Refunds are issued within 5 days.');
-    expect(container?.querySelector('strong')?.textContent).toBe('5 days');
-    expect(container?.querySelectorAll('ul.list-disc li')).toHaveLength(2);
-    expect(container?.textContent).toContain('Based on Refunds');
+    expect(widget().messages.map((message) => message.role)).toEqual(['customer', 'ai']);
+    expect(widget().messages[0].content).toBe('How do I get a refund?');
+    expect(reply().content).toBe(refunds.answer);
+    expect(reply().sources?.map((source) => source.title)).toEqual(['Refunds']);
 
     act(() => button('How am I billed?')?.click());
-    expect(container?.textContent).toContain('Plans are billed monthly.');
-    expect(container?.textContent).toContain('Based on Billing basics');
+    expect(reply().content).toBe('Plans are billed monthly.');
+    expect(reply().sources?.map((source) => source.title)).toEqual(['Billing basics']);
 
     act(() => button('Do you have a mobile app?')?.click());
-    expect(container?.textContent).toContain('I’d pass this to your team');
+    expect(reply().content).toContain('I’d pass this to your team');
+    expect(reply().sources).toBeUndefined();
     expect(container?.textContent).toContain('among your 402 article titles');
   });
 
-  it('answers a question the visitor types', async () => {
+  it('writes an answer out a few words at a time, then names its source', async () => {
+    reducedMotion(false);
+    vi.useFakeTimers();
+    render('acme.com');
+    // Past the paced steps, to the moment the answers arrive.
+    await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
+    expect(reply()).toMatchObject({ content: '', isStreaming: true });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(90); });
+    expect(reply()).toMatchObject({ content: 'Refunds are', isStreaming: true });
+    expect(reply().sources).toBeUndefined();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(reply()).toMatchObject({ content: refunds.answer, isStreaming: false });
+    expect(reply().sources).toHaveLength(1);
+  });
+
+  it('answers a question the visitor types into the widget', async () => {
     render('acme.com');
     await settle();
-    state.previewAnswer.mockResolvedValueOnce({
-      data: { available: true, question: 'Do you ship to Mars?', can_answer: false, sources: [] }, error: null,
-    });
-    act(() => type(container?.querySelector('input[aria-label="Customer question"]') as HTMLInputElement, 'Do you ship to Mars?'));
-    await act(async () => { (container?.querySelector('button[aria-label="Ask"]') as HTMLButtonElement).click(); });
+    let answer: (value: unknown) => void = () => {};
+    state.previewAnswer.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    act(() => widget().onSendMessage('Do you ship to Mars?'));
     await settle();
 
     expect(state.previewAnswer).toHaveBeenLastCalledWith({ website_url: 'https://acme.com', help_center_url: 'https://help.acme.com/en', question: 'Do you ship to Mars?' });
+    expect(widget().isAIThinking).toBe(true);
+    expect(widget().messages.map((message) => message.content)).toEqual(['Do you ship to Mars?']);
+
+    await act(async () => answer({ data: { available: true, question: 'Do you ship to Mars?', can_answer: false, sources: [] }, error: null }));
+    await settle();
     expect(button('Do you ship to Mars?')?.getAttribute('aria-pressed')).toBe('true');
-    expect(container?.textContent).toContain('I’d pass this to your team');
+    expect(reply().content).toContain('I’d pass this to your team');
+
+    // Asking something already on the list shows it again without another request.
+    act(() => widget().onSendMessage('How am I billed?'));
+    expect(state.previewAnswer).toHaveBeenCalledTimes(1);
+    expect(reply().content).toBe('Plans are billed monthly.');
   });
 
   it('saves what was found and asks a visitor for an account in place, without any choice to make', async () => {

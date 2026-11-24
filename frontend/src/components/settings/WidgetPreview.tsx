@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { mountWidget, unmountWidget, type WidgetConfig } from '@helpin-ai/widget-core';
+import { mountWidget, unmountWidget, type Message, type WidgetConfig } from '@helpin-ai/widget-core';
 
 // Widget-core CSS -- helpin-* prefixed classes, no conflicts with dashboard
 import '@helpin-ai/widget-core/styles';
@@ -27,6 +27,12 @@ interface WidgetPreviewProps {
   escalationMessage?: string;
   widgetKey?: string;
   host?: string;
+  /** A conversation to show, for example the onboarding preview's answers. */
+  messages?: Message[];
+  isAIThinking?: boolean;
+  onSendMessage?: (content: string) => void;
+  /** The chat window alone, filling its container: no backdrop, launcher, or controls that would leave the conversation. */
+  bare?: boolean;
 }
 
 /**
@@ -57,6 +63,10 @@ export function WidgetPreview({
   escalationMessage,
   widgetKey,
   host,
+  messages,
+  isAIThinking,
+  onSendMessage,
+  bare = false,
 }: WidgetPreviewProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(true);
@@ -105,13 +115,17 @@ export function WidgetPreview({
         helpSpaces,
       },
       isOpen,
+      showLauncher: !bare,
       onClose: () => setIsOpen(false),
       onLauncherClick: () => setIsOpen((open) => !open),
       initialView,
       widgetKey,
       host,
+      messages,
+      isAIThinking,
+      onSendMessage,
     });
-  }, [privacyNotice, initialView, brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, aiDisplayName, avatarUrl, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, availability, aiFirst, showTalkToHuman, escalationMessage, widgetKey, host]);
+  }, [privacyNotice, initialView, brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, aiDisplayName, avatarUrl, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, availability, aiFirst, showTalkToHuman, escalationMessage, widgetKey, host, messages, isAIThinking, onSendMessage, bare]);
 
   // Unmount only when the React component itself unmounts
   useEffect(() => {
@@ -126,6 +140,7 @@ export function WidgetPreview({
   return (
     <>
       <style>{`
+        ${brandOverride(brandColor)}
         .widget-preview-panel {
           position: relative;
           width: 100%;
@@ -166,10 +181,30 @@ export function WidgetPreview({
           left: ${positionSide === 'left' ? '16px' : 'auto'};
           right: ${positionSide === 'right' ? '16px' : 'auto'};
         }
+        ${bare ? `
+        /* Unclipped so the window's shadow shows; isolated so its on-site z-index stays inside the panel. */
+        .widget-preview-panel { padding: 0; overflow: visible; contain: none; isolation: isolate; background: none; border: 0; }
+        .widget-preview-panel .helpin-chat-window { inset: 0; width: 100%; max-width: none; height: 100%; max-height: none; }
+        .widget-preview-panel .helpin-conversation-back,
+        .widget-preview-panel .helpin-window-close-inline { display: none; }
+        ` : ''}
       `}</style>
       <div className="widget-preview-panel">
         <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
       </div>
     </>
   );
+}
+
+/** The brand color as the live widget applies it: its style variables, with readable text on top. */
+function brandOverride(color: string) {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color.trim());
+  if (!match) return '';
+  const [r, g, b] = match.slice(1).map((part) => parseInt(part, 16));
+  const foreground = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#000000' : '#ffffff';
+  return `.widget-preview-panel .helpin-widget {
+          --helpin-primary: ${match[0]};
+          --helpin-primary-hover: color-mix(in srgb, ${match[0]} 85%, black);
+          --helpin-primary-foreground: ${foreground};
+        }`;
 }

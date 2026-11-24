@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -442,6 +443,7 @@ func validatePreviewAnswer(contract *quickstartAnswerContract, question string, 
 	if contract.Confidence < helpcenterAnswerConfidenceFloor || helpcenterLinkPattern.MatchString(contract.Answer) {
 		return nil, false
 	}
+	contract.Answer = withoutLeadingQuestion(contract.Answer)
 	var cited []model.PublicHelpCenterArticleRef
 	for _, source := range sources {
 		if slices.Contains(contract.CitedSourceID, source.id) {
@@ -449,6 +451,26 @@ func validatePreviewAnswer(contract *quickstartAnswerContract, question string, 
 		}
 	}
 	return cited, len(cited) > 0
+}
+
+// leadingQuestion matches an answer that opens with a question, after an
+// optional list marker, up to the dash or colon that joins it to the answer.
+var leadingQuestion = regexp.MustCompile(`^((?:\d+[.)]|[-*])\s+)?[^.!?\n]*\?[\s—–:-]*`)
+
+// withoutLeadingQuestion drops an opening sentence that is a question: the
+// model sometimes restates what was asked, despite being told not to. A list
+// marker in front of it is kept for the answer that follows.
+func withoutLeadingQuestion(answer string) string {
+	answer = strings.TrimSpace(answer)
+	match := leadingQuestion.FindStringSubmatch(answer)
+	if match == nil {
+		return answer
+	}
+	rest := strings.TrimSpace(answer[len(match[0]):])
+	if rest == "" {
+		return answer
+	}
+	return match[1] + rest
 }
 
 // consumePreviewAnswerBudget counts one preview answer against the server's

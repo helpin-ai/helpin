@@ -39,7 +39,7 @@ export function OnboardingShell({ steps, current, title, description, headerActi
   }, [current]);
 
   return (
-    <PublicPageShell headerAction={headerAction} contentWidth="wide" brandPanel={false}>
+    <PublicPageShell headerAction={headerAction} contentWidth="wide" brandPanel={false} themeToggle>
       <div className="space-y-7">
         {currentIndex >= 0 && (
           // One continuous bar, no visible count: the AI step is only known after

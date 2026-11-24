@@ -35,8 +35,10 @@
   color-scheme: dark;
 }
 /* Task pages (onboarding): one column, no brand panel. */
-.public-page--solo { grid-template-columns: minmax(0, 1fr); max-width: 1200px; }
-.public-page--solo .public-page-content--wide { max-width: 600px; }
+/* Top-aligned and as wide as an app page (max-w-7xl), so steps don't shift as they grow. */
+.public-page--solo { grid-template-columns: minmax(0, 1fr); }
+.public-page--solo .public-page-main { width: 100%; max-width: 80rem; margin-inline: auto; }
+.public-page--solo .public-page-content--wide { max-width: none; margin: 0; padding-block: 40px 48px; }
 .public-page-main { order: 2; display: flex; flex-direction: column; min-width: 0; padding: 22px 40px 12px; }
 .public-page-header, .public-page-footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .public-page-header a { flex-shrink: 0; }

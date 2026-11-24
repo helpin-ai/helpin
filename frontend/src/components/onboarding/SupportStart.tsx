@@ -15,7 +15,8 @@ import { cn } from '@/lib/utils';
 import { siteLabel, websiteDisplayName } from '@/lib/workspaceOnboardingFlow';
 import { ensureAuthConfiguration, useAuthStore } from '@/stores/authStore';
 import { OnboardingShell } from './OnboardingShell';
-import { BrandMark, SupportAgentPreview } from './SupportAgentPreview';
+import { BrandMark, PreviewQuestions, PreviewWidget } from './SupportAgentPreview';
+import { useAgentPreview } from './useAgentPreview';
 import { WebsiteForm } from './SupportWebsiteStep';
 import { prefersReducedMotion, useSupportPreview, type SupportPreviewRun } from './useSupportPreview';
 
@@ -73,6 +74,12 @@ function SupportPreview({ website }: { website: string }) {
   const [signingUp, setSigningUp] = useState(false);
   const { run, retry } = useSupportPreview(website, addedHelpCenter);
   const { site, helpCenter } = run;
+  const agent = useAgentPreview({
+    websiteUrl: site?.website_url ?? website,
+    helpUrl: helpCenter?.url ?? '',
+    answers: run.preview?.answers,
+    gaps: run.preview?.gaps,
+  });
   const answersRef = useRef<HTMLLIElement>(null);
   const answered = Boolean(run.preview ?? run.answersFailed);
   const [folded, setFolded] = useState<StepView['id']>();
@@ -137,72 +144,76 @@ function SupportPreview({ website }: { website: string }) {
   const canPutLive = Boolean(site) && (Boolean(helpCenter) || run.status !== 'running');
 
   return (
-    <div className="space-y-8">
-      <p role="status" className="sr-only">{working ? working.title : 'Finished'}</p>
-      <ol>
-        {steps.map((step, index) => (
-          <Step
-            key={step.id}
-            ref={step.id === 'answers' ? answersRef : undefined}
-            step={step}
-            last={index === steps.length - 1}
-            log={run.logs[step.id]}
-            open={chosen[step.id] ?? autoOpen(step, index)}
-            onOpenChange={step.id === 'answers' ? undefined : (open) => setChosen((previous) => ({ ...previous, [step.id]: open }))}
-            summary={stepSummary(step, companyName, helpCenter)}
-          >
-            {step.id === 'site' && (site
-              ? <BrandCard site={site} name={name ?? site.company_name} onNameChange={setName} />
-              : <BrandSkeleton />)}
-            {step.id === 'help_center' && helpCenter && (
-              <HelpCenterFound host={host} found={helpCenter} onAdd={setAddedHelpCenter} />
-            )}
-            {step.id === 'articles' && run.articles && run.articles.length > 0 && (
-              <ul className="space-y-1 text-[13px] leading-5 text-muted-foreground">
-                {run.articles.map((article, index) => (
-                  <li
-                    key={article.url}
-                    className="flex gap-2 duration-300 animate-in fade-in slide-in-from-left-1 fill-mode-backwards motion-reduce:animate-none"
-                    style={{ animationDelay: `${index * 70}ms` }}
-                  >
-                    <Tick01Icon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
-                    <a href={article.url} target="_blank" rel="noreferrer noopener" className="min-w-0 truncate underline-offset-2 hover:text-foreground hover:underline">{article.title}</a>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {step.id === 'answers' && site && (run.preview || run.answersFailed) && (
-              <div className="space-y-3">
-                {run.answersFailed && (
-                  <p className="text-[12.5px] leading-5 text-muted-foreground">{run.answersFailed} You can still put it live; it answers once your content is in.</p>
-                )}
-                {run.preview && run.preview.answers.length === 0 && (
-                  <p className="text-[12.5px] leading-5 text-muted-foreground">
-                    It will answer from {helpCenter?.counts ? `your ${helpCenter.counts.articles} articles` : host} once it’s live. Ask it something to see how it hands questions to your team.
-                  </p>
-                )}
-                {run.preview && (
-                  <SupportAgentPreview
-                    site={site}
-                    companyName={companyName}
-                    helpUrl={helpUrl}
-                    answers={run.preview.answers}
-                    gaps={run.preview.gaps}
-                    articleCount={helpCenter?.counts?.articles}
-                  />
-                )}
-              </div>
-            )}
-          </Step>
-        ))}
-      </ol>
+    // On a wide screen the steps sit beside the widget they are building; on a phone it follows them.
+    <div className="grid gap-x-14 gap-y-8 lg:grid-cols-[minmax(0,1fr)_25rem] lg:grid-rows-[auto_1fr]">
+      <div className="min-w-0 space-y-8">
+        <p role="status" className="sr-only">{working ? working.title : 'Finished'}</p>
+        <ol>
+          {steps.map((step, index) => (
+            <Step
+              key={step.id}
+              ref={step.id === 'answers' ? answersRef : undefined}
+              step={step}
+              last={index === steps.length - 1}
+              log={run.logs[step.id]}
+              open={chosen[step.id] ?? autoOpen(step, index)}
+              onOpenChange={step.id === 'answers' ? undefined : (open) => setChosen((previous) => ({ ...previous, [step.id]: open }))}
+              summary={stepSummary(step, companyName, helpCenter)}
+            >
+              {step.id === 'site' && (site
+                ? <BrandCard site={site} name={name ?? site.company_name} onNameChange={setName} />
+                : <BrandSkeleton />)}
+              {step.id === 'help_center' && helpCenter && (
+                <HelpCenterFound host={host} found={helpCenter} onAdd={setAddedHelpCenter} />
+              )}
+              {step.id === 'articles' && run.articles && run.articles.length > 0 && (
+                <ul className="space-y-1 text-[13px] leading-5 text-muted-foreground">
+                  {run.articles.map((article, index) => (
+                    <li
+                      key={article.url}
+                      className="flex gap-2 duration-300 animate-in fade-in slide-in-from-left-1 fill-mode-backwards motion-reduce:animate-none"
+                      style={{ animationDelay: `${index * 70}ms` }}
+                    >
+                      <Tick01Icon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                      <a href={article.url} target="_blank" rel="noreferrer noopener" className="min-w-0 truncate underline-offset-2 hover:text-foreground hover:underline">{article.title}</a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {step.id === 'answers' && site && (run.preview || run.answersFailed) && (
+                <div className="space-y-3">
+                  {run.answersFailed && (
+                    <p className="text-[12.5px] leading-5 text-muted-foreground">{run.answersFailed} You can still put it live; it answers once your content is in.</p>
+                  )}
+                  {run.preview && run.preview.answers.length === 0 && (
+                    <p className="text-[12.5px] leading-5 text-muted-foreground">
+                      It will answer from {helpCenter?.counts ? `your ${helpCenter.counts.articles} articles` : host} once it’s live. Ask it something to see how it hands questions to your team.
+                    </p>
+                  )}
+                  {run.preview && <PreviewQuestions preview={agent} articleCount={helpCenter?.counts?.articles} />}
+                </div>
+              )}
+            </Step>
+          ))}
+        </ol>
 
-      {run.status === 'running' && !answered && <WhileYouWait />}
-      {site && run.status === 'stopped' && (
-        <p role="alert" className="text-[13px] leading-5 text-muted-foreground">
-          {run.error} <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={retry}>Try again</button>
-        </p>
-      )}
+        {run.status === 'running' && !answered && <WhileYouWait />}
+        {site && run.status === 'stopped' && (
+          <p role="alert" className="text-[13px] leading-5 text-muted-foreground">
+            {run.error} <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={retry}>Try again</button>
+          </p>
+        )}
+      </div>
+
+      <aside className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
+        {site ? (
+          <PreviewWidget site={site} companyName={companyName} host={host} preview={agent} />
+        ) : (
+          <div aria-hidden="true" className="hidden h-[min(40rem,calc(100svh-9rem))] min-h-[26rem] items-center justify-center rounded-2xl border border-dashed text-[12.5px] text-muted-foreground lg:flex">
+            Your chat widget appears here
+          </div>
+        )}
+      </aside>
 
       {canPutLive && (signingUp ? (
         <InlineSignup host={host} onSignedUp={() => void navigate({ to: '/onboarding' })} />

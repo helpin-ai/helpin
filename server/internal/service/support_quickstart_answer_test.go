@@ -221,3 +221,17 @@ func TestWritePublicBlocksTextIncludesListsAndTables(t *testing.T) {
 		t.Errorf("text = %q, want markup removed", got)
 	}
 }
+
+func TestWithoutLeadingQuestion(t *testing.T) {
+	for answer, want := range map[string]string{
+		"How do I set up my first event? Start from your Box office.":            "Start from your Box office.",
+		"1. How are tickets charged? — We charge per ticket.\n2. Pay as you go.": "1. We charge per ticket.\n2. Pay as you go.",
+		"Start from your Box office. Need more? Ask us.":                         "Start from your Box office. Need more? Ask us.",
+		"Is that all?":             "Is that all?",
+		"  Refunds take 5 days.  ": "Refunds take 5 days.",
+	} {
+		if got := withoutLeadingQuestion(answer); got != want {
+			t.Errorf("withoutLeadingQuestion(%q) = %q, want %q", answer, got, want)
+		}
+	}
+}

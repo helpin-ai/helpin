@@ -83,7 +83,8 @@ func (s *SupportQuickstartService) Preview(ctx context.Context, req model.Suppor
 		send(model.SupportQuickstartEvent{Type: model.QuickstartEventPreview, Preview: &model.SupportQuickstartPreview{}})
 		return nil
 	}
-	cacheKey := "onb:preview:" + aiUsageStableHash(strings.TrimRight(website, "/")+"|"+strings.TrimRight(helpURL, "/"))
+	// The number changes when cached answers would no longer pass the current checks.
+	cacheKey := "onb:preview:3:" + aiUsageStableHash(strings.TrimRight(website, "/")+"|"+strings.TrimRight(helpURL, "/"))
 	var cached quickstartCachedPreview
 	if s.cacheGet(ctx, cacheKey, &cached) && cached.Preview != nil {
 		send(model.SupportQuickstartEvent{Type: model.QuickstartEventArticles, Articles: cached.Articles})
