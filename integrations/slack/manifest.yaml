@@ -50,6 +50,7 @@ oauth_config:
       - files:read
       - files:write
       - users:read
+      - users:read.email
       - commands
 settings:
   event_subscriptions:

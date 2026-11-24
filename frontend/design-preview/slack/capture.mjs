@@ -54,6 +54,7 @@ try {
     await shot('channels')
     await slackShortcut.click()
     await page.getByRole('button', { name: /#acme-support/ }).waitFor()
+    await shot('channel-rules')
     await page.getByRole('button', { name: /#acme-support/ }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByText('Customer support', { exact: true }).first().waitFor()
@@ -87,7 +88,7 @@ try {
     await page.mouse.move(0, 0)
     await page.locator('[data-support-reply-composer]').screenshot({ path: resolve(output, 'composer-detail.png'), animations: 'disabled' })
     await go('pm/tasks/' + taskId)
-    await page.getByText('#payments', { exact: true }).waitFor()
+    await page.getByText('Replies sync to #payments', { exact: true }).waitFor()
     await shot('task')
     await page.locator('[data-comment-thread-id]').filter({ hasText: '#payments' }).screenshot({ path: resolve(output, 'comment-detail.png'), animations: 'disabled' })
   } catch (error) {

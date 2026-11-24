@@ -1,5 +1,7 @@
 package model
 
+import "context"
+
 // SlackRoute maps an opted-in Slack channel to its Helpin destination.
 type SlackRoute struct {
 	AccountID        string  `json:"-" gorm:"primaryKey"`
@@ -20,4 +22,16 @@ type SlackThread struct {
 	AccountID string `json:"account"`
 	Channel   string `json:"channel"`
 	Root      string `json:"root"`
+	Permalink string `json:"permalink,omitempty"`
+}
+
+type slackSourceKey struct{}
+
+func WithSlackSource(ctx context.Context, permalink string) context.Context {
+	return context.WithValue(ctx, slackSourceKey{}, permalink)
+}
+
+func SlackSource(ctx context.Context) (string, bool) {
+	url, ok := ctx.Value(slackSourceKey{}).(string)
+	return url, ok
 }

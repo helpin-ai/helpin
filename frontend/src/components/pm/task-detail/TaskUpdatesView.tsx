@@ -1,3 +1,4 @@
+import { SlackSourceLabel } from '@/components/support/SlackMessageSource';
 import { useEffect, useMemo, useState } from 'react';
 import { GitBranchIcon, Loading01Icon } from '@/lib/icons';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -41,22 +42,25 @@ function TaskSystemUpdateRow({
 }) {
   const agentActivity = taskUpdateAgentPresentation(entry, linkedRun);
   const label = agentActivity?.title ?? taskUpdateEventLabel(entry, linkedRun);
-  const humanActor = agentActivity && !agentActivity.automated && entry.kind === 'change'
-    ? entry.actor
-    : undefined;
+  const fromSlack = entry.activity?.metadata?.via === 'slack';
+  const showActor = fromSlack || (agentActivity && !agentActivity.automated && entry.kind === 'change');
+  const humanActor = showActor ? entry.actor : undefined;
   const humanActorName = humanActor?.full_name?.trim() || humanActor?.email?.trim() || '';
   return (
-    <UpdateActivityRow
-      label={label}
-      occurredAt={entry.occurred_at}
-      emphasizedValues={[humanActorName, agentActivity?.agentName ?? '']}
-      detail={agentActivity?.detail}
-      humanActor={humanActor}
-      agent={agentActivity ? { name: agentActivity.agentName, presetKey: agentActivity.agentPresetKey } : undefined}
-      fallbackIcon={entry.kind === 'git' ? <GitBranchIcon className="h-3.5 w-3.5" /> : undefined}
-      actionLabel={agentActivity?.runId ? 'View run →' : undefined}
-      onClick={agentActivity?.runId ? () => onOpenDelivery(agentActivity.runId) : undefined}
-    />
+    <div>
+      <UpdateActivityRow
+        label={fromSlack && humanActorName ? `${humanActorName} · ${label}` : label}
+        occurredAt={entry.occurred_at}
+        emphasizedValues={[humanActorName, agentActivity?.agentName ?? '']}
+        detail={agentActivity?.detail}
+        humanActor={humanActor}
+        agent={agentActivity ? { name: agentActivity.agentName, presetKey: agentActivity.agentPresetKey } : undefined}
+        fallbackIcon={entry.kind === 'git' ? <GitBranchIcon className="h-3.5 w-3.5" /> : undefined}
+        actionLabel={agentActivity?.runId ? 'View run →' : undefined}
+        onClick={agentActivity?.runId ? () => onOpenDelivery(agentActivity.runId) : undefined}
+      />
+      {fromSlack && <div className="-mt-2 mb-2 pl-11"><SlackSourceLabel href={entry.activity?.metadata?.slack_permalink} /></div>}
+    </div>
   );
 }
 

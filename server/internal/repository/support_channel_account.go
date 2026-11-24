@@ -161,11 +161,11 @@ func (r *SupportConversationRepository) ReplyDestinations(ctx context.Context, c
 	}
 	db := r.db.WithContext(ctx)
 	q := db.Table("support_conversations c").
-		Select(`c.id, a.provider, c.display_id, CASE WHEN a.provider = 'slack' THEN '#' || r.channel_name ELSE COALESCE(c.customer_name,'') END AS name`).
+		Select(`c.id, a.provider, c.display_id, CASE WHEN a.provider = 'slack' THEN '#' || COALESCE(NULLIF(r.channel_name,''), NULLIF(c.provider_channel_name,''),split_part(c.provider_thread_key, ':', 1)) ELSE COALESCE(c.customer_name,'') END AS name`).
 		Joins("JOIN support_channel_accounts a ON a.id = c.channel_account_id AND a.workspace_id = c.workspace_id AND a.provider = c.channel").
 		Joins("LEFT JOIN slack_channel_routes r ON a.provider = 'slack' AND r.account_id = a.id AND r.channel_id = split_part(c.provider_thread_key, ':', 1)").
 		Where("c.workspace_id = ? AND c.channel_identity_id IS NOT NULL AND c.anonymized_at IS NULL AND a.status = ? AND a.disabled_at IS NULL", c.WorkspaceID, model.SupportChannelAccountActive).
-		Where("a.provider = 'telegram' OR (a.provider = 'slack' AND r.purpose IN ('support','mixed') AND split_part(c.provider_thread_key, ':', 2) <> '')")
+		Where("a.provider = 'telegram' OR (a.provider = 'slack' AND COALESCE(r.purpose,'mixed') IN ('support','mixed') AND split_part(c.provider_thread_key, ':', 2) <> '')")
 	switch {
 	case len(c.ProviderDestinations) > 0:
 		ids := make([]string, 0, len(c.ProviderDestinations))

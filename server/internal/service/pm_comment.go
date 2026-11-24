@@ -135,7 +135,9 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		return nil, errCommandInput("author is required")
 	}
 
+	url, _ := model.SlackSource(ctx)
 	comment := &model.PMComment{
+		SlackPermalink: nilIfEmpty(url),
 		SlackSourceKey: req.SlackSourceKey,
 		EntityType:     req.EntityType,
 		EntityID:       req.EntityID,

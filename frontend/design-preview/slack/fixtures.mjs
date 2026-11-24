@@ -32,7 +32,7 @@ const workflow = { workflow: { id: task.workflow_id, name: 'Payments workflow', 
 const detail = { task, state, owners: [people[1]], followers: [], requester_member: members[0], labels: [], epic_name: epic.name }
 const comments = [{
   author: people[1], reply_count: 0, reactions: [], replies: [],
-  comment: { id: 'comment-1', entity_type: 'task', entity_id: task.id, author_id: people[1].id, body: 'The discount calculation is fixed. The regression check passes with FALL20. Ready for review.', created_at: time('10:18'), updated_at: time('10:18'), slack_discussion_channel: 'payments' },
+  comment: { id: 'comment-1', entity_type: 'task', entity_id: task.id, author_id: people[1].id, body: 'The discount calculation is fixed. The regression check passes with FALL20. Ready for review.', created_at: time('10:18'), updated_at: time('10:18'), slack_discussion_channel: 'payments', slack_permalink: 'https://northstar-example.slack.com/archives/C2/p1795169880000000' },
 }]
 const thread = [
   ['10:02', 'Lena Park', 'We’re seeing an error at checkout when a customer applies FALL20. The same order goes through without the code.'],
@@ -46,6 +46,7 @@ const messages = thread.map(([at, name, content], i) => ({
   message_type: 'reply', via_channel: 'slack', channel_delivery: i % 2 ? { provider: 'slack', status: 'sent', retryable: false } : null,
   created_at: time(at), updated_at: time(at),
 }))
+messages.push({ ...messages[1], id: 'slack-assignment', content: 'Sam assigned this conversation to Ana.', is_internal: true, message_type: 'system', system_event_type: 'assigned', metadata: JSON.stringify({ via: 'slack', slack_permalink: 'https://northstar-example.slack.com/archives/C2/p1795169880000000' }), created_at: time('10:14') })
 const rows = [
   ['Lena Park', 'Checkout returns an error', 'slack', thread[3][2], '10:12'],
   ['Owen Mills', 'October invoice copy', 'email', 'Could you send a copy to our billing address?', '10:07'],
@@ -61,7 +62,7 @@ const conversations = rows.map(([name, subject, source, preview, at], i) => ({
   display_id: 1042 - i, customer_name: name, customer_email: name.split(' ')[0].toLowerCase() + (i ? '@customer.example' : '@acme.example'),
   anonymous_id: source === 'widget' ? 'visitor-' + i : null,
   provider_destinations: source === 'slack' ? [{ provider: source, id: i ? 'conversation-' + i : CONVERSATION_ID, display_id: 1042 - i, name: i ? '#partner-support' : '#acme-support' }] : undefined,
-  subject, source, channel: source, flow_state: i % 3 === 0 ? 'assigned_to_human' : 'queued_for_human', human_takeover: true, assigned_user_id: i % 3 === 0 ? 'sam' : undefined, priority: i ? 'medium' : 'high',
+  subject, source, channel: source, flow_state: i % 3 === 0 ? 'assigned_to_human' : 'queued_for_human', human_takeover: true, assigned_user_id: i === 0 ? 'ana' : i % 3 === 0 ? 'sam' : undefined, priority: i ? 'medium' : 'high',
   mailbox_id: mailbox.id, mailbox_name: mailbox.name, last_message: preview, list_last_message_preview: preview,
   list_last_message_at: time(at), list_last_activity_at: time(at), created_at: time(i ? '08:30' : '10:02'), updated_at: time(at),
   last_message_sender_type: i ? 'customer' : 'user', last_message_sender_display_name: i ? name : 'Sam Ellis',
@@ -111,7 +112,7 @@ const fixtures = new Map(Object.entries({
   })),
   [taskPath]: detail, '/api/pm/comments': comments, '/api/pm/epics': [{ epic, owners: [], labels: [] }],
   '/api/pm/workflows': [workflow], '/api/pm/workflows/resolve': workflow, '/api/pm/tasks': paged([task]),
-  [taskPath + '/updates']: { data: [], high_water: '', read_initialized: true, unread_count: 0 },
+  [taskPath + '/updates']: { data: [{ id: 'priority-change', kind: 'change', occurred_at: time('10:19'), actor: people[0], activity: { id: 'activity', action: 'updated', field_name: 'priority', old_value: 'medium', new_value: 'high', metadata: { via: 'slack', slack_permalink: 'https://northstar-example.slack.com/archives/C2/p1795169880000000' } } }], high_water: '', read_initialized: true, unread_count: 0 },
 }))
 
 export function responseFor(path) {

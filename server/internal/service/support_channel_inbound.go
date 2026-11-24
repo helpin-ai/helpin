@@ -118,6 +118,7 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 		}
 		if event.Teammate {
 			msg.SenderType = "user"
+			msg.SenderUserID = event.TeammateUserID
 			msg.TrustedInbound = true
 		}
 		if conv == nil {

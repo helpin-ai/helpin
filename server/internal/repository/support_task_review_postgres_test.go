@@ -48,7 +48,7 @@ func TestPMTriagePostgresSupportReviewLocksAndRollback(t *testing.T) {
 	repo := NewSupportConversationRepository(env.db)
 	ctx := context.Background()
 	refusal := errors.New("review rejected")
-	err := repo.LinkTaskReviewed(ctx, env.workspace, conversationID, env.task, func(conversation *model.SupportConversation, messages []model.SupportMessage, task *model.PMTask) error {
+	err := repo.LinkTaskReviewed(ctx, env.workspace, conversationID, env.task, nil, "", func(conversation *model.SupportConversation, messages []model.SupportMessage, task *model.PMTask) error {
 		// A second connection cannot change either locked row while validation and
 		// mutation are in progress. A bounded server timeout avoids hanging tests.
 		for _, table := range []string{"pm_tasks", "support_conversations"} {
@@ -97,7 +97,7 @@ func TestPMTriagePostgresSupportReviewLocksAndRollback(t *testing.T) {
 	if conversation.LinkedTaskID != nil {
 		t.Fatal("refused review changed link")
 	}
-	if err := repo.LinkTaskReviewed(ctx, env.workspace, conversationID, env.task, func(*model.SupportConversation, []model.SupportMessage, *model.PMTask) error { return nil }); err != nil {
+	if err := repo.LinkTaskReviewed(ctx, env.workspace, conversationID, env.task, nil, "", func(*model.SupportConversation, []model.SupportMessage, *model.PMTask) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if err := env.db.First(&conversation, "id = ?", conversationID).Error; err != nil {
