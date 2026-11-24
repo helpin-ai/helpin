@@ -1029,6 +1029,8 @@ export function useDeleteSupportTag(workspaceId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.builtinInboxViews(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
