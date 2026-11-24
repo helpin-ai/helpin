@@ -209,8 +209,11 @@ func (s *SlackService) agentQuestion(ctx context.Context, a *model.SupportChanne
 	if slackHelp(m.Text, a.Handle) || access == (slackAccess{}) {
 		return s.reply(ctx, token, m, access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled), true)
 	}
-	if a.AIRepliesDisabled || s.dock == nil {
-		return s.sendPrivate(ctx, token, m, "Workspace questions require Slack AI replies to be enabled in Helpin.\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), false), true)
+	if a.AIRepliesDisabled {
+		return s.private(ctx, token, m, "AI replies are turned off for Slack. Ask a workspace admin to turn on “AI questions, drafts, and summaries” in Helpin’s Slack settings.")
+	}
+	if s.dock == nil {
+		return s.private(ctx, token, m, "Helpin’s AI service is unavailable. Try again later. If it keeps happening, share this thread with Helpin support.")
 	}
 	chatID := access.chatID(a.ID, m, actor)
 	content := strings.TrimSpace(strings.ReplaceAll(m.Text, "<@"+a.Handle+">", ""))
@@ -233,13 +236,7 @@ func (s *SlackService) agentQuestion(ctx context.Context, a *model.SupportChanne
 	detail, err := s.dock.SendMessage(ctx, a.WorkspaceID, actor.UserID, chatID, req)
 	if err != nil {
 		s.channels.logger.WarnContext(ctx, "Slack Ask Agent turn could not start", "workspace_id", a.WorkspaceID, "error", err)
-		msg := slackFailureReason(err.Error())
-		if strings.Contains(err.Error(), "still working") {
-			msg = "I’m still answering your previous question. Try your follow-up after my reply."
-		}
-		if errors.Is(err, model.ErrAIAllowanceExhausted) || errors.Is(err, model.ErrBillingWorkspaceLocked) || errors.Is(err, model.ErrExtraAIUsageDisabled) {
-			msg = "Your workspace needs more AI usage. A workspace admin can review billing in Helpin."
-		}
+		msg := slackFailureReason(err, "I couldn’t confirm that your request started. Try your question again. If you requested a change, check it in Helpin first.")
 		return s.private(ctx, token, m, msg)
 	}
 	if detail.AcceptedMessage == nil {
@@ -344,7 +341,7 @@ func (s *SlackService) deliverAgentAnswer(ctx context.Context, job *model.Suppor
 	}
 	switch {
 	case run.Status == model.AgentRunStatusFailed:
-		answer = slackFailureReason(derefString(run.ErrorMessage))
+		answer = slackFailureReason(errors.New(derefString(run.ErrorMessage)), "I couldn’t finish your request. If you asked for a change, check it in Helpin before retrying. If it happens again, share this thread with Helpin support.")
 	case run.Status == model.AgentRunStatusPaused:
 		answer = "This request paused for input. Open the agent run in Helpin to review what it needs."
 	case run.Status == model.AgentRunStatusCancelled:
@@ -361,18 +358,52 @@ func (s *SlackService) deliverAgentAnswer(ctx context.Context, job *model.Suppor
 }
 
 // Report recognized causes without copying runtime diagnostics or customer data into Slack.
-func slackFailureReason(detail string) string {
-	detail = strings.ToLower(detail)
+func slackFailureReason(err error, fallback string) string {
+	var apiErr *slack.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case "missing_scope", "token_revoked", "invalid_auth", "account_inactive":
+			return "Helpin needs permission from Slack. Ask a workspace admin to reauthorize Slack in Helpin’s External tools settings."
+		case "not_in_channel":
+			return "Helpin hasn’t joined this channel. Invite @Helpin here, then ask again."
+		case "ratelimited":
+			return "Slack is limiting requests from Helpin. Wait a moment and try again."
+		}
+		return fallback
+	}
+	detail := strings.ToLower(err.Error())
+	// Launch errors retain their type. Completed runs store only the message.
+	matches := func(reason error) bool {
+		return errors.Is(err, reason) || strings.Contains(detail, strings.ToLower(reason.Error()))
+	}
 	switch {
-	case strings.Contains(detail, "requires tool") && strings.Contains(detail, "skill"):
-		return "The Slack agent’s configuration is missing a required tool. Ask a workspace admin to contact Helpin support."
+	case strings.Contains(detail, "tool ") && strings.Contains(detail, "is not allowed for agent"),
+		strings.Contains(detail, "requires tool") && strings.Contains(detail, "skill"),
+		strings.Contains(detail, "run allowed_tools do not overlap"):
+		return "Helpin’s Slack agent is missing a tool it needs. Share this thread with Helpin support so they can fix the setup."
+	case strings.Contains(detail, "no permitted slack agent tools"):
+		return "Your linked Helpin account needs access to PM or Support. Ask a workspace admin to check your access."
+	case strings.Contains(detail, "actor does not have permission to run command"), strings.Contains(detail, "slack action unavailable for this member"):
+		return "Your linked Helpin account doesn’t have permission for this action. Ask a workspace admin to check your access."
+	case matches(ErrExternalMCPReauthorize):
+		return "An external tool needs to be reconnected. Ask a workspace admin to check External tools in Helpin settings."
+	case strings.Contains(detail, "configure a workspace ai default or select a profile"):
+		return "Helpin needs a default AI model for this request. Ask a workspace admin to select one in Helpin settings."
+	case matches(ErrAIConnection), matches(ErrAIConnectionPolicyUnavailable), matches(ErrWorkspaceAIUnavailable):
+		return "Helpin couldn’t use the selected AI model. Ask a workspace admin to check the model and its connection in Helpin settings."
+	case matches(model.ErrBillingWorkspaceLocked):
+		return "This Helpin workspace is locked. Ask a workspace admin to review its billing plan."
+	case matches(model.ErrAIAllowanceExhausted), matches(model.ErrExtraAIUsageDisabled), matches(model.ErrExecutionStoppedBeforeAllowance):
+		return "Your workspace has reached its AI usage limit. Ask a workspace admin to review AI usage in Helpin."
+	case strings.Contains(detail, "still working on the previous message"):
+		return "I’m still answering your previous question. Wait for my reply, then send your follow-up."
+	case strings.Contains(detail, "resume the agent before sending another message"):
+		return "This chat is paused. Resume it in Helpin, then send your message again."
 	case strings.Contains(detail, "rate limit") || strings.Contains(detail, "rate_limit"):
-		return "The AI service is rate-limited. Wait a moment, then try again."
+		return "The AI service is receiving too many requests. Wait a moment and try again."
 	case strings.Contains(detail, "deadline exceeded") || strings.Contains(detail, "timed out"):
-		return "The agent timed out before it could answer. Try again with a narrower question."
-	case strings.Contains(detail, "ai allowance exhausted") || strings.Contains(detail, "extra ai usage disabled"):
-		return "Your workspace has reached its AI usage limit. Ask a workspace admin to review billing in Helpin."
+		return "Helpin ran out of time waiting for a response. If you asked for a change, check it in Helpin before trying again."
 	default:
-		return "The agent stopped before it could answer. Try again. If it keeps happening, share this thread with Helpin support."
+		return fallback
 	}
 }
