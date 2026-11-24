@@ -6,7 +6,7 @@ describe('signupRedirect', () => {
   it('opens first workspace creation when signup has no explicit redirect', () => {
     expect(signupSuccessRedirect(null)).toEqual({
       to: '/onboarding',
-      search: { step: 'workspace' },
+      search: { step: 'website' },
     });
   });
 
@@ -19,8 +19,8 @@ describe('signupRedirect', () => {
 
 describe('loginDestination', () => {
   it('sends a person without workspaces to the full onboarding flow', () => {
-    expect(loginDestination({ workspaces: [] })).toEqual({ to: '/onboarding', search: { step: 'workspace' } });
-    expect(loginDestination({ workspaces: null })).toEqual({ to: '/onboarding', search: { step: 'workspace' } });
+    expect(loginDestination({ workspaces: [] })).toEqual({ to: '/onboarding', search: { step: 'website' } });
+    expect(loginDestination({ workspaces: null })).toEqual({ to: '/onboarding', search: { step: 'website' } });
   });
 
   it('prefers the default workspace, then the first one', () => {

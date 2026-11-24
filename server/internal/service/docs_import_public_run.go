@@ -23,7 +23,6 @@ const (
 	// publicImportMaxLinkedLookups bounds how many linked article numbers one
 	// import follows, so a help center full of stale links cannot stall it.
 	publicImportMaxLinkedLookups = 1000
-	publicImportProgressEvery    = 5
 )
 
 // publicImportTarget is the Helpin collection a source collection became.
@@ -259,7 +258,6 @@ func (r *publicImportRun) loadCheckpoints(ctx context.Context) error {
 
 // importListedArticles imports the articles that collections list.
 func (r *publicImportRun) importListedArticles(ctx context.Context) error {
-	seen := 0
 	for _, entry := range r.collections {
 		target, ok := r.targets[entry.targetID]
 		if !ok {
@@ -269,12 +267,11 @@ func (r *publicImportRun) importListedArticles(ctx context.Context) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			seen++
 			r.importArticle(ctx, summary, nil, &target, false)
-			r.reportProgress(ctx, seen%publicImportProgressEvery == 0)
+			// Saved after every article so the setup screen's count keeps up.
+			r.reportProgress(ctx)
 		}
 	}
-	r.reportProgress(ctx, true)
 	return nil
 }
 
@@ -523,10 +520,7 @@ func hostOfURL(raw string) string {
 
 // reportProgress stores the running counts so the import screen can follow
 // along.
-func (r *publicImportRun) reportProgress(ctx context.Context, write bool) {
-	if !write {
-		return
-	}
+func (r *publicImportRun) reportProgress(ctx context.Context) {
 	failures := json.RawMessage("[]")
 	if len(r.failures) > 0 {
 		encoded, err := json.Marshal(r.failures)
@@ -543,7 +537,7 @@ func (r *publicImportRun) reportProgress(ctx context.Context, write bool) {
 
 // finish stores the report and closes the job.
 func (r *publicImportRun) finish(ctx context.Context) {
-	r.reportProgress(ctx, true)
+	r.reportProgress(ctx)
 	summary, err := json.Marshal(r.summary)
 	if err != nil {
 		r.s.logger.ErrorContext(ctx, "encode import summary", "job_id", r.jobID, "error", err)
@@ -555,7 +549,7 @@ func (r *publicImportRun) finish(ctx context.Context) {
 		status = model.DocsImportStatusFailed
 	}
 	doneAt := time.Now()
-	if err := r.s.importRepo.UpdateStatus(ctx, r.jobID, status, &doneAt); err != nil {
+	if err := r.s.closeJob(ctx, r.jobID, status, &doneAt); err != nil {
 		r.s.logger.ErrorContext(ctx, "close import job", "job_id", r.jobID, "error", err)
 	}
 	r.s.logger.InfoContext(ctx, "public help center import finished",

@@ -107,6 +107,7 @@ func defaultActions() []Action {
 		{"data_import_setup", "Data import setup", CategorySetup, "setup", false, ModalityChat},
 		{"company_product_context_generation", "Company/product context generation", CategorySetup, "setup", false, ModalityChat},
 		{"dock_chat_title_generation", "Dock chat title", CategoryAgents, "agent", false, ModalityChat},
+		{"onboarding_preview_answer", "Onboarding preview answer", CategorySetup, "setup", false, ModalityChat},
 	}
 	for _, seed := range seeds {
 		actions = append(actions, seededAction(seed))

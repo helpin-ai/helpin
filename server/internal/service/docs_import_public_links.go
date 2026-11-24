@@ -59,7 +59,7 @@ func (r *publicImportRun) importLinkedArticles(ctx context.Context) error {
 		}
 		queue = append(queue, found...)
 	}
-	r.reportProgress(ctx, true)
+	r.reportProgress(ctx)
 	return nil
 }
 

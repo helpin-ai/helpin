@@ -558,6 +558,13 @@ func main() {
 		cfg.OpenAIEmbeddingModel,
 		nil,
 	)
+	// The worker's embedding service runs syncs and starts none; finished
+	// imports need one that queues a sync workflow.
+	docsImportService.SetSpaceIndexer(service.NewDocsEmbeddingServiceWithCollections(
+		docsChunkRepo, docsBlockRepo, agentKnowledgeSourceRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo,
+		docsHelpcenterRepo, docsDocumentRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel,
+		temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace),
+	))
 	supportContentSyncService := service.NewSupportContentSyncService(
 		supportContentSourceRepo,
 		supportContentPageRepo,

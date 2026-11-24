@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,6 +77,30 @@ func (s *DocsImportService) PreviewPublicHelpCenter(ctx context.Context, req mod
 	if err != nil {
 		return nil, publicImportError(err)
 	}
+	return publicHelpCenterPreview(site)
+}
+
+// PublicHelpCenterArticles reads a public help center once and returns its
+// counts together with every public article, each with its summary and
+// top-level collection, in the order the help center shows them. Nothing is
+// written.
+func (s *DocsImportService) PublicHelpCenterArticles(ctx context.Context, rawURL string) (*model.PublicHelpCenterImportPreview, []model.PublicHelpCenterArticleRef, error) {
+	site, err := s.publicIntercomClient().LoadHelpCenter(ctx, rawURL, nil)
+	if err != nil {
+		return nil, nil, publicImportError(err)
+	}
+	preview, err := publicHelpCenterPreview(site)
+	if err != nil {
+		return nil, nil, err
+	}
+	var refs []model.PublicHelpCenterArticleRef
+	for _, top := range site.Collections {
+		refs = appendPublicArticleRefs(refs, top, top.Name)
+	}
+	return preview, refs, nil
+}
+
+func publicHelpCenterPreview(site *intercom.PublicHelpCenter) (*model.PublicHelpCenterImportPreview, error) {
 	flat := flattenPublicCollections(site.Collections)
 	preview := &model.PublicHelpCenterImportPreview{
 		Platform:       model.PublicHelpCenterPlatformIntercom,
@@ -101,6 +126,49 @@ func (s *DocsImportService) PreviewPublicHelpCenter(ctx context.Context, req mod
 		return nil, fmt.Errorf("%w: this help center has no public articles to import", ErrPublicImportInvalid)
 	}
 	return preview, nil
+}
+
+// ReadPublicArticle returns one public help-center article as plain text.
+func (s *DocsImportService) ReadPublicArticle(ctx context.Context, articleURL string) (title, text string, err error) {
+	article, err := s.publicIntercomClient().Article(ctx, articleURL)
+	if err != nil {
+		return "", "", publicImportError(err)
+	}
+	var b strings.Builder
+	writePublicBlocksText(&b, article.Blocks)
+	return article.Title, strings.TrimSpace(b.String()), nil
+}
+
+// appendPublicArticleRefs adds a collection's articles, then its nested
+// collections' articles, all named under the top-level collection.
+func appendPublicArticleRefs(refs []model.PublicHelpCenterArticleRef, collection intercom.PublicCollection, top string) []model.PublicHelpCenterArticleRef {
+	for _, article := range collection.Articles {
+		refs = append(refs, model.PublicHelpCenterArticleRef{Title: article.Title, URL: article.URL, Summary: article.Summary, Collection: top})
+	}
+	for _, child := range collection.Children {
+		refs = appendPublicArticleRefs(refs, child, top)
+	}
+	return refs
+}
+
+// writePublicBlocksText writes the readable text of article blocks, one block
+// per line, including list items, table cells and collapsible summaries.
+func writePublicBlocksText(b *strings.Builder, blocks []intercom.Block) {
+	for _, block := range blocks {
+		if text := strings.TrimSpace(htmlToPlainText(cmp.Or(block.Text, block.Summary.Text))); text != "" {
+			b.WriteString(text)
+			b.WriteString("\n")
+		}
+		writePublicBlocksText(b, block.Content)
+		for _, item := range block.Items {
+			writePublicBlocksText(b, item.Content)
+		}
+		for _, row := range block.Rows {
+			for _, cell := range row.Cells {
+				writePublicBlocksText(b, cell.Content)
+			}
+		}
+	}
 }
 
 func countPublicArticles(collection intercom.PublicCollection) int {

@@ -156,6 +156,16 @@ type PublicHelpCenterImportPreview struct {
 	TopCollections    []PublicHelpCenterCollectionCount `json:"top_collections"`
 }
 
+// PublicHelpCenterArticleRef names one public article or page.
+type PublicHelpCenterArticleRef struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	// Summary is the article's one-line description, when it has one.
+	Summary string `json:"summary,omitempty"`
+	// Collection is the top-level collection the article sits under.
+	Collection string `json:"collection,omitempty"`
+}
+
 // PublicHelpCenterCollectionCount is one top-level collection in a preview,
 // counting the articles in it and in its subcollections.
 type PublicHelpCenterCollectionCount struct {

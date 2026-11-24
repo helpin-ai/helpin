@@ -24,14 +24,14 @@ export default function Workspaces() {
   const isLoading = wsLoading || orgsLoading;
 
   const openOnboarding = () => {
-    void navigate({ to: '/onboarding', search: { step: 'workspace' } });
+    void navigate({ to: '/onboarding', search: { step: 'website' } });
   };
 
   // `?create=true` links and people without a workspace continue in onboarding.
   const redirectToOnboarding = Boolean(create) || (wsLoaded && allWorkspaces.length === 0);
   useEffect(() => {
     if (redirectToOnboarding) {
-      void navigate({ to: '/onboarding', search: { step: 'workspace' }, replace: true });
+      void navigate({ to: '/onboarding', search: { step: 'website' }, replace: true });
     }
   }, [navigate, redirectToOnboarding]);
 

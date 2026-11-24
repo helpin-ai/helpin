@@ -189,10 +189,11 @@ func (b *HelpcenterBrandImporter) Propose(ctx context.Context, sourceURL string)
 		BrandName: page.siteName,
 		// On a plain website the header logo is drawn for the page's own,
 		// usually light, background.
-		LogoURL:    page.logoURL,
-		FaviconURL: page.faviconURL,
-		BrandColor: page.themeColor,
-		WebsiteURL: page.finalURL.Scheme + "://" + page.finalURL.Host,
+		LogoURL:       page.logoURL,
+		FaviconURL:    page.faviconURL,
+		BrandColor:    page.themeColor,
+		WebsiteURL:    page.finalURL.Scheme + "://" + page.finalURL.Host,
+		HelpCenterURL: page.helpCenterURL,
 	}
 	finishBrandProposal(proposal)
 	return proposal, nil
@@ -335,6 +336,8 @@ type brandPage struct {
 	themeColor string
 	faviconURL string
 	logoURL    string
+	// helpCenterURL is the page's best link to the site's help center.
+	helpCenterURL string
 }
 
 // readPage fetches a web page and reads its brand metadata.
@@ -373,6 +376,7 @@ func parseBrandPage(root *html.Node, base *url.URL) *brandPage {
 	var title, ogSiteName, appName, iconHref, appleIconHref string
 	var headerLogo string
 	var headerSVG *html.Node
+	helpScore := 0
 	var walk func(n *html.Node, inHeader, inHomeLink bool)
 	walk = func(n *html.Node, inHeader, inHomeLink bool) {
 		if n.Type == html.ElementNode {
@@ -414,6 +418,9 @@ func parseBrandPage(root *html.Node, base *url.URL) *brandPage {
 				}
 			case "a":
 				inHomeLink = inHomeLink || brandHomeLink(n, base)
+				if target, score := helpCenterLink(n, base); score > helpScore {
+					helpScore, page.helpCenterURL = score, target
+				}
 			case "svg":
 				// Many sites draw the logo as inline SVG in the link home.
 				if inHeader && headerSVG == nil && (inHomeLink || brandLogoHint(n)) {
