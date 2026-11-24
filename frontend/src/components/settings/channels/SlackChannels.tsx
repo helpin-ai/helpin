@@ -19,7 +19,7 @@ import {
   QuietTextAction,
 } from '@/components/design-system/quiet'
 import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker'
-import { InformationCircleIcon, SlackIcon } from '@/lib/icons'
+import { SlackIcon } from '@/lib/icons'
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useEpics } from '@/hooks/queries/useEpics'
 import { useInboxScopes } from '@/hooks/queries/useSupport'
@@ -257,13 +257,6 @@ function RouteDialog({
   const options = (items: { id: string; name: string }[] = []) =>
     items.map((item) => ({ value: item.id, label: item.name }))
   const selected = channels.data?.find((c) => c.id === route.channel_id)
-  const descriptions: Record<SlackPurpose, string> = {
-    support: 'Each new customer thread opens a conversation in Helpin. Replies stay in that conversation.',
-    mixed: 'Mention @Helpin or choose “Create support request” to open a conversation from a thread.',
-    pm: selected?.is_private
-      ? 'Create or link tasks and share task discussion replies in this channel.'
-      : 'Create tasks and ask @Helpin for private task updates.',
-  }
   const pending = save.isPending || remove.isPending
   return (
     <Dialog
@@ -329,10 +322,6 @@ function RouteDialog({
             />
           }
         />
-        <div className="-mt-2 flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
-          <InformationCircleIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          <span>{descriptions[route.purpose]}</span>
-        </div>
         {route.purpose === 'pm' ? (
           <>
             <QuietPropertyRow
