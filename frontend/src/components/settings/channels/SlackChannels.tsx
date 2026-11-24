@@ -35,9 +35,9 @@ const purposes = {
   pm: 'Project work',
 }
 const purposeTooltips: Record<SlackPurpose, string> = {
-  support: 'Turn every new customer thread into a support request.',
-  mixed: 'Open a support request only when someone asks.',
-  pm: 'Create and follow tasks in this channel.',
+  support: 'New Slack threads become Helpin support conversations.',
+  mixed: 'Mention @Helpin or choose “Create support request” in Slack.',
+  pm: 'Create and follow Helpin tasks in Slack.',
 }
 const emptyRoute: SlackRoute = {
   channel_id: '',
