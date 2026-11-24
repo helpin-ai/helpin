@@ -36,7 +36,7 @@
     <div class="heading"><h1>Slack in Helpin</h1><span>Northstar · Fictional workspace</span></div>
     <nav aria-label="Screenshots">
       <a href="#inbox">Conversation</a><a href="#mixed-channels">Reply channels</a><a href="#list">Inbox list</a><a href="#task">Linked task</a>
-      <a href="#channel-rules">Channel rules</a><a href="#channels">Channels</a><a href="#routing">Support routing</a><a href="#project-routing">PM defaults</a>
+      <a href="#channels">Support channels</a><a href="#channel-rules">Slack channel rules</a><a href="#routing">Support routing</a><a href="#project-routing">PM defaults</a>
     </nav>
   </header>
   <figure>
@@ -53,7 +53,7 @@
     list: 'The Customer support inbox on a narrow screen. Slack, email, and chat conversations share the same queue.',
     task: 'Sam changed PAY-142’s priority from Slack. The source link opens the thread, and Ana’s discussion syncs to #payments.',
     'channel-rules': 'Invite @Helpin to ask a question. Add a rule for automatic support intake or channel defaults.',
-    channels: 'Slack’s Manage shortcut opens External tools → Apps. Chat, Email, and Telegram are also available here.',
+    channels: 'Settings → Support → Channels. Each channel has a Manage link. Telegram’s opens its bot settings in External tools → Apps.',
     routing: 'Customer threads in #acme-support go to the Customer support inbox.',
     'project-routing': 'Tasks drafted from #payments start with the Payments team and the Checkout reliability epic.'
   }
@@ -64,7 +64,7 @@
       if (link.hash === '#' + id) link.setAttribute('aria-current', 'page')
       else link.removeAttribute('aria-current')
     }
-    const file = id + '.png?v=8'
+    const file = id === 'channels' ? 'channels.png?v=9' : id + '.png?v=8'
     document.getElementById('screen').src = file
     document.getElementById('screen').alt = captions[id]
     document.getElementById('full').href = file
