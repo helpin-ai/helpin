@@ -2,10 +2,13 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
+	"time"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"time"
 )
 
 // SlackRepository stores installation grants and channel routing.
@@ -174,6 +177,9 @@ func bindSlackTask(ctx context.Context, tx *gorm.DB, thread model.SlackThread, i
 	if err := tx.WithContext(ctx).Exec("INSERT INTO slack_task_threads(account_id,channel_id,thread_ts,task_id) VALUES(?,?,?,?)", thread.AccountID, thread.Channel, thread.Root, id).Error; err != nil {
 		return err
 	}
+	if strings.HasPrefix(thread.Channel, "D") {
+		return nil
+	} // DMs have no shared task discussion.
 	var route model.SlackRoute
 	if err := tx.Where("account_id=? AND channel_id=?", thread.AccountID, thread.Channel).First(&route).Error; err != nil {
 		return err
@@ -271,4 +277,48 @@ func (r *SlackRepository) Discussion(ctx context.Context, a, channel, root strin
 // RecordCard remembers the provider timestamp so changes update the original card.
 func (r *SlackRepository) RecordCard(ctx context.Context, a, channel, root, ts string) error {
 	return r.db.WithContext(ctx).Table("slack_task_threads").Where("account_id=? AND channel_id=? AND thread_ts=?", a, channel, root).UpdateColumn("card_ts", ts).Error
+}
+
+// EnsureAgentChat gives concurrent deliveries in one private thread a single Dock conversation.
+func (r *SlackRepository) EnsureAgentChat(ctx context.Context, workspace, user, id, title string) error {
+	return r.db.WithContext(ctx).Exec(`INSERT INTO dock_chats (id,workspace_id,user_id,title,visibility,slack_thread,created_at,updated_at)
+        VALUES (?,?,?,?,'private',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING`, id, workspace, user, title).Error
+}
+
+// Limit projections to the accepted turn even after the same run has resumed.
+const slackTurnMessages = ` FROM agent_run_messages turn
+ JOIN agent_run_messages reply ON reply.workspace_id=turn.workspace_id AND reply.dock_chat_id=turn.dock_chat_id
+ AND reply.run_id=turn.run_id AND reply.dock_chat_sequence>turn.dock_chat_sequence
+ WHERE turn.workspace_id=? AND turn.dock_chat_id=? AND turn.id=? AND turn.role='user'
+ AND reply.role='assistant'
+ AND NOT EXISTS (SELECT 1 FROM agent_run_messages later WHERE later.dock_chat_id=turn.dock_chat_id
+ AND later.role='user' AND later.dock_chat_sequence BETWEEN turn.dock_chat_sequence+1 AND reply.dock_chat_sequence) `
+
+func (r *SlackRepository) AgentTurnTools(ctx context.Context, workspace, chat, message string) ([]string, error) {
+	var row struct{ ToolInvocations []byte }
+	err := r.db.WithContext(ctx).Raw("SELECT reply.tool_invocations "+slackTurnMessages+
+		` AND reply.tool_invocations IS NOT NULL AND CAST(reply.tool_invocations AS text) NOT IN ('[]','null') ORDER BY reply.dock_chat_sequence DESC LIMIT 1`, workspace, chat, message).Scan(&row).Error
+	if err != nil || len(row.ToolInvocations) == 0 {
+		return nil, err
+	}
+	var calls []struct {
+		Name string `json:"tool_name"`
+	}
+	if err = json.Unmarshal(row.ToolInvocations, &calls); err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, call := range calls {
+		names = append(names, call.Name)
+	}
+	return names, nil
+}
+
+// AgentAnswer returns only the final response for the accepted turn. Progress, tool
+// output, and answers to subsequent turns must never be sent to Slack.
+func (r *SlackRepository) AgentAnswer(ctx context.Context, workspace, chat, message string) (string, error) {
+	var answer string
+	err := r.db.WithContext(ctx).Raw("SELECT reply.content "+slackTurnMessages+
+		" AND reply.message_type='assistant_final' ORDER BY reply.dock_chat_sequence LIMIT 1", workspace, chat, message).Scan(&answer).Error
+	return answer, err
 }

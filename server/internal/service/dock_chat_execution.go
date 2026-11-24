@@ -49,6 +49,9 @@ func (s *DockChatService) effectiveChatExecution(ctx context.Context, chat *mode
 }
 
 func (s *DockChatService) scopedChatExecutionTools(ctx context.Context, chat *model.DockChat, userID string, agent *model.Agent) ([]string, error) {
+	if chat.SlackThread {
+		return s.slackAgentTools(ctx, chat, userID, agent)
+	}
 	if chat.FlowBuilder != nil {
 		return flowBuilderTools(), nil
 	}

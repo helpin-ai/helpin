@@ -281,6 +281,9 @@ func (s *DockChatService) updateChatLocked(ctx context.Context, workspaceID, use
 	if err != nil {
 		return nil, err
 	}
+	if chat.SlackThread && (req.ExecutionEnabled != nil || req.Visibility != nil) {
+		return nil, fmt.Errorf("Slack agent conversations stay private and use scoped tools")
+	}
 	if chat.FlowBuilder != nil && (req.ExecutionEnabled != nil || req.Visibility != nil) {
 		return nil, fmt.Errorf("flow builder conversations stay private and cannot execute work")
 	}

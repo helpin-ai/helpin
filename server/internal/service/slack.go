@@ -22,6 +22,7 @@ type SlackConfig struct{ ClientID, ClientSecret, SigningSecret, RedirectURL stri
 
 // SlackService manages the Slack workspace installation shared by PM and Support.
 type SlackService struct {
+	dock     slackAskAgent
 	triage   *PMTriageService
 	insights *PMTaskInsightsService
 	tasks    *PMTaskService
@@ -40,6 +41,8 @@ func NewSlackService(channels *SupportChannelService, repo *repository.SlackRepo
 	channels.slack = s
 	return s
 }
+
+func (s *SlackService) SetAskAgent(dock *DockChatService) { s.dock = dock }
 
 func (s *SlackService) enabled() bool {
 	return s.cfg.ClientID != "" && s.cfg.ClientSecret != "" && s.cfg.SigningSecret != "" && s.cfg.RedirectURL != "" && len(s.channels.cfg.EncryptionKey) == 32
@@ -75,7 +78,7 @@ func (s *SlackService) StartInstall(ctx context.Context, workspace, user string)
 	if err = s.repo.SaveState(ctx, hash, workspace, user); err != nil {
 		return "", err
 	}
-	params := url.Values{"client_id": {s.cfg.ClientID}, "redirect_uri": {s.cfg.RedirectURL}, "state": {raw}, "scope": {"app_mentions:read,channels:read,groups:read,channels:history,groups:history,chat:write,files:read,files:write,users:read,commands"}}
+	params := url.Values{"client_id": {s.cfg.ClientID}, "redirect_uri": {s.cfg.RedirectURL}, "state": {raw}, "scope": {"assistant:write,im:history,app_mentions:read,channels:read,groups:read,channels:history,groups:history,chat:write,files:read,files:write,users:read,commands"}}
 	return "https://slack.com/oauth/v2/authorize?" + params.Encode(), nil
 }
 

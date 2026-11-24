@@ -43,6 +43,8 @@ type Envelope struct {
 
 // Message carries the original Slack IDs as strings to preserve timestamp precision.
 type Message struct {
+	ChannelType      string `json:"channel_type,omitempty"`
+	Tab              string `json:"tab,omitempty"`
 	OldChannelID     string `json:"old_channel_id,omitempty"`
 	NewChannelID     string `json:"new_channel_id,omitempty"`
 	CurrentChannelID string `json:"-"`

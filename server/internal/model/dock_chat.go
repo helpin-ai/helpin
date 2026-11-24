@@ -19,6 +19,7 @@ const (
 // backed the chat carry AgentRun.DockChatID, so the full history is a real FK
 // chain rather than a heuristic match.
 type DockChat struct {
+	SlackThread           bool                `json:"-" gorm:"->;not null;default:false"`
 	FlowBuilder           *FlowBuilderState   `json:"flow_builder,omitempty" gorm:"type:jsonb;serializer:json"`
 	CoverageGapID         *string             `json:"coverage_gap_id,omitempty" gorm:"type:uuid;index"`
 	InitialContext        *DockContextMessage `json:"initial_context,omitempty" gorm:"type:jsonb;serializer:json"`

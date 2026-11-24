@@ -1785,6 +1785,7 @@ func main() {
 		SetMediaSourceService(supportInboxService).
 		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
 	publicShareRepo := repository.NewPublicShareRepository(db)
+	slackService.SetAskAgent(dockChatService)
 	dockChatService.SetFlowBuilder(ruleEngine, flowTemplateRegistry, flowTemplateInstaller)
 	commandService.SetFlowBuilderChat(dockChatService)
 	publicShareSource := service.NewPublicShareSource(dockChatService, agentService, dockChatRepo, agentRunMessageRepo, workspaceRepo)
@@ -2453,6 +2454,7 @@ func main() {
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
 	go supportChannelService.StartWorker(inboundCtx, "slack_shortcut")
 	go supportChannelService.StartWorker(inboundCtx, service.SlackPMDeliveryJob)
+	go supportChannelService.StartWorker(inboundCtx, service.SlackAgentReplyJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackEventJob)
 	go supportChannelService.RunOutbox(inboundCtx, 2*time.Second)
 	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics, appEmailClient, cfg.OpsAlertEmails)

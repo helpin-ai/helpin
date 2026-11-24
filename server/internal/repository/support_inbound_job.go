@@ -117,3 +117,8 @@ func (r *SupportInboundJobRepository) SetConversation(ctx context.Context, job *
 	return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).Where("id = ? AND lease_token = ?", job.ID, job.LeaseToken).
 		Updates(map[string]any{"conversation_id": conversationID, "message_id": messageID}).Error
 }
+
+// WaitForResult releases a polling job's lease without charging a delivery retry.
+func (r *SupportInboundJobRepository) WaitForResult(ctx context.Context, job *model.SupportInboundJob, next time.Time) error {
+	return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).Where("id=? AND lease_token=? AND status='processing'", job.ID, job.LeaseToken).Updates(map[string]any{"status": "pending", "available_at": next, "payload": job.Payload, "lease_token": "", "attempts": gorm.Expr("attempts - 1")}).Error
+}

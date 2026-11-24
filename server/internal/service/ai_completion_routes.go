@@ -88,6 +88,7 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		}
 	}
 	policies := []AICompletionRoutePolicy{
+		{FeatureKey: BillingFeatureAskChat, OperationKey: "slack_question", Primary: openRouterDeepSeekFlashRoute, Fallbacks: []AICompletionRoute{openRouterLunaRoute}, MaximumOutputTokens: 320},
 		{FeatureKey: BillingFeatureSupportTranslation, OperationKey: "quality_review", Primary: openRouterDeepSeekTranslationRoute, PreferRequestRoute: true, MaximumOutputTokens: 128},
 		{FeatureKey: BillingFeatureSupportTranslation, Primary: AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16", ServiceTier: defaultAICompletionServiceTier}, Fallbacks: []AICompletionRoute{openRouterDeepSeekTranslationRoute}, MaximumOutputTokens: 4000},
 		common(BillingFeatureAIRouting, 400),

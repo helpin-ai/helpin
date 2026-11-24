@@ -134,6 +134,8 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 		}
 		return s.offerDraft(ctx, a, token, route, m, actor, conv)
 	}
+	ctx, progress := s.startProgress(ctx, token, m, "Reading the support conversation…")
+	defer s.finishProgress(ctx, token, m, progress)
 	messages, err := inbox.ListConversationMessages(ctx, a.WorkspaceID, conv.ID, true)
 	if err != nil {
 		return err
