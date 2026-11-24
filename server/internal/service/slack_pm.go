@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,6 +30,27 @@ func (s *SlackService) SetPM(tasks *PMTaskService, comments *PMCommentService, a
 	s.appURL = strings.TrimRight(base, "/")
 }
 
+var slackLinkEncoding = base32.NewEncoding("23456789ABCDEFGHJKLMNPQRSTUVWXYZ").WithPadding(base32.NoPadding)
+
+func newSlackLinkCode() (string, error) {
+	var random [5]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	code := slackLinkEncoding.EncodeToString(random[:])
+	return code[:4] + "-" + code[4:], nil
+}
+
+func slackLinkCodeHash(raw string) string {
+	code := strings.TrimSpace(raw)
+	// Legacy grants are 43 case-sensitive characters, including possible hyphens.
+	if len(code) < 43 {
+		code = strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(code, "-", ""), " ", ""))
+	}
+	digest := sha256.Sum256([]byte(code))
+	return hex.EncodeToString(digest[:])
+}
+
 // LinkMember completes an explicitly accepted account-link grant.
 func (s *SlackService) LinkMember(ctx context.Context, workspace, user, raw string) error {
 	a, err := s.repo.Installation(ctx, workspace)
@@ -37,8 +60,7 @@ func (s *SlackService) LinkMember(ctx context.Context, workspace, user, raw stri
 	if a == nil || raw == "" {
 		return ErrChannelInvalid
 	}
-	digest := sha256.Sum256([]byte(raw))
-	return s.repo.Link(ctx, a.ID, user, hex.EncodeToString(digest[:]))
+	return s.repo.Link(ctx, a.ID, user, slackLinkCodeHash(raw))
 }
 
 func (s *SlackService) private(ctx context.Context, token string, m slack.Message, text string, blocks ...any) error {
@@ -81,11 +103,11 @@ func (s *SlackService) linkedActor(ctx context.Context, a *model.SupportChannelA
 }
 
 func (s *SlackService) promptLink(ctx context.Context, a *model.SupportChannelAccount, token string, m slack.Message) error {
-	raw, hash, err := newWebhookSecret()
+	raw, err := newSlackLinkCode()
 	if err != nil {
 		return err
 	}
-	if err = s.repo.GrantLink(ctx, a.ID, m.User, hash); err != nil {
+	if err = s.repo.GrantLink(ctx, a.ID, m.User, slackLinkCodeHash(raw)); err != nil {
 		return err
 	}
 	address := s.appURL + "/oauth/slack/callback?" + url.Values{"workspace": {a.WorkspaceID}, "pair": {"1"}}.Encode()

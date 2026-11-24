@@ -318,3 +318,38 @@ func TestSlackUnlinkedSupportFollowupPromptsInThread(t *testing.T) {
 		t.Fatalf("handled=%v error=%v calls=%d", handled, err, calls)
 	}
 }
+
+func TestSlackLinkCodeRedemption(t *testing.T) {
+	ctx := context.Background()
+	f := newChannelFixture(t)
+	account := f.connect(t, f.workspace)
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", account.ID)
+	mustExec(t, f.db, "CREATE TABLE slack_members(account_id text,slack_user text,user_id text, PRIMARY KEY(account_id,slack_user))")
+	mustExec(t, f.db, "CREATE TABLE slack_link_grants(token_hash text PRIMARY KEY,account_id text,slack_user text,expires_at datetime)")
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
+	code, err := newSlackLinkCode()
+	if err != nil || len(code) != 9 || code[4] != '-' {
+		t.Fatal("failed to generate a short grouped Slack code")
+	}
+	legacy, legacyHash, err := newWebhookSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, hash, input string }{
+		{"lowercase without separator", slackLinkCodeHash(code), strings.ToLower(strings.ReplaceAll(code, "-", ""))},
+		{"space separator", slackLinkCodeHash(code), strings.ReplaceAll(code, "-", " ")},
+		{"existing grant", legacyHash, legacy},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := s.repo.GrantLink(ctx, account.ID, "U1", tc.hash); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.LinkMember(ctx, f.workspace, "member", tc.input); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.LinkMember(ctx, f.workspace, "member", tc.input); err == nil {
+				t.Fatal("reused a consumed code")
+			}
+		})
+	}
+}
