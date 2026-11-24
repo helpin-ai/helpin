@@ -793,22 +793,24 @@ func mapFromJSON(value interface{}) map[string]interface{} {
 }
 
 func validateRunAllowedTools(requested []string, agent *model.Agent) error {
-	requested = normalizeStringSlice(requested)
 	if len(requested) == 0 {
 		return nil
-	}
-	allowedSet := map[string]bool{}
-	for _, tool := range parseJSONStringSlice(agent.AllowedTools) {
-		allowedSet[tool] = true
 	}
 	// Output-bound review tools are safe to grant per run. They validate the
 	// run output context before doing anything, so older document agents can use
 	// new review-candidate flows without requiring an agent row migration first.
-	allowedSet["publish_document_change_proposal"] = true
-	allowedSet["publish_ai_section_candidate"] = true
-	for _, tool := range requested {
+	allowed := append(parseJSONStringSlice(agent.AllowedTools), "publish_document_change_proposal", "publish_ai_section_candidate")
+	return validateAgentToolSubset(requested, allowed, agent.Name)
+}
+
+func validateAgentToolSubset(requested, allowed []string, agentName string) error {
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, tool := range allowed {
+		allowedSet[tool] = true
+	}
+	for _, tool := range normalizeStringSlice(requested) {
 		if !allowedSet[tool] {
-			return fmt.Errorf("tool %q is not allowed for agent %s", tool, strings.TrimSpace(agent.Name))
+			return fmt.Errorf("tool %q is not allowed for agent %s", tool, strings.TrimSpace(agentName))
 		}
 	}
 	return nil
@@ -5300,11 +5302,15 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		validationAgent := agent
-		if opts.executionEnabled && opts.dockChatID != nil && agent.EffectivePresetKey() == model.AgentPresetAskAgent {
-			validationAgent = withAskAgentDirectTools(agent)
+		switch {
+		case agent.IsSystem && agent.EffectivePresetKey() == model.AgentPresetAskAgent && !opts.executionEnabled && isSlackDockTrigger(trigger, opts.dockChatID):
+			err = validateAgentToolSubset(req.AllowedTools, slackRuntimeTools(), agent.Name)
+		case opts.executionEnabled && opts.dockChatID != nil && agent.EffectivePresetKey() == model.AgentPresetAskAgent:
+			err = validateRunAllowedTools(req.AllowedTools, withAskAgentDirectTools(agent))
+		default:
+			err = validateRunAllowedTools(req.AllowedTools, agent)
 		}
-		if err := validateRunAllowedTools(req.AllowedTools, validationAgent); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)

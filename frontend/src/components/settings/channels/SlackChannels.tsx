@@ -97,10 +97,13 @@ export function SlackChannels({
   return (
     <Card className="gap-0 rounded-lg py-0">
       <CardContent className="px-4 py-3">
-        <div className="flex items-center gap-3">
+        <header className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
           <SlackIcon className="size-5 shrink-0" />
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold">Slack</h2>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h2 className="text-sm font-semibold">Slack</h2>
+              {data?.connected && <QuietStatusText tone="positive">Connected</QuietStatusText>}
+            </div>
             <p className="text-xs text-muted-foreground">
               {settings.isLoading
                 ? 'Loading connection…'
@@ -113,17 +116,50 @@ export function SlackChannels({
                       : 'Configure the Slack app on your Helpin instance to connect.'}
             </p>
           </div>
-          {!data?.connected && (
+          {data?.connected ? (
+            <div className="col-start-2 flex items-center gap-1 sm:col-start-3 sm:row-start-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={
+                  !data.configured || install.isPending || disconnect.isPending
+                }
+                onClick={() => install.mutate()}
+              >
+                Reauthorize
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={disconnect.isPending}
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: 'Disconnect Slack?',
+                      description:
+                        'Message delivery will stop for all connected Slack channels.',
+                      confirmText: 'Disconnect',
+                      variant: 'destructive',
+                    })
+                  )
+                    disconnect.mutate()
+                }}
+              >
+                Disconnect
+              </Button>
+            </div>
+          ) : (
             <Button
               size="sm"
               variant="outline"
+              className="col-start-2 justify-self-start sm:col-start-3 sm:row-start-1"
               disabled={!data?.configured || install.isPending}
               onClick={() => install.mutate()}
             >
               Connect Slack
             </Button>
           )}
-        </div>
+        </header>
         {data?.connected && (
           <div className="mt-3 border-t">
             <label className="flex items-center justify-between gap-3 border-b py-3 text-sm">
@@ -157,7 +193,7 @@ export function SlackChannels({
                 key={route.channel_id}
                 variant="ghost"
                 onClick={() => setDraft(route)}
-                className="flex h-auto w-full items-center justify-between gap-3 rounded-none border-b py-3 text-left"
+                className="flex h-auto w-full items-center justify-between gap-3 rounded-none border-b py-3 text-left last:border-b-0"
               >
                 <span className="truncate font-medium">
                   #{route.channel_name}
@@ -167,40 +203,6 @@ export function SlackChannels({
                 </span>
               </Button>
             ))}
-            <div className="flex items-center justify-between pt-2">
-              <QuietStatusText tone="positive">Connected</QuietStatusText>
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={
-                    !data.configured || install.isPending || disconnect.isPending
-                  }
-                  onClick={() => install.mutate()}
-                >
-                  Reauthorize
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={disconnect.isPending}
-                  onClick={async () => {
-                    if (
-                      await confirm({
-                        title: 'Disconnect Slack?',
-                        description:
-                          'Message delivery will stop for all connected Slack channels.',
-                        confirmText: 'Disconnect',
-                        variant: 'destructive',
-                      })
-                    )
-                      disconnect.mutate()
-                  }}
-                >
-                  Disconnect
-                </Button>
-              </div>
-            </div>
           </div>
         )}
         {draft && (

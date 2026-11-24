@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ import (
 type slackTestAsk struct {
 	chat, client string
 	calls        int
+	startErr     error
 }
 
 func (f *slackTestAsk) SendMessage(_ context.Context, workspace, user, chat string, req model.SendDockChatMessageRequest) (*model.DockChatDetail, error) {
@@ -31,6 +33,9 @@ func (f *slackTestAsk) SendMessage(_ context.Context, workspace, user, chat stri
 	f.client = req.ClientMessageID
 	if req.Content != "Which tasks are blocked?" || workspace == "" || user != "helpin-member" {
 		return nil, fmt.Errorf("unexpected turn")
+	}
+	if f.startErr != nil {
+		return nil, f.startErr
 	}
 	return &model.DockChatDetail{AcceptedMessage: &model.AgentRunMessage{ID: "turn"}}, nil
 }
@@ -86,8 +91,35 @@ func TestSlackInstallAIDefaultAndReconnect(t *testing.T) {
 }
 
 func TestSlackAgentDMDelivery(t *testing.T) {
-	for _, outcome := range []string{"quick", "answer", "fallback", "failed", "cancelled", "timeout", "worker failure"} {
+	for _, outcome := range []string{"quick", "answer", "fallback", "failed", "launch rejected", "cancelled", "timeout", "worker failure"} {
 		t.Run(outcome, func(t *testing.T) { testSlackAgentDMDelivery(t, outcome) })
+	}
+}
+
+func TestSlackFailureAdvice(t *testing.T) {
+	const fallback = "I couldn’t confirm the result."
+	for _, tc := range []struct {
+		cause error
+		want  string
+	}{
+		{fmt.Errorf("turn: %w", model.ErrAIAllowanceExhausted), "AI usage limit"},
+		{errors.New(model.ErrBillingWorkspaceLocked.Error()), "billing plan"},
+		{ErrAIConnectionUnavailable, "model and its connection"},
+		{errors.New("configure a workspace AI default or select a profile"), "select one"},
+		{fmt.Errorf("private-integration-name: %w", ErrExternalMCPReauthorize), "External tools"},
+		{errors.New(`actor does not have permission to run command "private-integration-name"`), "check your access"},
+		{errors.New("the chat agent is still working on the previous message"), "Wait for my reply"},
+		{fmt.Errorf("thread lookup: %w", &slack.APIError{Code: "missing_scope"}), "reauthorize Slack"},
+		{&slack.APIError{Code: "not_in_channel"}, "Invite @Helpin"},
+		{&slack.APIError{Code: "ratelimited"}, "Slack is limiting requests"},
+		{errors.New("rate_limit_error"), "AI service"},
+		{context.DeadlineExceeded, "check it in Helpin"},
+		{errors.New("unexpected private-integration-name"), fallback},
+	} {
+		got := slackFailureReason(tc.cause, fallback)
+		if !strings.Contains(got, tc.want) || strings.Contains(got, "private-integration-name") {
+			t.Errorf("advice for %v: got %q, want %q", tc.cause, got, tc.want)
+		}
 	}
 }
 func testSlackAgentDMDelivery(t *testing.T, outcome string) {
@@ -111,6 +143,9 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	svc := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{SigningSecret: "fixture"})
 	svc.authz = authorization.NewAuthzService(f.db, dockChatAdminMemberRepo{}, nil)
 	agent := &slackTestAsk{}
+	if outcome == "launch rejected" {
+		agent.startErr = fmt.Errorf("tool %q is not allowed for agent %s", "fixture_internal_tool", "fixture_private_name")
+	}
 	svc.dock = agent
 	var delivered []map[string]any
 	var statuses []string
@@ -171,6 +206,13 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	work(SlackEventJob, false)
 	if agent.calls != 1 || agent.chat == "" {
 		t.Fatal("agent was not invoked once")
+	}
+	if outcome == "launch rejected" {
+		work(SlackAgentReplyJob, false)
+		if len(delivered) != 2 || delivered[1]["text"] != "Helpin’s Slack agent is missing a tool it needs. Share this thread with Helpin support so they can fix the setup." || strings.Join(statuses, ",") != "processing,active" {
+			t.Fatalf("unexpected launch rejection: %v %v", delivered, statuses)
+		}
+		return
 	}
 	insert := func(id, role, kind, content, tools string, seq int) {
 		t.Helper()
@@ -239,7 +281,7 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 		if err := f.db.Exec("INSERT INTO agent_runs VALUES ('run',?,?,?)", f.workspace, outcome, `skill "document_editing" requires tool "private-internal-name"`).Error; err != nil {
 			t.Fatal(err)
 		}
-		expected = "The Slack agent’s configuration is missing a required tool. Ask a workspace admin to contact Helpin support."
+		expected = "Helpin’s Slack agent is missing a tool it needs. Share this thread with Helpin support so they can fix the setup."
 		if outcome == "cancelled" {
 			expected = "This request was cancelled. Send it again to start a new run."
 		}
@@ -324,6 +366,55 @@ func TestSlackAskRuntimeSkillContract(t *testing.T) {
 	req, err := runtimeStartRunRequest(run, agent, projected)
 	if err != nil || !sameNormalizedToolSet(req.AllowedTools, input.AllowedTools) {
 		t.Fatalf("scoped launch: %+v %v", req.AllowedTools, err)
+	}
+}
+
+func TestSlackConversationUpdateRunAdmission(t *testing.T) {
+	ctx := context.Background()
+	db := setupCodingDelegationTestDB(t)
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN dock_chat_id TEXT")
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN dock_chat_sequence INTEGER")
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN client_message_id TEXT")
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'pending'")
+	mustExec(t, db, "CREATE TABLE dock_chats (id TEXT PRIMARY KEY, workspace_id TEXT, next_message_sequence INTEGER, updated_at DATETIME)")
+	mustExec(t, db, "INSERT INTO dock_chats (id, workspace_id) VALUES ('chat-1', 'ws-1')")
+	seedCodingDelegationAgent(t, db, model.AgentPresetAskAgent, model.InvocationModeInteractive, time.Now())
+	preset := mustJSONStringSlice(askAgentPresetTools())
+	mustExec(t, db, "UPDATE agents SET allowed_tools=? WHERE id='agent-1'", preset)
+	runtime := &fakeAgentRuntimeSignalClient{}
+	svc := newCodingDelegationService(t, db, runtime)
+	dock := DockChatService{authz: authorization.NewAuthzService(nil, dockChatAdminMemberRepo{}, nil)}
+	chat := &model.DockChat{ID: "chat-1", WorkspaceID: "ws-1", SlackThread: true}
+	user := "user-1"
+	tools, err := dock.scopedChatExecutionTools(ctx, chat, user, &model.Agent{AllowedTools: preset})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trigger := &model.AgentRunTriggerContext{TriggerType: dockChatTriggerType, ActorID: &user, Context: json.RawMessage(`{"dock_chat_id":"chat-1","slack_thread":true}`)}
+	start := func(allowed []string, trigger *model.AgentRunTriggerContext, chatID *string) error {
+		req := model.StartAgentRunRequest{AgentID: "agent-1", AllowedTools: allowed, AdditionalContext: strPtr("What’s the update on this conversation?")}
+		_, err := svc.startTargetRunWithOptions(ctx, "ws-1", "workspace", "ws-1", req, &user, trigger, nil, nil, startTargetRunOptions{dockChatID: chatID})
+		return err
+	}
+	for _, tc := range []struct {
+		name    string
+		trigger *model.AgentRunTriggerContext
+		chatID  *string
+		tool    string
+	}{
+		{"ordinary Dock", nil, &chat.ID, "set_support_conversation_status"},
+		{"no backing chat", trigger, nil, "set_support_conversation_status"},
+		{"outside Slack scope", trigger, &chat.ID, "list_crm_companies"},
+	} {
+		if err := start([]string{tc.tool}, tc.trigger, tc.chatID); err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("%s: expected tool rejection, got %v", tc.name, err)
+		}
+	}
+	if err := start(tools, trigger, &chat.ID); err != nil {
+		t.Fatalf("start conversation update: %v", err)
+	}
+	if len(runtime.startRunCalls) != 1 || !sameNormalizedToolSet(runtime.startRunCalls[0].AllowedTools, tools) {
+		t.Fatal("expected only the permitted Slack tools to reach the runtime")
 	}
 }
 

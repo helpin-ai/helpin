@@ -64,7 +64,7 @@
       if (link.hash === '#' + id) link.setAttribute('aria-current', 'page')
       else link.removeAttribute('aria-current')
     }
-    const version = { channels: 9, 'channel-rules': 10, routing: 10, 'project-routing': 10 }[id] ?? 8
+    const version = { channels: 9, 'channel-rules': 11, routing: 11, 'project-routing': 11 }[id] ?? 8
     const file = id + '.png?v=' + version
     document.getElementById('screen').src = file
     document.getElementById('screen').alt = captions[id]
