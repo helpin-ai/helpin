@@ -162,8 +162,9 @@ func (s *SlackService) directAgent(ctx context.Context, a *model.SupportChannelA
 	}
 	ctx = authorization.WithActor(ctx, actor)
 	route := &model.SlackRoute{Purpose: "pm", ChannelID: m.Channel, CurrentChannelID: m.Channel}
-	if id := slackSupportLink.FindStringSubmatch(m.Text); len(id) > 1 {
-		return s.internalSupportAnswer(ctx, a, token, route, m, actor, id[1], false)
+
+	if handled, err := s.answerReferencedConversation(ctx, a, token, route, m, actor); handled {
+		return err
 	}
 	if slackDraftRequest(m.Text, a.Handle) {
 		return s.offerDraft(ctx, a, token, route, m, actor, nil)

@@ -121,6 +121,9 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 	if slackHelp(m.Text, a.Handle) {
 		return s.agentQuestion(authorization.WithActor(ctx, actor), a, token, m, actor)
 	}
+	if handled, err := s.answerReferencedConversation(ctx, a, token, route, m, actor); handled {
+		return err
+	}
 	allowed, err := s.authz.CanAccessModule(ctx, actor, model.ModulePM)
 	if err != nil {
 		return err
@@ -129,9 +132,7 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 		return s.private(ctx, token, m, "You need access to project management in this workspace.")
 	}
 	ctx = authorization.WithActor(ctx, actor)
-	if id := slackSupportLink.FindStringSubmatch(m.Text); len(id) > 1 {
-		return s.internalSupportAnswer(ctx, a, token, route, m, actor, id[1], false)
-	}
+
 	linked, err := s.repo.ThreadTask(ctx, a.ID, m.Channel, m.Root())
 	if err != nil {
 		return err

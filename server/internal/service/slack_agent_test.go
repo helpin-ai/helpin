@@ -291,3 +291,30 @@ func TestSlackAskRuntimeSkillContract(t *testing.T) {
 		t.Fatalf("scoped launch: %+v %v", req.AllowedTools, err)
 	}
 }
+
+func TestSlackUnlinkedSupportFollowupPromptsInThread(t *testing.T) {
+	f := newChannelFixture(t)
+	account := f.connect(t, f.workspace)
+	mustExec(t, f.db, "CREATE TABLE slack_members(account_id text,slack_user text,user_id text)")
+	mustExec(t, f.db, "CREATE TABLE slack_link_grants(token_hash text,account_id text,slack_user text,expires_at datetime)")
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
+	calls := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+			return
+		}
+		if r.URL.Path != "/chat.postEphemeral" || payload["user"] != "U1" || payload["thread_ts"] != "1" || payload["text"] != "Link your Helpin account to continue." {
+			t.Errorf("unexpected linking response at %s", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer api.Close()
+	s.api.BaseURL = api.URL + "/"
+	handled, err := s.supportCommand(context.Background(), account, "token", &model.SlackRoute{Purpose: "mixed"}, slack.Message{Text: "What's the latest?", User: "U1", Channel: "C1", ThreadTS: "1", TS: "2"}, true)
+	if !handled || err != nil || calls != 1 {
+		t.Fatalf("handled=%v error=%v calls=%d", handled, err, calls)
+	}
+}
