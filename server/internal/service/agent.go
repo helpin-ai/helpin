@@ -6756,7 +6756,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 
 	runtimeAgent = runtimeAgentForDockExecution(run, runtimeAgent)
-	if params.targetType != supportPreviewTarget && !isSupportInvestigationRun(run) {
+	if params.targetType != supportPreviewTarget && !isSupportInvestigationRun(run) && !isSlackDockRun(run) {
 		runtimeAgent, err = s.projectEnabledExternalMCPTools(ctx, params.workspaceID, runtimeAgent)
 		if err != nil {
 			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
@@ -6931,6 +6931,15 @@ func (s *AgentService) auditActorIDForRun(ctx context.Context, run *model.AgentR
 	// An event or schedule fires a flow with no user, and a template-installed
 	// agent has no authored version. Attribute the run's writes to the person
 	// who set up the flow so tools that record an author do not fail.
+	if actorID := s.ruleCreatorForRun(ctx, run); actorID != "" {
+		return actorID
+	}
+	// Built-in triggers start system agents with no user, version author, or
+	// rule; fall back to the workspace owner so author columns stay valid.
+	return s.workspaceOwnerID(ctx, run.WorkspaceID)
+}
+
+func (s *AgentService) ruleCreatorForRun(ctx context.Context, run *model.AgentRun) string {
 	ruleID := runInputRuleID(run.Input)
 	if s == nil || s.ruleEngine == nil || ruleID == "" {
 		return ""
@@ -6940,6 +6949,22 @@ func (s *AgentService) auditActorIDForRun(ctx context.Context, run *model.AgentR
 		return ""
 	}
 	return strings.TrimSpace(derefString(rule.CreatedBy))
+}
+
+// workspaceOwnerID returns the workspace owner's user ID, or "" when unknown.
+func (s *AgentService) workspaceOwnerID(ctx context.Context, workspaceID string) string {
+	if s == nil || s.workspaceRepo == nil || strings.TrimSpace(workspaceID) == "" {
+		return ""
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, strings.TrimSpace(workspaceID))
+	if err != nil {
+		slog.WarnContext(ctx, "resolve workspace owner", "error", err, "workspace_id", workspaceID)
+		return ""
+	}
+	if workspace == nil {
+		return ""
+	}
+	return strings.TrimSpace(workspace.OwnerID)
 }
 
 // runInputRuleID returns the automation rule that started a run, if any.

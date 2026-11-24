@@ -382,6 +382,7 @@ func (s *AIStandardProfiles) sealEnvironmentCredential(c *model.AIConnection, pr
 		return false, err
 	}
 	source := model.AIConnectionCredentialSourceEnvironment
+	c.LastVerifiedAt, c.LastVerificationError = nil, nil
 	c.CredentialSource = &source
 	c.Status = "connected"
 	return true, nil

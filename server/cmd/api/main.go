@@ -1680,6 +1680,7 @@ func main() {
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService, service.NewSupportAgentDefaults(supportInboxService))
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	workspaceService.SetSubscriptionGrantRevoker(aiConnectionService)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	workspaceService.SetWebsiteDefaultsApplier(supportInboxService)
 	workspaceService.SetOrganizationRoles(orgRepo)
@@ -1710,6 +1711,8 @@ func main() {
 			// Telegram requires HTTPS webhooks; only a local Bot API fake runs without.
 			RequireHTTPS: cfg.TelegramAPIBaseURL == "",
 		}).SetInboxService(supportInboxService)
+	slackService := service.NewSlackService(supportChannelService, repository.NewSlackRepository(db), service.SlackConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret, SigningSecret: cfg.SlackSigningSecret, RedirectURL: strings.TrimRight(cfg.AppBaseURL, "/") + "/oauth/slack/callback"})
+	slackService.SetPM(pmTaskService, pmCommentService, authzService, pmTriageService, pmTaskInsightsService, cfg.AppBaseURL)
 	channelOutbox := repository.NewSupportChannelOutboxRepository(db)
 	supportChannelService.SetOutboxRepository(channelOutbox)
 	supportInboxService.SetChannelOutbox(channelOutbox)
@@ -1783,6 +1786,7 @@ func main() {
 		SetMediaSourceService(supportInboxService).
 		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
 	publicShareRepo := repository.NewPublicShareRepository(db)
+	slackService.SetAskAgent(dockChatService)
 	dockChatService.SetFlowBuilder(ruleEngine, flowTemplateRegistry, flowTemplateInstaller)
 	commandService.SetFlowBuilderChat(dockChatService)
 	publicShareSource := service.NewPublicShareSource(dockChatService, agentService, dockChatRepo, agentRunMessageRepo, workspaceRepo)
@@ -2137,6 +2141,7 @@ func main() {
 		RequestTypes:        handler.NewSupportRequestTypeHandler(supportRequestTypeService),
 		CRMFieldDefinitions: handler.NewCRMFieldDefinitionHandler(customFieldService),
 		SupportWebhooks:     handler.NewSupportWebhookHandler(webhookService),
+		Slack:               handler.NewSlackHandler(slackService),
 		SupportChannels:     handler.NewSupportChannelHandler(supportChannelService),
 		SupportImports:      handler.NewSupportImportHandler(supportImportService),
 		SupportActions:      handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
@@ -2431,6 +2436,7 @@ func main() {
 
 	// Durable inbound processing does not depend on outbound Postmark/Redis configuration.
 	inboundCtx, inboundCancel := context.WithCancel(context.Background())
+	go aiConnectionService.RunModelGrantRevocations(inboundCtx)
 	defer inboundCancel()
 	supportTagJobsDone := make(chan struct{})
 	go func() {
@@ -2454,6 +2460,10 @@ func main() {
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelEvent)
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
+	go supportChannelService.StartWorker(inboundCtx, "slack_shortcut")
+	go supportChannelService.StartWorker(inboundCtx, service.SlackPMDeliveryJob)
+	go supportChannelService.StartWorker(inboundCtx, service.SlackAgentReplyJob)
+	go supportChannelService.StartWorker(inboundCtx, service.SlackEventJob)
 	go supportChannelService.RunOutbox(inboundCtx, 2*time.Second)
 	go emailFallbackService.StartInboundBacklogMonitor(inboundCtx, metrics, appEmailClient, cfg.OpsAlertEmails)
 	// Start email fallback workers only when both Redis and Postmark are available.

@@ -1555,6 +1555,11 @@ func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceI
 	return nil
 }
 
+// ErrSupportConversationUnavailable means the conversation is missing or the
+// actor cannot access it; callers must not distinguish the two.
+// The message keeps the legacy "ticket not found" text that callers match on.
+var ErrSupportConversationUnavailable = errors.New("ticket not found")
+
 // GetConversation returns a single conversation.
 func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
 	ticket, err := s.loadConversationAccessible(ctx, workspaceID, id)
@@ -1562,7 +1567,7 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 	if ticket == nil {
-		return nil, fmt.Errorf("ticket not found")
+		return nil, ErrSupportConversationUnavailable
 	}
 	if s.triageService != nil {
 		if err := s.triageService.HydrateConversation(ctx, ticket); err != nil {
@@ -1583,6 +1588,7 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if len(group) > 1 {
+			ticket.ProviderDestinations = mergedProviderDestinations(group)
 			ticket.MergeEmailRecipients = model.SupportMergeEmailAudience(group)
 			for _, c := range group {
 				if c.AnonymousID != nil || model.SupportChannelHasChatSession(c.Source) {
@@ -1603,6 +1609,10 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 				}
 			}
 		}
+	}
+	ticket.ProviderDestinations, err = s.conversationRepo.ReplyDestinations(ctx, ticket)
+	if err != nil {
+		return nil, err
 	}
 	if ticket.MergedIntoID != nil {
 		root, err := s.mergeRepository().Root(ctx, workspaceID, id)
@@ -2182,17 +2192,6 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if err != nil {
 		return nil, err
 	}
-	// Any request the customer sees in the portal (portal intake, or an email
-	// thread claimed after sign-in) can receive replies there.
-	portalReplySurface := supportConversationPortalReplySurface(conv)
-	// A provider-channel conversation (Telegram), or a merged group holding
-	// one, delivers "chat" replies through the channel outbox.
-	providerChannel := conv.ChannelIdentityID != nil || deliveryConversation.MergeHasChannel
-	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
-		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && !model.SupportChannelHasChatSession(conv.Source) && !deliveryConversation.MergeHasWidget && !portalReplySurface && !providerChannel {
-		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
-	}
-
 	replyID := ""
 	if senderType == "user" && senderUserID != nil && !req.IsInternal && messageType == "reply" && clientMessageID != "" {
 		previous, lookupErr := s.messageRepo.FindTeammateReplyByClientID(ctx, workspaceID, ticketID, *senderUserID, clientMessageID)
@@ -2203,6 +2202,53 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 			return previous, nil
 		}
 		replyID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("support-reply:"+workspaceID+":"+ticketID+":"+*senderUserID+":"+clientMessageID)).String()
+	}
+
+	// Recheck the live route in case a bot or channel was removed while drafting.
+	providerChannel := conv.ChannelIdentityID != nil || deliveryConversation.MergeHasChannel
+	explicitChat := req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail
+	hasWidget := strings.TrimSpace(derefString(conv.AnonymousID)) != "" || model.SupportChannelHasChatSession(conv.Source) || deliveryConversation.MergeHasWidget
+	portalReplySurface := supportConversationPortalReplySurface(conv)
+	customerChatTarget := req.ReplyTransport == "widget" || req.ReplyTransport == "portal"
+	if req.ReplyTransport == "portal" && !portalReplySurface {
+		return nil, fmt.Errorf("this request is unavailable in the customer portal")
+	}
+	if req.ReplyTransport == "widget" && !hasWidget {
+		return nil, fmt.Errorf("this conversation has no chat session")
+	}
+	// Preserve automatic Telegram routing for clients that predate the picker.
+	if req.ReplyTransport == "" && !slices.ContainsFunc(deliveryConversation.ProviderDestinations, func(d model.SupportProviderDestination) bool { return d.Provider == "slack" }) {
+		deliveryConversation.ProviderDestinations = nil
+	}
+	if explicitChat && providerChannel && !customerChatTarget {
+		destinations, err := s.conversationRepo.ReplyDestinations(ctx, deliveryConversation)
+		if err != nil {
+			return nil, err
+		}
+		deliveryConversation.ProviderDestinations = destinations
+		providerChannel = len(destinations) > 0
+	}
+	if explicitChat && !providerChannel && req.ProviderOriginID != "" {
+		return nil, fmt.Errorf("the selected messaging channel is no longer connected")
+	}
+	if !customerChatTarget && !req.IsInternal && messageType == "reply" && req.DeliveryMode != model.SupportDeliveryEmailOnly && len(deliveryConversation.ProviderDestinations) > 0 {
+		destinations := deliveryConversation.ProviderDestinations
+		if len(destinations) == 1 && req.ProviderOriginID == "" {
+			req.ProviderOriginID = destinations[0].ID
+		}
+		if !slices.ContainsFunc(destinations, func(d model.SupportProviderDestination) bool {
+			return d.ID == req.ProviderOriginID && (req.ReplyTransport == "" || req.ReplyTransport == d.Provider)
+		}) {
+			return nil, fmt.Errorf("choose the original channel thread for this reply")
+		}
+	} else {
+		req.ProviderOriginID = ""
+	}
+	// A provider-channel conversation (Telegram), or a merged group holding
+	// one, delivers "chat" replies through the channel outbox.
+	if explicitChat &&
+		!hasWidget && !portalReplySurface && !providerChannel {
+		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
 	}
 
 	explicitEmail := req.DeliveryMode == model.SupportDeliveryEmailOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail
@@ -2331,10 +2377,16 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
-	if req.AIAssisted || clientMessageID != "" || translation != nil {
+	if req.AIAssisted || clientMessageID != "" || translation != nil || req.ProviderOriginID != "" || req.ReplyTransport != "" {
 		metadata := map[string]any{}
 		if strings.TrimSpace(msg.Metadata) != "" {
 			_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
+		}
+		if req.ReplyTransport != "" {
+			metadata["reply_transport"] = req.ReplyTransport
+		}
+		if req.ProviderOriginID != "" {
+			metadata["provider_origin_id"] = req.ProviderOriginID
 		}
 		if translation != nil {
 			metadata["translated"] = true
@@ -2547,8 +2599,12 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
 	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" && conv != nil {
-		if msg.WidgetVisible() && conv.AnonymousID != nil && *conv.AnonymousID != "" {
-			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+		if msg.WidgetVisible() {
+			if conv.MergeRevision > 0 {
+				s.refreshMergedVisitors(ctx, conv)
+			} else if conv.AnonymousID != nil && *conv.AnonymousID != "" {
+				s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+			}
 		}
 		if !explicitEmail && req.DeliveryMode != model.SupportDeliveryChatOnly && s.emailFallbackService != nil && supportChannelsIncludeEmail(req.Channels) {
 			go func(convSnapshot *model.SupportConversation) {
@@ -2674,6 +2730,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	}
 	requesterMemberID := trimOptionalPtr(req.RequesterMemberID)
 	createReq := model.CreateTaskRequest{
+		SlackThread:       req.SlackThread,
 		WorkspaceID:       workspaceID,
 		Name:              firstNonEmptyString(trimPtrValue(req.Name), draft.Title),
 		Description:       description,

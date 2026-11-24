@@ -41,7 +41,11 @@ export function useDeleteAIProfile(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (profile: AIProfile) => unwrap(await aiProfileService.remove(workspaceId, profile)),
-    onSuccess: () => invalidateAI(queryClient, workspaceId),
+    onSuccess: (_, removed) => {
+      queryClient.setQueryData<AIProfile[]>(queryKeys.ai.profiles(workspaceId), profiles =>
+        profiles?.filter(profile => profile.id !== removed.id))
+      return invalidateAI(queryClient, workspaceId)
+    },
   })
 }
 
@@ -60,6 +64,15 @@ export function useSetAIModelVisibility(workspaceId: string) {
     mutationFn: async ({ profile, hidden }: { profile: AIProfile; hidden: boolean }) =>
       unwrap(await aiProfileService.setVisibility(workspaceId, profile, hidden)),
     onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
+export function useSetAgentSharing(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({profile, shared}: {profile: AIProfile; shared: boolean}) =>
+      unwrap(await aiProfileService.setAgentSharing(workspaceId, profile, shared)),
+    onSettled: () => invalidateAI(queryClient, workspaceId),
   })
 }
 

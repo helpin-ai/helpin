@@ -76,9 +76,10 @@ import { getClipboardImageFiles } from '@/lib/clipboardAttachments';
 import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './draftAttachments';
 import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
+import { QuietSelect } from '@/components/design-system/quiet-select';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
-import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
-import { hasChatTransport, providerChannelLabel, supportChannel } from '@/lib/supportChannels';
+import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery, saveReplyDestination, useReplyDestination, type ReplyDestination } from './replyDelivery';
+import { hasChatTransport, supportChannel, supportChannelLabel } from '@/lib/supportChannels';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -859,7 +860,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
   const user = useAuthStore((s) => s.user);
   const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name ?? null);
-  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const { data: conversation, refetch: refreshConversation } = useConversation(workspaceId, conversationId);
   const selectDeliveryMode = useCallback((mode: SupportReplyDeliveryMode) => {
     saveReplyDelivery(workspaceId, conversationId, mode);
   }, [workspaceId, conversationId]);
@@ -880,24 +881,41 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 		&& conversation?.channel !== 'internal' && conversation?.source !== 'internal';
 	const hasChatSession = Boolean(conversation?.anonymous_id) || hasChatTransport(conversation?.source) || Boolean(conversation?.merge_has_widget);
 	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
-	// A messaging-app conversation (Telegram), or a merged group holding one,
-	// carries "chat" replies through that app.
-	const providerChannel = providerChannelLabel(conversation);
-	const providerOnly = Boolean(conversation && supportChannel(conversation.channel)?.transport === 'provider');
+  const draftDestination = useReplyDestination(workspaceId, conversationId);
+  const destinations = conversation?.provider_destinations ?? [];
+  const transports: NonNullable<ReplyDestination['reply_transport']>[] = [...new Set(destinations.map(d => d.provider))];
+  if (hasChatSession) transports.unshift('widget');
+  else if (!transports.length && portalReplySurface) transports.push('portal');
+  const selectedTransport = draftDestination.reply_transport ?? (transports.length === 1 ? transports[0] : undefined);
+  const selectedProvider = selectedTransport === 'slack' || selectedTransport === 'telegram' ? selectedTransport : undefined;
+  const threads = selectedProvider ? destinations.filter(d => d.provider === selectedProvider) : [];
+  const origin = draftDestination.provider_origin_id
+    ? threads.find(d => d.id === draftDestination.provider_origin_id)
+    : threads.length === 1 ? threads[0] : undefined;
+  const originNeeded = !!selectedProvider && threads.length > 0 && !origin;
+  const destinationUnavailable = !!selectedTransport && !transports.includes(selectedTransport);
+  const needsTransport = !selectedTransport && transports.length > 1;
+  const providerChannel = selectedProvider && !destinationUnavailable ? supportChannelLabel(selectedProvider) : undefined;
+  const providerConversation = supportChannel(conversation?.channel)?.transport === 'provider' || !!conversation?.merge_has_channel;
+  const unavailableProvider = providerConversation && !destinations.length && !hasChatSession && !portalReplySurface;
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
+    isProviderSource: supportChannel(conversation?.source)?.transport === 'provider',
     portal: portalReplySurface,
-    presence,
+    presence: destinations.length ? 'unknown' : presence,
     emailEligible: !emailUnavailableReason,
     active: !editingNote && !inactive && replyMode !== 'note',
     hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
-  const deliveryMode = hiddenPortalIntake ? 'email_only' : providerOnly ? 'chat_only' : selectedDeliveryMode;
+  const deliveryMode = hiddenPortalIntake && !transports.length ? 'email_only' : selectedDeliveryMode;
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = conversation && !conversation.anonymous_id && !hasChatTransport(conversation.source) && !conversation.merge_has_widget && !portalReplySurface && !providerChannel
+  const chatUnavailableReason = unavailableProvider ? 'The original messaging channel is unavailable' : conversation && !hasChatSession && !portalReplySurface && !destinations.length
     ? hiddenPortalIntake ? 'This request is hidden from the portal; reply by email' : 'No chat session available' : undefined;
-  const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
-    : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
+  const destinationError = destinationUnavailable ? 'The selected channel is unavailable. Choose another channel.'
+    : needsTransport ? 'Choose a delivery channel' : originNeeded ? 'Choose a thread for this reply' : chatUnavailableReason;
+  const deliveryUnavailableReason = deliveryMode === 'email_only' ? emailUnavailableReason
+    : destinationError || (deliveryMode === 'chat_and_email' ? emailUnavailableReason : undefined);
+  const widgetTyping = hasChatSession && selectedTransport === 'widget' && deliveryMode !== 'email_only';
   const sendsEmail = deliveryMode !== 'chat_only';
   const deliveryRecipientEmails = normalizeRecipientEmails([primaryRecipientEmail, ...(conversation?.merge_email_recipients ?? [])]);
   const ccRecipients = normalizeRecipientEmails(conversation?.email_cc ?? [], deliveryRecipientEmails);
@@ -1181,7 +1199,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
   // Typing indicator
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
-    if (!wsSend || !wsConnected || (typing && (isNoteRef.current || inactive || deliveryMode === 'email_only'))) return;
+    if (!wsSend || !wsConnected || (typing && (isNoteRef.current || inactive || !widgetTyping))) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -1200,17 +1218,22 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       conversation_id: conversationId,
       content: typingContent ?? '',
     });
-  }, [conversationId, deliveryMode, wsSend, wsConnected, inactive]);
+  }, [conversationId, widgetTyping, wsSend, wsConnected, inactive]);
 
   useEffect(() => {
-    if (inactive || isNote || deliveryMode === 'email_only') sendTyping(false);
-  }, [deliveryMode, inactive, isNote, sendTyping]);
+    if (inactive || isNote || !widgetTyping) sendTyping(false);
+  }, [widgetTyping, inactive, isNote, sendTyping]);
 
   const handleTyping = useCallback((typingContent: string) => {
+    if (!isNoteRef.current && !inactive && deliveryMode !== 'email_only' && selectedTransport &&
+        !draftDestination.reply_transport && (!selectedProvider || origin)) {
+      saveReplyDestination(workspaceId, conversationId, { reply_transport: selectedTransport, provider_origin_id: origin?.id });
+    }
+    if (!widgetTyping) return;
     sendTyping(true, typingContent);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => sendTyping(false), 5000);
-  }, [sendTyping]);
+  }, [conversationId, deliveryMode, draftDestination.reply_transport, inactive, origin, selectedProvider, selectedTransport, sendTyping, widgetTyping, workspaceId]);
 
   // Clean up typing indicator on unmount or conversation change
   useEffect(() => {
@@ -1612,6 +1635,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         markdown?: string;
         attachments?: SupportAttachmentPayload[];
         deliveryMode?: SupportReplyDeliveryMode;
+        destination?: ReplyDestination;
       }>).detail;
       if (detail?.conversationId !== conversationId) return;
       if (detail.pendingSend && (getEditorMarkdown(editor).trim() || pendingAttachments.length>0)) return;
@@ -1623,6 +1647,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       }
       sendTyping(false);
       setReplyMode('reply');
+      saveReplyDestination(workspaceId, conversationId, detail.destination);
       restoreReplyDelivery(workspaceId, conversationId, isReplyDeliveryMode(detail.deliveryMode) ? detail.deliveryMode : undefined);
       setDraft(conversationId, markdown);
       setDraftHasContent(!!markdown.trim());
@@ -1695,10 +1720,15 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
     // Freeze the submitted intent in the shared draft so a presence update in
     // either mounted composer cannot change the destination of a failed retry.
+    const destination: ReplyDestination = deliveryMode === 'email_only' ? {} : {
+      reply_transport: selectedTransport,
+      ...(origin ? { provider_origin_id: origin.id } : {}),
+    };
     if (!isInternal) {
+      saveReplyDestination(workspaceId, conversationId, destination);
       restoreReplyDelivery(workspaceId, conversationId, deliveryMode);
     }
-    const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, normalizedCC]);
+    const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, selectedTransport, origin?.id, normalizedCC]);
     if (translatedSendRef.current?.fingerprint !== fingerprint) translatedSendRef.current = { fingerprint, id: crypto.randomUUID() };
     const translating = !sendOriginal && !isInternal && outgoingTranslation.enabled && !!markdown;
     if (translating) editor.setEditable(false);
@@ -1713,7 +1743,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         ...(!isInternal ? { client_message_id: translatedSendRef.current!.id, ...(sendOriginal ? { send_original: true } : {}) } : {}),
         is_internal: isInternal,
         ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
-        ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
+        ...(!isInternal ? { delivery_mode: deliveryMode, ...destination, channels: replyDeliveryChannels(deliveryMode) } : {}),
         ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
         ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
       });
@@ -1744,7 +1774,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       setPendingMacro(null);
       if (macroTextPresent(sentText, macro.marker)) void runMacro(macro.shortcut);
     }
-  }, [runMacro, setPendingMacro, editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
+  }, [runMacro, setPendingMacro, editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, selectedTransport, origin, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async (sendOriginal = false) => {
     if (inactive || !editor || !editor.isEditable || attachmentsPending || updateNoteMutation.isPending) return;
@@ -1874,7 +1904,14 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     || JSON.stringify(pendingAttachments.map(a => a.attachmentId).sort()) !== JSON.stringify((editingNote.attachments ?? []).map(a => a.id).sort());
   const content = editor.getText();
   const hasContent = content.trim().length > 0;
-  const showDeliveryNotice = hasContent || pendingAttachments.length > 0;
+  const showThreadPicker = deliveryMode !== 'email_only' && (threads.length > 1 || originNeeded);
+  const showProviderNotice = deliveryMode !== 'email_only' && !!providerChannel;
+  const recipient = origin?.name.trim();
+  const replyNotice = providerChannel ? `Reply on ${providerChannel}` : 'Reply';
+  const deliveryNoticeError = originNeeded && deliveryMode !== 'email_only' ? undefined : deliveryUnavailableReason;
+  const sendLabel = editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes')
+    : isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send';
+  const showDeliveryNotice = showThreadPicker || hasContent || pendingAttachments.length > 0;
   const suggestedPrimaryEmail = conversation?.suggested_primary_recipient_email?.trim() || '';
   const canUseAITools = hasContent && !isRewriting && !sendMutation.isPending;
   const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDownIcon }> = [
@@ -1945,7 +1982,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
 
       {/* Rises into view once a reply is started. The grid-rows trick grows
           its height without measuring, so the composer's top edge lifts. */}
-      {sendsEmail && !isNote && (
+      {!isNote && (sendsEmail || showProviderNotice || showThreadPicker || unavailableProvider) && (
         <div
           className={cn(
             'grid transition-[grid-template-rows,opacity] duration-700 ease-in-out motion-reduce:transition-none',
@@ -1962,14 +1999,36 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
                 showDeliveryNotice ? 'translate-y-0' : 'translate-y-3',
               )}
             >
-              <p className="flex min-w-0 items-center gap-1 whitespace-nowrap" aria-live="polite">
-                <span className="shrink-0">{deliveryMode === 'email_only' ? 'Only' : 'Also'} emailed to</span>{' '}
-                {deliveryRecipientEmails.length > 0
-                  ? <EmailRecipientList emails={deliveryRecipientEmails} label="recipients" />
-                  : <span className="font-medium text-foreground">the customer</span>}
-                {ccRecipients.length > 0 && <>{' '}<span className="shrink-0">· Cc</span>{' '}<EmailRecipientList emails={ccRecipients} label="Cc" className="shrink-[3]" /></>}
-              </p>
-              {deliveryUnavailableReason && <p role="status" className="text-quiet-accent">{deliveryUnavailableReason}</p>}
+              {showThreadPicker ? (
+                <div className="flex min-w-0 items-center gap-1">
+                  <span className="shrink-0">{replyNotice} to</span>
+                  <QuietSelect
+                    label="Reply thread"
+                    placeholder="Choose thread"
+                    value={origin?.id ?? ''}
+                    onChange={id => {
+                      const thread = destinations.find(d => d.id === id);
+                      if (thread) saveReplyDestination(workspaceId, conversationId, { reply_transport: thread.provider, provider_origin_id: id });
+                    }}
+                    options={threads.map(d => ({ value: d.id, label: `${!selectedProvider ? supportChannelLabel(d.provider) + ' · ' : ''}${d.name || 'Direct message'} · Conversation ${d.display_id}` }))}
+                  />
+                </div>
+              ) : showProviderNotice && (
+                <p className="flex min-w-0 items-baseline gap-1" aria-live="polite">
+                  <span className="shrink-0">{replyNotice}{recipient && ' to'}</span>{' '}
+                  {recipient && <span className="truncate font-medium text-foreground" title={recipient}>{recipient}</span>}
+                </p>
+              )}
+              {sendsEmail && (
+                <p className="flex min-w-0 items-center gap-1 whitespace-nowrap" aria-live="polite">
+                  <span className="shrink-0">{deliveryMode === 'email_only' ? 'Only' : 'Also'} emailed to</span>{' '}
+                  {deliveryRecipientEmails.length > 0
+                    ? <EmailRecipientList emails={deliveryRecipientEmails} label="recipients" />
+                    : <span className="font-medium text-foreground">the customer</span>}
+                  {ccRecipients.length > 0 && <>{' '}<span className="shrink-0">· Cc</span>{' '}<EmailRecipientList emails={ccRecipients} label="Cc" className="shrink-[3]" /></>}
+                </p>
+              )}
+              {deliveryNoticeError && <p role="status" className="text-quiet-accent">{deliveryNoticeError}</p>}
             </div>
           </div>
         </div>
@@ -2484,13 +2543,23 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
           <div className="inline-flex shrink-0 items-center">
             {!isNote && <ReplyDeliverySelector
               mode={deliveryMode}
-              onChange={selectDeliveryMode}
+              onChange={(mode, transport) => {
+                const choices = destinations.filter(d => d.provider === transport);
+                saveReplyDestination(workspaceId, conversationId, {
+                  reply_transport: transport,
+                  provider_origin_id: transport === selectedProvider && origin ? origin.id : choices.length === 1 ? choices[0].id : undefined,
+                });
+                selectDeliveryMode(mode);
+              }}
               disabled={isRewriting || sendMutation.isPending}
               email={primaryRecipientEmail}
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
               portal={portalReplySurface && !hasChatSession}
-              channel={providerChannel}
+              channel={selectedTransport}
+              transports={transports}
+              unavailableProvider={unavailableProvider}
+              onOpen={providerConversation || destinations.length ? () => { void refreshConversation(); } : undefined}
             />}
             <Button
               size="sm"
@@ -2502,7 +2571,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               )}
             >
               {isNote && !editingNote && <SentIcon className="h-3 w-3" />}
-              {editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes') : isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send'}
+              {sendLabel}
             </Button>
           </div>
         </div>

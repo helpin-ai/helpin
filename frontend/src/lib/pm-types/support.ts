@@ -2,7 +2,7 @@
 
 export type ConversationStatus = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketSource = 'widget' | 'internal' | 'email' | 'api' | 'portal' | 'telegram';
+export type TicketSource = 'widget' | 'internal' | 'email' | 'api' | 'portal' | 'telegram' | 'slack';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 export type SupportConversationTriageStatus = 'not_run' | 'suggested' | 'auto_moved' | 'dismissed' | 'overridden';
 export type SupportConversationTriageSource = 'rule' | 'ai';
@@ -41,10 +41,13 @@ export interface SupportConversation {
   merge_revision?: number;
   merge_email_recipients?: string[];
   merge_has_widget?: boolean;
-  /** A merged member came from a messaging app (Telegram); replies reach it there. */
+  /** A merged member came from a messaging app, including disconnected accounts. */
   merge_has_channel?: boolean;
+  /** Live messaging destinations for this conversation, checked against its account and Support route. */
+  provider_destinations?: { id: string; provider: 'slack' | 'telegram'; name: string; display_id: number }[];
   /** The connected bot's handle, for Telegram conversations. */
   channel_handle?: string;
+  provider_channel_name?: string;
   merge_continuation_id?: string;
   merge_participants?: string[];
   list_last_message_preview?: string;
@@ -826,7 +829,7 @@ export interface SupportMessage {
   system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
-  via_channel?: 'email' | 'widget' | 'portal' | 'telegram' | null;
+  via_channel?: 'email' | 'widget' | 'portal' | 'telegram' | 'slack' | null;
   email_notified_at?: string;
   widget_read_at?: string | null;
   email_read_at?: string;
@@ -847,7 +850,7 @@ export interface SupportMessage {
   /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
   email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
   /** Delivery through a messaging app (Telegram). */
-  channel_delivery?: { status: 'sending' | 'sent' | 'failed' | 'unconfirmed' | 'cancelled'; error_code?: string; retryable: boolean } | null;
+  channel_delivery?: { provider?: string; status: 'sending' | 'sent' | 'failed' | 'unconfirmed' | 'cancelled'; error_code?: string; retryable: boolean } | null;
   /** Human-readable bounce or complaint description. Empty unless delivery failed. */
   email_delivery_error?: string;
   /** Primary outbound email recipient, populated for messages sent via email. */
@@ -1258,6 +1261,7 @@ export interface CreateConversationRequest {
   source?: TicketSource;
 }
 
+export type SupportReplyTransport = 'widget' | 'portal' | 'slack' | 'telegram';
 export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
 
 export interface CreateMessageRequest {
@@ -1269,6 +1273,8 @@ export interface CreateMessageRequest {
   client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
+  reply_transport?: SupportReplyTransport;
+  provider_origin_id?: string;
   delivery_mode?: SupportReplyDeliveryMode;
   email_subject?: string;
   channels?: ('chat' | 'email')[];

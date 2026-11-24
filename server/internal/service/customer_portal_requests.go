@@ -538,7 +538,7 @@ func portalMessageFromAssistant(msg *model.SupportMessage) bool {
 }
 
 func portalMessageVisible(msg *model.SupportMessage) bool {
-	return !msg.IsInternal && msg.DeliveryMode() != model.SupportDeliveryEmailOnly && msg.MessageType == "reply" &&
+	return msg.CustomerChatVisible() && msg.MessageType == "reply" &&
 		(msg.SenderType == "customer" || msg.SenderType == "user" || msg.SenderType == "agent" || msg.SenderType == "ai")
 }
 

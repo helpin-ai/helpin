@@ -5,11 +5,18 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   PROVIDER_ORDER,
   providerMeta,
+  providerShortLabel,
+  chatGPTAccountLabel,
   type AIProviderKey,
 } from "@/lib/aiProviders";
 import type {
@@ -18,33 +25,126 @@ import type {
 } from "@/lib/services/aiConnectionService";
 import { ProviderIcon } from "./ProviderIcon";
 import { AIConnectionStatusBadge } from "./AIConnectionStatusBadge";
-import { ArrowLeft01Icon, PlusSignIcon } from "@/lib/icons";
+import { ArrowLeft01Icon, MoreHorizontalIcon, PlusSignIcon } from "@/lib/icons";
 
 export function AIAddModelsDialog({
   connections,
   models,
   canManageWorkspace,
+  startWithProviders,
   onClose,
   onModels,
   onConnect,
   onReconnect,
+  onDisconnect,
 }: {
   connections: AIConnection[];
   models: AIConnectionModel[];
   canManageWorkspace: boolean;
+  startWithProviders: boolean;
   onClose: () => void;
   onModels: (connection: AIConnection) => void;
   onConnect: (provider: AIProviderKey) => void;
   onReconnect: (connection: AIConnection) => void;
+  onDisconnect: (connection: AIConnection) => void;
 }) {
-  const [provider, setProvider] = useState<AIProviderKey | null>(null);
-  const available = PROVIDER_ORDER.filter(
+  const [chooseProvider, setChooseProvider] = useState(
+    startWithProviders || !connections.length,
+  );
+  const providers = PROVIDER_ORDER.filter(
     (key) =>
       key === "openai_compatible" ||
       models.some((m) => m.provider === key) ||
       connections.some((c) => c.provider === key),
   );
-  const own = connections.filter((c) => c.provider === provider);
+
+  function connectionRow(connection: AIConnection) {
+    const managed = connection.funding === "managed";
+    const editable = connection.scope === "personal" || canManageWorkspace;
+    const repair = editable && !managed && connection.status !== "connected";
+    const action = repair
+      ? connection.status === "pending"
+        ? "Continue login"
+        : "Reconnect"
+      : editable && connection.status === "connected"
+        ? "Choose models"
+        : "View models";
+    const name =
+      managed && connection.name === connection.provider + " (managed)"
+        ? providerShortLabel(connection.provider)
+        : connection.name;
+    const detail = chatGPTAccountLabel(connection);
+    return (
+      <div
+        key={connection.id}
+        className="flex items-center border-b last:border-b-0"
+      >
+        <button
+          type="button"
+          aria-label={repair ? action + " for " + name : "Models for " + name}
+          className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-md px-2 py-3 text-left hover:bg-muted focus-visible:outline-ring sm:grid-cols-[minmax(0,1fr)_9rem_7rem]"
+          onClick={() =>
+            repair ? onReconnect(connection) : onModels(connection)
+          }
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <ProviderIcon
+              provider={connection.provider}
+              className="size-5 shrink-0"
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium" title={name}>
+                {name}
+              </span>
+              {detail && (
+                <span className="block text-xs text-muted-foreground">
+                  {detail}
+                </span>
+              )}
+            </span>
+          </span>
+          <AIConnectionStatusBadge
+            status={connection.status}
+            verificationError={connection.last_verification_error}
+            className="col-start-1 row-start-2 justify-self-start sm:col-auto sm:row-auto"
+          />
+          <span className="col-start-2 row-start-1 whitespace-nowrap text-right text-sm sm:col-auto sm:row-auto">
+            {action} ›
+          </span>
+        </button>
+        <div className="w-8 shrink-0">
+          {editable && !managed && connection.status !== "disconnected" && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  aria-label={`Connection actions for ${name}`}
+                >
+                  <MoreHorizontalIcon className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {connection.status === "connected" && connection.endpoint?.auth_mode !== "none" && (
+                  <DropdownMenuItem onSelect={() => onReconnect(connection)}>
+                    {connection.provider === "openai_chatgpt" ? "Reconnect" : "Replace API key"}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => onDisconnect(connection)}
+                >
+                  Disconnect
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Dialog
       open
@@ -52,119 +152,66 @@ export function AIAddModelsDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[85vh] overflow-y-auto sm:max-w-xl"
+      >
         <DialogHeader className="text-left">
           <DialogTitle>
-            {provider ? providerMeta[provider].shortLabel : "Add models"}
+            {chooseProvider ? "Connect a provider" : "Add models"}
           </DialogTitle>
-          <DialogDescription>
-            {provider
-              ? "Choose a connection to select models."
-              : "Choose a provider."}
-          </DialogDescription>
         </DialogHeader>
-        {provider ? (
+        {chooseProvider ? (
           <>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-fit"
-              onClick={() => setProvider(null)}
-            >
-              <ArrowLeft01Icon className="size-4" />
-              Providers
-            </Button>
+            {!!connections.length && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-fit"
+                onClick={() => setChooseProvider(false)}
+              >
+                <ArrowLeft01Icon className="size-4" />
+                Connections
+              </Button>
+            )}
             <div className="divide-y">
-              {own.map((connection) => {
-                const editable =
-                  connection.scope === "personal" || canManageWorkspace;
-                return (
-                  <div
-                    key={connection.id}
-                    className="flex flex-wrap items-center gap-3 py-3"
-                  >
-                    <ProviderIcon
-                      provider={connection.provider}
-                      className="size-5 shrink-0"
-                    />
-                    <div className="min-w-[100px] flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {connection.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {connection.scope === "personal"
-                          ? "Personal"
-                          : "Workspace-wide"}
-                      </p>
-                    </div>
-                    <AIConnectionStatusBadge status={connection.status} />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      aria-label={`Models for ${connection.name}`}
-                      onClick={() => onModels(connection)}
-                    >
-                      {editable ? "Models" : "View models"}
-                    </Button>
-                    {editable &&
-                      connection.status !== "connected" &&
-                      connection.funding !== "managed" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onReconnect(connection)}
-                        >
-                          {connection.status === "pending"
-                            ? "Continue login"
-                            : "Reconnect"}
-                        </Button>
-                      )}
-                  </div>
-                );
-              })}
+              {providers.map((key) => (
+                <button
+                  type="button"
+                  key={key}
+                  className="flex w-full items-center gap-3 rounded-md px-2 py-3 text-left hover:bg-muted"
+                  onClick={() => onConnect(key)}
+                >
+                  <ProviderIcon provider={key} className="size-5" />
+                  {key === "openai_compatible"
+                    ? "Custom endpoint"
+                    : providerMeta[key].label}
+                </button>
+              ))}
             </div>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => onConnect(provider)}
-            >
-              <PlusSignIcon className="size-4" />
-              {own.length ? "Add another connection" : "Connect provider"}
-            </Button>
           </>
         ) : (
-          <div className="divide-y">
-            {available.map((key) => {
-              const connected = connections.some(
-                (c) => c.provider === key && c.status === "connected",
+          <>
+            {[true, false].map((managed) => {
+              const group = connections.filter(
+                (c) => (c.funding === "managed") === managed,
               );
               return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-label={`Choose ${providerMeta[key].shortLabel}`}
-                  onClick={() =>
-                    connections.some((c) => c.provider === key)
-                      ? setProvider(key)
-                      : onConnect(key)
-                  }
-                  className="flex w-full items-center gap-3 rounded-md px-2 py-3 text-left hover:bg-quiet-hover focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <ProviderIcon provider={key} className="size-5 shrink-0" />
-                  <span className="flex-1 text-sm font-medium">
-                    {key === "openai_compatible"
-                      ? "Custom endpoint"
-                      : providerMeta[key].shortLabel}
-                  </span>
-                  {connected && (
-                    <span className="text-xs text-quiet-positive">
-                      Connected
-                    </span>
-                  )}
-                </button>
+                group.length > 0 && (
+                  <section key={String(managed)}>
+                    <h3 className="bg-muted/50 px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                      {managed ? "Helpin-managed" : "Your connections"}
+                    </h3>
+                    {group.map(connectionRow)}
+                  </section>
+                )
               );
             })}
-          </div>
+            <Button variant="outline" size="sm" className="w-fit" onClick={() => setChooseProvider(true)}>
+              <PlusSignIcon className="size-4" />
+              Connect a provider
+            </Button>
+          </>
         )}
       </DialogContent>
     </Dialog>

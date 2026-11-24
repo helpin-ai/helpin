@@ -12,14 +12,17 @@ const toneClasses: Record<ConnectionStatusTone, string> = {
 
 export function AIConnectionStatusBadge({
   status,
+  verificationError,
   className,
 }: {
   status: string;
+  verificationError?: string;
   className?: string;
 }) {
-  const info = connectionStatusInfo(status);
+  const info = connectionStatusInfo(status, verificationError);
   return (
-    <Badge variant="outline" className={cn("shrink-0 text-[10px]", toneClasses[info.tone], className)}>
+    <Badge title={status === "connected" ? verificationError || "Credentials configured. Model availability depends on the provider." : undefined} variant="outline" className={cn("shrink-0 text-[10px]", toneClasses[info.tone], className)}>
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
       {info.label}
     </Badge>
   );

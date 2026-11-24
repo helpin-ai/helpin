@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>External tools · Helpin settings preview</title>
+<style>
+:root{color-scheme:light;font:14px/1.4 system-ui,sans-serif;color:#272624;background:#f5f5f4}
+*{box-sizing:border-box}
+body{margin:0}
+main{max-width:1760px;margin:auto;padding:0 14px 12px}
+header{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+h1{font-size:14px;font-weight:600;margin:0}
+.controls{display:flex;align-items:center;gap:14px}
+select,.full{font:inherit;font-size:13px;color:inherit}
+select{background:#fff;border:1px solid #d6d3d1;border-radius:6px;padding:4px 7px}
+.full{text-underline-offset:3px}
+.scene{position:relative;width:min(100%,calc((100dvh - 68px) * 1.6));margin:0 auto;background:#fff;outline:1px solid #deddda;aspect-ratio:1440/900}
+.scene img{display:block;width:100%;height:auto}
+.spot{display:block;position:absolute;border-radius:4px}
+.spot:hover{box-shadow:inset 0 0 0 1px #77777766;background:#77777709}
+.spot:focus-visible,select:focus-visible,.full:focus-visible{outline:2px solid #6d592a;outline-offset:2px}
+@media(max-width:700px){
+ main{padding:0 6px 8px}
+ header{padding:6px 2px;gap:4px}
+ .scene{width:100%;max-width:430px;aspect-ratio:430/820}
+ .controls{gap:6px}
+ h1,.full,select{font-size:12px}
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+ <h1>Helpin settings preview</h1>
+ <div class="controls">
+ <select id="screens" aria-label="Preview screen">
+  <optgroup label="External tools">
+   <option value="apps">Apps · Connected Slack</option>
+   <option value="connect">Apps · Connect Slack</option>
+   <option value="support">Slack · Support channel</option>
+   <option value="project">Slack · Project channel</option>
+   <option value="mcp">MCP servers</option>
+   <option value="tools">MCP server · Tool permissions</option>
+  </optgroup>
+  <option value="channels">Support · Channels</option>
+ </select>
+ <a id="full" class="full" href="apps.png?v=2" target="_blank" rel="noopener">Full size</a>
+ </div>
+</header>
+<div class="scene" aria-label="Settings screenshots">
+ <img id="screen" src="apps.png?v=2" alt="External tools, Apps tab with Slack connected.">
+ <nav id="actions" aria-label="Explore this screen"></nav>
+</div>
+</main>
+<script>
+const hotspots = {"apps":[{"to":"apps","label":"Apps","x":19.600694444444443,"y":10.21875,"w":3.8780381944444446,"h":2.8055555555555554},{"to":"mcp","label":"MCP servers","x":23.739149305555557,"y":10.21875,"w":7.269965277777778,"h":2.8055555555555554},{"to":"support","label":"View support channel","x":20.45138888888889,"y":22.46875,"w":76.18055555555556,"h":4.805555555555555},{"to":"project","label":"View project channel","x":20.45138888888889,"y":27.274305555555557,"w":76.18055555555556,"h":4.805555555555555},{"to":"channels","label":"Support channels","x":6.319444444444445,"y":78.65277777777777,"w":10.868055555555555,"h":3.3333333333333335}],"apps-mobile":[{"to":"apps","label":"Apps","x":4.3604651162790695,"y":10.301067073170731,"w":12.986918604651162,"h":3.0792682926829267},{"to":"mcp","label":"MCP servers","x":18.219476744186046,"y":10.301067073170731,"w":24.34593023255814,"h":3.0792682926829267},{"to":"support","label":"View support channel","x":7.209302325581396,"y":23.746189024390244,"w":83.25581395348837,"h":5.274390243902439},{"to":"project","label":"View project channel","x":7.209302325581396,"y":29.020579268292682,"w":83.25581395348837,"h":5.274390243902439}],"support":[{"to":"apps","label":"Back to Apps","x":50.27452256944444,"y":63.375,"w":4.688585069444445,"h":3.75},{"to":"apps","label":"Close dialog","x":61.388888888888886,"y":32.041666666666664,"w":2.0833333333333335,"h":3.3333333333333335}],"support-mobile":[{"to":"apps","label":"Back to Apps","x":12.44186046511628,"y":64.6798780487805,"w":75.11627906976744,"h":4.115853658536586},{"to":"apps","label":"Close dialog","x":82.32558139534883,"y":25.259146341463413,"w":6.976744186046512,"h":3.658536585365854}],"project":[{"to":"apps","label":"Back to Apps","x":50.27452256944444,"y":67.06944444444444,"w":4.688585069444445,"h":3.75},{"to":"apps","label":"Close dialog","x":61.388888888888886,"y":28.34722222222222,"w":2.0833333333333335,"h":3.3333333333333335}],"project-mobile":[{"to":"apps","label":"Back to Apps","x":12.44186046511628,"y":68.73475609756098,"w":75.11627906976744,"h":4.115853658536586},{"to":"apps","label":"Close dialog","x":82.32558139534883,"y":21.204268292682926,"w":6.976744186046512,"h":3.658536585365854}],"mcp":[{"to":"apps","label":"Apps","x":19.600694444444443,"y":10.21875,"w":3.8780381944444446,"h":2.8055555555555554},{"to":"mcp","label":"MCP servers","x":23.739149305555557,"y":10.21875,"w":7.269965277777778,"h":2.8055555555555554},{"to":"tools","label":"View MCP tools","x":32.439236111111114,"y":27.46875,"w":8.071831597222221,"h":3.3333333333333335},{"to":"channels","label":"Support channels","x":6.319444444444445,"y":78.65277777777777,"w":10.868055555555555,"h":3.3333333333333335}],"mcp-mobile":[{"to":"apps","label":"Apps","x":4.3604651162790695,"y":10.301067073170731,"w":12.986918604651162,"h":3.0792682926829267},{"to":"mcp","label":"MCP servers","x":18.219476744186046,"y":10.301067073170731,"w":24.34593023255814,"h":3.0792682926829267},{"to":"tools","label":"View MCP tools","x":47.354651162790695,"y":40.20960365853659,"w":27.03125,"h":3.658536585365854}],"tools":[{"to":"apps","label":"Apps","x":19.600694444444443,"y":10.21875,"w":3.8780381944444446,"h":2.8055555555555554},{"to":"mcp","label":"MCP servers","x":23.739149305555557,"y":10.21875,"w":7.269965277777778,"h":2.8055555555555554},{"to":"mcp","label":"Hide MCP tools","x":32.439236111111114,"y":27.46875,"w":7.655164930555555,"h":3.3333333333333335},{"to":"channels","label":"Support channels","x":6.319444444444445,"y":78.65277777777777,"w":10.868055555555555,"h":3.3333333333333335}],"tools-mobile":[{"to":"apps","label":"Apps","x":4.3604651162790695,"y":10.301067073170731,"w":12.986918604651162,"h":3.0792682926829267},{"to":"mcp","label":"MCP servers","x":18.219476744186046,"y":10.301067073170731,"w":24.34593023255814,"h":3.0792682926829267},{"to":"mcp","label":"Hide MCP tools","x":47.354651162790695,"y":40.20960365853659,"w":25.6359011627907,"h":3.658536585365854}],"connect":[{"to":"apps","label":"Apps","x":19.600694444444443,"y":10.21875,"w":3.8780381944444446,"h":2.8055555555555554},{"to":"mcp","label":"MCP servers","x":23.739149305555557,"y":10.21875,"w":7.269965277777778,"h":2.8055555555555554},{"to":"apps","label":"Preview connected workspace","x":88.759765625,"y":17.56597222222222,"w":7.872178819444445,"h":3.3333333333333335},{"to":"channels","label":"Support channels","x":6.319444444444445,"y":78.65277777777777,"w":10.868055555555555,"h":3.3333333333333335}],"connect-mobile":[{"to":"apps","label":"Apps","x":4.3604651162790695,"y":10.301067073170731,"w":12.986918604651162,"h":3.0792682926829267},{"to":"mcp","label":"MCP servers","x":18.219476744186046,"y":10.301067073170731,"w":24.34593023255814,"h":3.0792682926829267},{"to":"apps","label":"Preview connected workspace","x":64.10247093023256,"y":19.2797256097561,"w":26.36264534883721,"h":3.658536585365854}],"channels":[{"to":"apps","label":"Manage Slack in External tools","x":91.52669270833333,"y":22.99652777777778,"w":5.105251736111111,"h":3.3333333333333335},{"to":"apps","label":"External tools in Integration","x":6.319444444444445,"y":37.40277777777778,"w":10.868055555555555,"h":3.3333333333333335}],"channels-mobile":[{"to":"apps","label":"Manage Slack in External tools","x":73.36845930232558,"y":24.32545731707317,"w":17.096656976744185,"h":3.658536585365854}]}
+const descriptions = {
+ apps:'Apps tab in External tools. Slack is connected to Northstar, with a customer support channel and a project channel.',
+ connect:'Apps before installation. Connect Slack adds a workspace connection.',
+ support:'The Slack channel acme-support routes customer threads to the Customer support inbox.',
+ project:'The Slack channel payments defaults new tasks to the Payments team and the Checkout reliability epic.',
+ mcp:'MCP servers tab with Northstar knowledge connected, two of three tools enabled, and agent access controls.',
+ tools:'The MCP tool list shows tool names, enablement, and read or write access.',
+ channels:'The Support Channels page has Manage shortcuts for Chat, Email, and Slack, followed by the Telegram settings.'
+}
+const narrow=matchMedia('(max-width:700px)')
+const picker=document.getElementById('screens'), actions=document.getElementById('actions'), screen=document.getElementById('screen')
+function show(){
+ const hash=location.hash.slice(1)
+ const id=Object.hasOwn(descriptions,hash)?hash:'apps'
+ const key=id+(narrow.matches?'-mobile':'')
+ picker.value=id
+ document.title=picker.selectedOptions[0].text+' · Helpin settings preview'
+ screen.src=key+'.png?v=2'
+ screen.alt=descriptions[id]
+ document.getElementById('full').href=screen.getAttribute('src')
+ actions.replaceChildren(...hotspots[key].filter(box=>box.to!==id).map(box=>{
+  const a=document.createElement('a')
+  a.href='#'+box.to
+  a.setAttribute('aria-label',box.label)
+  a.title=box.label
+  a.className='spot'
+  Object.assign(a.style,{left:box.x+'%',top:box.y+'%',width:box.w+'%',height:box.h+'%'})
+  return a
+ }))
+}
+picker.addEventListener('change',()=>{location.hash=picker.value})
+narrow.addEventListener('change',show)
+window.addEventListener('hashchange',show)
+show()
+</script>
+</body>
+</html>

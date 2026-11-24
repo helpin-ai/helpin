@@ -9,14 +9,13 @@ import {
   useAISettings,
   useEnableAIModel,
   useSetAIModelVisibility,
-  useDeleteAIProfile,
 } from "@/hooks/queries/useAIProfiles";
 import type {
   AIConnection,
   DiscoveredAIModel,
 } from "@/lib/services/aiConnectionService";
 import type { AIProfile } from "@/lib/services/aiProfileService";
-import { catalogLabel, modelCatalogFor } from "@/lib/aiProviders";
+import { catalogLabel, chatGPTAccountLabel, modelCatalogFor, providerLabel, providerShortLabel } from "@/lib/aiProviders";
 import {
   Dialog,
   DialogContent,
@@ -25,12 +24,10 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { QuietSearchInput } from "@/components/design-system/quiet";
 import { Input } from "@/components/ui/input";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
-import { useConfirm } from "@/components/ui/confirm-dialog";
-import { ArrowReloadHorizontalIcon } from "@/lib/icons";
+import { ArrowLeft01Icon, ArrowReloadHorizontalIcon } from "@/lib/icons";
 import { AISetupHelp } from "./AISetupHelp";
 import { AIModelNewBadge } from "./AIModelNewBadge";
 import { AIConfiguredModelRow } from "./AIConfiguredModelRow";
@@ -42,12 +39,16 @@ export function AIConnectionModelsDialog({
   connection,
   connections,
   canManage,
+  onRemove,
+  onBack,
   onClose,
 }: {
   workspaceId: string;
   connection: AIConnection;
   connections: AIConnection[];
   canManage: boolean;
+  onRemove: (profile: AIProfile) => void;
+  onBack: () => void;
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -64,13 +65,10 @@ export function AIConnectionModelsDialog({
   const refresh = useRefreshConnectionModels(workspaceId, connection.id);
   const save = useEnableAIModel(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
-  const remove = useDeleteAIProfile(workspaceId);
   const settings = useAISettings(workspaceId);
-  const confirm = useConfirm();
   const busy =
     save.isPending ||
-    visibility.isPending ||
-    remove.isPending;
+    visibility.isPending;
   const existing = (profiles.data ?? []).filter(
     (p) => p.primary.connection_id === connection.id,
   );
@@ -153,25 +151,6 @@ export function AIConnectionModelsDialog({
       );
     }
   }
-  async function deleteModel(profile: AIProfile) {
-    if (
-      !(await confirm({
-        title: `Remove “${profile.name}”?`,
-        description:
-          "Remove this saved configuration. Models used by agents must be reassigned first. To only hide it from model pickers, use the toggle instead.",
-        confirmText: "Remove",
-        variant: "destructive",
-      }))
-    )
-      return;
-    try {
-      await remove.mutateAsync(profile);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not remove model.",
-      );
-    }
-  }
   const customID = custom.trim();
   const customExists = known.has(customID);
 
@@ -183,24 +162,11 @@ export function AIConnectionModelsDialog({
           if (!open && !busy) onClose();
         }}
       >
-        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[780px]">
           <DialogHeader className="border-b px-6 py-4 text-left">
-            <DialogTitle>{connection.name} models</DialogTitle>
-            <div className="flex items-center gap-1">
-              <DialogDescription>
-                {connection.scope === "personal"
-                  ? "Personal · Your chats and manual runs"
-                  : "Workspace-wide · Chats, agents, and automations"}
-              </DialogDescription>
-              <AISetupHelp
-                label="About model access"
-                description={
-                  connection.scope === "personal"
-                    ? "Only you can use this connection. Choose its models in Ask Agent or when starting a manual run. Agent defaults and scheduled runs require a workspace-wide model."
-                    : "Members can choose these models in Ask Agent or assign them to agents, including scheduled and automated runs. Only administrators can change shared model settings."
-                }
-              />
-            </div>
+            <Button size="sm" variant="ghost" className="w-fit" disabled={busy} onClick={onBack}><ArrowLeft01Icon className="size-4" />Connections</Button>
+            <DialogTitle>{connection.funding === "managed" ? providerShortLabel(connection.provider) : connection.name} models</DialogTitle>
+            <DialogDescription>{chatGPTAccountLabel(connection) ?? (connection.funding === "managed" ? "Helpin-managed" : providerLabel(connection.provider))}</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 px-6 py-3">
             <QuietSearchInput
@@ -234,18 +200,8 @@ export function AIConnectionModelsDialog({
               </QuickTooltip>
             )}
           </div>
-          <div className="flex items-center justify-between px-6 pb-2 text-xs text-muted-foreground">
-            <span>Model</span>
-            <span className="flex items-center gap-1">
-              Show in model pickers
-              <AISetupHelp
-                label="About model visibility"
-                description="Show in Ask Agent and agent model pickers. Hidden models stay on the AI models settings page. Existing selections and defaults keep working. Newly discovered models are not added automatically."
-              />
-            </span>
-          </div>
           <div className="min-h-0 flex-1 overflow-y-auto border-y px-6">
-            <AIConnectionPolicyNotice policy={connection.policy} />
+            <AIConnectionPolicyNotice policy={connection.policy} hideManagedPricing />
             {(discovered.data?.warning || discovered.isError) && (
               <p
                 role="status"
@@ -296,7 +252,7 @@ export function AIConnectionModelsDialog({
                         editable={editable}
                         busy={busy}
                         onEdit={() => setEditing(profile)}
-                        onRemove={() => void deleteModel(profile)}
+                        onRemove={() => onRemove(profile)}
                         onVisibility={(shown) => void toggle(profile, shown)}
                       />
                     );
@@ -317,12 +273,8 @@ export function AIConnectionModelsDialog({
                           </p>
                         )}
                       </div>
-                      <Switch
-                        aria-label={`Show ${model.name} in model pickers`}
-                        checked={false}
-                        disabled={!canEnable || busy}
-                        onCheckedChange={() => void enable(model)}
-                      />
+                      <Button variant="outline" size="sm" aria-label={`Add ${model.name}`}
+                        disabled={!canEnable || busy} onClick={() => void enable(model)}>Add</Button>
                     </div>
                   );
                 })}
@@ -400,14 +352,12 @@ export function AIConnectionModelsDialog({
                 {canManage
                   ? "Supported models"
                   : "Managed by your workspace admins"}
-                <AISetupHelp
-                  label="About available models"
-                  description={
-                    canManage
-                      ? "This connection uses the supported model catalog. Model discovery does not change managed defaults or subscription runtime support."
-                      : "Ask an administrator to change shared model visibility. You can manage your own personal connections in Settings."
-                  }
-                />
+                {!canManage && (
+                  <AISetupHelp
+                    label="About available models"
+                    description="Ask an administrator to change shared model visibility. You can manage your own personal connections in Settings."
+                  />
+                )}
               </span>
             )}
           </div>

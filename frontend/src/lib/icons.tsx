@@ -1,3 +1,5 @@
+import slackMark from '@/assets/slack-mark.svg';
+import telegramMark from '@/assets/telegram-mark.svg';
 import type { FC, CSSProperties } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -176,7 +178,6 @@ import {
   AiMagicIcon as _AiMagicIcon,
   AiNetworkIcon as _AiNetworkIcon,
   CloudServerIcon as _CloudServerIcon,
-  Unlink01Icon as _Unlink01Icon,
   SquareUnlock01Icon as _SquareUnlock01Icon,
   StopIcon as _StopIcon,
   StarIcon as _StarIcon,
@@ -212,7 +213,6 @@ import {
   ZoomOutAreaIcon as _ZoomOutAreaIcon,
   ThumbsDownIcon as _ThumbsDownIcon,
   ThumbsUpIcon as _ThumbsUpIcon,
-  TelegramIcon as _TelegramIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -352,7 +352,13 @@ export const CursorPointer01Icon = /* @__PURE__ */ hi(_CursorPointer01Icon);
 export const TextIcon = /* @__PURE__ */ hi(_TextIcon);
 export const ArrowMoveUpRightIcon = /* @__PURE__ */ hi(_ArrowMoveUpRightIcon);
 export const BubbleChatIcon = /* @__PURE__ */ hi(_BubbleChatIcon);
-export const TelegramIcon = /* @__PURE__ */ hi(_TelegramIcon);
+// Official full-color mark from Slack's media kit, served locally with the app.
+export const SlackIcon: IconComponent = ({ className, style }) => (
+  <img src={slackMark} alt="" width={16} height={16} className={className} style={style} />
+);
+export const TelegramIcon: IconComponent = ({ className, style }) => (
+  <img src={telegramMark} alt="" width={16} height={16} className={className} style={style} />
+);
 export const Clock01Icon = /* @__PURE__ */ hi(_Clock01Icon);
 export const Clock02Icon = /* @__PURE__ */ hi(_Clock02Icon);
 export const CodeIcon = /* @__PURE__ */ hi(_CodeIcon);
@@ -450,7 +456,6 @@ export const SparklesIcon = /* @__PURE__ */ hi(_SparklesIcon);
 export const AiMagicIcon = /* @__PURE__ */ hi(_AiMagicIcon);
 export const AiNetworkIcon = /* @__PURE__ */ hi(_AiNetworkIcon);
 export const CloudServerIcon = /* @__PURE__ */ hi(_CloudServerIcon);
-export const Unlink01Icon = /* @__PURE__ */ hi(_Unlink01Icon);
 export const StarIcon = /* @__PURE__ */ hi(_StarIcon);
 export const StickyNote01Icon = /* @__PURE__ */ hi(_StickyNote01Icon);
 export const Sun01Icon = /* @__PURE__ */ hi(_Sun01Icon);

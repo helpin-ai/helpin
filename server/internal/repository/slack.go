@@ -1,0 +1,337 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// SlackRepository stores installation grants and channel routing.
+type SlackRepository struct{ db *gorm.DB }
+
+// NewSlackRepository returns the workspace Slack store.
+func NewSlackRepository(db *gorm.DB) *SlackRepository { return &SlackRepository{db: db} }
+
+// SaveState records a short-lived browser grant.
+func (r *SlackRepository) SaveState(ctx context.Context, hash, workspace, user string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM slack_install_states WHERE expires_at <= ?", time.Now()).Error; err != nil {
+			return err
+		}
+		return tx.Exec("INSERT INTO slack_install_states(state_hash,workspace_id,user_id,expires_at) VALUES (?,?,?,?)", hash, workspace, user, time.Now().Add(10*time.Minute)).Error
+	})
+}
+
+// ConsumeState validates the grant against the currently authenticated installer.
+func (r *SlackRepository) ConsumeState(ctx context.Context, hash, workspace, user string) (bool, error) {
+	q := r.db.WithContext(ctx).Exec("DELETE FROM slack_install_states WHERE state_hash=? AND workspace_id=? AND user_id=? AND expires_at>?", hash, workspace, user, time.Now())
+	return q.RowsAffected == 1, q.Error
+}
+
+// Installation finds the active Slack installation in one workspace.
+func (r *SlackRepository) Installation(ctx context.Context, workspace string) (*model.SupportChannelAccount, error) {
+	var a model.SupportChannelAccount
+	err := r.db.WithContext(ctx).Where("workspace_id=? AND provider='slack' AND disabled_at IS NULL", workspace).Limit(1).Find(&a).Error
+	if err != nil || a.ID == "" {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// PreviousInstallation preserves thread history only when both workspaces match.
+func (r *SlackRepository) PreviousInstallation(ctx context.Context, workspace, team string) (*model.SupportChannelAccount, error) {
+	var a model.SupportChannelAccount
+	err := r.db.WithContext(ctx).Where("workspace_id=? AND provider='slack' AND external_account_id=? AND disabled_at IS NOT NULL", workspace, team).Order("disabled_at DESC").Limit(1).Find(&a).Error
+	if err != nil || a.ID == "" {
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (r *SlackRepository) Reactivate(ctx context.Context, a *model.SupportChannelAccount, token, handle, name, user string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.SupportChannelAccount{}).Where("id=? AND workspace_id=? AND disabled_at IS NOT NULL", a.ID, a.WorkspaceID).
+			Updates(map[string]any{"disabled_at": nil, "status": "active", "token_encrypted": token, "handle": handle, "display_name": name, "connected_by": user, "auth_error_count": 0, "ai_replies_disabled": true})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		// The admin opts channels back in and teammates renew their links.
+		for _, table := range []string{"slack_channel_routes", "slack_task_drafts", "slack_link_grants", "slack_members"} {
+			if err := tx.Exec("DELETE FROM "+table+" WHERE account_id=?", a.ID).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Exec("UPDATE support_inbound_jobs SET status='completed',payload='',lease_token='' WHERE channel_account_id=? AND status IN ('pending','processing','failed')", a.ID).Error
+	})
+}
+
+// Routes lists the installation's enabled channels.
+func (r *SlackRepository) Routes(ctx context.Context, account string) ([]model.SlackRoute, error) {
+	rows := make([]model.SlackRoute, 0)
+	err := slackRoutes(r.db.WithContext(ctx), account).Order("r.channel_name").Scan(&rows).Error
+	return rows, err
+}
+
+func slackRoutes(db *gorm.DB, account string) *gorm.DB {
+	return db.Table("slack_channel_routes r").Select("r.*, COALESCE(ids.current_id,r.channel_id) AS current_channel_id").
+		Joins("LEFT JOIN slack_channel_ids ids ON ids.account_id=r.account_id AND ids.channel_id=r.channel_id").
+		Where("r.account_id=?", account)
+}
+
+// Route returns a channel's opt-in record.
+func (r *SlackRepository) Route(ctx context.Context, account, channel string) (*model.SlackRoute, error) {
+	var row model.SlackRoute
+	err := slackRoutes(r.db.WithContext(ctx), account).
+		Where("r.channel_id=COALESCE((SELECT routing_id FROM slack_channel_ids WHERE account_id=? AND channel_id=?),?)", account, channel, channel).
+		Limit(1).Scan(&row).Error
+	if row.AccountID == "" || err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// SetRoute updates the validated destination for one channel.
+func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, preserveCompany bool) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSlackInstallation(tx, row.AccountID); err != nil {
+			return err
+		}
+		if err := tx.Exec("INSERT INTO slack_channel_ids(account_id,channel_id,routing_id,current_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING", row.AccountID, row.ChannelID, row.ChannelID, row.ChannelID).Error; err != nil {
+			return err
+		}
+		id, err := lookupSlackChannelID(tx, row.AccountID, row.ChannelID)
+		if err != nil {
+			return err
+		}
+		row.ChannelID = id.RoutingID
+		columns := []string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"}
+		if preserveCompany {
+			row.CRMCompanyID = nil
+		} else {
+			columns = append(columns, "crm_company_id")
+		}
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns(columns)}).Create(&row).Error
+	})
+}
+
+// RemoveRoute disables intake and delivery for a channel.
+func (r *SlackRepository) RemoveRoute(ctx context.Context, account, channel string) error {
+	return r.db.WithContext(ctx).Where("account_id=? AND channel_id=COALESCE((SELECT routing_id FROM slack_channel_ids WHERE account_id=? AND channel_id=?),?)", account, account, channel, channel).Delete(&model.SlackRoute{}).Error
+}
+
+// Member finds a linked Helpin identity, scoped to this Slack installation.
+func (r *SlackRepository) Member(ctx context.Context, account, user string) (string, error) {
+	var id string
+	err := r.db.WithContext(ctx).Table("slack_members").Select("user_id").Where("account_id=? AND slack_user=?", account, user).Scan(&id).Error
+	return id, err
+}
+
+// GrantLink records an expiring link supplied privately to the Slack user.
+func (r *SlackRepository) GrantLink(ctx context.Context, account, user, hash string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM slack_link_grants WHERE expires_at<=?", time.Now()).Error; err != nil {
+			return err
+		}
+		return tx.Exec("INSERT INTO slack_link_grants(token_hash,account_id,slack_user,expires_at) VALUES (?,?,?,?)", hash, account, user, time.Now().Add(10*time.Minute)).Error
+	})
+}
+
+// Link consumes the grant and binds the two verified identities.
+func (r *SlackRepository) Link(ctx context.Context, account, user, hash string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var slackUser string
+		if err := tx.Raw("DELETE FROM slack_link_grants WHERE token_hash=? AND account_id=? AND expires_at>? RETURNING slack_user", hash, account, time.Now()).Scan(&slackUser).Error; err != nil {
+			return err
+		}
+		if slackUser == "" {
+			return gorm.ErrRecordNotFound
+		}
+		result := tx.Exec("INSERT INTO slack_members(account_id,slack_user,user_id) VALUES (?,?,?) ON CONFLICT (account_id,slack_user) DO UPDATE SET user_id=excluded.user_id WHERE slack_members.user_id=excluded.user_id", account, slackUser, user)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrDuplicatedKey
+		}
+		return nil
+	})
+}
+
+// ThreadTask looks up the PM record already linked to this discussion.
+func (r *SlackRepository) ThreadTask(ctx context.Context, account, channel, root string) (string, error) {
+	var id string
+	err := r.db.WithContext(ctx).Table("slack_task_threads").Select("task_id").Where("account_id=? AND channel_id=? AND thread_ts=?", account, channel, root).Scan(&id).Error
+	return id, err
+}
+
+// LinkTask establishes a thread link after the caller checks the task audience.
+func (r *SlackRepository) LinkTask(ctx context.Context, account, channel, root, id, actor string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return bindSlackTask(ctx, tx, model.SlackThread{AccountID: account, Channel: channel, Root: root}, id, actor)
+	})
+}
+
+func bindSlackTask(ctx context.Context, tx *gorm.DB, thread model.SlackThread, id, actor string) error {
+	if err := tx.WithContext(ctx).Exec("INSERT INTO slack_task_threads(account_id,channel_id,thread_ts,task_id) VALUES(?,?,?,?)", thread.AccountID, thread.Channel, thread.Root, id).Error; err != nil {
+		return err
+	}
+	if strings.HasPrefix(thread.Channel, "D") {
+		return nil
+	} // DMs have no shared task discussion.
+	var route model.SlackRoute
+	if err := tx.Where("account_id=? AND channel_id=?", thread.AccountID, thread.Channel).First(&route).Error; err != nil {
+		return err
+	}
+	if route.Purpose != "pm" {
+		return nil
+	}
+	root := model.PMComment{EntityType: "task", EntityID: id, AuthorID: actor, Body: "Replies in this discussion are shared with #" + route.ChannelName + "."}
+	if err := tx.Create(&root).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec("UPDATE pm_comments SET slack_discussion_channel=? WHERE id=?", route.ChannelName, root.ID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec("UPDATE slack_task_threads SET comment_id=? WHERE account_id=? AND channel_id=? AND thread_ts=?", root.ID, thread.AccountID, thread.Channel, thread.Root).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`INSERT INTO support_inbound_jobs(id,kind,workspace_id,channel_account_id,payload,status,available_at)
+ SELECT gen_random_uuid(),'slack_pm_delivery',workspace_id,?,json_build_object('task',?::text,'channel',?::text,'root',?::text)::text,'pending',now() FROM pm_tasks WHERE id=?`, thread.AccountID, id, thread.Channel, thread.Root, id).Error
+}
+
+// BindSlackTask links the discussion inside the task creation transaction.
+func (r *PMTaskRepository) BindSlackTask(ctx context.Context, thread model.SlackThread, id, actor string) error {
+	return bindSlackTask(ctx, r.db, thread, id, actor)
+}
+
+// EpicOptions returns active epics for team-scoped selection.
+func (r *SlackRepository) EpicOptions(ctx context.Context, ws string) ([]model.PMEpic, error) {
+	var rows []model.PMEpic
+	err := r.db.WithContext(ctx).Select("id,name,team_id").Where("workspace_id=? AND archived=false", ws).Order("name,id").Find(&rows).Error
+	return rows, err
+}
+
+// SaveDraft stores a short-lived review scoped to the member and source.
+func (r *SlackRepository) SaveDraft(ctx context.Context, id, account, user string, conversation *string, content []byte) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM slack_task_drafts WHERE expires_at<=?", time.Now()).Error; err != nil {
+			return err
+		}
+		return tx.Exec("INSERT INTO slack_task_drafts(id,account_id,user_id,conversation_id,content,expires_at) VALUES(?,?,?,?,?::jsonb,?)", id, account, user, conversation, string(content), time.Now().Add(15*time.Minute)).Error
+	})
+}
+
+// Draft retrieves one member's unexpired review.
+func (r *SlackRepository) Draft(ctx context.Context, id, account, user string) ([]byte, error) {
+	var content string
+	err := r.db.WithContext(ctx).Table("slack_task_drafts").Select("content").Where("id=? AND account_id=? AND user_id=? AND expires_at>?", id, account, user, time.Now()).Scan(&content).Error
+	return []byte(content), err
+}
+
+// SupportThread resolves an accessible live source record by thread identity.
+func (r *SlackRepository) SupportThread(ctx context.Context, a *model.SupportChannelAccount, key string) (*model.SupportConversation, error) {
+	c, err := r.SupportThreadOrigin(ctx, a, key)
+	if c != nil && c.MergedIntoID != nil {
+		return nil, err
+	}
+	return c, err
+}
+
+// SupportThreadOrigin includes merged sources so customer status is scoped to the original thread.
+func (r *SlackRepository) SupportThreadOrigin(ctx context.Context, a *model.SupportChannelAccount, key string) (*model.SupportConversation, error) {
+	var c model.SupportConversation
+	err := r.db.WithContext(ctx).Where("workspace_id=? AND channel_account_id=? AND provider_thread_key=? AND anonymized_at IS NULL AND status<>'spam'", a.WorkspaceID, a.ID, key).Limit(1).Find(&c).Error
+	if err != nil || c.ID == "" {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// PublishedReply reads only outbound messages confirmed in this thread.
+func (r *SlackRepository) PublishedReply(ctx context.Context, a *model.SupportChannelAccount, c string) (model.SupportMessage, error) {
+	var m model.SupportMessage
+	err := r.db.WithContext(ctx).Model(&m).Where("workspace_id=? AND is_internal=false AND message_type='reply' AND sender_type IN ('user','agent','ai') AND deleted_at IS NULL", a.WorkspaceID).
+		Where("(channel_account_id=? AND external_message_key IS NOT NULL AND COALESCE(origin_conversation_id,conversation_id)=?) OR EXISTS (SELECT 1 FROM support_channel_outbox o WHERE o.message_id=support_messages.id AND o.channel_account_id=? AND o.dispatch_status='accepted' AND coalesce(o.provider_origin_id,o.conversation_id)=?)", a.ID, c, a.ID, c).
+		Order("created_at DESC, id DESC").Limit(1).Find(&m).Error
+	return m, err
+}
+
+// RecordUpdateRequest claims the owner alert once per published update.
+func (r *SlackRepository) RecordUpdateRequest(ctx context.Context, c, key string) (bool, error) {
+	q := r.db.WithContext(ctx).Exec("INSERT INTO slack_update_requests(conversation_id,published_key) VALUES(?,?) ON CONFLICT(conversation_id) DO UPDATE SET published_key=excluded.published_key WHERE slack_update_requests.published_key<>excluded.published_key", c, key)
+	return q.RowsAffected == 1, q.Error
+}
+
+// SlackDiscussion holds the PM comment and Slack card for one thread.
+type SlackDiscussion struct{ TaskID, CommentID, CardTS string }
+
+// Discussion looks up the current task binding.
+func (r *SlackRepository) Discussion(ctx context.Context, a, channel, root string) (SlackDiscussion, error) {
+	var d SlackDiscussion
+	err := r.db.WithContext(ctx).Table("slack_task_threads").Select("task_id,coalesce(comment_id::text,'') AS comment_id,coalesce(card_ts,'') AS card_ts").Where("account_id=? AND channel_id=? AND thread_ts=?", a, channel, root).Scan(&d).Error
+	return d, err
+}
+
+// RecordCard remembers the provider timestamp so changes update the original card.
+func (r *SlackRepository) RecordCard(ctx context.Context, a, channel, root, ts string) error {
+	return r.db.WithContext(ctx).Table("slack_task_threads").Where("account_id=? AND channel_id=? AND thread_ts=?", a, channel, root).UpdateColumn("card_ts", ts).Error
+}
+
+// EnsureAgentChat gives concurrent deliveries in one private thread a single Dock conversation.
+func (r *SlackRepository) EnsureAgentChat(ctx context.Context, workspace, user, id, title string) error {
+	return r.db.WithContext(ctx).Exec(`INSERT INTO dock_chats (id,workspace_id,user_id,title,visibility,slack_thread,created_at,updated_at)
+        VALUES (?,?,?,?,'private',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING`, id, workspace, user, title).Error
+}
+
+// Limit projections to the accepted turn even after the same run has resumed.
+const slackTurnMessages = ` FROM agent_run_messages turn
+ JOIN agent_run_messages reply ON reply.workspace_id=turn.workspace_id AND reply.dock_chat_id=turn.dock_chat_id
+ AND reply.run_id=turn.run_id AND reply.dock_chat_sequence>turn.dock_chat_sequence
+ WHERE turn.workspace_id=? AND turn.dock_chat_id=? AND turn.id=? AND turn.role='user'
+ AND reply.role='assistant'
+ AND NOT EXISTS (SELECT 1 FROM agent_run_messages later WHERE later.dock_chat_id=turn.dock_chat_id
+ AND later.role='user' AND later.dock_chat_sequence BETWEEN turn.dock_chat_sequence+1 AND reply.dock_chat_sequence) `
+
+func (r *SlackRepository) AgentTurnTools(ctx context.Context, workspace, chat, message string) ([]string, error) {
+	var row struct{ ToolInvocations []byte }
+	err := r.db.WithContext(ctx).Raw("SELECT reply.tool_invocations "+slackTurnMessages+
+		` AND reply.tool_invocations IS NOT NULL AND CAST(reply.tool_invocations AS text) NOT IN ('[]','null') ORDER BY reply.dock_chat_sequence DESC LIMIT 1`, workspace, chat, message).Scan(&row).Error
+	if err != nil || len(row.ToolInvocations) == 0 {
+		return nil, err
+	}
+	var calls []struct {
+		Name string `json:"tool_name"`
+	}
+	if err = json.Unmarshal(row.ToolInvocations, &calls); err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, call := range calls {
+		names = append(names, call.Name)
+	}
+	return names, nil
+}
+
+// AgentTurnStatus checks the backing run of the accepted message, even if the chat has since moved on.
+func (r *SlackRepository) AgentTurnStatus(ctx context.Context, workspace, chat, message string) (model.AgentRun, error) {
+	var run model.AgentRun
+	err := r.db.WithContext(ctx).Table("agent_run_messages turn").Select("runs.status, runs.error_message").Joins("JOIN agent_runs runs ON runs.id=turn.run_id AND runs.workspace_id=turn.workspace_id").Where("turn.workspace_id=? AND turn.dock_chat_id=? AND turn.id=? AND turn.role='user'", workspace, chat, message).Scan(&run).Error
+	return run, err
+}
+
+// AgentAnswer returns only the final response for the accepted turn. Progress, tool
+// output, and answers to subsequent turns must never be sent to Slack.
+func (r *SlackRepository) AgentAnswer(ctx context.Context, workspace, chat, message string) (string, error) {
+	var answer string
+	err := r.db.WithContext(ctx).Raw("SELECT reply.content "+slackTurnMessages+
+		" AND reply.message_type='assistant_final' ORDER BY reply.dock_chat_sequence LIMIT 1", workspace, chat, message).Scan(&answer).Error
+	return answer, err
+}

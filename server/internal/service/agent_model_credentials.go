@@ -107,7 +107,7 @@ func requireAIConnectionRunOwner(run *model.AgentRun, actor string) error {
 		}
 		return nil
 	}
-	if input.AISelection != nil && input.AISelection.ConnectionScope == "workspace" {
+	if input.AISelection != nil && (input.AISelection.ConnectionScope == "workspace" || input.AISelection.AgentGrantID != nil) {
 		return nil
 	}
 	if input.ModelConnectionID != "" && (actor == "" || actor != derefString(run.TriggeredByUserID)) {

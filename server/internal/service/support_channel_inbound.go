@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -59,7 +60,11 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 	receipt := &channelReceipt{}
 	err = s.conversationRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// One customer's concurrent first messages must open one conversation.
-		if err := lockChannelSubject(tx, model.SupportChannelSubjectKey(account.ID, event.ExternalUserID)); err != nil {
+		subject := event.ExternalUserID
+		if event.ThreadKey != "" {
+			subject = event.ThreadKey
+		}
+		if err := lockChannelSubject(tx, model.SupportChannelSubjectKey(account.ID, subject)); err != nil {
 			return err
 		}
 		if err := repository.LockContactAnonymization(tx, account.WorkspaceID); err != nil {
@@ -74,6 +79,24 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 			receipt.duplicate, receipt.message = true, &existing
 			return nil
 		}
+		var conv *model.SupportConversation
+		if event.ThreadKey != "" {
+			var thread model.SupportConversation
+			err = tx.Where("workspace_id=? AND channel_account_id=? AND provider_thread_key=?", account.WorkspaceID, account.ID, event.ThreadKey).Limit(1).Find(&thread).Error
+			if thread.ID != "" {
+				if thread.AnonymizedAt != nil || thread.Status == model.SupportConversationStatusSpam {
+					receipt.duplicate = true
+					return nil
+				}
+				conv = &thread
+			} else if err == nil && event.ExistingThreadOnly {
+				receipt.duplicate = true
+				return nil
+			}
+		}
+		if err != nil {
+			return err
+		}
 		identity, err := repository.UpsertSupportChannelIdentityTx(ctx, tx, &model.SupportChannelIdentity{
 			WorkspaceID: account.WorkspaceID, ChannelAccountID: account.ID, ExternalUserID: event.ExternalUserID,
 			DisplayName: event.DisplayName, Username: event.Username,
@@ -82,7 +105,9 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 			return err
 		}
 		displayName := channelCustomerName(identity)
-		conv, err := s.channelConversationTx(ctx, tx, identity, now)
+		if event.ThreadKey == "" {
+			conv, err = s.channelConversationTx(ctx, tx, identity, now)
+		}
 		if err != nil {
 			return err
 		}
@@ -91,15 +116,24 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 			Content: channelMessageContent(event), MessageType: "reply", ViaChannel: strPtr(account.Provider),
 			ChannelAccountID: &account.ID, ExternalMessageKey: &event.ExternalMessageKey,
 		}
+		if event.Teammate {
+			msg.SenderType = "user"
+			msg.TrustedInbound = true
+		}
 		if conv == nil {
 			conv = &model.SupportConversation{
 				WorkspaceID: account.WorkspaceID, Subject: channelSubject(event), Status: model.SupportConversationStatusOpen,
 				FlowState: strPtr(flowState), Priority: "medium", Channel: account.Provider, Source: account.Provider,
-				CustomerName: &displayName, CRMContactID: identity.CRMContactID, MailboxID: mailboxID, AssignedUserID: ownerID,
-				ChannelAccountID: &account.ID, ChannelIdentityID: &identity.ID,
+				CustomerName: &displayName, CRMContactID: identity.CRMContactID, CRMCompanyID: event.DefaultCompanyID, MailboxID: mailboxID, AssignedUserID: ownerID,
+				ChannelAccountID: &account.ID, ChannelIdentityID: &identity.ID, ProviderThreadKey: nilIfEmpty(event.ThreadKey), ProviderChannelName: nilIfEmpty(event.ChannelName),
 			}
 			if err := s.conversationRepo.WithTx(tx).Create(ctx, conv); err != nil {
 				return err
+			}
+			if event.ThreadKey != "" {
+				if err := tx.Table("support_conversations").Where("id=?", conv.ID).Updates(map[string]any{"provider_thread_key": event.ThreadKey, "provider_channel_name": event.ChannelName}).Error; err != nil {
+					return err
+				}
 			}
 			if identity.CRMContactID != nil {
 				// Shows the conversation on the contact, as linking by hand does.
@@ -115,7 +149,11 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 			receipt.conversationCreated = true
 		} else {
 			msg.ConversationID = conv.ID
-			if receipt.reopened, receipt.conversationChanged, err = s.createCustomerReplyTx(ctx, tx, msg); err != nil {
+			if event.Teammate {
+				if err = s.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {
+					return err
+				}
+			} else if receipt.reopened, receipt.conversationChanged, err = s.createCustomerReplyTx(ctx, tx, msg); err != nil {
 				return err
 			}
 		}
@@ -183,7 +221,7 @@ func enqueueChannelAttachments(ctx context.Context, tx *gorm.DB, account *model.
 		tooLarge := maxDownload > 0 && file.Size > maxDownload
 		if tooLarge {
 			attachment.ProcessingStatus = supportAttachmentStatusRejected
-			attachment.ProcessingError = fmt.Sprintf("%s is larger than Telegram lets bots download (%s). Ask the customer to send it another way.", file.FileName, formatByteLimit(maxDownload))
+			attachment.ProcessingError = fmt.Sprintf("%s exceeds the %s download limit. Ask the customer to send it another way.", file.FileName, formatByteLimit(maxDownload))
 		}
 		if err := tx.WithContext(ctx).Create(&attachment).Error; err != nil {
 			return err
@@ -225,6 +263,9 @@ func (s *SupportInboxService) publishChannelMessage(ctx context.Context, account
 	if receipt.reopened != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(msg.WorkspaceID, receipt.reopened, origin))
 	}
+	if event.Teammate {
+		return
+	}
 	s.enrichSupportMessageLinksAsync(msg, origin)
 	s.recordSupportEvent(SupportEventInput{
 		WorkspaceID: msg.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
@@ -236,6 +277,19 @@ func (s *SupportInboxService) publishChannelMessage(ctx context.Context, account
 	}
 	// Something Helpin cannot show is not a question for the AI agent.
 	if event.Kind != channels.EventMessage {
+		return
+	}
+	// Slack's assistant setting covers teammate drafts and private answers.
+	// Public customer replies are sent explicitly by an agent.
+	if account.Provider == "slack" {
+		if s.triageService != nil {
+			go func() {
+				ctx := context.WithoutCancel(ctx)
+				if _, err := s.triageService.EvaluateAndRoute(ctx, msg.WorkspaceID, msg.ConversationID, msg.ID); err != nil {
+					slog.ErrorContext(ctx, "Slack support triage failed", "workspace_id", msg.WorkspaceID, "conversation_id", msg.ConversationID, "error", err)
+				}
+			}()
+		}
 		return
 	}
 	go s.runWidgetPostMessageAutomation(context.WithoutCancel(ctx), msg.WorkspaceID, msg.ConversationID, msg.ID, msg.Content)

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { useEffect } from "react";
-import type { SupportReplyDeliveryMode } from "@/lib/pmTypes";
+import type { CreateMessageRequest, SupportReplyDeliveryMode } from "@/lib/pmTypes";
 
 export const REPLY_DELIVERY_LABELS: Record<SupportReplyDeliveryMode, string> = {
   chat_only: "Chat only",
@@ -41,10 +41,19 @@ export function replyDeliveryChannels(
 
 export type ReplyPresence = 'unknown' | 'online' | 'offline';
 
+interface ReplyDeliveryContext {
+  source?: string;
+  isProviderSource?: boolean;
+  portal?: boolean;
+  presence: ReplyPresence;
+  emailEligible: boolean;
+}
+
 export function nextAutomaticReplyDelivery(
   current: SupportReplyDeliveryMode | undefined,
-  { source, portal, presence, emailEligible }: { source?: string; portal?: boolean; presence: ReplyPresence; emailEligible: boolean },
+  { source, isProviderSource, portal, presence, emailEligible }: ReplyDeliveryContext,
 ): SupportReplyDeliveryMode {
+  if (isProviderSource) return 'chat_only';
   if (current && current !== 'chat_only') return current;
   // An email thread the customer also sees in the portal is answered in both.
   if (source === 'email') return portal && emailEligible ? 'chat_and_email' : 'email_only';
@@ -98,6 +107,27 @@ function useDraftValue(key: string) {
   return useDeliveryDrafts((state) => key in state ? state[key] : loadDraftValue(key));
 }
 
+export type ReplyDestination = Pick<CreateMessageRequest, 'reply_transport' | 'provider_origin_id'>;
+
+export function getReplyDestination(metadata?: string): ReplyDestination {
+  try {
+    const { reply_transport, provider_origin_id } = JSON.parse(metadata ?? '{}');
+    if (reply_transport === 'widget' || reply_transport === 'portal') return { reply_transport };
+    if (reply_transport === 'slack' || reply_transport === 'telegram') {
+      return { reply_transport, provider_origin_id };
+    }
+  } catch { /* Older drafts may have no destination. */ }
+  return {};
+}
+
+export function useReplyDestination(workspaceId: string, conversationId: string) {
+  return getReplyDestination(useDraftValue(`${draftKey(workspaceId, conversationId)}:destination`));
+}
+
+export function saveReplyDestination(workspaceId: string, conversationId: string, destination?: ReplyDestination) {
+  saveDraftValue(`${draftKey(workspaceId, conversationId)}:destination`, destination?.reply_transport ? JSON.stringify(destination) : undefined);
+}
+
 function automaticDraftKey(workspaceId: string, conversationId: string) {
   return `${draftKey(workspaceId, conversationId)}:automatic`;
 }
@@ -105,7 +135,7 @@ function automaticDraftKey(workspaceId: string, conversationId: string) {
 export function useComposerDelivery(
   workspaceId: string,
   conversationId: string,
-  context: { source?: string; portal?: boolean; presence: ReplyPresence; emailEligible: boolean; active: boolean; hasDraft?: boolean },
+  context: ReplyDeliveryContext & { active: boolean; hasDraft?: boolean },
 ) {
   const choice = useReplyDelivery(workspaceId, conversationId);
   const legacyKey = draftKey(workspaceId, conversationId);
@@ -144,6 +174,7 @@ export function clearAutomaticReplyDelivery(workspaceId: string, conversationId:
 // Call only after a successful send. Failed retries and undo keep their destination.
 export function clearReplyDeliveryDraft(workspaceId: string, conversationId: string) {
   saveDraftValue(manualDraftKey(workspaceId, conversationId));
+  saveReplyDestination(workspaceId, conversationId);
   clearAutomaticReplyDelivery(workspaceId, conversationId);
 }
 

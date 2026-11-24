@@ -183,6 +183,45 @@ describe('ReplyComposer AI loading state', () => {
     expect(notices[0].querySelector('button')?.getAttribute('aria-label')).toBe('More recipients: other@example.com');
   });
 
+  it.each([
+    ['slack', 'Slack', '#acme-support'],
+    ['telegram', 'Telegram', 'Lena Park'],
+  ])('names %s in the recipient line and sends using the shared picker', async (provider, label, name) => {
+    setup();
+    const origin = { id: 'origin', provider, name, display_id: 42 };
+    mocks.conversation = { source: provider, channel: provider, provider_destinations: [origin], customer_email: 'lena@example.com' };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
+    expect(container.querySelector('[data-support-delivery-notice]')?.textContent).toBe(`Reply on ${label} to ${name}`);
+    expect(container.querySelector(`button[aria-label="Sending options: ${label} only"]`)?.textContent).toBe('');
+    await act(async () => button('Send').click());
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ delivery_mode: 'chat_only', channels: ['chat'], provider_origin_id: 'origin' }));
+    act(() => { useSupportInboxStore.setState({ replyMode: 'note' }); });
+    expect(container.querySelector('[data-support-delivery-notice]')).toBeNull();
+    expect(container.querySelector('[aria-label^="Sending options:"]')).toBeNull();
+  });
+
+  it.each(['slack', 'telegram'])('does not offer %s delivery based on conversation history alone', (provider) => {
+    setup();
+    mocks.conversation = { source: provider, channel: provider, channel_handle: 'old_bot', provider_channel_name: 'old-channel', merge_has_channel: true };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>); });
+    expect(container.querySelector('[aria-label^="Sending options:"]')?.getAttribute('aria-label')).toBe('Sending options: Choose channel');
+    expect(button('Send').disabled).toBe(true);
+  });
+
+  it('requires a thread in the recipient area when a merged Slack conversation has multiple destinations', () => {
+    setup();
+    mocks.conversation = {
+      source: 'slack', channel: 'slack', provider_channel_name: 'acme-support',
+      provider_destinations: [
+        { id: 'one', provider: 'slack', name: '#acme-support', display_id: 12 },
+        { id: 'two', provider: 'slack', name: '#partner-support', display_id: 13 },
+      ],
+    };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>); });
+    expect(container.querySelector('[data-support-delivery-notice] [aria-label="Reply thread"]')).not.toBeNull();
+    expect(button('Send').disabled).toBe(true);
+  });
+
   it('lists a shared address only once after merging conversations from the same customer', () => {
     setup(true);
     mocks.conversation = { ...mocks.conversation, merge_email_recipients: ['customer@example.com', ' CUSTOMER@example.com '] };

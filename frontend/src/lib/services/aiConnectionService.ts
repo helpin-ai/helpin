@@ -31,7 +31,7 @@ export interface AIConnection {
   user_id: string | null;
   name: string;
   provider: string;
-  status: "pending" | "connected" | "reauthorization_required" | "disconnected";
+  status: "unconfigured" | "pending" | "connected" | "reauthorization_required" | "disconnected";
   account_id?: string;
   expires_at?: string;
   /** Time of the last explicit connection test. */

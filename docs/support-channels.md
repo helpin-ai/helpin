@@ -3,7 +3,7 @@
 This guide is for engineers changing how Helpin receives and answers support
 conversations from messaging apps. It explains the channel registry, the
 provider tables, the inbound and outbound flows, and the steps for adding a
-provider. Telegram is the only provider today. To connect a bot on a Community
+provider. To connect a Telegram bot on a Community
 installation, see [Telegram in the Community configuration](community/configuration.md#telegram).
 
 ## Channels and transports
@@ -16,8 +16,8 @@ applies, and whether it counts as setup evidence. Add behavior to the registry,
 not to scattered `channel == "..."` checks.
 
 Telegram uses the `provider` transport: replies go out through a provider
-adapter rather than the chat widget, the portal, or email. The composer offers
-only "Telegram only" for these conversations, and AI follows the workspace's
+adapter. While drafting a private reply, the composer names Telegram and the recipient. The delivery picker lists Telegram
+when the bot can reach that conversation. Teammates use the standard **Send** button. AI follows the workspace's
 chat AI setting plus the bot's own **AI replies** switch.
 
 ## Tables
@@ -89,7 +89,8 @@ them.
 
 Unconfirmed replies are never resent automatically. Two rejected tokens in a
 row mark the bot `reauthorization_required`; an admin replaces the token in
-**Settings → Channels**.
+**Settings → Integration → External tools → Apps → Telegram**.
+**Support → Channels → Telegram → Manage** opens the same settings.
 
 ## Contacts and privacy
 
@@ -115,7 +116,7 @@ a no-op; a new message after deletion starts a new identity.
 3. Add the channel to both registries with the `provider` transport and the
    matching AI and triage behavior, and add its rows to
    `TestSupportChannelBehaviorMatrix`.
-4. Extend the Settings → Channels connect form for the provider.
+4. Place the connection form in External tools → Apps and link it from Support → Channels.
 5. Cover parsing and rendering with recorded fixtures, and the flows with the
    PostgreSQL integration tests.
 

@@ -220,8 +220,8 @@ export function Sidebar() {
   };
 
   const panelNavGroups = useMemo(
-    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams),
-    [wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams],
+    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams, modules),
+    [wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams, modules],
   );
   const currentNavGroups = panelNavGroups[activeRail].map(group => ({ ...group, items: filterWorkspaceNav(group.items, modules) })).filter(group => group.items.length > 0);
   const setupProgress = setup?.total_count ? Math.round((setup.completed_count / setup.total_count) * 100) : 0;

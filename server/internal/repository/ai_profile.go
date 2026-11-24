@@ -31,7 +31,7 @@ func (r *AIProfileRepository) Get(ctx context.Context, workspace, id string) (*m
 
 func (r *AIProfileRepository) List(ctx context.Context, workspace, user string) ([]model.AIProfile, error) {
 	profiles := []model.AIProfile{}
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND (scope = ? OR user_id = ?) AND deleted_at IS NULL", workspace, "workspace", user).Order("name,id").Find(&profiles).Error
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND (scope = ? OR user_id = ? OR agent_grant_id IS NOT NULL) AND deleted_at IS NULL", workspace, "workspace", user).Order("name,id").Find(&profiles).Error
 	return profiles, err
 }
 
@@ -178,5 +178,28 @@ func (r *AIProfileRepository) SetPersonalDefault(ctx context.Context, workspace,
 			settings.DefaultProfileID = &p.ID
 		}
 		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "user_id"}}, DoUpdates: clause.AssignmentColumns([]string{"default_profile_id", "updated_at"})}).Create(&settings).Error
+	})
+}
+
+func (r *AIProfileRepository) SetAgentGrant(ctx context.Context, profile *model.AIProfile, grantID *string, account string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if grantID != nil {
+			var c model.AIConnection
+			if err := tx.Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ? AND user_id = ? AND account_id = ? AND scope = 'personal' AND provider = 'openai_chatgpt' AND status = 'connected' AND superseded_by IS NULL", profile.Primary.ConnectionID, profile.WorkspaceID, profile.UserID, account).Take(&c).Error; err != nil {
+				return err
+			}
+			var member struct{ UserID string }
+			if err := tx.Table("workspace_members").Select("user_id").Clauses(clause.Locking{Strength: "SHARE"}).Where("workspace_id = ? AND user_id = ? AND status = ?", profile.WorkspaceID, profile.UserID, model.WorkspaceMemberStatusActive).Take(&member).Error; err != nil {
+				return err
+			}
+		}
+		result := tx.Model(&model.AIProfile{}).Where("id = ? AND workspace_id = ? AND user_id = ? AND scope = 'personal' AND revision = ? AND deleted_at IS NULL", profile.ID, profile.WorkspaceID, profile.UserID, profile.Revision).Updates(map[string]any{"agent_grant_id": grantID, "grant_account_id": account, "revision": profile.Revision + 1})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrAIProfileChanged
+		}
+		return nil
 	})
 }

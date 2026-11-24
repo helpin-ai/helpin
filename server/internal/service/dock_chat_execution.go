@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -49,6 +50,9 @@ func (s *DockChatService) effectiveChatExecution(ctx context.Context, chat *mode
 }
 
 func (s *DockChatService) scopedChatExecutionTools(ctx context.Context, chat *model.DockChat, userID string, agent *model.Agent) ([]string, error) {
+	if chat.SlackThread {
+		return s.slackAgentTools(ctx, chat, userID, agent)
+	}
 	if chat.FlowBuilder != nil {
 		return flowBuilderTools(), nil
 	}
@@ -60,6 +64,15 @@ func (s *DockChatService) scopedChatExecutionTools(ctx context.Context, chat *mo
 
 func runtimeAgentForDockExecution(run *model.AgentRun, agent AgentRuntimeAgent) AgentRuntimeAgent {
 	if run == nil || run.DockChatID == nil {
+		return agent
+	}
+	if isSlackDockRun(run) {
+		// Shared runtime registration is stable. Each run narrows this ceiling
+		// to the linked member's tools at launch.
+		agent.ID += runtimeSlackAgentSuffix
+		agent.Skills = nil
+		agent.AllowedTools = append(slices.Clone(slackPMReadTools), safeSupportDiscoveryToolAliases...)
+		agent.SystemPrompt = "You are Helpin in Slack. Answer questions using the available project and support tools. Give concise, factual replies. If a requested action needs the Slack task review form, explain how to open it."
 		return agent
 	}
 	if isFlowBuilderRun(run) {

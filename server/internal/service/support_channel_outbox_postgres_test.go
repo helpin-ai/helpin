@@ -237,6 +237,71 @@ func TestChannelOutboxDeliversAndRecordsTheProviderKey(t *testing.T) {
 	}
 }
 
+// A provider conversation merged into a widget keeps its original DM even
+// when the last inbound message predates the merge.
+func TestMixedWidgetAndTelegramDeliveryPostgres(t *testing.T) {
+	f := newOutboxFixture(t)
+	ctx := context.Background()
+	widget := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: f.workspace, Subject: "Widget help", Source: "widget", Channel: "widget", Status: "open", AnonymousID: strPtr("widget-visitor")}
+	if err := f.inbox.conversationRepo.Create(ctx, &widget); err != nil {
+		t.Fatal(err)
+	}
+	merge := repository.NewSupportMergeRepository(f.db)
+	if _, err := merge.Merge(ctx, f.workspace, widget.ID, []string{f.conv}, f.userID, uuid.NewString(), true); err != nil {
+		t.Fatal(err)
+	}
+	merged, err := f.inbox.GetConversation(ctx, f.workspace, widget.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !merged.MergeHasWidget || len(merged.ProviderDestinations) != 1 || merged.ProviderDestinations[0].ID != f.conv {
+		t.Fatalf("missing widget or DM: %+v", merged.ProviderDestinations)
+	}
+	send := func(transport, origin string) (*model.SupportMessage, error) {
+		return f.inbox.CreateConversationMessage(ctx, f.workspace, widget.ID, model.CreateMessageRequest{
+			Content: transport + " update", ReplyTransport: transport, DeliveryMode: model.SupportDeliveryChatOnly,
+			ProviderOriginID: origin, ExpectedMergeRevision: &merged.MergeRevision,
+		}, "user", &f.userID, nil, strPtr("Owner"))
+	}
+	chat, err := send("widget", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := f.row(t, chat.ID); row != nil {
+		t.Fatalf("widget reply enqueued for provider: %+v", row)
+	}
+	dm, err := send("telegram", f.conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := f.row(t, dm.ID); row == nil || derefString(row.ProviderOriginID) != f.conv || row.DispatchStatus != "pending" {
+		t.Fatalf("DM was not pinned to selected origin: %+v", row)
+	}
+	public, err := f.inbox.ListWidgetConversationMessages(ctx, f.workspace, widget.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visibleChat := false
+	for _, m := range public {
+		if m.ID == dm.ID {
+			t.Fatal("DM appeared in widget history")
+		}
+		if m.ID == chat.ID {
+			visibleChat = true
+		}
+	}
+	if !visibleChat {
+		t.Fatal("widget reply missing from history")
+	}
+	if _, err := send("slack", f.conv); err == nil {
+		t.Fatal("Slack reply accepted a Telegram origin")
+	}
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET disabled_at=now() WHERE id=?", f.account.ID)
+	if _, err := send("telegram", f.conv); err == nil {
+		t.Fatal("disconnected DM was accepted")
+	}
+}
+
 func TestChannelOutboxOutcomes(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

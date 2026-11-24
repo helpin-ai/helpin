@@ -33,7 +33,7 @@ import {
 import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
 import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes';
-import type { WorkspaceTeam } from '@/lib/types';
+import type { WorkspaceModule, WorkspaceTeam } from '@/lib/types';
 import type { NavGroup, RailId, RailItem } from './types';
 
 export function deriveActiveRail(pathname: string): RailId {
@@ -97,6 +97,7 @@ export function buildPanelNavGroups(
   permissionSet?: Set<string>,
   agentAttentionCount = 0,
   settingsTeams: readonly Pick<WorkspaceTeam, 'id' | 'name'>[] = [],
+  modules?: readonly WorkspaceModule[],
 ): Record<RailId, NavGroup[]> {
   return {
     projects: [
@@ -150,7 +151,7 @@ export function buildPanelNavGroups(
       },
     ],
     docs: [],
-    settings: getSettingsSidebarGroups(canManageSettings, permissionSet).map((group) => ({
+    settings: getSettingsSidebarGroups(canManageSettings, permissionSet, modules).map((group) => ({
       label: group.label,
       icon: group.icon,
       items: group.sections.map((section) => ({

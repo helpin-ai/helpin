@@ -37,6 +37,12 @@ type Event struct {
 	ExternalUserID string
 	// ExternalChatID is where replies go.
 	ExternalChatID string
+	ThreadKey      string
+	ChannelName    string
+	// DefaultCompanyID comes from the configured Helpin route.
+	DefaultCompanyID   *string `json:"-"`
+	ExistingThreadOnly bool
+	Teammate           bool
 	// ExternalMessageKey identifies the message within the connected account.
 	ExternalMessageKey string
 	DisplayName        string

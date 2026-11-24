@@ -64,7 +64,7 @@ export const providerMeta: Record<AIProviderKey, AIProviderMeta> = {
     key: "openai_chatgpt",
     label: "ChatGPT subscription",
     shortLabel: "ChatGPT",
-    description: "Sign in with your ChatGPT plan. Available for your own manual runs.",
+    description: "Sign in with your ChatGPT plan. Choose which models to share with workspace agents.",
     needsApiKey: false,
     supportsControls: { reasoningEffort: true, serviceTier: true, openrouterQuantizations: false },
     scopes: ["personal"],
@@ -117,12 +117,19 @@ export const connectionStatusMeta: Record<
   { label: string; tone: ConnectionStatusTone }
 > = {
   connected: { label: "Connected", tone: "positive" },
+  unconfigured: { label: "Not configured", tone: "neutral" },
   pending: { label: "Awaiting login", tone: "attention" },
   reauthorization_required: { label: "Reconnect required", tone: "attention" },
   disconnected: { label: "Disconnected", tone: "neutral" },
 };
 
-export function connectionStatusInfo(status: string) {
+export function chatGPTAccountLabel(connection: AIConnection) {
+  if (connection.provider !== "openai_chatgpt") return undefined;
+  return connection.account_id ? `ChatGPT account ···· ${connection.account_id.slice(-8)}` : "ChatGPT subscription";
+}
+
+export function connectionStatusInfo(status: string, verificationError?: string) {
+  if (status === "connected" && verificationError) return { label: "Last test failed", tone: "attention" as const };
   return (
     connectionStatusMeta[status as AIConnection["status"]] ?? {
       label: status.replaceAll("_", " "),

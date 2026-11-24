@@ -1016,12 +1016,16 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 // runtimeExecutionAgentSuffix marks the runtime agent record that
 // runtimeAgentForDockExecution projects for execution-enabled Dock runs.
 const runtimeExecutionAgentSuffix = "-execution"
+const runtimeSlackAgentSuffix = "-slack"
 const runtimeFlowBuilderAgentSuffix = "-flow-builder"
 
 // runtimeAgentBaseID maps a runtime agent ID back to the Helpin agent ID so
 // callbacks from execution runs pass the same agent checks as ordinary runs.
 func runtimeAgentBaseID(id string) string {
 	id = strings.TrimSpace(id)
+	if strings.HasSuffix(id, runtimeSlackAgentSuffix) {
+		return strings.TrimSuffix(id, runtimeSlackAgentSuffix)
+	}
 	if strings.HasSuffix(id, runtimeFlowBuilderAgentSuffix) {
 		return strings.TrimSuffix(id, runtimeFlowBuilderAgentSuffix)
 	}
@@ -1046,7 +1050,8 @@ func (s *AgentRuntimeHostService) enrichCommandAgentScope(ctx context.Context, m
 		}
 		executionProjection := meta.AgentID == run.AgentID+runtimeExecutionAgentSuffix && input.ExecutionEnabled
 		builderProjection := meta.AgentID == run.AgentID+runtimeFlowBuilderAgentSuffix && isFlowBuilderRun(run)
-		if !executionProjection && !builderProjection {
+		slackProjection := meta.AgentID == run.AgentID+runtimeSlackAgentSuffix && isSlackDockRun(run)
+		if !executionProjection && !builderProjection && !slackProjection {
 			return ErrAgentRuntimeHostForbidden
 		}
 		meta.AgentID = run.AgentID

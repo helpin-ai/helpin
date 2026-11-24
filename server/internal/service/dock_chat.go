@@ -281,6 +281,9 @@ func (s *DockChatService) updateChatLocked(ctx context.Context, workspaceID, use
 	if err != nil {
 		return nil, err
 	}
+	if chat.SlackThread && (req.ExecutionEnabled != nil || req.Visibility != nil) {
+		return nil, fmt.Errorf("Slack agent conversations stay private and use scoped tools")
+	}
 	if chat.FlowBuilder != nil && (req.ExecutionEnabled != nil || req.Visibility != nil) {
 		return nil, fmt.Errorf("flow builder conversations stay private and cannot execute work")
 	}
@@ -926,7 +929,8 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 	triggerContext, err := json.Marshal(struct {
 		DockChatID       string                           `json:"dock_chat_id"`
 		AttachedContexts []model.AgentRunContextReference `json:"attached_contexts,omitempty"`
-	}{DockChatID: chat.ID, AttachedContexts: attachedContexts})
+		SlackThread      bool                             `json:"slack_thread,omitempty"`
+	}{DockChatID: chat.ID, AttachedContexts: attachedContexts, SlackThread: chat.SlackThread})
 	if err != nil {
 		return fmt.Errorf("encode dock chat context: %w", err)
 	}

@@ -41,7 +41,6 @@ import {
   Timer01Icon,
   LeftToRightListBulletIcon,
   WebhookIcon,
-  TelegramIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -83,7 +82,7 @@ const CustomerPortal = hi(Globe02Icon);
 const SLAPolicies = hi(Timer01Icon);
 const Fields = hi(LeftToRightListBulletIcon);
 const Webhooks = hi(WebhookIcon);
-const Channels = hi(TelegramIcon);
+const Channels = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(PlugSocketIcon);
@@ -103,7 +102,7 @@ export type SettingsSection =
   | 'system-status'
   | 'server'
   | 'mcp'
-  | 'external-mcp'
+  | 'external-tools'
   | 'external-agents'
   | 'billing'
   | 'repositories'
@@ -299,12 +298,12 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Integrations & data',
   },
   {
-    id: 'external-mcp',
-    label: 'External tools (MCP)',
-    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
+    id: 'external-tools',
+    label: 'External tools',
+    description: 'Connect workspace apps and MCP servers.',
+    keywords: ['Slack', 'Telegram', 'MCP servers', 'agent tools'],
     icon: ExternalMCP,
     group: 'Integrations & data',
-    requiredPermission: 'settings.read',
   },
   {
     id: 'external-agents',
@@ -416,8 +415,8 @@ const allSettingsSections: SettingsSectionMeta[] = [
   {
     id: 'support-channels',
     label: 'Channels',
-    description: 'Connect messaging apps such as Telegram so customers can write in from them.',
-    keywords: ['telegram', 'bot', 'messaging', 'channels', 'omnichannel', 'social'],
+    description: 'Manage where conversations reach your team.',
+    keywords: ['slack', 'telegram', 'bot', 'messaging', 'channels', 'omnichannel', 'social'],
     icon: Channels,
     group: 'Support',
     requiredPermission: 'support.admin',
@@ -530,6 +529,22 @@ export function buildSettingsRoutePath(workspaceSlug: string, section: SettingsR
   return `/w/${workspaceSlug}/settings/${section}`;
 }
 
+export function externalToolsAccess(canManageSettings: boolean, permissions?: ReadonlySet<string>, modules?: readonly WorkspaceModule[]) {
+  const hasSupport = !modules || modules.includes('support');
+  const slack = canManageSettings && (hasSupport || modules.includes('pm'));
+  const telegram = !!permissions?.has('support.admin') && hasSupport;
+  return {
+    slack,
+    telegram,
+    apps: slack || telegram,
+    mcp: !!permissions?.has('settings.read') && (!modules || modules.includes('agents')),
+  };
+}
+
+export function buildExternalMCPSettingsPath(slug: string): string {
+  return buildSettingsRoutePath(slug, 'external-tools') + '?tab=mcp';
+}
+
 export type SettingsSidebarGroup = {
   label: string;
   icon?: IconComponent;
@@ -541,13 +556,18 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
     const module = workspaceSurface(buildSettingsRoutePath('workspace', section.id));
+    if (section.id === 'support-channels' && modules && !modules.includes('support')) continue;
+    if (section.id === 'external-tools') {
+      const access = externalToolsAccess(canManageSettings, permissionSet, modules);
+      if (!access.apps && !access.mcp) continue;
+    }
     if (modules && module && !modules.includes(module)) {
       continue;
     }
     if (section.requiresManageSettings && !canManageSettings) {
       continue;
     }
-    if (section.requiredPermission && !permissionSet?.has(section.requiredPermission)) {
+    if (section.requiredPermission && !permissionSet?.has(section.requiredPermission) && !(section.id === 'support-channels' && canManageSettings)) {
       continue;
     }
     if (section.sidebar === false) {

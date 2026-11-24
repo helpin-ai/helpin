@@ -1,7 +1,7 @@
 import type { WSEvent } from '@/hooks/useWebSocket'
 import { buildSettingsRoutePath } from './settingsSections'
 
-type DesktopTarget = { path: string; search?: { run: string } } | { dock: { chatId: string } | { runId: string } }
+type DesktopTarget = { path: string; search?: { run: string } | { tab: 'mcp' } } | { dock: { chatId: string } | { runId: string } }
 
 export function desktopNotificationTarget(event: WSEvent, slug: string): DesktopTarget {
   const data = event.data ?? {}
@@ -22,7 +22,7 @@ export function desktopNotificationTarget(event: WSEvent, slug: string): Desktop
       case 'sprint': return { path: `${base}/pm/sprints` }
       case 'support_conversation': return { path: `${base}/support/${id}` }
       case 'doc': case 'document': return { path: `${base}/docs/documents/${id}` }
-      case 'external_mcp_server': return { path: buildSettingsRoutePath(slug, 'external-mcp') }
+      case 'external_mcp_server': return { path: buildSettingsRoutePath(slug, 'external-tools'), search: { tab: 'mcp' } }
     }
   }
   return { path: `${base}/notifications` }

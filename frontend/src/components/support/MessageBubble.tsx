@@ -8,12 +8,13 @@ import { getSupportAIActivity, getSupportCodeCheck } from './supportAIActivityMo
 import { SupportCodeCheckCard } from './SupportCodeCheckCard';
 import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
+import { SlackMessageSource } from './SlackMessageSource';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, UserIcon, ZapIcon, Timer01Icon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, TelegramIcon, UserIcon, ZapIcon, Timer01Icon } from '@/lib/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { EmailDetailModal } from './EmailDetailModal';
@@ -30,7 +31,7 @@ import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getCustomerAvatarSeed, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
-import { getReplyEmailSubject, getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
+import { getReplyDestination, getReplyEmailSubject, getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -405,7 +406,7 @@ export const MessageBubble = memo(function MessageBubble({
     // Telegram may already have the unconfirmed reply; sending again could duplicate it.
     if (message.channel_delivery?.status === 'unconfirmed' && !(await confirm({
       title: 'Send this reply again?',
-      description: 'Telegram did not confirm the first attempt. If it did arrive, the customer will get it twice.',
+      description: 'The messaging provider did not confirm the first attempt. If it did arrive, the customer will get it twice.',
       confirmText: 'Send again',
     }))) return;
     const { error } = await api.post(`/support/inbox/messages/${message.id}/channel-retry?workspace_id=${encodeURIComponent(message.workspace_id)}`, {});
@@ -466,7 +467,9 @@ export const MessageBubble = memo(function MessageBubble({
     </time>
   );
   const messageSource = message.via_channel ?? source;
-  const sourceLabel = isInternal ? null : deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode]
+  const transport = getReplyDestination(message.metadata).reply_transport;
+  const deliveryLabel = deliveryMode && REPLY_DELIVERY_LABELS[deliveryMode].replace('Chat', supportChannel(transport)?.label ?? 'Chat');
+  const sourceLabel = isInternal ? null : deliveryLabel ? deliveryLabel
     : messageSource ? supportChannel(messageSource)?.messageLabel ?? messageSource : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
@@ -545,7 +548,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [], deliveryMode, emailSubject: getReplyEmailSubject(message.metadata) },
+      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [], deliveryMode, destination: getReplyDestination(message.metadata), emailSubject: getReplyEmailSubject(message.metadata) },
     }));
   }, [message.attachments, message.conversation_id, message.metadata, deliveryMode]);
 
@@ -960,7 +963,9 @@ export const MessageBubble = memo(function MessageBubble({
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';
   const showStandaloneEmailBadge = isCustomer && hasEmailBadge;
-  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge;
+  const showSlackSource = isCustomer && !message.is_internal && message.via_channel === 'slack';
+  const showTelegramSource = isCustomer && !message.is_internal && message.via_channel === 'telegram';
+  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource || showTelegramSource;
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
@@ -1066,6 +1071,12 @@ export const MessageBubble = memo(function MessageBubble({
           {message.pending_send && <PendingSendStatus message={message}/>}
           {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
             <div className="mt-0.5">
+              {showSlackSource && <SlackMessageSource workspaceId={message.workspace_id} messageId={message.id} />}
+              {showTelegramSource && (
+                <span className="mb-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <TelegramIcon className="size-3" />Received from Telegram
+                </span>
+              )}
               {showStandaloneEmailBadge && (
                 <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
                   <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>

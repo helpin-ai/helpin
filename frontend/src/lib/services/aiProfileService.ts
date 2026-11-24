@@ -21,6 +21,9 @@ export interface AIProfileRoute {
 }
 
 export interface AIProfile {
+  agent_grant_id?: string;
+  subscription_name?: string;
+  subscription_status?: string;
   // Legacy API field name: controls visibility in all model pickers, not execution.
   hidden_from_ask_agent?: boolean;
   primary_policy?: AIConnectionPolicyView;
@@ -52,6 +55,8 @@ export const aiProfileService = {
   setPersonalDefault: (workspace: string, default_profile_id: string | null) =>
     api.put(`/ai-settings/personal?workspace_id=${encodeURIComponent(workspace)}`, { default_profile_id }),
   enableModel: (workspace: string, value: {connection_id: string; model: string; name: string}) => api.post<AIProfile>(path(workspace, '/models'), value),
+  setAgentSharing: (workspace: string, profile: AIProfile, shared: boolean) =>
+    api.put<AIProfile>(path(workspace, `/${encodeURIComponent(profile.id)}/agent-sharing`), {revision: profile.revision, shared}),
   setVisibility: (workspace: string, profile: AIProfile, hidden: boolean) =>
     api.put<AIProfile>(path(workspace, `/${encodeURIComponent(profile.id)}/visibility`), {revision: profile.revision, hidden_from_ask_agent: hidden}),
   list: (workspace: string) => api.get<AIProfile[]>(path(workspace, "/")),

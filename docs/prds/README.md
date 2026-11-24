@@ -42,3 +42,4 @@ Product requirements and proposed contracts. These documents record intent and d
 - [Organizations](organizations.md)
 - [Shortcut API importer](shortcut-api-importer.md)
 - [Shortcut CSV importer](shortcut-importer.md)
+- [Two-way Slack integration for PM and Support](slack-pm-and-support.md)

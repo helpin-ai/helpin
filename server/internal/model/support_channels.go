@@ -16,6 +16,7 @@ const (
 	SupportChannelAPI      = "api"
 	SupportChannelInternal = "internal"
 	SupportChannelTelegram = "telegram"
+	SupportChannelSlack    = "slack"
 )
 
 // SupportChannelTransport is how replies reach the customer.
@@ -74,6 +75,7 @@ var supportChannels = []SupportChannelSpec{
 	{Key: SupportChannelAPI, Transport: SupportTransportNone, Triage: SupportTriageSettingInternal, TriageRuleChannel: true, SLAChannel: true, SetupEvidence: true},
 	{Key: SupportChannelInternal, Transport: SupportTransportNone, Triage: SupportTriageSettingInternal, TriageRuleChannel: true, SLAChannel: true},
 	{Key: SupportChannelTelegram, Transport: SupportTransportProvider, AIMode: SupportAIModeChat, Triage: SupportTriageSettingWidget, TriageRuleChannel: true, SLAChannel: true, SetupEvidence: true},
+	{Key: SupportChannelSlack, Transport: SupportTransportProvider, Triage: SupportTriageSettingWidget, TriageRuleChannel: true, SLAChannel: true, SkipsDefaultMailbox: true, SetupEvidence: true},
 }
 
 // LookupSupportChannel matches key exactly.

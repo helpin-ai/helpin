@@ -1,4 +1,5 @@
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
+import { isConversationUnavailableError, SupportConversationLoadError } from '@/lib/supportConversationError';
 import type { CreateTaskFromConversationRequest, UpdateSupportNoteRequest } from '@/lib/pmTypes';
 import type { CustomerPortalCompanyRole, CustomerPortalContactAccessValue, CustomerPortalRole, WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
@@ -50,7 +51,7 @@ import type {
   SupportConversation,
   SupportMessagePage,
   SupportSharedItem,
-  SupportReplyDeliveryMode,
+  CreateMessageRequest,
   VisitorContextResponse,
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
@@ -105,23 +106,6 @@ export type SupportConversationFilters = {
 
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
-type SendMessagePayload = {
-  expected_merge_revision?: number;
-  send_original?: boolean;
-  auto_translate?: boolean;
-  translation_target_language?: string;
-  content: string;
-  client_message_id?: string;
-  is_internal?: boolean;
-  ai_assisted?: boolean;
-  delivery_mode?: SupportReplyDeliveryMode;
-  email_subject?: string;
-  channels?: Array<'chat' | 'email'>;
-  attachment_ids?: string[];
-  cc_emails?: string[];
-  bcc_emails?: string[];
-};
-
 type OptimisticSupportUser = {
   id?: string | null;
   full_name?: string | null;
@@ -139,7 +123,7 @@ export function buildOptimisticSupportMessage({
 }: {
   workspaceId: string;
   conversationId: string;
-  payload: SendMessagePayload;
+  payload: CreateMessageRequest;
   user: OptimisticSupportUser | null;
   now: string;
   optimisticId: string;
@@ -156,8 +140,8 @@ export function buildOptimisticSupportMessage({
     content: payload.content.trim() || ' ',
     message_type: 'reply',
     is_internal: Boolean(payload.is_internal),
-    via_channel: payload.delivery_mode ? (payload.delivery_mode === 'email_only' ? 'email' : 'widget') : payload.channels?.includes('email') ? 'email' : 'widget',
-    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode, ...(payload.email_subject !== undefined ? { email_subject: payload.email_subject } : {}) }) } : {}),
+    via_channel: payload.delivery_mode ? (payload.delivery_mode === 'email_only' ? 'email' : payload.reply_transport ?? 'widget') : payload.channels?.includes('email') ? 'email' : 'widget',
+    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode, reply_transport: payload.reply_transport, provider_origin_id: payload.provider_origin_id, ...(payload.email_subject !== undefined ? { email_subject: payload.email_subject } : {}) }) } : {}),
     created_at: now,
     updated_at: now,
   };
@@ -1069,8 +1053,14 @@ export function useDisableSupportEmailRoute(workspaceId: string) {
 export function useConversation(workspaceId: string, conversationId: string | null) {
   return useQuery({
     queryKey: queryKeys.support.conversation(workspaceId, conversationId ?? ''),
-    queryFn: async () => unwrap(await supportService.getConversation(workspaceId, conversationId!)),
+    queryFn: async () => {
+      const response = await supportService.getConversation(workspaceId, conversationId!);
+      if (response.error) throw new SupportConversationLoadError(response.error, response.status);
+      if (!response.data) throw new SupportConversationLoadError('conversation not found', 404);
+      return response.data;
+    },
     enabled: !!workspaceId && !!conversationId,
+    retry: (failureCount, error) => !isConversationUnavailableError(error) && failureCount < 1,
     staleTime: 30_000,
     refetchInterval: (query) => {
       const state = query.state.data?.ai_follow_up?.status;
@@ -1116,6 +1106,18 @@ export function useSendConversationTranscript(workspaceId: string) {
   });
 }
 
+export function useMessageSlackSource(workspaceId: string, messageId: string, visible: boolean) {
+  return useQuery({
+    queryKey: queryKeys.support.messageSlackSource(workspaceId, messageId),
+    queryFn: async () => unwrap(await supportService.getMessageSlackSource(workspaceId, messageId)),
+    enabled: visible && !!workspaceId && !!messageId,
+    staleTime: 30 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useMessageEmailDetail(workspaceId: string, messageId: string | null, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.messageEmail(workspaceId, messageId ?? ''),
@@ -1158,7 +1160,7 @@ export function useVisitorContext(workspaceId: string, conversationId: string | 
 export function useSendMessage(workspaceId: string, conversationId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: SendMessagePayload) =>
+    mutationFn: (payload: CreateMessageRequest) =>
       (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : supportService.sendConversationReply(workspaceId, conversationId!, payload)).then((response) => {
         if (response.status === 422) throw new SupportTranslationSendError();
         return unwrap(response);
@@ -1199,7 +1201,10 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
-    onError: (error: Error, _payload, context) => {
+    onError: (error: Error, payload, context) => {
+      if (conversationId && payload.provider_origin_id) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId), exact: true });
+      }
       if (conversationId && context?.optimisticId) {
         queryClient.setQueryData<SupportMessagePages>(queryKeys.support.messages(workspaceId, conversationId), current => removeMessageFromPages(current, context.optimisticId));
       }

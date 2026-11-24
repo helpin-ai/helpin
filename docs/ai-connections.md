@@ -17,7 +17,15 @@ Personal connections and profiles belong to a user within a workspace. They are
 available for explicit manual use and trusted descendants. Shared connections
 belong to the workspace and support unattended execution. Shared management uses
 workspace settings permissions; selecting a shared connection requires current
-workspace access. ChatGPT connections remain personal. Existing personal IDs and
+workspace access. A ChatGPT subscription owner can open **Settings → AI Models**,
+change a saved model’s **Access** from **Personal** to **Workspace-wide**, and confirm. Each
+shared model appears in agent creation, editing and manual runs. Scheduled runs
+use the agent’s saved choice. The grant authorizes that model on that specific
+subscription, including when several people have connected the same provider.
+The connection settings and other models remain personal. Choose **Personal**
+to revoke access, then choose another model for affected agents. Runtime
+credential revocation is retried if the runtime is temporarily unavailable.
+Existing personal IDs and
 encryption AAD are preserved; there is no account-wide credential migration.
 
 Fallback happens before admission when the authorized primary connection is

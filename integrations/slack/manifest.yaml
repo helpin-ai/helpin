@@ -1,0 +1,67 @@
+display_information:
+  name: Helpin
+  description: Reply to customers, create tasks, and track progress in Slack.
+  long_description: >-
+    Turn a customer’s Slack thread into a Helpin support conversation. Your team can reply
+    and share files from the inbox, and the customer sees the response in the same thread.
+
+    When an issue needs follow-up, create a task from the discussion or link an existing
+    one. Review the draft before saving, then ask @Helpin for a task update or a summary
+    of the support conversation.
+features:
+  bot_user:
+    display_name: Helpin
+    always_online: false
+  shortcuts:
+    - name: Create support request
+      type: message
+      callback_id: create_support
+      description: Send this thread to the configured Helpin inbox.
+    - name: Create task
+      type: message
+      callback_id: create_task
+      description: Review a Helpin task from this thread.
+    - name: Link existing task
+      type: message
+      callback_id: link_task
+      description: Link this thread to a Helpin task.
+  app_home:
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+    agent_tasks_enabled: false
+  agent_view:
+    agent_description: Ask about your Helpin tasks and support conversations.
+    suggested_prompts:
+      - title: What can you do?
+        message: What can you do?
+oauth_config:
+  redirect_urls:
+    - https://app.helpin.ai/oauth/slack/callback
+  scopes:
+    bot:
+      - assistant:write
+      - im:history
+      - app_mentions:read
+      - channels:read
+      - groups:read
+      - channels:history
+      - groups:history
+      - chat:write
+      - files:read
+      - files:write
+      - users:read
+      - commands
+settings:
+  event_subscriptions:
+    request_url: https://api.helpin.ai/api/slack/events
+    bot_events:
+      - app_home_opened
+      - message.im
+      - app_mention
+      - message.channels
+      - message.groups
+      - channel_id_changed
+      - app_uninstalled
+  interactivity:
+    is_enabled: true
+    request_url: https://api.helpin.ai/api/slack/actions

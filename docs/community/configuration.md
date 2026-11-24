@@ -336,8 +336,8 @@ plain `http` cannot connect a bot.
 
 1. In Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, and
    follow the prompts. Copy the token it gives you.
-2. In Helpin, open **Settings → Channels** (workspace admins), choose
-   **Connect Telegram bot**, paste the token, and pick the inbox new
+2. In Helpin, open **Settings → Integration → External tools → Apps** as a Support admin.
+   Under **Telegram**, choose **Connect bot**, paste the token, and pick the inbox new
    conversations land in.
 3. Send your bot a message from Telegram. It appears in that inbox.
 

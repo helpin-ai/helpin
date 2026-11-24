@@ -509,6 +509,7 @@ export interface Comment {
   agent_run_id?: string | null;
   body: string;
   parent_id?: string;
+  slack_discussion_channel?: string;
   block_id?: string;
   range?: Record<string, unknown>;
   anchor_text?: string;

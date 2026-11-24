@@ -38,6 +38,7 @@ COPY --from=build /workspace/help-center/serverCompression.mjs ./serverCompressi
 COPY --from=build /workspace/help-center/serverRenderCache.mjs ./serverRenderCache.mjs
 COPY --from=build /workspace/help-center/serverRedirects.mjs ./serverRedirects.mjs
 COPY --from=build /workspace/help-center/serverSeo.mjs ./serverSeo.mjs
+COPY --from=build /workspace/help-center/serverRequestLog.mjs ./serverRequestLog.mjs
 COPY --from=build /workspace/help-center/portalMount.mjs ./portalMount.mjs
 COPY --from=portal /workspace/frontend/dist-portal ./portal
 RUN node --input-type=module -e "await import('./dist/server/server.js')"

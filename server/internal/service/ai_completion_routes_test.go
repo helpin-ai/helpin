@@ -215,3 +215,10 @@ func TestDeepSeek1017CompletionRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestSlackQuestionRoute(t *testing.T) {
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureAskChat, "slack_question")
+	if !ok || policy.Primary.Model != defaultFastOpenRouterAgentModel {
+		t.Fatalf("Slack question route missing or unexpected: %+v", policy)
+	}
+}
