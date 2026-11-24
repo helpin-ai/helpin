@@ -7,6 +7,7 @@ import (
 
 // PMComment represents comments for tasks/epics/docs.
 type PMComment struct {
+	SlackPermalink         *string    `json:"slack_permalink,omitempty" gorm:"<-:create"`
 	SlackDiscussionChannel *string    `json:"slack_discussion_channel,omitempty" gorm:"->"`
 	SlackSourceKey         *string    `json:"-" gorm:"<-:create"`
 	ID                     string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -31,6 +32,9 @@ func (PMComment) TableName() string { return "pm_comments" }
 
 // Ordinary comments also come from bulk imports and older schemas.
 func (comment *PMComment) BeforeCreate(tx *gorm.DB) error {
+	if comment.SlackPermalink == nil {
+		tx.Statement.Omits = append(tx.Statement.Omits, "SlackPermalink")
+	}
 	if comment.SlackSourceKey == nil {
 		tx.Statement.Omits = append(tx.Statement.Omits, "SlackSourceKey")
 	}

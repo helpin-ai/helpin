@@ -49,7 +49,7 @@ func TestPMTriageSupportLinkReview(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err = support.linkReviewedConversationTask(ctx, env.wsID, conversation.ID, task.Task.ID, env.userID, hash, task.Task.UpdatedAt)
+			err = support.linkReviewedConversationTask(ctx, env.wsID, conversation.ID, task.Task.ID, env.userID, hash, task.Task.UpdatedAt, nil)
 			if scenario == "accepted" && err != nil {
 				t.Fatal(err)
 			}

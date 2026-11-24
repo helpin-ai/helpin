@@ -12,26 +12,27 @@ import (
 
 // Slack's agent-session indicator is shared with the thread. Keep record details
 // in the requester's DM or ephemeral answer.
-func (s *SlackService) sessionStatus(ctx context.Context, token string, m slack.Message, status string) {
+func (s *SlackService) sessionStatus(ctx context.Context, token string, m slack.Message, status string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	if err := s.api.Call(ctx, token, "agents.sessions.setStatus", map[string]string{"channel_id": m.Destination(), "thread_ts": m.Root(), "status": status}, nil); err != nil {
 		s.channels.logger.WarnContext(ctx, "Slack agent status unavailable", "status", status, "error", err)
+		return false
 	}
+	return true
 }
 
 type slackProgressKey struct{}
 type slackProgress struct {
+	Native  bool
 	TS      string
 	settled bool
 }
 
-// In a DM one editable message carries the work label and then the answer.
-// Channel members see only Slack's standard working indicator.
+// Use one indicator. In DMs without native status, edit the fallback message into the answer.
 func (s *SlackService) startProgress(ctx context.Context, token string, m slack.Message, label string) (context.Context, *slackProgress) {
-	progress := &slackProgress{}
-	s.sessionStatus(ctx, token, m, "processing")
-	if slackDirect(m) && label != "" {
+	progress := &slackProgress{Native: s.sessionStatus(ctx, token, m, "processing")}
+	if !progress.Native && slackDirect(m) && label != "" {
 		ts, err := s.postProgress(ctx, token, m, label)
 		if err != nil {
 			s.channels.logger.WarnContext(ctx, "Slack progress message unavailable", "error", err)
@@ -78,7 +79,7 @@ func slackReadPhase(tools []string) string {
 }
 
 func (s *SlackService) updateReadProgress(ctx context.Context, a *model.SupportChannelAccount, p *slackAgentResult, job *model.SupportInboundJob) error {
-	if !slackDirect(p.Message) {
+	if p.NativeProgress || !slackDirect(p.Message) {
 		return nil
 	}
 	tools, err := s.repo.AgentTurnTools(ctx, a.WorkspaceID, p.ChatID, p.TurnID)
@@ -86,6 +87,9 @@ func (s *SlackService) updateReadProgress(ctx context.Context, a *model.SupportC
 		return err
 	}
 	phase := slackReadPhase(tools)
+	if phase == "" && p.LastPhase == "" && s.channels.now().Sub(job.CreatedAt) >= 3*time.Second {
+		phase = "Working…"
+	}
 	if phase == "" || phase == p.LastPhase {
 		return nil
 	}
@@ -106,4 +110,46 @@ func (s *SlackService) updateReadProgress(ctx context.Context, a *model.SupportC
 	}
 	job.Payload = string(payload)
 	return err
+}
+
+// After a failed retry, surface an actionable outcome to the requester. Ordinary
+// inbound customer messages continue to use the support delivery retry policy.
+func (s *SlackService) reportRequestFailure(ctx context.Context, job *model.SupportInboundJob) bool {
+	if job.ChannelAccountID == nil || job.Attempts < 2 || s.channels.now().Sub(job.CreatedAt) < time.Minute {
+		return false
+	}
+	var message slack.Message
+	var progressTS string
+	switch job.Kind {
+	case SlackAgentReplyJob:
+		var p slackAgentResult
+		if json.Unmarshal([]byte(job.Payload), &p) != nil {
+			return false
+		}
+		message, progressTS = p.Message, p.ProgressTS
+	case SlackEventJob:
+		if json.Unmarshal([]byte(job.Payload), &message) != nil {
+			return false
+		}
+	default:
+		return false
+	}
+	a, err := s.channels.accounts.GetForWebhook(ctx, "slack", *job.ChannelAccountID)
+	if err != nil || a == nil {
+		return false
+	}
+	if job.Kind == SlackEventJob && !slackDirect(message) && message.Type != "app_mention" && !s.mentionsBot(message.Text, a.Handle) {
+		return false
+	}
+	token, err := s.channels.decryptToken(a)
+	if err != nil {
+		return false
+	}
+	progressCtx := context.WithValue(ctx, slackProgressKey{}, &slackProgress{TS: progressTS})
+	err = s.private(progressCtx, token, message, "I couldn’t confirm the result of this request. Check the record in Helpin before retrying a change. If it keeps happening, share this thread with Helpin support.")
+	s.sessionStatus(ctx, token, message, "active")
+	if err != nil {
+		s.channels.logger.WarnContext(ctx, "Slack failure notice unavailable", "job_id", job.ID, "error", err)
+	}
+	return err == nil
 }

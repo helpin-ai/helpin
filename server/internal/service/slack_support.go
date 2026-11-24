@@ -18,19 +18,32 @@ import (
 )
 
 // Look at the exact parent only. A nearby channel message may refer to a different customer.
-func (s *SlackService) referencedConversation(ctx context.Context, token string, m slack.Message) (string, error) {
-	matches := slackSupportLink.FindAllStringSubmatch(m.Text, -1)
-	if len(matches) == 0 && m.ThreadTS != "" && m.ThreadTS != m.TS {
-		var page struct{ Messages []slack.Message }
-		params := url.Values{"channel": {m.Destination()}, "latest": {m.ThreadTS}, "inclusive": {"true"}, "limit": {"1"}}
-		if err := s.api.Get(ctx, token, "conversations.history", params, &page); err != nil {
-			slog.WarnContext(ctx, "Slack parent message lookup failed", "error", err)
-			return "", errors.New("I couldn’t read the parent message. Paste the Helpin conversation link in your reply.")
-		}
-		if len(page.Messages) == 1 && page.Messages[0].TS == m.ThreadTS {
-			matches = slackSupportLink.FindAllStringSubmatch(page.Messages[0].Text, -1)
-		}
+func (s *SlackService) slackReferenceText(ctx context.Context, token string, m slack.Message) (string, error) {
+	if m.ThreadTS == "" || m.ThreadTS == m.TS || slackSupportLink.MatchString(m.Text) || slackTaskLink.MatchString(m.Text) || slackTaskKey.MatchString(m.Text) {
+		return m.Text, nil
 	}
+	var page struct{ Messages []slack.Message }
+	params := url.Values{"channel": {m.Destination()}, "latest": {m.ThreadTS}, "inclusive": {"true"}, "limit": {"1"}}
+	if err := s.api.Get(ctx, token, "conversations.history", params, &page); err != nil {
+		slog.WarnContext(ctx, "Slack parent message lookup failed", "error", err)
+		return "", errors.New("I couldn’t read the parent message. Paste the Helpin link in your reply.")
+	}
+	if len(page.Messages) == 1 && page.Messages[0].TS == m.ThreadTS {
+		return page.Messages[0].Text, nil
+	}
+	return m.Text, nil
+}
+
+func (s *SlackService) referencedConversation(ctx context.Context, token string, m slack.Message) (string, error) {
+	text, err := s.slackReferenceText(ctx, token, m)
+	if err != nil {
+		return "", err
+	}
+	return slackConversationInText(text)
+}
+
+func slackConversationInText(text string) (string, error) {
+	matches := slackSupportLink.FindAllStringSubmatch(text, -1)
 	var id string
 	for _, match := range matches {
 		if id != "" && !strings.EqualFold(id, match[1]) {
@@ -41,19 +54,9 @@ func (s *SlackService) referencedConversation(ctx context.Context, token string,
 	return id, nil
 }
 
-// A named task in the question takes priority over a support link inherited from the parent.
-func (s *SlackService) answerReferencedConversation(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message, actor *authorization.Actor) (bool, error) {
-	if slackHelp(m.Text, a.Handle) || (slackTaskKey.MatchString(m.Text) && !slackSupportLink.MatchString(m.Text)) {
-		return false, nil
-	}
-	id, err := s.referencedConversation(ctx, token, m)
-	if err != nil {
-		return true, s.private(ctx, token, m, err.Error())
-	}
-	if id == "" {
-		return false, nil
-	}
-	return true, s.internalSupportAnswer(ctx, a, token, route, m, actor, id, slackDraftRequest(m.Text, a.Handle))
+func slackCreateSupportRequest(text, handle string) bool {
+	command := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(text), "<@"+handle+">")))
+	return strings.HasPrefix(command, "create support request") || strings.HasPrefix(command, "create a support request")
 }
 
 // supportCommand returns true when a request was handled privately or as a factual customer update.
@@ -63,8 +66,7 @@ func (s *SlackService) supportCommand(ctx context.Context, a *model.SupportChann
 	draft := slackDraftRequest(m.Text, a.Handle) || (strings.Contains(q, "creat") && strings.Contains(q, "task"))
 	summary := strings.Contains(q, "summar") || strings.Contains(q, "recap")
 	update := strings.Contains(q, "update") || strings.Contains(q, "status") || strings.Contains(q, "latest")
-	command := strings.TrimSpace(strings.TrimPrefix(q, strings.ToLower("<@"+a.Handle+">")))
-	if teammate && (strings.HasPrefix(command, "create support request") || strings.HasPrefix(command, "create a support request")) {
+	if slackCreateSupportRequest(m.Text, a.Handle) {
 		return false, nil
 	}
 	if !draft && !summary && !update && !link && !(teammate && (m.ThreadTS != "" || slackSupportLink.MatchString(m.Text))) {
@@ -74,14 +76,14 @@ func (s *SlackService) supportCommand(ctx context.Context, a *model.SupportChann
 	var id string
 	var err error
 	if teammate {
-		actor, err = s.linkedActor(ctx, a, m.User)
+		actor, err = s.requestingActor(ctx, a, token, m.User)
 		if err != nil {
 			return true, err
 		}
 		if actor == nil {
 			return true, s.promptLink(ctx, a, token, m)
 		}
-		id, err = s.referencedConversation(ctx, token, m)
+		id, err = slackConversationInText(m.Text)
 		if err != nil {
 			return true, s.private(ctx, token, m, err.Error())
 		}
@@ -172,10 +174,11 @@ func (s *SlackService) supportCommand(ctx context.Context, a *model.SupportChann
 		if err != nil || task == nil {
 			return true, s.private(ctx, token, m, "This task is unavailable.")
 		}
+		ctx = model.WithSlackSource(ctx, s.sourceURL(ctx, token, m.Destination(), m.Root()))
 		if err = s.channels.inbox.LinkConversationTask(ctx, a.WorkspaceID, conv.ID, task.Task.ID, actor.UserID); err != nil {
 			return true, err
 		}
-		return true, s.private(ctx, token, m, "Linked "+task.Task.TaskKey+" to this support conversation.")
+		return true, s.reply(ctx, token, m, "Linked "+task.Task.TaskKey+" to this support conversation.", false)
 	}
 	return true, s.internalSupportAnswer(ctx, a, token, route, m, actor, conv.ID, draft)
 }
@@ -199,6 +202,33 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 			return s.private(ctx, token, m, "You need Support edit permission to link a task.")
 		}
 		return s.offerDraft(ctx, a, token, route, m, actor, conv)
+	}
+	ws, err := s.tasks.workspaceRepo.GetByID(ctx, a.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if !a.AIRepliesDisabled && s.dock != nil {
+		refs := []slackRecord{{Kind: "support_conversation", ID: conv.ID, Label: fmt.Sprintf("conversation #%d", conv.DisplayID), URL: s.appURL + "/w/" + ws.Slug + "/support/" + conv.ID}}
+		taskID, err := s.repo.ThreadTask(ctx, a.ID, m.Channel, m.Root())
+		if err != nil {
+			return err
+		}
+		if taskID == "" {
+			taskID = derefString(conv.LinkedTaskID)
+		}
+		if taskID != "" {
+			pm, err := s.authz.CanAccessModule(ctx, actor, model.ModulePM)
+			if err != nil {
+				return err
+			}
+			if pm && s.authz.Can(actor, authorization.PermPMRead) {
+				task, err := s.tasks.GetByID(ctx, taskID)
+				if err == nil && task != nil && task.Task.WorkspaceID == a.WorkspaceID {
+					refs = append(refs, slackRecord{Kind: "task_created_or_linked_in_thread", ID: taskID, Label: task.Task.TaskKey, URL: s.appURL + "/w/" + ws.Slug + "/pm/tasks/" + taskID})
+				}
+			}
+		}
+		return s.agentQuestion(ctx, a, token, m, actor, refs...)
 	}
 	ctx, progress := s.startProgress(ctx, token, m, "Reading the support conversation…")
 	defer s.finishProgress(ctx, token, m, progress)
@@ -243,26 +273,8 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 			blocks = []any{map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}}
 		}
 	}
-	ws, err := s.tasks.workspaceRepo.GetByID(ctx, a.WorkspaceID)
-	if err != nil {
-		return err
-	}
-	if route.Purpose == "pm" && slackCommand(m.Text) == "share" {
-		allowed, err := s.channelAudience(ctx, a, token, m.Destination(), func(viewer *authorization.Actor) (bool, error) {
-			ok, err := s.authz.CanAccessModule(ctx, viewer, model.ModuleSupport)
-			if err != nil || !ok || !s.authz.Can(viewer, authorization.PermSupportRead) {
-				return false, err
-			}
-			c, err := inbox.loadConversationAccessible(authorization.WithActor(ctx, viewer), a.WorkspaceID, id)
-			return err == nil && c != nil && c.AnonymizedAt == nil, nil
-		})
-		if err != nil {
-			return err
-		}
-		return s.shareAnswer(ctx, a, token, m, info, allowed, blocks...)
-	}
-	blocks = append(blocks, slackButtons(map[string]any{"type": "button", "text": slackText("Open conversation"), "url": s.appURL + "/w/" + ws.Slug + "/support/" + conv.ID, "action_id": "open_support"}))
-	return s.private(ctx, token, m, info, blocks...)
+	blocks = append(blocks, slackButtons(map[string]any{"type": "button", "text": slackText(fmt.Sprintf("Open conversation #%d", conv.DisplayID)), "url": s.appURL + "/w/" + ws.Slug + "/support/" + conv.ID, "action_id": "open_support"}))
+	return s.reply(ctx, token, m, info, false, blocks...)
 }
 
 // SetAI updates the explicit Slack assistance setting on the installation.
