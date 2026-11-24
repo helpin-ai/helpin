@@ -96,7 +96,7 @@ func TestSlackAgentDMDelivery(t *testing.T) {
 	}
 	work(SlackEventJob, true)
 	work(SlackEventJob, false)
-	if len(delivered) != 1 || !strings.Contains(fmt.Sprint(delivered[0]["text"]), "Welcome") {
+	if len(delivered) != 1 || !strings.Contains(fmt.Sprint(delivered[0]["text"]), "Which tasks are blocked on my team?") {
 		t.Fatalf("welcome: %v", delivered)
 	}
 	for range 2 {
@@ -172,5 +172,16 @@ func TestSlackAgentScopeAndHistory(t *testing.T) {
 	access.Support = true
 	if root == access.chatID("install", m, a) {
 		t.Fatal("history reused across access changes")
+	}
+}
+
+func TestSlackHelpRespectsAccessAndAI(t *testing.T) {
+	pm := (slackAccess{PM: true}).help(false, false)
+	if !strings.Contains(pm, "task’s key") || strings.Contains(pm, "blocked") || strings.Contains(pm, "Create a task") || strings.Contains(pm, "support conversation") {
+		t.Fatalf("PM reader guide: %s", pm)
+	}
+	support := (slackAccess{Support: true}).help(true, true)
+	if !strings.Contains(support, "customer report") || strings.Contains(support, "ENG-123") || strings.Contains(support, "Create a task") {
+		t.Fatalf("Support guide: %s", support)
 	}
 }
