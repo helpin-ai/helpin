@@ -198,9 +198,9 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	if len(delivered) != 2 {
 		t.Fatal("repeated identical phase")
 	}
-	expected := "Task A is blocked."
+	expected := "## Update\n- **Task A** is blocked."
 	if outcome == "answer" {
-		insert("answer", "assistant", "assistant_final", "Task A is blocked.", "[]", 3)
+		insert("answer", "assistant", "assistant_final", expected, "[]", 3)
 		insert("next", "user", "prompt", "another question", "[]", 4)
 		insert("other", "assistant", "assistant_final", "Another answer.", "[]", 5)
 	} else if outcome == "timeout" {
@@ -221,6 +221,9 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	work(SlackAgentReplyJob, true)
 	if len(delivered) != 3 || delivered[2]["text"] != expected || delivered[2]["method"] != "/chat.update" || delivered[2]["ts"] != "30.2" || delivered[2]["channel"] != "D1" {
 		t.Fatalf("wrong final reply: %v", delivered)
+	}
+	if outcome == "answer" && fmt.Sprint(delivered[2]["blocks"]) != fmt.Sprint([]any{map[string]string{"type": "markdown", "text": expected}}) {
+		t.Fatalf("wrong formatted answer: %v", delivered[2]["blocks"])
 	}
 	if strings.Join(statuses, ",") != "processing,active" {
 		t.Fatalf("wrong lifecycle %v", statuses)

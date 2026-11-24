@@ -157,6 +157,7 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 	if len(lines) > 0 {
 		info += "\n" + lines[len(lines)-1]
 	}
+	blocks := []any{map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}}
 	if ai := inbox.supportAIService; !a.AIRepliesDisabled && ai != nil && ai.llmProvider != nil {
 		evidence, err := json.Marshal(map[string]any{"question": m.Text, "subject": conv.Subject, "status": conv.Status, "messages": lines})
 		if err != nil {
@@ -164,8 +165,10 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 		}
 		result, err := s.ask(ctx, a, m, evidence, "Answer the teammate's question about this support conversation. For a summary, include the report, progress, and next action if recorded.")
 
-		if err == nil && result != nil {
-			info = conv.Subject + " · " + conv.Status + "\n" + result.Content
+		if err == nil && result != nil && strings.TrimSpace(result.Content) != "" {
+			header := conv.Subject + " · " + conv.Status
+			info = truncate(header+"\n"+result.Content, 3900)
+			blocks = []any{map[string]any{"type": "section", "text": slackText(truncate(header, 2800))}, slackMarkdown(result.Content)}
 		}
 	}
 	ws, err := s.tasks.workspaceRepo.GetByID(ctx, a.WorkspaceID)
@@ -184,9 +187,10 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 		if err != nil {
 			return err
 		}
-		return s.shareAnswer(ctx, a, token, m, info, allowed)
+		return s.shareAnswer(ctx, a, token, m, info, allowed, blocks...)
 	}
-	return s.private(ctx, token, m, info, map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}, slackButtons(map[string]any{"type": "button", "text": slackText("Open conversation"), "url": s.appURL + "/w/" + ws.Slug + "/support/" + conv.ID, "action_id": "open_support"}))
+	blocks = append(blocks, slackButtons(map[string]any{"type": "button", "text": slackText("Open conversation"), "url": s.appURL + "/w/" + ws.Slug + "/support/" + conv.ID, "action_id": "open_support"}))
+	return s.private(ctx, token, m, info, blocks...)
 }
 
 // SetAI updates the explicit Slack assistance setting on the installation.

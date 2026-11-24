@@ -241,13 +241,13 @@ func (s *SlackService) deliverAgentAnswer(ctx context.Context, job *model.Suppor
 	if err != nil || a == nil {
 		return err
 	}
-	finish := func(answer string) error {
+	finish := func(answer string, blocks ...any) error {
 		token, err := s.channels.decryptToken(a)
 		if err != nil {
 			return err
 		}
 		progressCtx := context.WithValue(ctx, slackProgressKey{}, &slackProgress{TS: p.ProgressTS})
-		if err = s.private(progressCtx, token, p.Message, truncate(answer, 3900)); err != nil {
+		if err = s.private(progressCtx, token, p.Message, truncate(answer, 3900), blocks...); err != nil {
 			return err
 		}
 		s.sessionStatus(ctx, token, p.Message, "active")
@@ -287,24 +287,25 @@ func (s *SlackService) deliverAgentAnswer(ctx context.Context, job *model.Suppor
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(answer) == "" {
-		run, err := s.repo.AgentTurnStatus(ctx, a.WorkspaceID, p.ChatID, p.TurnID)
-		if err != nil {
-			return err
+	if strings.TrimSpace(answer) != "" {
+		return finish(answer, slackMarkdown(answer))
+	}
+	run, err := s.repo.AgentTurnStatus(ctx, a.WorkspaceID, p.ChatID, p.TurnID)
+	if err != nil {
+		return err
+	}
+	switch {
+	case run.Status == model.AgentRunStatusFailed:
+		answer = slackFailureReason(derefString(run.ErrorMessage))
+	case run.Status == model.AgentRunStatusCancelled:
+		answer = "This request was cancelled. Send it again to start a new run."
+	case s.channels.now().Sub(job.CreatedAt) < 5*time.Minute:
+		if err := s.updateReadProgress(ctx, a, &p, job); err != nil {
+			s.channels.logger.WarnContext(ctx, "Slack activity update unavailable", "error", err)
 		}
-		switch {
-		case run.Status == model.AgentRunStatusFailed:
-			answer = slackFailureReason(derefString(run.ErrorMessage))
-		case run.Status == model.AgentRunStatusCancelled:
-			answer = "This request was cancelled. Send it again to start a new run."
-		case s.channels.now().Sub(job.CreatedAt) < 5*time.Minute:
-			if err := s.updateReadProgress(ctx, a, &p, job); err != nil {
-				s.channels.logger.WarnContext(ctx, "Slack activity update unavailable", "error", err)
-			}
-			return errSlackAgentPending
-		default:
-			answer = "Helpin didn’t receive a final answer within five minutes. Try again with a narrower question."
-		}
+		return errSlackAgentPending
+	default:
+		answer = "Helpin didn’t receive a final answer within five minutes. Try again with a narrower question."
 	}
 	return finish(answer)
 }

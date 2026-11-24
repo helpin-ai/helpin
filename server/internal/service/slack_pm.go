@@ -95,6 +95,10 @@ func (s *SlackService) promptLink(ctx context.Context, a *model.SupportChannelAc
 func slackText(text string) map[string]string {
 	return map[string]string{"type": "plain_text", "text": text}
 }
+func slackMarkdown(text string) map[string]string {
+	return map[string]string{"type": "markdown", "text": truncate(text, 12000)}
+}
+
 func slackButtons(buttons ...any) map[string]any {
 	return map[string]any{"type": "actions", "elements": buttons}
 }
@@ -188,13 +192,15 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 		if task.Task.Blocked {
 			info += "\nBlocked: " + derefString(task.Task.Blocker)
 		}
+		blocks := []any{map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}}
 		if !a.AIRepliesDisabled && slackCommand(m.Text) != "link" && s.channels.inbox.supportAIService != nil {
 			evidence, err := json.Marshal(map[string]string{"question": m.Text, "task": info, "description": truncate(tiptap.RichTextToMarkdown(derefString(task.Task.Description)), 1800)})
 			if err != nil {
 				return err
 			}
 			if answer, err := s.ask(ctx, a, m, evidence, "Answer the teammate's question about this task. Name its key and give the current status when asked for an update."); err == nil && answer != nil && answer.Content != "" {
-				info = truncate(answer.Content, 2700)
+				info = truncate(answer.Content, 3900)
+				blocks = []any{slackMarkdown(answer.Content)}
 			}
 		}
 		if slackCommand(m.Text) == "share" {
@@ -202,9 +208,10 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 			if err != nil {
 				return err
 			}
-			return s.shareAnswer(ctx, a, token, m, info, allowed)
+			return s.shareAnswer(ctx, a, token, m, info, allowed, blocks...)
 		}
-		return s.private(ctx, token, m, info, map[string]any{"type": "section", "text": slackText(info)}, slackButtons(map[string]any{"type": "button", "text": slackText("Open task"), "url": s.appURL + "/w/" + ws.Slug + "/pm/tasks/" + task.Task.ID, "action_id": "open_task"}))
+		blocks = append(blocks, slackButtons(map[string]any{"type": "button", "text": slackText("Open task"), "url": s.appURL + "/w/" + ws.Slug + "/pm/tasks/" + task.Task.ID, "action_id": "open_task"}))
+		return s.private(ctx, token, m, info, blocks...)
 	}
 	if !s.authz.Can(actor, authorization.PermPMEdit) {
 		return s.agentQuestion(ctx, a, token, m, actor)
