@@ -204,7 +204,7 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 		t.Fatalf("same-workspace reconnect lost history: %v", err)
 	}
 	active, err := s.repo.Routes(ctx, account.ID)
-	if err != nil || len(active) != 0 {
+	if err != nil || active == nil || len(active) != 0 {
 		t.Fatalf("restored routing without opt-in: %v", err)
 	}
 

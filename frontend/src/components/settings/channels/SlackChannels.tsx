@@ -130,7 +130,7 @@ export function SlackChannels({
         </div>
         {data?.connected && (
           <div className="mt-3 border-t">
-            {data.routes.map((route) => (
+            {data.routes?.map((route) => (
               <Button
                 key={route.channel_id}
                 variant="ghost"
