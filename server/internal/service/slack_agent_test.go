@@ -327,6 +327,55 @@ func TestSlackAskRuntimeSkillContract(t *testing.T) {
 	}
 }
 
+func TestSlackConversationUpdateRunAdmission(t *testing.T) {
+	ctx := context.Background()
+	db := setupCodingDelegationTestDB(t)
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN dock_chat_id TEXT")
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN dock_chat_sequence INTEGER")
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN client_message_id TEXT")
+	mustExec(t, db, "ALTER TABLE agent_run_messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'pending'")
+	mustExec(t, db, "CREATE TABLE dock_chats (id TEXT PRIMARY KEY, workspace_id TEXT, next_message_sequence INTEGER, updated_at DATETIME)")
+	mustExec(t, db, "INSERT INTO dock_chats (id, workspace_id) VALUES ('chat-1', 'ws-1')")
+	seedCodingDelegationAgent(t, db, model.AgentPresetAskAgent, model.InvocationModeInteractive, time.Now())
+	preset := mustJSONStringSlice(askAgentPresetTools())
+	mustExec(t, db, "UPDATE agents SET allowed_tools=? WHERE id='agent-1'", preset)
+	runtime := &fakeAgentRuntimeSignalClient{}
+	svc := newCodingDelegationService(t, db, runtime)
+	dock := DockChatService{authz: authorization.NewAuthzService(nil, dockChatAdminMemberRepo{}, nil)}
+	chat := &model.DockChat{ID: "chat-1", WorkspaceID: "ws-1", SlackThread: true}
+	user := "user-1"
+	tools, err := dock.scopedChatExecutionTools(ctx, chat, user, &model.Agent{AllowedTools: preset})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trigger := &model.AgentRunTriggerContext{TriggerType: dockChatTriggerType, ActorID: &user, Context: json.RawMessage(`{"dock_chat_id":"chat-1","slack_thread":true}`)}
+	start := func(allowed []string, trigger *model.AgentRunTriggerContext, chatID *string) error {
+		req := model.StartAgentRunRequest{AgentID: "agent-1", AllowedTools: allowed, AdditionalContext: strPtr("What’s the update on this conversation?")}
+		_, err := svc.startTargetRunWithOptions(ctx, "ws-1", "workspace", "ws-1", req, &user, trigger, nil, nil, startTargetRunOptions{dockChatID: chatID})
+		return err
+	}
+	for _, tc := range []struct {
+		name    string
+		trigger *model.AgentRunTriggerContext
+		chatID  *string
+		tool    string
+	}{
+		{"ordinary Dock", nil, &chat.ID, "set_support_conversation_status"},
+		{"no backing chat", trigger, nil, "set_support_conversation_status"},
+		{"outside Slack scope", trigger, &chat.ID, "list_crm_companies"},
+	} {
+		if err := start([]string{tc.tool}, tc.trigger, tc.chatID); err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("%s: expected tool rejection, got %v", tc.name, err)
+		}
+	}
+	if err := start(tools, trigger, &chat.ID); err != nil {
+		t.Fatalf("start conversation update: %v", err)
+	}
+	if len(runtime.startRunCalls) != 1 || !sameNormalizedToolSet(runtime.startRunCalls[0].AllowedTools, tools) {
+		t.Fatal("expected only the permitted Slack tools to reach the runtime")
+	}
+}
+
 func TestSlackUnlinkedSupportFollowupPromptsInThread(t *testing.T) {
 	f := newChannelFixture(t)
 	account := f.connect(t, f.workspace)

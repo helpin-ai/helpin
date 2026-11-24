@@ -112,20 +112,31 @@ func isSlackDockRun(run *model.AgentRun) bool {
 		return false
 	}
 	var input model.AgentRunInputPayload
-	if json.Unmarshal(run.Input, &input) != nil || input.Trigger == nil || input.Trigger.TriggerType != dockChatTriggerType || input.ExecutionEnabled || len(input.AllowedTools) == 0 {
+	if json.Unmarshal(run.Input, &input) != nil || input.ExecutionEnabled || len(input.AllowedTools) == 0 {
+		return false
+	}
+	return isSlackDockTrigger(input.Trigger, run.DockChatID)
+}
+
+func isSlackDockTrigger(trigger *model.AgentRunTriggerContext, chatID *string) bool {
+	if chatID == nil || *chatID == "" || trigger == nil || trigger.TriggerType != dockChatTriggerType {
 		return false
 	}
 	var c struct {
 		SlackThread bool   `json:"slack_thread"`
 		ChatID      string `json:"dock_chat_id"`
 	}
-	return json.Unmarshal(input.Trigger.Context, &c) == nil && c.SlackThread && c.ChatID == *run.DockChatID
+	return json.Unmarshal(trigger.Context, &c) == nil && c.SlackThread && c.ChatID == *chatID
 }
 
 var slackPMReadTools = []string{"list_workspace_members", "list_tasks", "get_task", "get_task_context", "list_task_checklist", "list_epics", "get_epic", "list_epic_tasks", "list_sprints", "list_sprint_tasks", "list_workspace_teams", "list_team_workflows_with_stages"}
 
 var slackPMWriteTools = []string{"update_task", "update_task_state"}
 var slackSupportWriteTools = []string{"assign_support_conversation", "set_support_conversation_status", "set_support_conversation_priority"}
+
+func slackRuntimeTools() []string {
+	return appendPresetTools(slackPMReadTools, slackPMWriteTools, safeSupportDiscoveryToolAliases, slackSupportWriteTools)
+}
 
 func (s *DockChatService) slackAgentTools(ctx context.Context, chat *model.DockChat, userID string, agent *model.Agent) ([]string, error) {
 	actor, err := s.authz.ResolveActor(ctx, chat.WorkspaceID, userID)
