@@ -5,6 +5,7 @@ export type SlackPurpose = 'support' | 'mixed' | 'pm'
 export interface SlackRoute {
   channel_id: string
   channel_name: string
+  crm_company_id?: string | null
   purpose: SlackPurpose
   mailbox_id: string | null
   team_id: string | null

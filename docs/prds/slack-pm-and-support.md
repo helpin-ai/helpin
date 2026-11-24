@@ -12,6 +12,8 @@ A workspace admin connects the Helpin Slack app once and configures each partici
 | Mixed customer and account discussion | A person explicitly asks `@Helpin` for support or chooses **Create support request** on a message. | The configured Support inbox |
 | Internal project work | A teammate chooses **Create task** or **Link existing task**, or asks the bot to do so. | A PM task in a team the teammate can access |
 
+In a Slack Connect channel configured for customer support or support on request, a settings manager with CRM access can select an optional default company. A new inbox conversation inherits that company. Agents can change it in Company details. Editing the channel default applies to future conversations and leaves the sender’s contact record alone.
+
 Start with channels and threads. Bot DMs as a separate support intake can follow later. A private response to the person invoking a command in a channel is part of the first release.
 
 ## Creating a task

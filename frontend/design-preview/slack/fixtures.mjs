@@ -16,7 +16,7 @@ const team = { id: 'payments', workspace_id: ws, name: 'Payments', key: 'PAY', h
 const epic = { id: 'checkout', team_id: team.id, name: 'Checkout reliability', display_id: 18, workspace_id: ws, ...timestamps }
 const mailbox = { id: 'support', name: 'Customer support', handle: 'support', icon: 'inbox', is_shared: true, is_default: false, active: true, unread_count: 3, total_count: 8 }
 const routes = [
-  { channel_id: 'C1', channel_name: 'acme-support', purpose: 'support', mailbox_id: mailbox.id, team_id: null, epic_id: null },
+  { channel_id: 'C1', crm_company_id: 'acme', channel_name: 'acme-support', purpose: 'support', mailbox_id: mailbox.id, team_id: null, epic_id: null },
   { channel_id: 'C2', channel_name: 'payments', purpose: 'pm', mailbox_id: null, team_id: team.id, epic_id: epic.id },
 ]
 export const taskId = '6ec87beb-8360-4101-a805-19077bbcf142'
@@ -74,16 +74,17 @@ const inbox = '/api/support/inbox'
 const conversation = inbox + '/conversations/' + CONVERSATION_ID
 const workspacePath = '/api/workspaces/' + ws
 const taskPath = '/api/pm/tasks/' + task.id
-const permissions = ['workspace.read', 'workspace.members.read', 'settings.read', 'settings.manage', 'team.manage', 'pm.read', 'pm.edit', 'support.read', 'support.edit', 'support.admin', 'support.merge', 'docs.read', 'ws.connect']
+const permissions = ['workspace.read', 'workspace.members.read', 'settings.read', 'settings.manage', 'team.manage', 'pm.read', 'pm.edit', 'crm.read', 'support.read', 'support.edit', 'support.admin', 'support.merge', 'docs.read', 'ws.connect']
 const fixtures = new Map(Object.entries({
   '/api/notifications': { data: [], unread_count: 0 }, '/api/notifications/unread-count': { count: 0 }, '/api/automation/runs/attention-count': { count: 0 },
   '/api/auth/config': { signup_enabled: true, app_email_configured: true },
   '/api/auth/me': { ...people[0], default_workspace_id: ws },
   '/api/workspaces': [workspace], '/api/organizations': [org], '/api/workspaces/by-slug/northstar': workspace,
   [workspacePath + '/my-membership']: members[0], [workspacePath + '/members']: members, [workspacePath + '/assignable-members']: members,
-  [workspacePath + '/me']: { workspace_id: ws, modules: ['support', 'pm', 'docs'], membership: members[0], permissions, team_memberships: [{ team_id: team.id }] },
+  [workspacePath + '/me']: { workspace_id: ws, modules: ['support', 'pm', 'docs', 'crm'], membership: members[0], permissions, team_memberships: [{ team_id: team.id }] },
   '/api/settings': { settings: { id: 'settings', workspace_id: ws, notifications_enabled: true }, teams: [team], people: [], memberships: [], user_memberships: [], managers: [], job_role_criteria: [], invitation_team_preassignments: [], team_estimate_settings: [], team_field_visibility: [], team_repo_defaults: [] },
   '/api/slack/': { configured: true, connected: true, ai_enabled: true, workspace_name: workspace.name, routes },
+  '/api/crm/companies/acme': { id: 'acme', name: 'Acme', domain: 'acme.example' },
   '/api/slack/channels': routes.map(r => ({ id: r.channel_id, name: r.channel_name, is_ext_shared: r.purpose === 'support', is_private: true })),
   '/api/support/channels': [{ provider: 'telegram', id: 'telegram-1', workspace_id: ws, handle: 'northstar_support_bot', display_name: 'Northstar Support', status: 'active', mailbox_id: mailbox.id, ai_replies_disabled: true, last_event_at: time('09:54') }],
   '/api/settings/module-access': { modules: [], grants: [] }, [inbox + '/mailboxes']: [mailbox], [inbox + '/routing-usage']: { triage_enabled: false, exhausted: false },

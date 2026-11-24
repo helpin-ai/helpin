@@ -16,7 +16,9 @@ import { QuietSelect } from '@/components/design-system/quiet-select'
 import {
   QuietPropertyRow,
   QuietStatusText,
+  QuietTextAction,
 } from '@/components/design-system/quiet'
+import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker'
 import { SlackIcon } from '@/lib/icons'
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useEpics } from '@/hooks/queries/useEpics'
@@ -47,11 +49,13 @@ export function SlackChannels({
   workspaceId,
   slug,
   hasSupport,
+  hasCRM,
   hasPM,
 }: {
   workspaceId: string
   slug: string
   hasSupport: boolean
+  hasCRM?: boolean
   hasPM: boolean
 }) {
   const key = ['slack', workspaceId]
@@ -193,6 +197,7 @@ export function SlackChannels({
           <RouteDialog
             initial={draft}
             hasSupport={hasSupport}
+            hasCRM={hasCRM}
             hasPM={hasPM}
             workspaceId={workspaceId}
             onClose={() => setDraft(null)}
@@ -210,6 +215,7 @@ export function SlackChannels({
 function RouteDialog({
   initial,
   hasSupport,
+  hasCRM,
   hasPM,
   workspaceId,
   onClose,
@@ -217,6 +223,7 @@ function RouteDialog({
 }: {
   initial: SlackRoute
   hasSupport: boolean
+  hasCRM?: boolean
   hasPM: boolean
   workspaceId: string
   onClose: () => void
@@ -367,6 +374,26 @@ function RouteDialog({
                   })
                 }
               />
+            }
+          />
+        )}
+        {hasCRM && route.purpose !== 'pm' && selected?.is_ext_shared && (
+          <QuietPropertyRow
+            label={<span title="Default CRM company for new conversations">CRM company</span>}
+            value={
+              <div className="flex min-w-0 items-center gap-2 pl-1.5 [&>[role=combobox]]:min-w-0 [&>[role=combobox]]:flex-1">
+                <CRMRecordPicker
+                  workspaceId={workspaceId}
+                  targetType="crm_company"
+                  value={route.crm_company_id ?? ''}
+                  onChange={(id) => setRoute({ ...route, crm_company_id: id })}
+                />
+                {route.crm_company_id && (
+                  <QuietTextAction onClick={() => setRoute({ ...route, crm_company_id: null })} aria-label="Clear default company">
+                    Clear
+                  </QuietTextAction>
+                )}
+              </div>
             }
           />
         )}

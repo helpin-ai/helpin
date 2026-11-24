@@ -99,7 +99,7 @@ func (r *SlackRepository) Route(ctx context.Context, account, channel string) (*
 }
 
 // SetRoute updates the validated destination for one channel.
-func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute) error {
+func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, preserveCompany bool) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockSlackInstallation(tx, row.AccountID); err != nil {
 			return err
@@ -112,7 +112,13 @@ func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute) er
 			return err
 		}
 		row.ChannelID = id.RoutingID
-		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns([]string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"})}).Create(&row).Error
+		columns := []string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"}
+		if preserveCompany {
+			row.CRMCompanyID = nil
+		} else {
+			columns = append(columns, "crm_company_id")
+		}
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns(columns)}).Create(&row).Error
 	})
 }
 

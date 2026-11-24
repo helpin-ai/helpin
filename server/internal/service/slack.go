@@ -224,8 +224,32 @@ func (s *SlackService) Configure(ctx context.Context, workspace string, row mode
 	if info.Channel.ID != row.ChannelID || !info.Channel.IsMember || info.Channel.IsArchived {
 		return fmt.Errorf("%w: invite @Helpin to an active channel first", ErrChannelInvalid)
 	}
+	preserveCompany := false
 	switch row.Purpose {
 	case "support", "mixed":
+		if info.Channel.IsShared {
+			canReadCRM, err := s.authz.CanAccessModule(ctx, actor, model.ModuleCRM)
+			if err != nil {
+				return err
+			}
+			canReadCRM = canReadCRM && s.authz.Can(actor, authorization.PermCRMRead)
+			preserveCompany = !canReadCRM
+			if canReadCRM && row.CRMCompanyID != nil {
+				if _, err := uuid.Parse(*row.CRMCompanyID); err != nil {
+					return fmt.Errorf("%w: choose a CRM company in this workspace", ErrChannelInvalid)
+				}
+				var matches int64
+				if err := s.channels.inbox.conversationRepo.DB().WithContext(ctx).Model(&model.CRMCompany{}).
+					Where("workspace_id = ? AND id = ?", workspace, *row.CRMCompanyID).Count(&matches).Error; err != nil {
+					return err
+				}
+				if matches == 0 {
+					return fmt.Errorf("%w: choose a CRM company in this workspace", ErrChannelInvalid)
+				}
+			}
+		} else {
+			row.CRMCompanyID = nil
+		}
 		row.TeamID = nil
 		row.EpicID = nil
 		row.MailboxID, err = s.channels.mailboxSelection(ctx, workspace, row.MailboxID)
@@ -233,6 +257,7 @@ func (s *SlackService) Configure(ctx context.Context, workspace string, row mode
 		if info.Channel.IsShared || info.Channel.PendingShared {
 			return fmt.Errorf("%w: choose an internal channel for PM", ErrChannelInvalid)
 		}
+		row.CRMCompanyID = nil
 		row.MailboxID = nil
 		if row.TeamID != nil {
 			team, e := s.channels.inbox.workspaceRepo.GetTeamByID(ctx, workspace, *row.TeamID)
@@ -252,7 +277,7 @@ func (s *SlackService) Configure(ctx context.Context, workspace string, row mode
 	}
 	row.AccountID = a.ID
 	row.ChannelName = info.Channel.Name
-	return s.repo.SetRoute(ctx, row)
+	return s.repo.SetRoute(ctx, row, preserveCompany)
 }
 
 // Remove disables one channel binding.
