@@ -69,6 +69,20 @@ func (r *PMAttachmentRepository) List(ctx context.Context, entityType, entityID 
 	return attachments, nil
 }
 
+// UploadedTaskFiles scopes both discovery and reads to the same task and its comments.
+func (r *PMAttachmentRepository) UploadedTaskFiles(ctx context.Context, workspaceID, taskID, fileID string, offset, limit int) ([]model.PMAttachment, error) {
+	db := r.db.WithContext(ctx)
+	comments := db.Model(&model.PMComment{}).Select("id").Where("entity_type = 'task' AND entity_id = ?", taskID)
+	query := db.Where("workspace_id = ? AND is_uploaded = ?", workspaceID, true).
+		Where("((entity_type = 'task' AND entity_id = ?) OR (entity_type = 'comment' AND entity_id IN (?)))", taskID, comments)
+	if fileID != "" {
+		query = query.Where("id = ?", fileID)
+	}
+	var files []model.PMAttachment
+	err := query.Order("created_at ASC, id ASC").Limit(limit).Offset(offset).Find(&files).Error
+	return files, err
+}
+
 // ConfirmUpload marks an attachment as uploaded.
 func (r *PMAttachmentRepository) ConfirmUpload(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).

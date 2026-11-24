@@ -43,6 +43,16 @@ func (r *SlackRepository) Installation(ctx context.Context, workspace string) (*
 	return &a, nil
 }
 
+// CreateInstallation initializes teammate AI from the workspace's shared model only on first install.
+func (r *SlackRepository) CreateInstallation(ctx context.Context, a *model.SupportChannelAccount) error {
+	settings, err := NewAIProfileRepository(r.db).Settings(ctx, a.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	a.AIRepliesDisabled = settings.DefaultProfileID == nil
+	return NewSupportChannelAccountRepository(r.db).Create(ctx, a)
+}
+
 // PreviousInstallation preserves thread history only when both workspaces match.
 func (r *SlackRepository) PreviousInstallation(ctx context.Context, workspace, team string) (*model.SupportChannelAccount, error) {
 	var a model.SupportChannelAccount
@@ -56,7 +66,7 @@ func (r *SlackRepository) PreviousInstallation(ctx context.Context, workspace, t
 func (r *SlackRepository) Reactivate(ctx context.Context, a *model.SupportChannelAccount, token, handle, name, user string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.SupportChannelAccount{}).Where("id=? AND workspace_id=? AND disabled_at IS NOT NULL", a.ID, a.WorkspaceID).
-			Updates(map[string]any{"disabled_at": nil, "status": "active", "token_encrypted": token, "handle": handle, "display_name": name, "connected_by": user, "auth_error_count": 0, "ai_replies_disabled": true})
+			Updates(map[string]any{"disabled_at": nil, "status": "active", "token_encrypted": token, "handle": handle, "display_name": name, "connected_by": user, "auth_error_count": 0})
 		if result.Error != nil {
 			return result.Error
 		}

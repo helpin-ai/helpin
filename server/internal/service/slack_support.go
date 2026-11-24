@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -14,25 +17,95 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
+// Look at the exact parent only. A nearby channel message may refer to a different customer.
+func (s *SlackService) referencedConversation(ctx context.Context, token string, m slack.Message) (string, error) {
+	matches := slackSupportLink.FindAllStringSubmatch(m.Text, -1)
+	if len(matches) == 0 && m.ThreadTS != "" && m.ThreadTS != m.TS {
+		var page struct{ Messages []slack.Message }
+		params := url.Values{"channel": {m.Destination()}, "latest": {m.ThreadTS}, "inclusive": {"true"}, "limit": {"1"}}
+		if err := s.api.Get(ctx, token, "conversations.history", params, &page); err != nil {
+			slog.WarnContext(ctx, "Slack parent message lookup failed", "error", err)
+			return "", errors.New("I couldn’t read the parent message. Paste the Helpin conversation link in your reply.")
+		}
+		if len(page.Messages) == 1 && page.Messages[0].TS == m.ThreadTS {
+			matches = slackSupportLink.FindAllStringSubmatch(page.Messages[0].Text, -1)
+		}
+	}
+	var id string
+	for _, match := range matches {
+		if id != "" && !strings.EqualFold(id, match[1]) {
+			return "", errors.New("Which conversation do you mean? Paste one Helpin conversation link in your reply.")
+		}
+		id = match[1]
+	}
+	return id, nil
+}
+
+// A named task in the question takes priority over a support link inherited from the parent.
+func (s *SlackService) answerReferencedConversation(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message, actor *authorization.Actor) (bool, error) {
+	if slackHelp(m.Text, a.Handle) || (slackTaskKey.MatchString(m.Text) && !slackSupportLink.MatchString(m.Text)) {
+		return false, nil
+	}
+	id, err := s.referencedConversation(ctx, token, m)
+	if err != nil {
+		return true, s.private(ctx, token, m, err.Error())
+	}
+	if id == "" {
+		return false, nil
+	}
+	return true, s.internalSupportAnswer(ctx, a, token, route, m, actor, id, slackDraftRequest(m.Text, a.Handle))
+}
+
 // supportCommand returns true when a request was handled privately or as a factual customer update.
 func (s *SlackService) supportCommand(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message, teammate bool) (bool, error) {
 	q := strings.ToLower(m.Text)
 	link := slackCommand(m.Text) == "link"
-	draft := (strings.Contains(q, "creat") && strings.Contains(q, "task")) || strings.Contains(q, "bug")
+	draft := slackDraftRequest(m.Text, a.Handle) || (strings.Contains(q, "creat") && strings.Contains(q, "task"))
 	summary := strings.Contains(q, "summar") || strings.Contains(q, "recap")
-	update := strings.Contains(q, "update") || strings.Contains(q, "status")
-	if !draft && !summary && !update && !link && !(teammate && m.ThreadTS != "") {
+	update := strings.Contains(q, "update") || strings.Contains(q, "status") || strings.Contains(q, "latest")
+	command := strings.TrimSpace(strings.TrimPrefix(q, strings.ToLower("<@"+a.Handle+">")))
+	if teammate && (strings.HasPrefix(command, "create support request") || strings.HasPrefix(command, "create a support request")) {
 		return false, nil
+	}
+	if !draft && !summary && !update && !link && !(teammate && (m.ThreadTS != "" || slackSupportLink.MatchString(m.Text))) {
+		return false, nil
+	}
+	var actor *authorization.Actor
+	var id string
+	var err error
+	if teammate {
+		actor, err = s.linkedActor(ctx, a, m.User)
+		if err != nil {
+			return true, err
+		}
+		if actor == nil {
+			return true, s.promptLink(ctx, a, token, m)
+		}
+		id, err = s.referencedConversation(ctx, token, m)
+		if err != nil {
+			return true, s.private(ctx, token, m, err.Error())
+		}
+		if id != "" && !link {
+			return true, s.internalSupportAnswer(ctx, a, token, route, m, actor, id, draft)
+		}
 	}
 	lookup := s.repo.SupportThread
 	if !teammate && update {
 		lookup = s.repo.SupportThreadOrigin
 	}
-	conv, err := lookup(ctx, a, m.Channel+":"+m.Root())
+	var conv *model.SupportConversation
+	if id == "" {
+		conv, err = lookup(ctx, a, m.Channel+":"+m.Root())
+	} else {
+		conv, err = s.channels.inbox.loadConversationAccessible(authorization.WithActor(ctx, actor), a.WorkspaceID, id)
+	}
 	if err != nil {
 		return true, err
 	}
-	if conv == nil {
+	if conv == nil || conv.AnonymizedAt != nil {
+		if teammate && (summary || update || link || draft || id != "" || strings.Contains(q, "?")) {
+			return true, s.private(ctx, token, m, "I couldn’t find an accessible support conversation for this thread. Paste its Helpin link in your reply.")
+		}
 		return false, nil
 	}
 	if !teammate {
@@ -73,13 +146,6 @@ func (s *SlackService) supportCommand(ctx context.Context, a *model.SupportChann
 			}
 		}
 		return true, s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Destination(), "thread_ts": m.Root(), "text": text, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + ":" + m.Channel + ":" + m.TS + ":status")}, nil)
-	}
-	actor, err := s.linkedActor(ctx, a, m.User)
-	if err != nil {
-		return true, err
-	}
-	if actor == nil {
-		return true, s.promptLink(ctx, a, token, m)
 	}
 	if link {
 		ctx = authorization.WithActor(ctx, actor)
@@ -140,7 +206,8 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 	if err != nil {
 		return err
 	}
-	info := fmt.Sprintf("%s · %s", conv.Subject, conv.Status)
+	header := fmt.Sprintf("#%d · %s · %s", conv.DisplayID, conv.Subject, conv.Status)
+	info := header
 	var lines []string
 	for _, msg := range messages {
 		if msg.DeletedAt.Valid || msg.MessageType == "system" {
@@ -157,6 +224,7 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 	if len(lines) > 0 {
 		info += "\n" + lines[len(lines)-1]
 	}
+	blocks := []any{map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}}
 	if ai := inbox.supportAIService; !a.AIRepliesDisabled && ai != nil && ai.llmProvider != nil {
 		evidence, err := json.Marshal(map[string]any{"question": m.Text, "subject": conv.Subject, "status": conv.Status, "messages": lines})
 		if err != nil {
@@ -164,8 +232,15 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 		}
 		result, err := s.ask(ctx, a, m, evidence, "Answer the teammate's question about this support conversation. For a summary, include the report, progress, and next action if recorded.")
 
-		if err == nil && result != nil {
-			info = conv.Subject + " · " + conv.Status + "\n" + result.Content
+		if err == nil && result != nil && strings.TrimSpace(result.Content) != "" {
+			info = truncate(header+"\n"+result.Content, 3900)
+			blocks = []any{map[string]any{"type": "section", "text": slackText(truncate(header, 2800))}, slackMarkdown(result.Content)}
+		} else {
+			if err != nil {
+				slog.WarnContext(ctx, "Slack conversation answer unavailable", "conversation_id", conv.ID, "error", err)
+			}
+			info = header + "\nI couldn’t generate an answer this time. Open the conversation for its latest activity."
+			blocks = []any{map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}}
 		}
 	}
 	ws, err := s.tasks.workspaceRepo.GetByID(ctx, a.WorkspaceID)
@@ -184,9 +259,10 @@ func (s *SlackService) internalSupportAnswer(ctx context.Context, a *model.Suppo
 		if err != nil {
 			return err
 		}
-		return s.shareAnswer(ctx, a, token, m, info, allowed)
+		return s.shareAnswer(ctx, a, token, m, info, allowed, blocks...)
 	}
-	return s.private(ctx, token, m, info, map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}, slackButtons(map[string]any{"type": "button", "text": slackText("Open conversation"), "url": s.appURL + "/w/" + ws.Slug + "/support/" + conv.ID, "action_id": "open_support"}))
+	blocks = append(blocks, slackButtons(map[string]any{"type": "button", "text": slackText("Open conversation"), "url": s.appURL + "/w/" + ws.Slug + "/support/" + conv.ID, "action_id": "open_support"}))
+	return s.private(ctx, token, m, info, blocks...)
 }
 
 // SetAI updates the explicit Slack assistance setting on the installation.

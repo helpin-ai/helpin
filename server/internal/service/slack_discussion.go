@@ -218,9 +218,11 @@ func (s *SlackService) notifySupportOwner(ctx context.Context, a *model.SupportC
 	})
 }
 
-func (s *SlackService) shareAnswer(ctx context.Context, a *model.SupportChannelAccount, token string, m slack.Message, info string, allowed bool) error {
+func (s *SlackService) shareAnswer(ctx context.Context, a *model.SupportChannelAccount, token string, m slack.Message, info string, allowed bool, blocks ...any) error {
 	if !allowed {
-		return s.private(ctx, token, m, "Only you can see this answer. Sharing requires a private internal channel where everyone can read the record.\n"+truncate(info, 2500))
+		const notice = "Only you can see this answer. Sharing requires a private internal channel where everyone can read the record."
+		blocks = append([]any{map[string]any{"type": "section", "text": slackText(notice)}}, blocks...)
+		return s.private(ctx, token, m, notice+"\n"+truncate(info, 2500), blocks...)
 	}
-	return s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Destination(), "thread_ts": m.Root(), "text": truncate(info, 2800), "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + m.Channel + m.TS + "share")}, nil)
+	return s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Destination(), "thread_ts": m.Root(), "text": truncate(info, 2800), "blocks": blocks, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + m.Channel + m.TS + "share")}, nil)
 }

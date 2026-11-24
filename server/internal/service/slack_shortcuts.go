@@ -91,6 +91,13 @@ func (s *SlackService) shortcutJob(ctx context.Context, job *model.SupportInboun
 	if !allowed || !s.authz.Can(actor, authorization.PermPMEdit) {
 		return s.private(ctx, token, request, "You need permission to edit tasks in Helpin.")
 	}
+	id, err := s.referencedConversation(ctx, token, request)
+	if err != nil {
+		return s.private(ctx, token, request, err.Error())
+	}
+	if id != "" {
+		return s.internalSupportAnswer(ctx, a, token, route, request, actor, id, true)
+	}
 	if route.Purpose == "pm" {
 		return s.offerDraft(ctx, a, token, route, request, actor, nil)
 	}

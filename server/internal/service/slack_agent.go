@@ -57,7 +57,7 @@ func (access slackAccess) chatID(account string, m slack.Message, actor *authori
 func (access slackAccess) help(edit, ai bool) string {
 	var sections []string
 	if access.PM {
-		tasks := "Catch up on tasks\n• “What’s the latest on ENG-123?” (Use your task’s key.)"
+		tasks := "*Catch up on tasks*\n• “What’s the latest on ENG-123?” (Use your task’s key.)"
 		if ai {
 			tasks += "\n• “Which tasks are blocked on my team?”"
 		}
@@ -68,10 +68,14 @@ func (access slackAccess) help(edit, ai bool) string {
 		if ai {
 			example = "Paste a Helpin support conversation link and ask, “What did the customer report, and what’s the next step?”"
 		}
-		sections = append(sections, "Get support context\n"+example)
+		sections = append(sections, "*Get support context*\n"+example)
 	}
 	if access.PM && edit {
-		sections = append(sections, "Turn a discussion into a task\nIn a connected project channel, mention @Helpin and say, “Create a task from this thread.” Review the draft before saving.")
+		where := "In a connected project channel"
+		if access.Support {
+			where = "In a connected project channel or a linked support thread"
+		}
+		sections = append(sections, "*Turn a discussion into a task*\n"+where+", mention @Helpin and say, “Create a task from this thread.” Review the draft before saving.")
 	}
 	if len(sections) == 0 {
 		return "Your Helpin account needs access to PM or Support to ask about workspace records."
@@ -83,7 +87,7 @@ func (access slackAccess) help(edit, ai bool) string {
 }
 
 func slackUnlinkedWelcome(ai bool) string {
-	const intro = "👋 Welcome to Helpin! Here are a few things you can try, depending on your workspace access."
+	const intro = "👋 *Welcome to Helpin!*\nHere are a few things you can try, depending on your workspace access."
 	const pairing = "Send your first request here and I’ll help you link your account."
 	return strings.Join([]string{intro, (slackAccess{PM: true, Support: true}).help(true, ai), pairing}, "\n\n")
 }
@@ -94,13 +98,13 @@ func (s *SlackService) welcome(ctx context.Context, a *model.SupportChannelAccou
 		return err
 	}
 	if actor == nil {
-		return s.private(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled))
+		return s.sendPrivate(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled), true)
 	}
 	access, err := slackMemberAccess(ctx, s.authz, actor)
 	if err != nil {
 		return err
 	}
-	return s.private(ctx, token, m, "👋 Welcome to Helpin!\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled))
+	return s.sendPrivate(ctx, token, m, "👋 *Welcome to Helpin!*\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled), true)
 }
 
 func isSlackDockRun(run *model.AgentRun) bool {
@@ -152,14 +156,15 @@ func (s *SlackService) directAgent(ctx context.Context, a *model.SupportChannelA
 	}
 	if actor == nil {
 		if slackHelp(m.Text, a.Handle) {
-			return s.private(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled))
+			return s.sendPrivate(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled), true)
 		}
 		return s.promptLink(ctx, a, token, m)
 	}
 	ctx = authorization.WithActor(ctx, actor)
 	route := &model.SlackRoute{Purpose: "pm", ChannelID: m.Channel, CurrentChannelID: m.Channel}
-	if id := slackSupportLink.FindStringSubmatch(m.Text); len(id) > 1 {
-		return s.internalSupportAnswer(ctx, a, token, route, m, actor, id[1], false)
+
+	if handled, err := s.answerReferencedConversation(ctx, a, token, route, m, actor); handled {
+		return err
 	}
 	if slackDraftRequest(m.Text, a.Handle) {
 		return s.offerDraft(ctx, a, token, route, m, actor, nil)
@@ -183,10 +188,10 @@ func (s *SlackService) agentQuestion(ctx context.Context, a *model.SupportChanne
 		return err
 	}
 	if slackHelp(m.Text, a.Handle) || access == (slackAccess{}) {
-		return s.private(ctx, token, m, access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled))
+		return s.sendPrivate(ctx, token, m, access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled), true)
 	}
 	if a.AIRepliesDisabled || s.dock == nil {
-		return s.private(ctx, token, m, "Workspace questions require Slack AI replies to be enabled in Helpin. "+access.help(s.authz.Can(actor, authorization.PermPMEdit), false))
+		return s.sendPrivate(ctx, token, m, "Workspace questions require Slack AI replies to be enabled in Helpin.\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), false), true)
 	}
 	chatID := access.chatID(a.ID, m, actor)
 	content := strings.TrimSpace(strings.ReplaceAll(m.Text, "<@"+a.Handle+">", ""))
@@ -237,13 +242,13 @@ func (s *SlackService) deliverAgentAnswer(ctx context.Context, job *model.Suppor
 	if err != nil || a == nil {
 		return err
 	}
-	finish := func(answer string) error {
+	finish := func(answer string, blocks ...any) error {
 		token, err := s.channels.decryptToken(a)
 		if err != nil {
 			return err
 		}
 		progressCtx := context.WithValue(ctx, slackProgressKey{}, &slackProgress{TS: p.ProgressTS})
-		if err = s.private(progressCtx, token, p.Message, truncate(answer, 3900)); err != nil {
+		if err = s.private(progressCtx, token, p.Message, truncate(answer, 3900), blocks...); err != nil {
 			return err
 		}
 		s.sessionStatus(ctx, token, p.Message, "active")
@@ -283,24 +288,25 @@ func (s *SlackService) deliverAgentAnswer(ctx context.Context, job *model.Suppor
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(answer) == "" {
-		run, err := s.repo.AgentTurnStatus(ctx, a.WorkspaceID, p.ChatID, p.TurnID)
-		if err != nil {
-			return err
+	if strings.TrimSpace(answer) != "" {
+		return finish(answer, slackMarkdown(answer))
+	}
+	run, err := s.repo.AgentTurnStatus(ctx, a.WorkspaceID, p.ChatID, p.TurnID)
+	if err != nil {
+		return err
+	}
+	switch {
+	case run.Status == model.AgentRunStatusFailed:
+		answer = slackFailureReason(derefString(run.ErrorMessage))
+	case run.Status == model.AgentRunStatusCancelled:
+		answer = "This request was cancelled. Send it again to start a new run."
+	case s.channels.now().Sub(job.CreatedAt) < 5*time.Minute:
+		if err := s.updateReadProgress(ctx, a, &p, job); err != nil {
+			s.channels.logger.WarnContext(ctx, "Slack activity update unavailable", "error", err)
 		}
-		switch {
-		case run.Status == model.AgentRunStatusFailed:
-			answer = slackFailureReason(derefString(run.ErrorMessage))
-		case run.Status == model.AgentRunStatusCancelled:
-			answer = "This request was cancelled. Send it again to start a new run."
-		case s.channels.now().Sub(job.CreatedAt) < 5*time.Minute:
-			if err := s.updateReadProgress(ctx, a, &p, job); err != nil {
-				s.channels.logger.WarnContext(ctx, "Slack activity update unavailable", "error", err)
-			}
-			return errSlackAgentPending
-		default:
-			answer = "Helpin didn’t receive a final answer within five minutes. Try again with a narrower question."
-		}
+		return errSlackAgentPending
+	default:
+		answer = "Helpin didn’t receive a final answer within five minutes. Try again with a narrower question."
 	}
 	return finish(answer)
 }

@@ -27,7 +27,7 @@ func (r *SupportInboxViewRepository) ListByWorkspace(ctx context.Context, worksp
 		Find(&views).Error; err != nil {
 		return nil, fmt.Errorf("list support inbox views: %w", err)
 	}
-	return views, nil
+	return r.withCurrentTags(ctx, workspaceID, views)
 }
 
 func (r *SupportInboxViewRepository) ListBuiltinByUser(ctx context.Context, workspaceID, userID string) ([]model.SupportInboxView, error) {
@@ -37,6 +37,39 @@ func (r *SupportInboxViewRepository) ListBuiltinByUser(ctx context.Context, work
 		Order("view_type ASC, view_key ASC").
 		Find(&views).Error; err != nil {
 		return nil, fmt.Errorf("list support inbox builtin views: %w", err)
+	}
+	return r.withCurrentTags(ctx, workspaceID, views)
+}
+
+// Saved filters keep tag IDs as CSV, so a removed tag can outlive its picker option.
+func (r *SupportInboxViewRepository) withCurrentTags(ctx context.Context, workspaceID string, views []model.SupportInboxView) ([]model.SupportInboxView, error) {
+	var liveIDs map[string]bool
+	for _, view := range views {
+		raw := view.Filters["tag_ids"]
+		if raw == "" {
+			continue
+		}
+		if liveIDs == nil {
+			var ids []string
+			if err := r.db.WithContext(ctx).Model(&model.SupportTag{}).Where("workspace_id = ?", workspaceID).Pluck("id", &ids).Error; err != nil {
+				return nil, fmt.Errorf("list current support tag IDs: %w", err)
+			}
+			liveIDs = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				liveIDs[id] = true
+			}
+		}
+		var kept []string
+		for _, id := range compactStrings(strings.Split(raw, ",")) {
+			if liveIDs[id] {
+				kept = append(kept, id)
+			}
+		}
+		if len(kept) == 0 {
+			delete(view.Filters, "tag_ids")
+		} else {
+			view.Filters["tag_ids"] = strings.Join(kept, ",")
+		}
 	}
 	return views, nil
 }

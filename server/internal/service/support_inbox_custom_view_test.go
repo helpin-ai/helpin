@@ -9,6 +9,29 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
+func TestSupportInboxViewIgnoresMissingTags(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	seedWorkspace(t, db, "ws", "Example", "example", "owner")
+	mustExec(t, db, "INSERT INTO support_tags(id,workspace_id,name) VALUES ('active','ws','Active')")
+	service := NewSupportInboxViewService(repository.NewSupportInboxViewRepository(db), nil, nil)
+	for _, raw := range []string{"deleted", "deleted,active"} {
+		_, err := service.Create(ctx, "ws", "owner", model.RoleOwner, model.CreateSupportInboxViewRequest{
+			Name: raw, Filters: model.SupportInboxViewFilters{"priority": "urgent,high", "tag_ids": raw},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	views, err := service.List(ctx, "ws", "owner")
+	if err != nil || len(views) != 2 {
+		t.Fatalf("list views: %v, %v", views, err)
+	}
+	if _, ok := views[0].Filters["tag_ids"]; ok || views[0].Filters["priority"] != "urgent,high" || views[1].Filters["tag_ids"] != "active" {
+		t.Fatalf("unexpected effective filters: %v, %v", views[0].Filters, views[1].Filters)
+	}
+}
+
 func TestSupportInboxViewServiceVisibilityAndPermissions(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

@@ -114,7 +114,7 @@ func (s *SlackService) CompleteInstall(ctx context.Context, workspace, user, raw
 	}
 	create := a == nil
 	if create {
-		a = &model.SupportChannelAccount{ID: uuid.NewString(), WorkspaceID: workspace, Provider: "slack", ExternalAccountID: grant.Team.ID, ConnectedBy: &user, AIRepliesDisabled: true, Status: "active"}
+		a = &model.SupportChannelAccount{ID: uuid.NewString(), WorkspaceID: workspace, Provider: "slack", ExternalAccountID: grant.Team.ID, ConnectedBy: &user, Status: "active"}
 	}
 	token, err := crypto.EncryptStringWithAAD(grant.Token, s.channels.cfg.EncryptionKey, channelTokenAAD(a.ID))
 	if err != nil {
@@ -133,7 +133,7 @@ func (s *SlackService) CompleteInstall(ctx context.Context, workspace, user, raw
 	a.TokenEncrypted = token
 	a.Handle = grant.BotUserID
 	a.DisplayName = grant.Team.Name
-	if err = s.channels.accounts.Create(ctx, a); err != nil && isUniqueConstraintViolation(err) {
+	if err = s.repo.CreateInstallation(ctx, a); err != nil && isUniqueConstraintViolation(err) {
 		return ErrChannelAlreadyConnected
 	}
 	return err

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,56 @@ func (f *slackTestAsk) SendMessage(_ context.Context, workspace, user, chat stri
 		return nil, fmt.Errorf("unexpected turn")
 	}
 	return &model.DockChatDetail{AcceptedMessage: &model.AgentRunMessage{ID: "turn"}}, nil
+}
+
+func TestSlackInstallAIDefaultAndReconnect(t *testing.T) {
+	ctx := context.Background()
+	f := newChannelFixture(t)
+	if err := f.db.AutoMigrate(&model.AIWorkspaceSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, f.db, "INSERT INTO ai_workspace_settings(workspace_id,default_profile_id) VALUES (?,?)", f.workspace, "shared-model")
+	mustExec(t, f.db, "CREATE TABLE slack_install_states(state_hash text PRIMARY KEY,workspace_id text,user_id text,expires_at datetime)")
+	for _, table := range []string{"slack_channel_routes", "slack_task_drafts", "slack_link_grants", "slack_members"} {
+		mustExec(t, f.db, "CREATE TABLE "+table+"(account_id text)")
+	}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"ok":true,"access_token":"fixture","bot_user_id":"bot","team":{"id":%q,"name":"workspace"}}`, r.FormValue("code"))
+	}))
+	defer api.Close()
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{ClientID: "client", ClientSecret: "secret", SigningSecret: "signing", RedirectURL: "https://example.test/callback"})
+	s.api.BaseURL = api.URL + "/"
+	install := func(ws string, wantEnabled bool) *model.SupportChannelAccount {
+		t.Helper()
+		start, err := s.StartInstall(ctx, ws, "installer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, err := url.Parse(start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CompleteInstall(ctx, ws, "installer", u.Query().Get("state"), "T-"+ws); err != nil {
+			t.Fatal(err)
+		}
+		a, err := s.repo.Installation(ctx, ws)
+		if err != nil || a == nil || !a.AIRepliesDisabled != wantEnabled {
+			t.Fatalf("installation AI enabled should be %v: account found=%v, error=%v", wantEnabled, a != nil, err)
+		}
+		return a
+	}
+	for _, ws := range []string{f.workspace, f.other} {
+		initial := ws == f.workspace
+		a := install(ws, initial)
+		if err := s.SetAI(ctx, ws, !initial); err != nil {
+			t.Fatal(err)
+		}
+		install(ws, !initial)
+		if err := s.channels.accounts.Disconnect(ctx, ws, a.ID, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		install(ws, !initial)
+	}
 }
 
 func TestSlackAgentDMDelivery(t *testing.T) {
@@ -147,9 +198,9 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	if len(delivered) != 2 {
 		t.Fatal("repeated identical phase")
 	}
-	expected := "Task A is blocked."
+	expected := "## Update\n- **Task A** is blocked."
 	if outcome == "answer" {
-		insert("answer", "assistant", "assistant_final", "Task A is blocked.", "[]", 3)
+		insert("answer", "assistant", "assistant_final", expected, "[]", 3)
 		insert("next", "user", "prompt", "another question", "[]", 4)
 		insert("other", "assistant", "assistant_final", "Another answer.", "[]", 5)
 	} else if outcome == "timeout" {
@@ -170,6 +221,9 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	work(SlackAgentReplyJob, true)
 	if len(delivered) != 3 || delivered[2]["text"] != expected || delivered[2]["method"] != "/chat.update" || delivered[2]["ts"] != "30.2" || delivered[2]["channel"] != "D1" {
 		t.Fatalf("wrong final reply: %v", delivered)
+	}
+	if outcome == "answer" && fmt.Sprint(delivered[2]["blocks"]) != fmt.Sprint([]any{map[string]string{"type": "markdown", "text": expected}}) {
+		t.Fatalf("wrong formatted answer: %v", delivered[2]["blocks"])
 	}
 	if strings.Join(statuses, ",") != "processing,active" {
 		t.Fatalf("wrong lifecycle %v", statuses)
@@ -235,5 +289,32 @@ func TestSlackAskRuntimeSkillContract(t *testing.T) {
 	req, err := runtimeStartRunRequest(run, agent, projected)
 	if err != nil || !sameNormalizedToolSet(req.AllowedTools, input.AllowedTools) {
 		t.Fatalf("scoped launch: %+v %v", req.AllowedTools, err)
+	}
+}
+
+func TestSlackUnlinkedSupportFollowupPromptsInThread(t *testing.T) {
+	f := newChannelFixture(t)
+	account := f.connect(t, f.workspace)
+	mustExec(t, f.db, "CREATE TABLE slack_members(account_id text,slack_user text,user_id text)")
+	mustExec(t, f.db, "CREATE TABLE slack_link_grants(token_hash text,account_id text,slack_user text,expires_at datetime)")
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
+	calls := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+			return
+		}
+		if r.URL.Path != "/chat.postEphemeral" || payload["user"] != "U1" || payload["thread_ts"] != "1" || payload["text"] != "Link your Helpin account to continue." {
+			t.Errorf("unexpected linking response at %s", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer api.Close()
+	s.api.BaseURL = api.URL + "/"
+	handled, err := s.supportCommand(context.Background(), account, "token", &model.SlackRoute{Purpose: "mixed"}, slack.Message{Text: "What's the latest?", User: "U1", Channel: "C1", ThreadTS: "1", TS: "2"}, true)
+	if !handled || err != nil || calls != 1 {
+		t.Fatalf("handled=%v error=%v calls=%d", handled, err, calls)
 	}
 }
