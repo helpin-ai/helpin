@@ -18,6 +18,7 @@ import {
   resolvePublicUrlParts,
 } from './serverSeo.mjs'
 import { prefixAssetUrls } from './assetUrls.mjs'
+import { requestLogLine } from './serverRequestLog.mjs'
 import {
   appendVary,
   compressBody,
@@ -742,6 +743,8 @@ async function handleRequest(request, response) {
   }
 
   const { host, rawHost, protocol, origin } = resolveHostInfo(request)
+  const logLine = requestLogLine(request.method, host, request.url)
+  if (logLine) console.log(logLine)
   const url = new URL(request.url || '/', `${protocol}://${host}`)
   const resolved = resolveHelpCenterContext(host, url.pathname, url.search, {
     rawHost,

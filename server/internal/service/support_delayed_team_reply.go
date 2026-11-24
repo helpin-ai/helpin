@@ -37,7 +37,7 @@ func (s *SupportInboxService) ProcessDelayedTeamReplies(ctx context.Context, now
 	cursor := "00000000-0000-0000-0000-000000000000"
 	for {
 		var conversations []model.SupportConversation
-		err := db.WithContext(ctx).Where("id > ? AND ai_state = ? AND status = ? AND channel = ? AND ai_escalated_at <= ? AND (delayed_team_reply_sent_for IS NULL OR delayed_team_reply_sent_for < ai_escalated_at)", cursor, "escalated", "open", "widget", now.Add(-time.Minute)).Order("id").Limit(100).Find(&conversations).Error
+		err := db.WithContext(ctx).Where("id > ? AND ai_state = ? AND status = ? AND channel = ? AND merged_into_id IS NULL AND ai_escalated_at <= ? AND (delayed_team_reply_sent_for IS NULL OR delayed_team_reply_sent_for < ai_escalated_at)", cursor, "escalated", "open", "widget", now.Add(-time.Minute)).Order("id").Limit(100).Find(&conversations).Error
 		if err != nil {
 			return err
 		}
@@ -56,8 +56,12 @@ func (s *SupportInboxService) ProcessDelayedTeamReplies(ctx context.Context, now
 					settings = parseSettings(inst.Settings)
 				}
 			}
+			// One bad conversation must not hold up every later one in the sweep.
 			if _, err := s.sendDelayedTeamReply(ctx, conv.ID, settings, now); err != nil {
-				return err
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				slog.ErrorContext(ctx, "delayed team reply failed", "error", err, "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID)
 			}
 		}
 	}
@@ -77,6 +81,10 @@ func (s *SupportInboxService) sendDelayedTeamReply(ctx context.Context, conversa
 		minutes := settings.DelayedTeamReplyMinutes
 		if minutes < 1 || minutes > 1440 {
 			minutes = 5
+		}
+		// A merged thread is read-only; the active conversation owns the handoff.
+		if conv.MergedIntoID != nil {
+			return nil
 		}
 		if conv.Channel != "widget" || conv.Status != "open" || derefString(conv.AIState) != "escalated" || conv.AIEscalatedAt == nil || now.Before(conv.AIEscalatedAt.Add(time.Duration(minutes)*time.Minute)) {
 			return nil
