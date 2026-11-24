@@ -51,7 +51,7 @@ Use the inbound email footer’s position and type size for a single **Received 
 - **“Give me an update on PAY-142.”** Resolve the task key, link, or current thread. Read status, owner, and due date from Helpin. Summarize recent progress, blockers, and the next step when recorded. Include an accessible source link. Ask which record the requester means when the reference is ambiguous.
 - **Customer asks “Any update?”** In their own support thread, answer immediately from the latest published customer-visible information. If there is nothing new, say so and notify the support owner once. Repeated asks in the same thread share one owner notification until a new customer-facing update is published.
 
-Use a fast LLM for natural-language requests, drafting, and summarization when enabled. Resolve records, check the requester and audience, and select permissible evidence before invoking the model. Apply existing AI usage checks. Manual task creation, factual published updates, message routing, and human replies must keep working when AI is disabled or usage is exhausted. [AI usage metering](../ai-usage-metering.md)
+On first connection, **AI questions, drafts, and summaries** starts enabled if the workspace has a shared default AI model. Admins can change it, and reauthorizing or reconnecting the same Slack workspace preserves their choice. Use a fast LLM for natural-language requests, drafting, and summarization when enabled. Resolve records, check the requester and audience, and select permissible evidence before invoking the model. Apply existing AI usage checks. Manual task creation, factual published updates, message routing, and human replies must keep working when AI is disabled or usage is exhausted. [AI usage metering](../ai-usage-metering.md)
 
 In a merged inbox conversation, the Send picker offers Chat for a widget session and Slack or Telegram for connected destinations in that conversation. When several channels can receive a reply, the teammate chooses one. Slack replies stay in the selected thread and Telegram replies in the selected DM. Only a “+ email” or “Email only” choice sends email. The closed picker shows the selected icons beside Send.
 
@@ -61,7 +61,7 @@ Opening Helpin’s Messages tab sends a one-time welcome. A teammate can DM Help
 
 With Slack AI enabled, workspace questions such as “Which tasks are blocked on my team?” use the in-app Ask Agent and its model selection and usage checks. Follow up in the same Slack thread. Slack shows a working indicator during processing. Fast answers go straight to the thread. In a DM, an observed PM or Support read can create one activity message that becomes the final answer. Failed requests show a reason when available and a next step. Each member has a private conversation with PM and Support read tools. Task creation uses the review form. Answers in PM channels are visible to the requester. Customer threads continue through the support inbox.
 
-For rollout, apply the updated manifest, choose **Reauthorize** in the connected Slack settings to grant DM history and agent permissions, and enable AI replies in Slack settings in Helpin. Verify the welcome, account pairing, a follow-up question, and private channel delivery in a test workspace.
+For rollout, apply the updated manifest, choose **Reauthorize** in the connected Slack settings to grant DM history and agent permissions, and check the AI setting in Helpin. Verify the welcome, account pairing, a follow-up question, and private channel delivery in a test workspace.
 
 ## What to reuse from Telegram
 

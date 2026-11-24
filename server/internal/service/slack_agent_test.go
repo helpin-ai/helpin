@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,56 @@ func (f *slackTestAsk) SendMessage(_ context.Context, workspace, user, chat stri
 		return nil, fmt.Errorf("unexpected turn")
 	}
 	return &model.DockChatDetail{AcceptedMessage: &model.AgentRunMessage{ID: "turn"}}, nil
+}
+
+func TestSlackInstallAIDefaultAndReconnect(t *testing.T) {
+	ctx := context.Background()
+	f := newChannelFixture(t)
+	if err := f.db.AutoMigrate(&model.AIWorkspaceSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, f.db, "INSERT INTO ai_workspace_settings(workspace_id,default_profile_id) VALUES (?,?)", f.workspace, "shared-model")
+	mustExec(t, f.db, "CREATE TABLE slack_install_states(state_hash text PRIMARY KEY,workspace_id text,user_id text,expires_at datetime)")
+	for _, table := range []string{"slack_channel_routes", "slack_task_drafts", "slack_link_grants", "slack_members"} {
+		mustExec(t, f.db, "CREATE TABLE "+table+"(account_id text)")
+	}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"ok":true,"access_token":"fixture","bot_user_id":"bot","team":{"id":%q,"name":"workspace"}}`, r.FormValue("code"))
+	}))
+	defer api.Close()
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{ClientID: "client", ClientSecret: "secret", SigningSecret: "signing", RedirectURL: "https://example.test/callback"})
+	s.api.BaseURL = api.URL + "/"
+	install := func(ws string, wantEnabled bool) *model.SupportChannelAccount {
+		t.Helper()
+		start, err := s.StartInstall(ctx, ws, "installer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, err := url.Parse(start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CompleteInstall(ctx, ws, "installer", u.Query().Get("state"), "T-"+ws); err != nil {
+			t.Fatal(err)
+		}
+		a, err := s.repo.Installation(ctx, ws)
+		if err != nil || a == nil || !a.AIRepliesDisabled != wantEnabled {
+			t.Fatalf("installation AI enabled should be %v: account found=%v, error=%v", wantEnabled, a != nil, err)
+		}
+		return a
+	}
+	for _, ws := range []string{f.workspace, f.other} {
+		initial := ws == f.workspace
+		a := install(ws, initial)
+		if err := s.SetAI(ctx, ws, !initial); err != nil {
+			t.Fatal(err)
+		}
+		install(ws, !initial)
+		if err := s.channels.accounts.Disconnect(ctx, ws, a.ID, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		install(ws, !initial)
+	}
 }
 
 func TestSlackAgentDMDelivery(t *testing.T) {
