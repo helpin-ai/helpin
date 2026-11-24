@@ -315,10 +315,10 @@ func (r *SlackRepository) AgentTurnTools(ctx context.Context, workspace, chat, m
 }
 
 // AgentTurnStatus checks the backing run of the accepted message, even if the chat has since moved on.
-func (r *SlackRepository) AgentTurnStatus(ctx context.Context, workspace, chat, message string) (string, error) {
-	var status string
-	err := r.db.WithContext(ctx).Table("agent_run_messages turn").Select("runs.status").Joins("JOIN agent_runs runs ON runs.id=turn.run_id AND runs.workspace_id=turn.workspace_id").Where("turn.workspace_id=? AND turn.dock_chat_id=? AND turn.id=? AND turn.role='user'", workspace, chat, message).Scan(&status).Error
-	return status, err
+func (r *SlackRepository) AgentTurnStatus(ctx context.Context, workspace, chat, message string) (model.AgentRun, error) {
+	var run model.AgentRun
+	err := r.db.WithContext(ctx).Table("agent_run_messages turn").Select("runs.status, runs.error_message").Joins("JOIN agent_runs runs ON runs.id=turn.run_id AND runs.workspace_id=turn.workspace_id").Where("turn.workspace_id=? AND turn.dock_chat_id=? AND turn.id=? AND turn.role='user'", workspace, chat, message).Scan(&run).Error
+	return run, err
 }
 
 // AgentAnswer returns only the final response for the accepted turn. Progress, tool

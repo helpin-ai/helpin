@@ -31,20 +31,25 @@ type slackProgress struct {
 func (s *SlackService) startProgress(ctx context.Context, token string, m slack.Message, label string) (context.Context, *slackProgress) {
 	progress := &slackProgress{}
 	s.sessionStatus(ctx, token, m, "processing")
-	if slackDirect(m) {
-		var response struct {
-			TS string `json:"ts"`
-		}
-		callCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		err := s.api.Call(callCtx, token, "chat.postMessage", map[string]any{"channel": m.Channel, "thread_ts": m.Root(), "text": label, "mrkdwn": false, "client_msg_id": inboundStableID("slack-progress:" + m.Channel + ":" + m.TS)}, &response)
-		if err == nil {
-			progress.TS = response.TS
-		} else {
+	if slackDirect(m) && label != "" {
+		ts, err := s.postProgress(ctx, token, m, label)
+		if err != nil {
 			s.channels.logger.WarnContext(ctx, "Slack progress message unavailable", "error", err)
+		} else {
+			progress.TS = ts
 		}
 	}
 	return context.WithValue(ctx, slackProgressKey{}, progress), progress
+}
+
+func (s *SlackService) postProgress(ctx context.Context, token string, m slack.Message, label string) (string, error) {
+	var response struct {
+		TS string `json:"ts"`
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	err := s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Channel, "thread_ts": m.Root(), "text": label, "mrkdwn": false, "client_msg_id": inboundStableID("slack-progress:" + m.Channel + ":" + m.TS)}, &response)
+	return response.TS, err
 }
 
 func (s *SlackService) finishProgress(ctx context.Context, token string, m slack.Message, p *slackProgress) {
@@ -73,7 +78,7 @@ func slackReadPhase(tools []string) string {
 }
 
 func (s *SlackService) updateReadProgress(ctx context.Context, a *model.SupportChannelAccount, p *slackAgentResult, job *model.SupportInboundJob) error {
-	if p.ProgressTS == "" {
+	if !slackDirect(p.Message) {
 		return nil
 	}
 	tools, err := s.repo.AgentTurnTools(ctx, a.WorkspaceID, p.ChatID, p.TurnID)
@@ -88,13 +93,17 @@ func (s *SlackService) updateReadProgress(ctx context.Context, a *model.SupportC
 	if err != nil {
 		return err
 	}
-	// Store the attempted phase even when Slack rate-limits it. The next poll
-	// prioritizes delivery of the final answer.
+	if p.ProgressTS == "" {
+		p.ProgressTS, err = s.postProgress(ctx, token, p.Message, phase)
+	} else {
+		err = s.private(context.WithValue(ctx, slackProgressKey{}, &slackProgress{TS: p.ProgressTS}), token, p.Message, phase)
+	}
+	// Avoid repeating an activity update on every poll, including after a rate limit.
 	p.LastPhase = phase
-	payload, err := json.Marshal(p)
-	if err != nil {
-		return err
+	payload, marshalErr := json.Marshal(p)
+	if marshalErr != nil {
+		return marshalErr
 	}
 	job.Payload = string(payload)
-	return s.private(context.WithValue(ctx, slackProgressKey{}, &slackProgress{TS: p.ProgressTS}), token, p.Message, phase)
+	return err
 }

@@ -35,7 +35,7 @@ func (f *slackTestAsk) SendMessage(_ context.Context, workspace, user, chat stri
 }
 
 func TestSlackAgentDMDelivery(t *testing.T) {
-	for _, outcome := range []string{"answer", "failed", "cancelled"} {
+	for _, outcome := range []string{"quick", "answer", "failed", "cancelled", "timeout"} {
 		t.Run(outcome, func(t *testing.T) { testSlackAgentDMDelivery(t, outcome) })
 	}
 }
@@ -45,7 +45,7 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	account := f.connect(t, f.workspace)
 	for _, query := range []string{
 		"UPDATE support_channel_accounts SET provider='slack',ai_replies_disabled=false",
-		"CREATE TABLE agent_runs(id text,workspace_id text,status text)",
+		"CREATE TABLE agent_runs(id text,workspace_id text,status text,error_message text)",
 		"CREATE TABLE slack_members(account_id text,slack_user text,user_id text)",
 		"CREATE TABLE dock_chats(id text PRIMARY KEY,workspace_id text,user_id text,title text,visibility text,slack_thread boolean,created_at datetime,updated_at datetime)",
 		"CREATE TABLE agent_run_messages(id text,workspace_id text,run_id text,dock_chat_id text,dock_chat_sequence integer,role text,message_type text,content text,tool_invocations text)",
@@ -125,18 +125,26 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 			t.Fatal(err)
 		}
 	}
-	if len(delivered) != 2 || delivered[1]["text"] != "Thinking…" || delivered[1]["thread_ts"] != "20.1" {
-		t.Fatalf("missing initial feedback: %v", delivered)
+	if len(delivered) != 1 || strings.Join(statuses, ",") != "processing" {
+		t.Fatalf("initial feedback: %v %v", delivered, statuses)
 	}
 	insert("turn", "user", "prompt", "which tasks", "[]", 1)
+	if outcome == "quick" {
+		insert("answer", "assistant", "assistant_final", "Quick answer", "[]", 2)
+		work(SlackAgentReplyJob, true)
+		if len(delivered) != 2 || delivered[1]["method"] != "/chat.postMessage" || delivered[1]["text"] != "Quick answer" || delivered[1]["thread_ts"] != "20.1" || strings.Join(statuses, ",") != "processing,active" {
+			t.Fatalf("quick reply: %v %v", delivered, statuses)
+		}
+		return
+	}
 	insert("progress", "assistant", "assistant_turn", "private work", `[{"tool_name":"mcp__helpin__list_tasks","input":{"private":"sensitive"}}]`, 2)
 	work(SlackAgentReplyJob, true)
-	if len(delivered) != 3 || delivered[2]["text"] != "Reading tasks…" || delivered[2]["method"] != "/chat.update" || delivered[2]["ts"] != "30.2" {
+	if len(delivered) != 2 || delivered[1]["text"] != "Reading tasks…" || delivered[1]["method"] != "/chat.postMessage" || delivered[1]["thread_ts"] != "20.1" {
 		t.Fatalf("wrong read feedback: %v", delivered)
 	}
 	due()
 	work(SlackAgentReplyJob, true)
-	if len(delivered) != 3 {
+	if len(delivered) != 2 {
 		t.Fatal("repeated identical phase")
 	}
 	expected := "Task A is blocked."
@@ -144,18 +152,23 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 		insert("answer", "assistant", "assistant_final", "Task A is blocked.", "[]", 3)
 		insert("next", "user", "prompt", "another question", "[]", 4)
 		insert("other", "assistant", "assistant_final", "Another answer.", "[]", 5)
-	} else {
-		if err := f.db.Exec("INSERT INTO agent_runs VALUES ('run',?,?)", f.workspace, outcome).Error; err != nil {
+	} else if outcome == "timeout" {
+		if err := f.db.Exec("UPDATE support_inbound_jobs SET created_at=? WHERE kind=?", time.Now().Add(-6*time.Minute), SlackAgentReplyJob).Error; err != nil {
 			t.Fatal(err)
 		}
-		expected = "I couldn’t complete this request. Please try again."
+		expected = "Helpin didn’t receive a final answer within five minutes. Try again with a narrower question."
+	} else {
+		if err := f.db.Exec("INSERT INTO agent_runs VALUES ('run',?,?,?)", f.workspace, outcome, `skill "document_editing" requires tool "private-internal-name"`).Error; err != nil {
+			t.Fatal(err)
+		}
+		expected = "The Slack agent’s configuration is missing a required tool. Ask a workspace admin to contact Helpin support."
 		if outcome == "cancelled" {
-			expected = "This request was cancelled."
+			expected = "This request was cancelled. Send it again to start a new run."
 		}
 	}
 	due()
 	work(SlackAgentReplyJob, true)
-	if len(delivered) != 4 || delivered[3]["text"] != expected || delivered[3]["ts"] != "30.2" || delivered[3]["channel"] != "D1" {
+	if len(delivered) != 3 || delivered[2]["text"] != expected || delivered[2]["method"] != "/chat.update" || delivered[2]["ts"] != "30.2" || delivered[2]["channel"] != "D1" {
 		t.Fatalf("wrong final reply: %v", delivered)
 	}
 	if strings.Join(statuses, ",") != "processing,active" {
