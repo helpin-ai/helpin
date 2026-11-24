@@ -103,6 +103,23 @@ func (s *SlackService) welcome(ctx context.Context, a *model.SupportChannelAccou
 	return s.private(ctx, token, m, "👋 Welcome to Helpin!\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled))
 }
 
+func isSlackDockRun(run *model.AgentRun) bool {
+	if run == nil || run.DockChatID == nil || run.TargetType != "workspace" || run.TargetID != run.WorkspaceID {
+		return false
+	}
+	var input model.AgentRunInputPayload
+	if json.Unmarshal(run.Input, &input) != nil || input.Trigger == nil || input.Trigger.TriggerType != dockChatTriggerType || input.ExecutionEnabled || len(input.AllowedTools) == 0 {
+		return false
+	}
+	var c struct {
+		SlackThread bool   `json:"slack_thread"`
+		ChatID      string `json:"dock_chat_id"`
+	}
+	return json.Unmarshal(input.Trigger.Context, &c) == nil && c.SlackThread && c.ChatID == *run.DockChatID
+}
+
+var slackPMReadTools = []string{"list_tasks", "get_task", "get_task_context", "list_task_checklist", "list_epics", "get_epic", "list_epic_tasks", "list_sprints", "list_sprint_tasks", "list_workspace_teams", "list_team_workflows_with_stages"}
+
 func (s *DockChatService) slackAgentTools(ctx context.Context, chat *model.DockChat, userID string, agent *model.Agent) ([]string, error) {
 	actor, err := s.authz.ResolveActor(ctx, chat.WorkspaceID, userID)
 	if err != nil {
@@ -117,9 +134,8 @@ func (s *DockChatService) slackAgentTools(ctx context.Context, chat *model.DockC
 		return nil, err
 	}
 	var allowed []string
-	pmTools := []string{"list_tasks", "get_task", "get_task_context", "list_task_checklist", "list_epics", "get_epic", "list_epic_tasks", "list_sprints", "list_sprint_tasks", "list_workspace_teams", "list_team_workflows_with_stages"}
 	for _, tool := range scoped {
-		if (access.PM && slices.Contains(pmTools, tool)) || (access.Support && slices.Contains(safeSupportDiscoveryToolAliases, tool)) {
+		if (access.PM && slices.Contains(slackPMReadTools, tool)) || (access.Support && slices.Contains(safeSupportDiscoveryToolAliases, tool)) {
 			allowed = append(allowed, tool)
 		}
 	}
@@ -267,13 +283,23 @@ func (s *SlackService) deliverAgentAnswer(ctx context.Context, job *model.Suppor
 		return err
 	}
 	if strings.TrimSpace(answer) == "" {
-		if s.channels.now().Sub(job.CreatedAt) < 5*time.Minute {
+		status, err := s.repo.AgentTurnStatus(ctx, a.WorkspaceID, p.ChatID, p.TurnID)
+		if err != nil {
+			return err
+		}
+		switch {
+		case status == model.AgentRunStatusFailed:
+			answer = "I couldn’t complete this request. Please try again."
+		case status == model.AgentRunStatusCancelled:
+			answer = "This request was cancelled."
+		case s.channels.now().Sub(job.CreatedAt) < 5*time.Minute:
 			if err := s.updateReadProgress(ctx, a, &p, job); err != nil {
 				s.channels.logger.WarnContext(ctx, "Slack activity update unavailable", "error", err)
 			}
 			return errSlackAgentPending
+		default:
+			answer = "I couldn’t finish this answer in time. Please try asking again."
 		}
-		answer = "I couldn’t finish this answer in time. Please try asking again."
 	}
 	token, err := s.channels.decryptToken(a)
 	if err != nil {

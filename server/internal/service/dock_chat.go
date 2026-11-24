@@ -929,7 +929,8 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 	triggerContext, err := json.Marshal(struct {
 		DockChatID       string                           `json:"dock_chat_id"`
 		AttachedContexts []model.AgentRunContextReference `json:"attached_contexts,omitempty"`
-	}{DockChatID: chat.ID, AttachedContexts: attachedContexts})
+		SlackThread      bool                             `json:"slack_thread,omitempty"`
+	}{DockChatID: chat.ID, AttachedContexts: attachedContexts, SlackThread: chat.SlackThread})
 	if err != nil {
 		return fmt.Errorf("encode dock chat context: %w", err)
 	}

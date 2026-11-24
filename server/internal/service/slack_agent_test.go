@@ -35,11 +35,17 @@ func (f *slackTestAsk) SendMessage(_ context.Context, workspace, user, chat stri
 }
 
 func TestSlackAgentDMDelivery(t *testing.T) {
+	for _, outcome := range []string{"answer", "failed", "cancelled"} {
+		t.Run(outcome, func(t *testing.T) { testSlackAgentDMDelivery(t, outcome) })
+	}
+}
+func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	ctx := context.Background()
 	f := newChannelFixture(t)
 	account := f.connect(t, f.workspace)
 	for _, query := range []string{
 		"UPDATE support_channel_accounts SET provider='slack',ai_replies_disabled=false",
+		"CREATE TABLE agent_runs(id text,workspace_id text,status text)",
 		"CREATE TABLE slack_members(account_id text,slack_user text,user_id text)",
 		"CREATE TABLE dock_chats(id text PRIMARY KEY,workspace_id text,user_id text,title text,visibility text,slack_thread boolean,created_at datetime,updated_at datetime)",
 		"CREATE TABLE agent_run_messages(id text,workspace_id text,run_id text,dock_chat_id text,dock_chat_sequence integer,role text,message_type text,content text,tool_invocations text)",
@@ -133,12 +139,23 @@ func TestSlackAgentDMDelivery(t *testing.T) {
 	if len(delivered) != 3 {
 		t.Fatal("repeated identical phase")
 	}
-	insert("answer", "assistant", "assistant_final", "Task A is blocked.", "[]", 3)
-	insert("next", "user", "prompt", "another question", "[]", 4)
-	insert("other", "assistant", "assistant_final", "Another answer.", "[]", 5)
+	expected := "Task A is blocked."
+	if outcome == "answer" {
+		insert("answer", "assistant", "assistant_final", "Task A is blocked.", "[]", 3)
+		insert("next", "user", "prompt", "another question", "[]", 4)
+		insert("other", "assistant", "assistant_final", "Another answer.", "[]", 5)
+	} else {
+		if err := f.db.Exec("INSERT INTO agent_runs VALUES ('run',?,?)", f.workspace, outcome).Error; err != nil {
+			t.Fatal(err)
+		}
+		expected = "I couldn’t complete this request. Please try again."
+		if outcome == "cancelled" {
+			expected = "This request was cancelled."
+		}
+	}
 	due()
 	work(SlackAgentReplyJob, true)
-	if len(delivered) != 4 || delivered[3]["text"] != "Task A is blocked." || delivered[3]["ts"] != "30.2" || delivered[3]["channel"] != "D1" {
+	if len(delivered) != 4 || delivered[3]["text"] != expected || delivered[3]["ts"] != "30.2" || delivered[3]["channel"] != "D1" {
 		t.Fatalf("wrong final reply: %v", delivered)
 	}
 	if strings.Join(statuses, ",") != "processing,active" {
@@ -183,5 +200,27 @@ func TestSlackHelpRespectsAccessAndAI(t *testing.T) {
 	support := (slackAccess{Support: true}).help(true, true)
 	if !strings.Contains(support, "customer report") || strings.Contains(support, "ENG-123") || strings.Contains(support, "Create a task") {
 		t.Fatalf("Support guide: %s", support)
+	}
+}
+
+func TestSlackAskRuntimeSkillContract(t *testing.T) {
+	agent := &model.Agent{ID: "ask", IsSystem: true, PresetKey: model.AgentPresetAskAgent, PresetVersionKey: "ask_agent_default", RuntimeKind: "native_sdk", AllowedTools: mustJSONStringSlice(askAgentPresetTools())}
+	original := runtimeAgentFromHelpinAgent(agent, "helpin")
+	if len(original.Skills) == 0 {
+		t.Fatal("expected in-app Ask skills")
+	}
+	input := model.AgentRunInputPayload{AllowedTools: []string{"list_tasks"}, Trigger: &model.AgentRunTriggerContext{TriggerType: dockChatTriggerType, Context: json.RawMessage(`{"dock_chat_id":"chat","slack_thread":true}`)}}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{ID: "run", WorkspaceID: "ws", TargetType: "workspace", TargetID: "ws", AgentID: "ask", DockChatID: stringPointer("chat"), Input: raw}
+	projected := runtimeAgentForDockExecution(run, original)
+	if len(projected.Skills) != 0 || projected.ID == original.ID || runtimeAgentBaseID(projected.ID) != original.ID {
+		t.Fatal("Slack launch inherited in-app skill contract")
+	}
+	req, err := runtimeStartRunRequest(run, agent, projected)
+	if err != nil || !sameNormalizedToolSet(req.AllowedTools, input.AllowedTools) {
+		t.Fatalf("scoped launch: %+v %v", req.AllowedTools, err)
 	}
 }
