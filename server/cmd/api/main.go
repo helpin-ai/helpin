@@ -1855,6 +1855,7 @@ func main() {
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
 	mcpService.SetDocsChangeProposals(docsChangeProposalService)
 	mcpService.SetAttachments(pmAttachmentService)
+	mcpService.SetTaskAttachments(pmAttachmentRepo, s3Client)
 	mcpService.SetDocsContentReader(docsContentRepo)
 	mcpService.SetPMComments(pmCommentService)
 	mcpService.SetCRMRecords(crmCompanyService, crmActivityService, service.NewCRMRecordUpsertService(

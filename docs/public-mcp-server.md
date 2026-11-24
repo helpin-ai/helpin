@@ -238,6 +238,8 @@ The [catalog](../server/internal/service/mcp_catalog.go) defines the available t
 | `list_tasks` | Read | Lists bounded task records | `PermPMRead` + PM module |
 | `get_task` | Read | Loads one task by ID and verifies workspace ownership | `PermPMRead` + PM module |
 | `get_task_context` | Read | Loads bounded task context; linked Docs/content additionally require Docs read, and Git links require context/integration read | `PermPMRead` + PM module |
+| `list_task_attachments` | Read | Lists uploaded task and comment files by task ID or key, with filenames and attachment IDs | `PermPMRead` + PM module |
+| `read_task_attachment` | Read | Returns a file from that task in chunks. Markdown and UTF-8 text are directly readable. Follow `next_offset` when present. Binary chunks carry an explicit base64 encoding. | `PermPMRead` + PM module |
 | `list_task_checklist` | Read | Lists checklist items for an accessible task | `PermPMRead` + PM module |
 | `create_task` | Write | Creates a task through the canonical Helpin command layer | `PermPMEdit` + PM module |
 | `create_task_batch` | Write | Creates up to 50 implementation-ready tasks in one accessible epic | `PermPMEdit` + PM module |

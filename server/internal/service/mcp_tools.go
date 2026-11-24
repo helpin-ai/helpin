@@ -327,6 +327,9 @@ func (s *MCPService) executeSpecialMCPTool(
 		}
 		return &MCPToolResult{Summary: "Workspace search completed.", Data: result}, nil
 
+	case "list_task_attachments", "read_task_attachment":
+		return s.executeTaskAttachment(ctx, principal, name, arguments)
+
 	case "get_task":
 		var input struct {
 			TaskID string `json:"task_id"`

@@ -138,6 +138,8 @@ type MCPService struct {
 	docsProposals  mcpDocsChangeProposalService
 	// proposalCommands overrides commands for propose_document_change in tests.
 	proposalCommands mcpCommandExecutor
+	taskFiles        *repository.PMAttachmentRepository
+	taskFileStore    mcpTaskFileStore
 	attachments      mcpAttachmentService
 	docsContent      mcpDocsContentReader
 	pmComments       mcpPMCommentLister
