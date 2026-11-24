@@ -15,7 +15,7 @@ export interface SlackSettings {
   connected?: boolean
   ai_enabled?: boolean
   workspace_name?: string
-  routes: SlackRoute[]
+  routes: SlackRoute[] | null
 }
 export interface SlackChannel {
   id: string

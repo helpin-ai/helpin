@@ -72,7 +72,7 @@ func (r *SlackRepository) Reactivate(ctx context.Context, a *model.SupportChanne
 
 // Routes lists the installation's enabled channels.
 func (r *SlackRepository) Routes(ctx context.Context, account string) ([]model.SlackRoute, error) {
-	var rows []model.SlackRoute
+	rows := make([]model.SlackRoute, 0)
 	err := slackRoutes(r.db.WithContext(ctx), account).Order("r.channel_name").Scan(&rows).Error
 	return rows, err
 }
