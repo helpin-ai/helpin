@@ -510,6 +510,7 @@ export interface Comment {
   body: string;
   parent_id?: string;
   slack_discussion_channel?: string;
+  slack_permalink?: string;
   block_id?: string;
   range?: Record<string, unknown>;
   anchor_text?: string;

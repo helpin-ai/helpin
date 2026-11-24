@@ -122,6 +122,26 @@ func (r *SupportMessageRepository) create(ctx context.Context, message *model.Su
 	if message == nil {
 		return gorm.ErrInvalidData
 	}
+	if link, ok := model.SlackSource(ctx); ok && message.MessageType == "system" {
+		metadata := map[string]any{}
+		if message.Metadata != "" {
+			if err := json.Unmarshal([]byte(message.Metadata), &metadata); err != nil {
+				return err
+			}
+		}
+		if metadata == nil {
+			metadata = map[string]any{}
+		}
+		metadata["via"] = "slack"
+		if link != "" {
+			metadata["slack_permalink"] = link
+		}
+		data, err := json.Marshal(metadata)
+		if err != nil {
+			return err
+		}
+		message.Metadata = string(data)
+	}
 	if message.PendingGuard != nil {
 		return r.createPendingMessage(ctx, message)
 	}

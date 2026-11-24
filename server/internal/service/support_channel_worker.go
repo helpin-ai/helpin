@@ -81,6 +81,9 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 	}
 	if workErr != nil {
 		s.logger.ErrorContext(ctx, "channel job failed", "job_id", job.ID, "kind", kind, "attempt", job.Attempts, "error", workErr)
+		if (kind == SlackEventJob || kind == SlackAgentReplyJob) && s.slack.reportRequestFailure(ctx, job) {
+			workErr = &repository.InboundUndeliverableError{Reason: "Slack request failed after retry; requester notified"}
+		}
 		if kind == SupportInboundKindChannelAttachment {
 			s.markAttachmentRetrying(ctx, job)
 		}

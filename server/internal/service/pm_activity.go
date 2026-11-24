@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -63,6 +64,16 @@ func (s *PMActivityService) log(ctx context.Context, workspaceID, entityType, en
 		return fmt.Errorf("workspace_id, entity_type, entity_id, and action are required")
 	}
 
+	if link, ok := model.SlackSource(ctx); ok {
+		metadata = maps.Clone(metadata)
+		if metadata == nil {
+			metadata = map[string]any{}
+		}
+		metadata["via"] = "slack"
+		if link != "" {
+			metadata["slack_permalink"] = link
+		}
+	}
 	rawMetadata := json.RawMessage(`{}`)
 	if metadata != nil {
 		bytes, err := json.Marshal(metadata)

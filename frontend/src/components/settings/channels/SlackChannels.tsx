@@ -109,7 +109,7 @@ export function SlackChannels({
                   : data?.connected
                     ? data.workspace_name
                     : data?.configured
-                      ? 'Connect a workspace to route Slack threads.'
+                      ? 'Connect your workspace to use @Helpin in Slack.'
                       : 'Configure the Slack app on your Helpin instance to connect.'}
             </p>
           </div>
@@ -124,7 +124,7 @@ export function SlackChannels({
                 })
               }
             >
-              Add channel
+              Add rule
             </Button>
           ) : (
             <Button
@@ -139,6 +139,10 @@ export function SlackChannels({
         </div>
         {data?.connected && (
           <div className="mt-3 border-t">
+            <div className="space-y-1 py-3">
+              <h3 className="text-sm font-medium">Channel rules</h3>
+              <p className="text-xs text-muted-foreground">Invite @Helpin to ask questions in a channel. Add a rule for automatic intake or channel defaults.</p>
+            </div>
             {data.routes?.map((route) => (
               <Button
                 key={route.channel_id}
@@ -268,7 +272,7 @@ function RouteDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {initial.channel_id ? 'Edit channel' : 'Add Slack channel'}
+            {initial.channel_id ? 'Edit channel rule' : 'Add channel rule'}
           </DialogTitle>
         </DialogHeader>
         <QuietPropertyRow
@@ -415,8 +419,8 @@ function RouteDialog({
               onClick={async () => {
                 if (
                   await confirm({
-                    title: 'Remove this channel?',
-                    description: 'Helpin will stop syncing this channel.',
+                    title: 'Remove this rule?',
+                    description: 'New requests will use the workspace defaults.',
                     confirmText: 'Remove',
                     variant: 'destructive',
                   })
@@ -424,7 +428,7 @@ function RouteDialog({
                   remove.mutate()
               }}
             >
-              Remove channel
+              Remove rule
             </Button>
           )}
           <Button variant="ghost" onClick={onClose} disabled={pending}>
@@ -434,7 +438,7 @@ function RouteDialog({
             disabled={!route.channel_id || pending}
             onClick={() => save.mutate()}
           >
-            Save channel
+            Save rule
           </Button>
         </DialogFooter>
       </DialogContent>

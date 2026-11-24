@@ -8,7 +8,7 @@ import { getSupportAIActivity, getSupportCodeCheck } from './supportAIActivityMo
 import { SupportCodeCheckCard } from './SupportCodeCheckCard';
 import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
-import { SlackMessageSource } from './SlackMessageSource';
+import { SlackMessageSource, SlackSourceLabel } from './SlackMessageSource';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
@@ -711,6 +711,10 @@ export const MessageBubble = memo(function MessageBubble({
     const taskHref = taskID && workspaceSlug ? buildTaskPath(workspaceSlug, taskID) : null;
     const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent, taskHref, taskID);
 
+    const sourceLabel = supportMetadataString(message.metadata, 'via') === 'slack'
+      ? <SlackSourceLabel href={supportMetadataString(message.metadata, 'slack_permalink')} />
+      : null;
+
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
     if (eventType) {
@@ -801,6 +805,7 @@ export const MessageBubble = memo(function MessageBubble({
               <div className="text-xs">{fullTimestamp}</div>
             </TooltipContent>
           </Tooltip>
+          {sourceLabel}
         </div>
       );
     }
@@ -822,6 +827,7 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           </TooltipContent>
         </Tooltip>
+          {sourceLabel}
       </div>
     );
   }

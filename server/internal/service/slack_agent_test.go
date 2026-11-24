@@ -86,7 +86,7 @@ func TestSlackInstallAIDefaultAndReconnect(t *testing.T) {
 }
 
 func TestSlackAgentDMDelivery(t *testing.T) {
-	for _, outcome := range []string{"quick", "answer", "failed", "cancelled", "timeout"} {
+	for _, outcome := range []string{"quick", "answer", "fallback", "failed", "cancelled", "timeout", "worker failure"} {
 		t.Run(outcome, func(t *testing.T) { testSlackAgentDMDelivery(t, outcome) })
 	}
 }
@@ -115,6 +115,10 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	var delivered []map[string]any
 	var statuses []string
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat.getPermalink" {
+			fmt.Fprint(w, `{"ok":false,"error":"message_not_found"}`)
+			return
+		}
 		if r.URL.Path != "/agents.sessions.setStatus" && r.URL.Path != "/chat.update" && r.URL.Path != "/chat.postMessage" {
 			t.Errorf("unexpected method %s", r.URL.Path)
 		}
@@ -124,6 +128,10 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 		}
 		if r.URL.Path == "/agents.sessions.setStatus" {
 			statuses = append(statuses, fmt.Sprint(message["status"]))
+			if outcome == "fallback" {
+				fmt.Fprint(w, `{"ok":false,"error":"feature_disabled"}`)
+				return
+			}
 		} else {
 			message["method"] = r.URL.Path
 			delivered = append(delivered, message)
@@ -190,16 +198,35 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	}
 	insert("progress", "assistant", "assistant_turn", "private work", `[{"tool_name":"mcp__helpin__list_tasks","input":{"private":"sensitive"}}]`, 2)
 	work(SlackAgentReplyJob, true)
-	if len(delivered) != 2 || delivered[1]["text"] != "Reading tasks…" || delivered[1]["method"] != "/chat.postMessage" || delivered[1]["thread_ts"] != "20.1" {
+	expectedMessages := 1
+	if outcome == "fallback" {
+		expectedMessages = 2
+	}
+	if len(delivered) != expectedMessages || (outcome == "fallback" && delivered[1]["text"] != "Reading tasks…") {
 		t.Fatalf("wrong read feedback: %v", delivered)
 	}
 	due()
 	work(SlackAgentReplyJob, true)
-	if len(delivered) != 2 {
+	if len(delivered) != expectedMessages {
 		t.Fatal("repeated identical phase")
 	}
+	if outcome == "worker failure" {
+		mustExec(t, f.db, "DROP TABLE agent_run_messages")
+		mustExec(t, f.db, "UPDATE support_inbound_jobs SET attempts=1,created_at=? WHERE kind=?", time.Now().Add(-2*time.Minute), SlackAgentReplyJob)
+		due()
+		work(SlackAgentReplyJob, true)
+		var status string
+		if err := f.db.Table("support_inbound_jobs").Select("status").Where("kind=?", SlackAgentReplyJob).Scan(&status).Error; err != nil {
+			t.Fatal(err)
+		}
+		if status != "failed" || len(delivered) != 2 || !strings.Contains(fmt.Sprint(delivered[1]["text"]), "couldn’t confirm") || strings.Join(statuses, ",") != "processing,active" {
+			t.Fatal("missing terminal failure notice", status, delivered, statuses)
+		}
+		return
+	}
+
 	expected := "## Update\n- **Task A** is blocked."
-	if outcome == "answer" {
+	if outcome == "answer" || outcome == "fallback" {
 		insert("answer", "assistant", "assistant_final", expected, "[]", 3)
 		insert("next", "user", "prompt", "another question", "[]", 4)
 		insert("other", "assistant", "assistant_final", "Another answer.", "[]", 5)
@@ -207,7 +234,7 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 		if err := f.db.Exec("UPDATE support_inbound_jobs SET created_at=? WHERE kind=?", time.Now().Add(-6*time.Minute), SlackAgentReplyJob).Error; err != nil {
 			t.Fatal(err)
 		}
-		expected = "Helpin didn’t receive a final answer within five minutes. Try again with a narrower question."
+		expected = "I didn’t receive a final answer within five minutes. If you requested a change, check the record in Helpin before retrying."
 	} else {
 		if err := f.db.Exec("INSERT INTO agent_runs VALUES ('run',?,?,?)", f.workspace, outcome, `skill "document_editing" requires tool "private-internal-name"`).Error; err != nil {
 			t.Fatal(err)
@@ -219,11 +246,19 @@ func testSlackAgentDMDelivery(t *testing.T, outcome string) {
 	}
 	due()
 	work(SlackAgentReplyJob, true)
-	if len(delivered) != 3 || delivered[2]["text"] != expected || delivered[2]["method"] != "/chat.update" || delivered[2]["ts"] != "30.2" || delivered[2]["channel"] != "D1" {
+	if len(delivered) != expectedMessages+1 {
+		t.Fatalf("unexpected deliveries: %v", delivered)
+	}
+	final := delivered[expectedMessages]
+	method := "/chat.postMessage"
+	if outcome == "fallback" {
+		method = "/chat.update"
+	}
+	if final["text"] != expected || final["method"] != method || final["channel"] != "D1" {
 		t.Fatalf("wrong final reply: %v", delivered)
 	}
-	if outcome == "answer" && fmt.Sprint(delivered[2]["blocks"]) != fmt.Sprint([]any{map[string]string{"type": "markdown", "text": expected}}) {
-		t.Fatalf("wrong formatted answer: %v", delivered[2]["blocks"])
+	if outcome == "answer" && fmt.Sprint(final["blocks"]) != fmt.Sprint([]any{map[string]string{"type": "markdown", "text": expected}}) {
+		t.Fatalf("wrong formatted answer: %v", final["blocks"])
 	}
 	if strings.Join(statuses, ",") != "processing,active" {
 		t.Fatalf("wrong lifecycle %v", statuses)
@@ -234,9 +269,9 @@ func TestSlackAgentScopeAndHistory(t *testing.T) {
 	ctx := context.Background()
 	dock := DockChatService{authz: authorization.NewAuthzService(nil, dockChatAdminMemberRepo{}, nil)}
 	chat := &model.DockChat{WorkspaceID: "ws", SlackThread: true}
-	agent := &model.Agent{AllowedTools: json.RawMessage(`["list_tasks","list_support_conversations","create_task","run_command","list_deals"]`)}
+	agent := &model.Agent{AllowedTools: json.RawMessage(`["list_tasks","list_support_conversations","update_task","create_task","run_command","list_deals"]`)}
 	tools, err := dock.scopedChatExecutionTools(ctx, chat, "user", agent)
-	if err != nil || !sameNormalizedToolSet(tools, []string{"list_tasks", "list_support_conversations"}) {
+	if err != nil || !sameNormalizedToolSet(tools, []string{"list_tasks", "list_support_conversations", "update_task", "assign_support_conversation", "set_support_conversation_status", "set_support_conversation_priority"}) {
 		t.Fatalf("tools: %v %v", tools, err)
 	}
 	a := &authorization.Actor{UserID: "user", WorkspaceMemberID: "member", Role: "member"}
@@ -300,6 +335,10 @@ func TestSlackUnlinkedSupportFollowupPromptsInThread(t *testing.T) {
 	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
 	calls := 0
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/users.info" {
+			fmt.Fprint(w, `{"ok":true,"user":{"id":"U1"}}`)
+			return
+		}
 		calls++
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -351,5 +390,176 @@ func TestSlackLinkCodeRedemption(t *testing.T) {
 				t.Fatal("reused a consumed code")
 			}
 		})
+	}
+}
+
+func TestSlackFirstMentionWithoutChannelRule(t *testing.T) {
+	ctx := context.Background()
+	f := newChannelFixture(t)
+	account := f.connect(t, f.workspace)
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", account.ID)
+	for _, ddl := range []string{
+		"CREATE TABLE slack_channel_routes(account_id text,channel_id text,channel_name text,purpose text)",
+		"CREATE TABLE slack_channel_ids(account_id text,channel_id text,routing_id text,current_id text)",
+		"CREATE TABLE slack_members(account_id text,slack_user text,user_id text, PRIMARY KEY(account_id,slack_user))",
+		"CREATE TABLE users(id text,email text,email_verified_at datetime)",
+		"CREATE TABLE workspace_members(workspace_id text,user_id text,status text)",
+		"CREATE TABLE support_conversations(id text,workspace_id text,channel_account_id text,provider_thread_key text,anonymized_at datetime,status text,deleted_at datetime)",
+	} {
+		mustExec(t, f.db, ddl)
+	}
+	mustExec(t, f.db, "INSERT INTO users VALUES ('member','case@example.com',CURRENT_TIMESTAMP)")
+	mustExec(t, f.db, "INSERT INTO workspace_members VALUES (?,'member','active')", f.workspace)
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{SigningSecret: "fixture"})
+	s.authz = authorization.NewAuthzService(f.db, dockChatAdminMemberRepo{}, nil)
+	external := false
+	var methods []string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/users.info":
+			fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","team_id":"424242","is_email_confirmed":true,"profile":{"email":"CASE@example.com"}}}`)
+		case "/conversations.info":
+			fmt.Fprintf(w, `{"ok":true,"channel":{"id":"C1","is_member":true,"is_ext_shared":%t}}`, external)
+		case "/chat.postMessage", "/chat.postEphemeral":
+			methods = append(methods, r.URL.Path)
+			var msg map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&msg); err != nil || msg["thread_ts"] == nil || !strings.Contains(fmt.Sprint(msg["text"]), "Catch up on tasks") {
+				t.Error("missing threaded help reply")
+			}
+			fmt.Fprint(w, `{"ok":true}`)
+		default:
+			t.Error("unexpected Slack method", r.URL.Path)
+		}
+	}))
+	defer api.Close()
+	s.api.BaseURL = api.URL + "/"
+	accept := func(kind, ts, content string) {
+		body := fmt.Sprintf(`{"type":"event_callback","team_id":"424242","event_id":"Ev","event":{"type":%q,"channel":"C1","user":"U1","ts":%q,"text":%q}}`, kind, ts, content)
+		stamp := fmt.Sprint(time.Now().Unix())
+		mac := hmac.New(sha256.New, []byte("fixture"))
+		fmt.Fprintf(mac, "v0:%s:%s", stamp, body)
+		if _, err := s.AcceptEvent(ctx, stamp, "v0="+hex.EncodeToString(mac.Sum(nil)), []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	accept("message", "10", "ordinary discussion")
+	accept("app_mention", "11", "<@"+account.Handle+"> help")
+	accept("message", "11", "<@"+account.Handle+"> help")
+	if ok, err := f.svc.processNextJob(ctx, SlackEventJob); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if ok, err := f.svc.processNextJob(ctx, SlackEventJob); ok || err != nil {
+		t.Fatal("unexpected extra job", ok, err)
+	}
+	linked, err := s.repo.Member(ctx, account.ID, "U1")
+	if err != nil || linked != "member" {
+		t.Fatal("verified member did not link", linked, err)
+	}
+	external = true
+	accept("app_mention", "12", "<@"+account.Handle+"> help")
+	if ok, err := f.svc.processNextJob(ctx, SlackEventJob); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if strings.Join(methods, ",") != "/chat.postMessage,/chat.postEphemeral" {
+		t.Fatal("wrong delivery", methods)
+	}
+	routes, err := s.repo.Routes(ctx, account.ID)
+	if err != nil || len(routes) != 0 {
+		t.Fatal("unexpected channel rule", routes, err)
+	}
+	mustExec(t, f.db, "INSERT INTO users VALUES ('second','case@example.com',CURRENT_TIMESTAMP)")
+	mustExec(t, f.db, "INSERT INTO workspace_members VALUES (?,'second','active')", f.workspace)
+	if id, err := s.repo.MatchMember(ctx, account, "U2", "case@example.com"); id != "" || err != nil {
+		t.Fatal("ambiguous identity matched", id, err)
+	}
+}
+
+func TestSlackReviewedSupportTaskAndFollowupAssignment(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+	actor := &authorization.Actor{WorkspaceID: env.wsID, UserID: env.userID, WorkspaceMemberID: "member-story-001", Role: model.RoleAdmin}
+	ctx = authorization.WithActor(ctx, actor)
+	const permalink = "https://example.slack.com/archives/C10/p1730000000000001"
+	ctx = model.WithSlackSource(ctx, permalink)
+	mustExec(t, env.db, "CREATE TABLE slack_task_threads(account_id text,channel_id text,thread_ts text,task_id text,PRIMARY KEY(account_id,channel_id,thread_ts))")
+	mustExec(t, env.db, "CREATE TABLE slack_channel_routes(account_id text,channel_id text,purpose text)")
+	conversations := repository.NewSupportConversationRepository(env.db)
+	inbox := NewSupportInboxService(conversations, nil, repository.NewSupportMessageRepository(env.db), nil, repository.NewCRMAssociationRepository(env.db), nil, nil, nil, nil, nil, nil, repository.NewUserRepository(env.db), nil, nil, nil)
+	inbox.SetTaskService(env.svc)
+	conv := &model.SupportConversation{WorkspaceID: env.wsID, Subject: "Wrong invoice date", Status: "open", Priority: "medium"}
+	if err := conversations.Create(ctx, conv); err != nil {
+		t.Fatal(err)
+	}
+	conv, err := inbox.loadConversationAccessible(ctx, env.wsID, conv.ID)
+	if err != nil || conv == nil {
+		t.Fatalf("source unavailable: %v", err)
+	}
+	_, hash := supportPMTriageEvidence(conv, nil)
+	f := newChannelFixture(t)
+	account := f.connect(t, env.wsID)
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", account.ID)
+	for _, ddl := range []string{
+		"CREATE TABLE slack_channel_ids(account_id text,channel_id text,routing_id text,current_id text)",
+		"CREATE TABLE slack_members(account_id text,slack_user text,user_id text)",
+		"CREATE TABLE slack_task_drafts(id text,account_id text,user_id text,content text,expires_at datetime)",
+	} {
+		mustExec(t, env.db, ddl)
+	}
+	mustExec(t, env.db, "INSERT INTO slack_members VALUES (?,'U1',?)", account.ID, env.userID)
+	s := NewSlackService(f.svc, repository.NewSlackRepository(env.db), SlackConfig{SigningSecret: "fixture"})
+	s.tasks = env.svc
+	s.authz = authorization.NewAuthzService(env.db, dockChatAdminMemberRepo{}, nil)
+	s.channels.inbox = inbox
+	s.appURL = "https://helpin.example"
+	thread := model.SlackThread{AccountID: account.ID, Channel: "C10", Root: "1730000000.000001", Permalink: permalink}
+	draftID := "01010101-0000-4000-8000-010101010101"
+	draft, err := json.Marshal(slackDraft{Thread: thread, ConversationID: conv.ID, SourceHash: hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, env.db, "INSERT INTO slack_task_drafts VALUES (?,?,?,?,?)", draftID, account.ID, env.userID, string(draft), time.Now().Add(time.Minute))
+	payload := fmt.Sprintf(`{"type":"view_submission","team":{"id":"424242"},"user":{"id":"U1"},"view":{"callback_id":"helpin_task","private_metadata":%q,"state":{"values":{"title":{"value":{"value":"Fix invoice dates"}},"description":{"value":{"value":"Fix the incorrect invoice date."}},"team":{"value":{"selected_option":{"value":%q}}},"type":{"value":{"selected_option":{"value":"bug"}}}}}}}`, draftID, env.teamID)
+	raw := url.Values{"payload": {payload}}.Encode()
+	stamp := fmt.Sprint(time.Now().Unix())
+	mac := hmac.New(sha256.New, []byte("fixture"))
+	fmt.Fprintf(mac, "v0:%s:%s", stamp, raw)
+	receipt, err := s.Action(context.Background(), stamp, "v0="+hex.EncodeToString(mac.Sum(nil)), []byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.repo.ThreadTask(ctx, thread.AccountID, thread.Channel, thread.Root)
+	if err != nil || id == "" || !strings.Contains(fmt.Sprint(receipt), "/pm/tasks/"+id) {
+		t.Fatalf("missing committed task or receipt: %v %v", receipt, err)
+	}
+	linked, err := conversations.GetByID(ctx, env.wsID, conv.ID, "", model.RoleAdmin)
+	if err != nil || linked == nil || derefString(linked.LinkedTaskID) != id {
+		t.Fatal("conversation lost reviewed task", err)
+	}
+	cmd := NewInternalCommandService(nil, env.svc, nil, nil, nil, nil, env.svc.taskRepo, nil)
+	args, err := json.Marshal(map[string]any{"task_id": id, "owner_member_ids": []string{"member-story-001"}, "priority": "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, runDB, meta := setupDockExecutionGuardTest(t)
+	cmd.agentRunRepo = guard.agentRunRepo
+	cmd.authz = authorization.NewAuthzService(env.db, dockChatAdminMemberRepo{}, nil)
+	meta.WorkspaceID, meta.TargetID, meta.ActorRole, meta.ActorID, meta.AgentID = env.wsID, env.wsID, model.RoleAdmin, env.userID, "ask-agent"
+	meta.AgentScopeResolved = true
+	meta.AgentTeamIDs = []string{env.teamID}
+	runInput, err := json.Marshal(model.AgentRunInputPayload{AllowedTools: []string{"update_task"}, Trigger: &model.AgentRunTriggerContext{ActorID: &env.userID, TriggerType: dockChatTriggerType, Context: json.RawMessage(`{"dock_chat_id":"dock-1","slack_thread":true,"slack_permalink":"https://example.slack.com/archives/C10/p1730000000000001"}`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, runDB, "UPDATE agent_runs SET workspace_id=?, target_id=?, input=? WHERE id=?", env.wsID, env.wsID, runInput, meta.RunID)
+	if _, err := cmd.Execute(ctx, meta, "pm.create_task", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("ungranted action was accepted")
+	}
+	_, err = cmd.Execute(ctx, meta, "pm.update_task", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := env.svc.GetByID(ctx, id)
+	if err != nil || len(task.Owners) != 1 || task.Task.Priority != "high" {
+		t.Fatal("requested assignment and priority did not persist", err)
 	}
 }

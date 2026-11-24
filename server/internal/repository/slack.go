@@ -108,6 +108,22 @@ func (r *SlackRepository) Route(ctx context.Context, account, channel string) (*
 	return &row, nil
 }
 
+// EffectiveRoute supplies on-demand behavior for an invited channel without saving a rule.
+func (r *SlackRepository) EffectiveRoute(ctx context.Context, account, channel string) (*model.SlackRoute, error) {
+	rule, err := r.Route(ctx, account, channel)
+	if err != nil || rule != nil {
+		return rule, err
+	}
+	id, err := lookupSlackChannelID(r.db.WithContext(ctx), account, channel)
+	if err != nil {
+		return nil, err
+	}
+	if id.RoutingID == "" {
+		id.RoutingID, id.CurrentID = channel, channel
+	}
+	return &model.SlackRoute{AccountID: account, ChannelID: id.RoutingID, CurrentChannelID: id.CurrentID, Purpose: "on_request"}, nil
+}
+
 // SetRoute updates the validated destination for one channel.
 func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, preserveCompany bool) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -132,7 +148,7 @@ func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, pr
 	})
 }
 
-// RemoveRoute disables intake and delivery for a channel.
+// RemoveRoute restores on-demand intake and removes channel defaults.
 func (r *SlackRepository) RemoveRoute(ctx context.Context, account, channel string) error {
 	return r.db.WithContext(ctx).Where("account_id=? AND channel_id=COALESCE((SELECT routing_id FROM slack_channel_ids WHERE account_id=? AND channel_id=?),?)", account, account, channel, channel).Delete(&model.SlackRoute{}).Error
 }
@@ -142,6 +158,20 @@ func (r *SlackRepository) Member(ctx context.Context, account, user string) (str
 	var id string
 	err := r.db.WithContext(ctx).Table("slack_members").Select("user_id").Where("account_id=? AND slack_user=?", account, user).Scan(&id).Error
 	return id, err
+}
+
+// MatchMember only inserts a link when the verified email identifies exactly one active member.
+func (r *SlackRepository) MatchMember(ctx context.Context, a *model.SupportChannelAccount, user, email string) (string, error) {
+	err := r.db.WithContext(ctx).Exec(`INSERT INTO slack_members(account_id,slack_user,user_id)
+    SELECT ?,?,u.id FROM users u JOIN workspace_members m ON m.user_id=u.id
+    WHERE m.workspace_id=? AND m.status='active' AND u.email_verified_at IS NOT NULL AND lower(u.email)=lower(?)
+    AND (SELECT count(*) FROM users v JOIN workspace_members n ON n.user_id=v.id
+         WHERE n.workspace_id=m.workspace_id AND n.status='active' AND v.email_verified_at IS NOT NULL AND lower(v.email)=lower(u.email))=1
+    ON CONFLICT DO NOTHING`, a.ID, user, a.WorkspaceID, email).Error
+	if err != nil {
+		return "", err
+	}
+	return r.Member(ctx, a.ID, user)
 }
 
 // GrantLink records an expiring link supplied privately to the Slack user.
@@ -185,7 +215,8 @@ func (r *SlackRepository) ThreadTask(ctx context.Context, account, channel, root
 // LinkTask establishes a thread link after the caller checks the task audience.
 func (r *SlackRepository) LinkTask(ctx context.Context, account, channel, root, id, actor string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return bindSlackTask(ctx, tx, model.SlackThread{AccountID: account, Channel: channel, Root: root}, id, actor)
+		source, _ := model.SlackSource(ctx)
+		return bindSlackTask(ctx, tx, model.SlackThread{AccountID: account, Channel: channel, Root: root, Permalink: source}, id, actor)
 	})
 }
 
@@ -197,13 +228,16 @@ func bindSlackTask(ctx context.Context, tx *gorm.DB, thread model.SlackThread, i
 		return nil
 	} // DMs have no shared task discussion.
 	var route model.SlackRoute
-	if err := tx.Where("account_id=? AND channel_id=?", thread.AccountID, thread.Channel).First(&route).Error; err != nil {
+	if err := tx.Where("account_id=? AND channel_id=?", thread.AccountID, thread.Channel).Limit(1).Find(&route).Error; err != nil {
 		return err
 	}
 	if route.Purpose != "pm" {
 		return nil
 	}
 	root := model.PMComment{EntityType: "task", EntityID: id, AuthorID: actor, Body: "Replies in this discussion are shared with #" + route.ChannelName + "."}
+	if thread.Permalink != "" {
+		root.SlackPermalink = &thread.Permalink
+	}
 	if err := tx.Create(&root).Error; err != nil {
 		return err
 	}

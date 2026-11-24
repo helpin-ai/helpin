@@ -43,6 +43,7 @@ type Event struct {
 	DefaultCompanyID   *string `json:"-"`
 	ExistingThreadOnly bool
 	Teammate           bool
+	TeammateUserID     *string
 	// ExternalMessageKey identifies the message within the connected account.
 	ExternalMessageKey string
 	DisplayName        string

@@ -16,7 +16,7 @@ import (
 // support message projection triggers serialize public message changes through
 // the parent conversation lock; ordinary reads here avoid reversing that order.
 // validate must only inspect its arguments, not perform database or provider IO.
-func (r *SupportConversationRepository) LinkTaskReviewed(ctx context.Context, workspaceID, conversationID, taskID string, validate func(*model.SupportConversation, []model.SupportMessage, *model.PMTask) error) error {
+func (r *SupportConversationRepository) LinkTaskReviewed(ctx context.Context, workspaceID, conversationID, taskID string, thread *model.SlackThread, actorID string, validate func(*model.SupportConversation, []model.SupportMessage, *model.PMTask) error) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task model.PMTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", taskID, workspaceID).First(&task).Error; err != nil {
@@ -35,6 +35,20 @@ func (r *SupportConversationRepository) LinkTaskReviewed(ctx context.Context, wo
 		}
 		if err := validate(&conversation, messages, &task); err != nil {
 			return err
+		}
+		if thread != nil {
+			linked, err := NewSlackRepository(tx).ThreadTask(ctx, thread.AccountID, thread.Channel, thread.Root)
+			if err != nil {
+				return err
+			}
+			if linked != "" && linked != taskID {
+				return errors.New("thread already linked to a different task")
+			}
+			if linked == "" {
+				if err := bindSlackTask(ctx, tx, *thread, taskID, actorID); err != nil {
+					return err
+				}
+			}
 		}
 		return linkSupportTask(ctx, tx, workspaceID, conversationID, taskID)
 	})

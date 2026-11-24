@@ -32,7 +32,7 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 	}
 	ctx, progress := s.startProgress(ctx, token, m, "Preparing your task draft…")
 	defer s.finishProgress(ctx, token, m, progress)
-	d := slackDraft{Direct: slackDirect(m), Thread: model.SlackThread{AccountID: a.ID, Channel: m.Channel, Root: m.Root()}, TeamID: route.TeamID, EpicID: route.EpicID}
+	d := slackDraft{Direct: slackDirect(m), Thread: model.SlackThread{AccountID: a.ID, Channel: m.Channel, Root: m.Root(), Permalink: s.sourceURL(ctx, token, m.Destination(), m.Root())}, TeamID: route.TeamID, EpicID: route.EpicID}
 	var history []model.SupportMessage
 	var source *string
 	if conv != nil {
