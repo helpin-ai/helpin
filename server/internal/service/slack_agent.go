@@ -71,7 +71,11 @@ func (access slackAccess) help(edit, ai bool) string {
 		sections = append(sections, "*Get support context*\n"+example)
 	}
 	if access.PM && edit {
-		sections = append(sections, "*Turn a discussion into a task*\nIn a connected project channel, mention @Helpin and say, “Create a task from this thread.” Review the draft before saving.")
+		where := "In a connected project channel"
+		if access.Support {
+			where = "In a connected project channel or a linked support thread"
+		}
+		sections = append(sections, "*Turn a discussion into a task*\n"+where+", mention @Helpin and say, “Create a task from this thread.” Review the draft before saving.")
 	}
 	if len(sections) == 0 {
 		return "Your Helpin account needs access to PM or Support to ask about workspace records."
