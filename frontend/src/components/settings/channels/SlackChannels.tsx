@@ -113,20 +113,7 @@ export function SlackChannels({
                       : 'Configure the Slack app on your Helpin instance to connect.'}
             </p>
           </div>
-          {data?.connected ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                setDraft({
-                  ...emptyRoute,
-                  purpose: hasSupport ? 'support' : 'pm',
-                })
-              }
-            >
-              Add rule
-            </Button>
-          ) : (
+          {!data?.connected && (
             <Button
               size="sm"
               variant="outline"
@@ -139,9 +126,31 @@ export function SlackChannels({
         </div>
         {data?.connected && (
           <div className="mt-3 border-t">
-            <div className="space-y-1 py-3">
-              <h3 className="text-sm font-medium">Channel rules</h3>
-              <p className="text-xs text-muted-foreground">Invite @Helpin to ask questions in a channel. Add a rule for automatic intake or channel defaults.</p>
+            <label className="flex items-center justify-between gap-3 border-b py-3 text-sm">
+              AI questions, drafts, and summaries
+              <Switch
+                checked={!!data.ai_enabled}
+                disabled={ai.isPending}
+                onCheckedChange={(enabled) => ai.mutate(enabled)}
+              />
+            </label>
+            <div className="flex items-center justify-between gap-3 py-3">
+              <div className="min-w-0 space-y-1">
+                <h3 className="text-sm font-medium">Channel rules</h3>
+                <p className="text-xs text-muted-foreground">Invite @Helpin to ask questions in a channel. Add a rule for automatic intake or channel defaults.</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setDraft({
+                    ...emptyRoute,
+                    purpose: hasSupport ? 'support' : 'pm',
+                  })
+                }
+              >
+                Add rule
+              </Button>
             </div>
             {data.routes?.map((route) => (
               <Button
@@ -158,14 +167,6 @@ export function SlackChannels({
                 </span>
               </Button>
             ))}
-            <label className="flex items-center justify-between border-b py-3 text-sm">
-              AI questions, drafts, and summaries
-              <Switch
-                checked={!!data.ai_enabled}
-                disabled={ai.isPending}
-                onCheckedChange={(enabled) => ai.mutate(enabled)}
-              />
-            </label>
             <div className="flex items-center justify-between pt-2">
               <QuietStatusText tone="positive">Connected</QuietStatusText>
               <div className="flex items-center gap-1">
