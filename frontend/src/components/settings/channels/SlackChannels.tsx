@@ -146,7 +146,7 @@ export function SlackChannels({
               </Button>
             ))}
             <label className="flex items-center justify-between border-b py-3 text-sm">
-              AI drafts and summaries
+              AI questions, drafts, and summaries
               <Switch
                 checked={!!data.ai_enabled}
                 disabled={ai.isPending}
@@ -155,25 +155,37 @@ export function SlackChannels({
             </label>
             <div className="flex items-center justify-between pt-2">
               <QuietStatusText tone="positive">Connected</QuietStatusText>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={disconnect.isPending}
-                onClick={async () => {
-                  if (
-                    await confirm({
-                      title: 'Disconnect Slack?',
-                      description:
-                        'Message delivery will stop for all connected Slack channels.',
-                      confirmText: 'Disconnect',
-                      variant: 'destructive',
-                    })
-                  )
-                    disconnect.mutate()
-                }}
-              >
-                Disconnect
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={
+                    !data.configured || install.isPending || disconnect.isPending
+                  }
+                  onClick={() => install.mutate()}
+                >
+                  Reauthorize
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={disconnect.isPending}
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: 'Disconnect Slack?',
+                        description:
+                          'Message delivery will stop for all connected Slack channels.',
+                        confirmText: 'Disconnect',
+                        variant: 'destructive',
+                      })
+                    )
+                      disconnect.mutate()
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </div>
             </div>
           </div>
         )}

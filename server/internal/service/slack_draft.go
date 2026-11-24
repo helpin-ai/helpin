@@ -14,6 +14,7 @@ import (
 )
 
 type slackDraft struct {
+	Direct                                    bool
 	Matches                                   []model.PMTriageCandidateView
 	Thread                                    model.SlackThread
 	ConversationID, SourceHash, HistoryNotice string
@@ -29,7 +30,9 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 	if !allowed || !s.authz.Can(actor, authorization.PermPMEdit) {
 		return s.private(ctx, token, m, "You need permission to create tasks in Helpin.")
 	}
-	d := slackDraft{Thread: model.SlackThread{AccountID: a.ID, Channel: m.Channel, Root: m.Root()}, TeamID: route.TeamID, EpicID: route.EpicID}
+	ctx, progress := s.startProgress(ctx, token, m, "Preparing your task draft…")
+	defer s.finishProgress(ctx, token, m, progress)
+	d := slackDraft{Direct: slackDirect(m), Thread: model.SlackThread{AccountID: a.ID, Channel: m.Channel, Root: m.Root()}, TeamID: route.TeamID, EpicID: route.EpicID}
 	var history []model.SupportMessage
 	var source *string
 	if conv != nil {

@@ -25,11 +25,22 @@ features:
       type: message
       callback_id: link_task
       description: Link this thread to a Helpin task.
+  app_home:
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+    agent_tasks_enabled: false
+  agent_view:
+    agent_description: Ask about your Helpin tasks and support conversations.
+    suggested_prompts:
+      - title: What can you do?
+        message: What can you do?
 oauth_config:
   redirect_urls:
     - https://app.helpin.ai/oauth/slack/callback
   scopes:
     bot:
+      - assistant:write
+      - im:history
       - app_mentions:read
       - channels:read
       - groups:read
@@ -44,6 +55,8 @@ settings:
   event_subscriptions:
     request_url: https://api.helpin.ai/api/slack/events
     bot_events:
+      - app_home_opened
+      - message.im
       - app_mention
       - message.channels
       - message.groups

@@ -53,6 +53,14 @@ Use a fast LLM for natural-language requests, drafting, and summarization when e
 
 In a merged inbox conversation, the Send picker offers Chat for a widget session and Slack or Telegram for connected destinations in that conversation. When several channels can receive a reply, the teammate chooses one. Slack replies stay in the selected thread and Telegram replies in the selected DM. Only a “+ email” or “Email only” choice sends email. The closed picker shows the selected icons beside Send.
 
+## Ask Agent in Slack
+
+Opening Helpin’s Messages tab sends a one-time welcome. A teammate can DM Helpin directly or mention it in a channel configured for PM. Each person pairs once per installation. “What can you do?” shows examples for their current module access and the installation’s AI setting.
+
+With Slack AI enabled, workspace questions such as “Which tasks are blocked on my team?” use the in-app Ask Agent and its model selection and usage checks. Follow up in the same Slack thread. Slack shows a working indicator during processing. In a DM, Helpin updates a single reply from Thinking to a short activity label when it observes a PM or Support read, then replaces it with the answer. Each member has a private conversation with PM and Support read tools. Task creation uses the review form. Answers in PM channels are visible to the requester. Customer threads continue through the support inbox.
+
+For rollout, apply the updated manifest, choose **Reauthorize** in the connected Slack settings to grant DM history and agent permissions, and enable AI replies in Slack settings in Helpin. Verify the welcome, account pairing, a follow-up question, and private channel delivery in a test workspace.
+
 ## What to reuse from Telegram
 
 Reuse the Support channel registry, inbound event deduplication, attachment jobs, realtime inbox updates, queued reply delivery, and delivery states including *failed* and *unconfirmed*. Telegram’s current implementation handles private chats, finds conversations by customer identity, and sends to a user ID. Slack needs a durable destination keyed by installation, channel, and root thread timestamp, with the sender recorded separately for each message. Configure routing per channel. Give Slack its own installation, request verification, interactive actions, and AI settings. Update provider-specific labels in the composer and merged conversations. [Support channel architecture](../support-channels.md) · [Inbound processing](../../server/internal/service/support_channel_inbound.go) · [Outbound delivery](../../server/internal/service/support_channel_outbox.go) · [Frontend channel registry](../../frontend/src/lib/supportChannels.ts)

@@ -60,6 +60,8 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 		workErr = s.slack.shortcutJob(workCtx, job)
 	case SlackPMDeliveryJob:
 		workErr = s.slack.deliverDiscussion(workCtx, job)
+	case SlackAgentReplyJob:
+		workErr = s.slack.deliverAgentAnswer(workCtx, job)
 	case SlackEventJob:
 		workErr = s.slack.process(workCtx, job)
 	case SupportInboundKindChannelEvent:
@@ -73,6 +75,9 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 	// Shutdown leaves a recoverable lease, never a false completion.
 	if ctx.Err() != nil {
 		return true, ctx.Err()
+	}
+	if errors.Is(workErr, errSlackAgentPending) {
+		return true, s.jobs.WaitForResult(ctx, job, s.now().Add(3*time.Second))
 	}
 	if workErr != nil {
 		s.logger.ErrorContext(ctx, "channel job failed", "job_id", job.ID, "kind", kind, "attempt", job.Attempts, "error", workErr)

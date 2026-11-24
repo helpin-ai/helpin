@@ -44,20 +44,27 @@ func (s *SlackService) AcceptEvent(ctx context.Context, stamp, signature string,
 		}
 		return "", s.repo.ChangeChannelID(ctx, a.ID, env.Event.OldChannelID, env.Event.NewChannelID)
 	}
-	if !env.Event.HumanMessage() {
+	welcome := env.Event.Type == "app_home_opened" && env.Event.Tab == "messages" && strings.HasPrefix(env.Event.Channel, "D") && env.Event.User != ""
+	if !welcome && !env.Event.HumanMessage() {
 		return "", nil
 	}
-	route, err := s.repo.Route(ctx, a.ID, env.Event.Channel)
-	if err != nil || route == nil {
-		return "", err
+	if !welcome && !slackDirect(env.Event) {
+		route, err := s.repo.Route(ctx, a.ID, env.Event.Channel)
+		if err != nil || route == nil {
+			return "", err
+		}
+		env.Event.Channel = route.ChannelID
 	}
-	env.Event.Channel = route.ChannelID
+	eventKey := env.Event.TS
+	if welcome {
+		eventKey = "welcome:" + env.Event.User
+	}
 	subject := model.SupportChannelSubjectKey(a.ID, env.Event.User)
 	data, err := json.Marshal(env.Event)
 	if err != nil {
 		return "", err
 	}
-	return "", s.channels.jobs.Create(ctx, &model.SupportInboundJob{ID: inboundStableID("slack:" + a.ID + ":" + env.Event.Channel + ":" + env.Event.TS), WorkspaceID: &a.WorkspaceID, ChannelAccountID: &a.ID, Kind: SlackEventJob, SubjectKey: &subject, Payload: string(data), Status: "pending", AvailableAt: s.channels.now()})
+	return "", s.channels.jobs.Create(ctx, &model.SupportInboundJob{ID: inboundStableID("slack:" + a.ID + ":" + env.Event.Channel + ":" + eventKey), WorkspaceID: &a.WorkspaceID, ChannelAccountID: &a.ID, Kind: SlackEventJob, SubjectKey: &subject, Payload: string(data), Status: "pending", AvailableAt: s.channels.now()})
 }
 
 func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob) error {
@@ -71,6 +78,16 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 	var m slack.Message
 	if err = json.Unmarshal([]byte(job.Payload), &m); err != nil {
 		return err
+	}
+	if slackDirect(m) || m.Type == "app_home_opened" {
+		token, err := s.channels.decryptToken(a)
+		if err != nil {
+			return err
+		}
+		if m.Type == "app_home_opened" {
+			return s.private(ctx, token, m, "Welcome to Helpin! Ask me what I can do, or ask about a task or support conversation.")
+		}
+		return s.directAgent(ctx, a, token, m)
 	}
 	route, err := s.repo.Route(ctx, a.ID, m.Channel)
 	if route == nil || err != nil {
