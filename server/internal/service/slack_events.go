@@ -85,7 +85,7 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 			return err
 		}
 		if m.Type == "app_home_opened" {
-			return s.private(ctx, token, m, "Welcome to Helpin! Ask me what I can do, or ask about a task or support conversation.")
+			return s.welcome(ctx, a, token, m)
 		}
 		return s.directAgent(ctx, a, token, m)
 	}
