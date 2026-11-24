@@ -99,7 +99,7 @@ func (r *SlackRepository) Route(ctx context.Context, account, channel string) (*
 }
 
 // SetRoute updates the validated destination for one channel.
-func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute) error {
+func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, preserveCompany bool) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockSlackInstallation(tx, row.AccountID); err != nil {
 			return err
@@ -112,7 +112,13 @@ func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute) er
 			return err
 		}
 		row.ChannelID = id.RoutingID
-		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns([]string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"})}).Create(&row).Error
+		columns := []string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"}
+		if preserveCompany {
+			row.CRMCompanyID = nil
+		} else {
+			columns = append(columns, "crm_company_id")
+		}
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns(columns)}).Create(&row).Error
 	})
 }
 
@@ -312,6 +318,13 @@ func (r *SlackRepository) AgentTurnTools(ctx context.Context, workspace, chat, m
 		names = append(names, call.Name)
 	}
 	return names, nil
+}
+
+// AgentTurnStatus checks the backing run of the accepted message, even if the chat has since moved on.
+func (r *SlackRepository) AgentTurnStatus(ctx context.Context, workspace, chat, message string) (model.AgentRun, error) {
+	var run model.AgentRun
+	err := r.db.WithContext(ctx).Table("agent_run_messages turn").Select("runs.status, runs.error_message").Joins("JOIN agent_runs runs ON runs.id=turn.run_id AND runs.workspace_id=turn.workspace_id").Where("turn.workspace_id=? AND turn.dock_chat_id=? AND turn.id=? AND turn.role='user'", workspace, chat, message).Scan(&run).Error
+	return run, err
 }
 
 // AgentAnswer returns only the final response for the accepted turn. Progress, tool

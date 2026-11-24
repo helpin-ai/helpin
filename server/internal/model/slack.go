@@ -7,6 +7,7 @@ type SlackRoute struct {
 	CurrentChannelID string  `json:"-" gorm:"->;-:migration"`
 	ChannelName      string  `json:"channel_name"`
 	Purpose          string  `json:"purpose"`
+	CRMCompanyID     *string `json:"crm_company_id" gorm:"type:uuid"`
 	MailboxID        *string `json:"mailbox_id"`
 	TeamID           *string `json:"team_id"`
 	EpicID           *string `json:"epic_id"`

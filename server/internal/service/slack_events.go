@@ -136,7 +136,7 @@ func (s *SlackService) receiveSupport(ctx context.Context, a *model.SupportChann
 			return err
 		}
 	}
-	e := channels.Event{Kind: channels.EventMessage, ExternalUserID: m.User, ExternalChatID: m.Channel, ExternalMessageKey: m.Channel + ":" + m.TS, ThreadKey: m.Channel + ":" + m.Root(), ChannelName: route.ChannelName, Text: m.Text, DisplayName: name, Teammate: teammate, ExistingThreadOnly: !explicit && (route.Purpose == "mixed" || teammate)}
+	e := channels.Event{Kind: channels.EventMessage, ExternalUserID: m.User, ExternalChatID: m.Channel, ExternalMessageKey: m.Channel + ":" + m.TS, ThreadKey: m.Channel + ":" + m.Root(), DefaultCompanyID: route.CRMCompanyID, ChannelName: route.ChannelName, Text: m.Text, DisplayName: name, Teammate: teammate, ExistingThreadOnly: !explicit && (route.Purpose == "mixed" || teammate)}
 	for _, f := range m.Files {
 		e.Files = append(e.Files, channels.InboundFile{FileID: f.ID, FileName: firstNonEmptyString(f.Name, "Attachment"), ContentType: f.Mime, Size: f.Size})
 	}

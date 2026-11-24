@@ -12,6 +12,8 @@ A workspace admin connects the Helpin Slack app once and configures each partici
 | Mixed customer and account discussion | A person explicitly asks `@Helpin` for support or chooses **Create support request** on a message. | The configured Support inbox |
 | Internal project work | A teammate chooses **Create task** or **Link existing task**, or asks the bot to do so. | A PM task in a team the teammate can access |
 
+In a Slack Connect channel configured for customer support or support on request, a settings manager with CRM access can select an optional default company. A new inbox conversation inherits that company. Agents can change it in Company details. Editing the channel default applies to future conversations and leaves the sender’s contact record alone.
+
 Start with channels and threads. Bot DMs as a separate support intake can follow later. A private response to the person invoking a command in a channel is part of the first release.
 
 ## Creating a task
@@ -57,7 +59,7 @@ In a merged inbox conversation, the Send picker offers Chat for a widget session
 
 Opening Helpin’s Messages tab sends a one-time welcome. A teammate can DM Helpin directly or mention it in a channel configured for PM. Each person pairs once per installation. “What can you do?” shows examples for their current module access and the installation’s AI setting.
 
-With Slack AI enabled, workspace questions such as “Which tasks are blocked on my team?” use the in-app Ask Agent and its model selection and usage checks. Follow up in the same Slack thread. Slack shows a working indicator during processing. In a DM, Helpin updates a single reply from Thinking to a short activity label when it observes a PM or Support read, then replaces it with the answer. Each member has a private conversation with PM and Support read tools. Task creation uses the review form. Answers in PM channels are visible to the requester. Customer threads continue through the support inbox.
+With Slack AI enabled, workspace questions such as “Which tasks are blocked on my team?” use the in-app Ask Agent and its model selection and usage checks. Follow up in the same Slack thread. Slack shows a working indicator during processing. Fast answers go straight to the thread. In a DM, an observed PM or Support read can create one activity message that becomes the final answer. Failed requests show a reason when available and a next step. Each member has a private conversation with PM and Support read tools. Task creation uses the review form. Answers in PM channels are visible to the requester. Customer threads continue through the support inbox.
 
 For rollout, apply the updated manifest, choose **Reauthorize** in the connected Slack settings to grant DM history and agent permissions, and enable AI replies in Slack settings in Helpin. Verify the welcome, account pairing, a follow-up question, and private channel delivery in a test workspace.
 

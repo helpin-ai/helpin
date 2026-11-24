@@ -16,7 +16,9 @@ import { QuietSelect } from '@/components/design-system/quiet-select'
 import {
   QuietPropertyRow,
   QuietStatusText,
+  QuietTextAction,
 } from '@/components/design-system/quiet'
+import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker'
 import { SlackIcon } from '@/lib/icons'
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useEpics } from '@/hooks/queries/useEpics'
@@ -31,6 +33,11 @@ const purposes = {
   support: 'Customer support',
   mixed: 'Support on request',
   pm: 'Project work',
+}
+const purposeTooltips: Record<SlackPurpose, string> = {
+  support: 'New Slack threads become Helpin support conversations.',
+  mixed: 'Mention @Helpin or choose “Create support request” in Slack.',
+  pm: 'Create and follow Helpin tasks in Slack.',
 }
 const emptyRoute: SlackRoute = {
   channel_id: '',
@@ -47,11 +54,13 @@ export function SlackChannels({
   workspaceId,
   slug,
   hasSupport,
+  hasCRM,
   hasPM,
 }: {
   workspaceId: string
   slug: string
   hasSupport: boolean
+  hasCRM?: boolean
   hasPM: boolean
 }) {
   const key = ['slack', workspaceId]
@@ -193,6 +202,7 @@ export function SlackChannels({
           <RouteDialog
             initial={draft}
             hasSupport={hasSupport}
+            hasCRM={hasCRM}
             hasPM={hasPM}
             workspaceId={workspaceId}
             onClose={() => setDraft(null)}
@@ -210,6 +220,7 @@ export function SlackChannels({
 function RouteDialog({
   initial,
   hasSupport,
+  hasCRM,
   hasPM,
   workspaceId,
   onClose,
@@ -217,6 +228,7 @@ function RouteDialog({
 }: {
   initial: SlackRoute
   hasSupport: boolean
+  hasCRM?: boolean
   hasPM: boolean
   workspaceId: string
   onClose: () => void
@@ -303,7 +315,7 @@ function RouteDialog({
                       !selected?.is_pending_ext_shared
                     : hasSupport,
                 )
-                .map(([value, label]) => ({ value, label }))}
+                .map(([value, label]) => ({ value, label, tooltip: purposeTooltips[value as SlackPurpose] }))}
               onChange={(value) =>
                 setRoute({ ...route, purpose: value as SlackPurpose })
               }
@@ -357,7 +369,7 @@ function RouteDialog({
                 label="Support inbox"
                 value={route.mailbox_id ?? 'default'}
                 options={[
-                  { value: 'default', label: 'Workspace default' },
+                  { value: 'default', label: 'Main inbox' },
                   ...options(scopes?.mailboxes),
                 ]}
                 onChange={(id) =>
@@ -370,15 +382,26 @@ function RouteDialog({
             }
           />
         )}
-        <p className="text-xs text-muted-foreground">
-          {route.purpose === 'pm'
-            ? selected?.is_private
-              ? 'Teammates can link tasks and share discussion replies here.'
-              : 'Teammates can create tasks and ask for private updates here.'
-            : route.purpose === 'mixed'
-              ? 'A mention of @Helpin opens a support conversation.'
-              : 'Each new customer thread opens a support conversation.'}
-        </p>
+        {hasCRM && route.purpose !== 'pm' && selected?.is_ext_shared && (
+          <QuietPropertyRow
+            label={<span title="Default CRM company for new conversations">CRM company</span>}
+            value={
+              <div className="flex min-w-0 items-center gap-2 pl-1.5 [&>[role=combobox]]:min-w-0 [&>[role=combobox]]:flex-1">
+                <CRMRecordPicker
+                  workspaceId={workspaceId}
+                  targetType="crm_company"
+                  value={route.crm_company_id ?? ''}
+                  onChange={(id) => setRoute({ ...route, crm_company_id: id })}
+                />
+                {route.crm_company_id && (
+                  <QuietTextAction onClick={() => setRoute({ ...route, crm_company_id: null })} aria-label="Clear default company">
+                    Clear
+                  </QuietTextAction>
+                )}
+              </div>
+            }
+          />
+        )}
         {(save.error || remove.error) && (
           <p role="alert" className="text-sm text-destructive">
             {errorText(save.error || remove.error)}

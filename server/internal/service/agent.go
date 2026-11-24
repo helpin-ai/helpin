@@ -6756,7 +6756,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 
 	runtimeAgent = runtimeAgentForDockExecution(run, runtimeAgent)
-	if params.targetType != supportPreviewTarget && !isSupportInvestigationRun(run) {
+	if params.targetType != supportPreviewTarget && !isSupportInvestigationRun(run) && !isSlackDockRun(run) {
 		runtimeAgent, err = s.projectEnabledExternalMCPTools(ctx, params.workspaceID, runtimeAgent)
 		if err != nil {
 			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)

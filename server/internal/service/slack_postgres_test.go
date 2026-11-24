@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -73,15 +74,16 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 	f := newOutboxFixture(t)
 	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{ClientID: "client", ClientSecret: "secret", SigningSecret: "signing", RedirectURL: "https://helpin.example.com/oauth/slack/callback"})
 	team := "T" + f.workspace
+	currentChannel := "C1"
 	var sent []map[string]any
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/conversations.info":
-			if r.URL.Query().Get("channel") != "C2" {
+			if r.URL.Query().Get("channel") != currentChannel {
 				t.Error("settings used the old Slack channel ID")
 			}
-			io.WriteString(w, `{"ok":true,"channel":{"id":"C2","name":"acme","is_member":true}}`)
+			fmt.Fprintf(w, `{"ok":true,"channel":{"id":%q,"name":"acme","is_member":true,"is_ext_shared":true}}`, currentChannel)
 		case "/oauth.v2.access":
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "access_token": "xoxb-fixture", "bot_user_id": "Ubot", "team": map[string]string{"id": team, "name": "Acme"}})
 		case "/users.info":
@@ -121,7 +123,17 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 	if err != nil || account == nil || account.TokenEncrypted == "xoxb-fixture" {
 		t.Fatalf("invalid installation: %v", err)
 	}
-	if err = s.repo.SetRoute(ctx, model.SlackRoute{AccountID: account.ID, ChannelID: "C1", ChannelName: "acme", Purpose: "support"}); err != nil {
+	s.authz = authorization.NewAuthzService(f.db, slackFixtureMember{f.userID}, nil)
+	owner := authorization.WithActor(ctx, &authorization.Actor{Role: "owner", UserID: f.userID, WorkspaceID: f.workspace})
+	companyID := uuid.NewString()
+	mustExec(t, f.db, "INSERT INTO crm_companies(id,workspace_id,display_id,name) VALUES(?,?,?,?)", companyID, f.workspace, "ACME", "Acme")
+	otherWorkspace, _ := seedSupportOpsWorkspace(t, f.db)
+	foreignCompany := uuid.NewString()
+	mustExec(t, f.db, "INSERT INTO crm_companies(id,workspace_id,display_id,name) VALUES(?,?,?,?)", foreignCompany, otherWorkspace, "OTHER", "Other")
+	if err := s.Configure(owner, f.workspace, model.SlackRoute{ChannelID: "C1", Purpose: "support", CRMCompanyID: &foreignCompany}); !errors.Is(err, ErrChannelInvalid) {
+		t.Fatalf("foreign workspace company accepted: %v", err)
+	}
+	if err = s.Configure(owner, f.workspace, model.SlackRoute{ChannelID: "C1", Purpose: "support", CRMCompanyID: &companyID}); err != nil {
 		t.Fatal(err)
 	}
 	event := fmt.Sprintf(`{"type":"event_callback","team_id":%q,"event_id":"Ev1","event":{"type":"message","channel":"C1","ts":"10.1","user":"Ucustomer","text":"Checkout failed"}}`, team)
@@ -141,6 +153,9 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 	if err != nil || conv == nil {
 		t.Fatalf("missing inbound thread: %v", err)
 	}
+	if conv.CRMCompanyID == nil || *conv.CRMCompanyID != companyID {
+		t.Fatal("new Slack conversation did not inherit its channel company")
+	}
 	reply := f.reply(t, conv.ID, "user", "Checkout works again.")
 	accept := func(body string) {
 		t.Helper()
@@ -153,13 +168,12 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 	change := fmt.Sprintf(`{"type":"event_callback","team_id":%q,"event_id":"Ev2","event":{"type":"channel_id_changed","old_channel_id":"C1","new_channel_id":"C2"}}`, team)
 	accept(change)
 	accept(change)
-	s.authz = authorization.NewAuthzService(f.db, slackFixtureMember{f.userID}, nil)
-	owner := authorization.WithActor(ctx, &authorization.Actor{Role: "owner", UserID: f.userID, WorkspaceID: f.workspace})
+	currentChannel = "C2"
 	if err := s.Configure(owner, f.workspace, model.SlackRoute{ChannelID: "C1", Purpose: "support"}); err != nil {
 		t.Fatalf("save settings opened before the channel ID change: %v", err)
 	}
 	routes, err := s.repo.Routes(ctx, account.ID)
-	if err != nil || len(routes) != 1 || routes[0].ChannelID != "C1" || routes[0].CurrentChannelID != "C2" {
+	if err != nil || len(routes) != 1 || routes[0].ChannelID != "C1" || routes[0].CurrentChannelID != "C2" || routes[0].CRMCompanyID != nil {
 		t.Fatalf("settings created a new route for the same channel: %+v %v", routes, err)
 	}
 	accept(fmt.Sprintf(`{"type":"event_callback","team_id":%q,"event_id":"Ev3","event":{"type":"message","channel":"C2","ts":"10.2","thread_ts":"10.1","user":"Ucustomer","text":"Still here"}}`, team))
@@ -169,6 +183,18 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 	var count int64
 	if err := f.db.Model(&model.SupportMessage{}).Where("conversation_id=? AND content=?", conv.ID, "Still here").Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("lost conversation after channel change: %d / %v", count, err)
+	}
+	conv, err = s.repo.SupportThread(ctx, account, "C1:10.1")
+	if err != nil || conv == nil || conv.CRMCompanyID == nil || *conv.CRMCompanyID != companyID {
+		t.Fatal("removing the channel default changed the company on an existing thread")
+	}
+	accept(fmt.Sprintf(`{"type":"event_callback","team_id":%q,"event_id":"Ev4","event":{"type":"message","channel":"C2","ts":"11.0","user":"Ucustomer","text":"Another question"}}`, team))
+	if ok, err := f.svc.processNextJob(ctx, SlackEventJob); err != nil || !ok {
+		t.Fatalf("new thread after clearing company: %v %v", ok, err)
+	}
+	newThread, err := s.repo.SupportThread(ctx, account, "C1:11.0")
+	if err != nil || newThread == nil || newThread.CRMCompanyID != nil {
+		t.Fatal("new thread inherited a cleared company")
 	}
 	f.due(t)
 	if _, err = f.svc.ProcessOutbox(ctx); err != nil {
@@ -315,7 +341,7 @@ func TestSlackMergedThreadAndTaskHandoffPostgres(t *testing.T) {
 	if err = f.db.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = repo.SetRoute(ctx, model.SlackRoute{AccountID: a.ID, ChannelID: "C2", ChannelName: "payments", Purpose: "pm"}); err != nil {
+	if err = repo.SetRoute(ctx, model.SlackRoute{AccountID: a.ID, ChannelID: "C2", ChannelName: "payments", Purpose: "pm"}, false); err != nil {
 		t.Fatal(err)
 	}
 	if err = repo.LinkTask(ctx, a.ID, "C2", "1", task.ID, f.userID); err != nil {

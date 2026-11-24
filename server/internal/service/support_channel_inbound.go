@@ -124,7 +124,7 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 			conv = &model.SupportConversation{
 				WorkspaceID: account.WorkspaceID, Subject: channelSubject(event), Status: model.SupportConversationStatusOpen,
 				FlowState: strPtr(flowState), Priority: "medium", Channel: account.Provider, Source: account.Provider,
-				CustomerName: &displayName, CRMContactID: identity.CRMContactID, MailboxID: mailboxID, AssignedUserID: ownerID,
+				CustomerName: &displayName, CRMContactID: identity.CRMContactID, CRMCompanyID: event.DefaultCompanyID, MailboxID: mailboxID, AssignedUserID: ownerID,
 				ChannelAccountID: &account.ID, ChannelIdentityID: &identity.ID, ProviderThreadKey: nilIfEmpty(event.ThreadKey), ProviderChannelName: nilIfEmpty(event.ChannelName),
 			}
 			if err := s.conversationRepo.WithTx(tx).Create(ctx, conv); err != nil {

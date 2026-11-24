@@ -35,7 +35,7 @@ function ExternalToolsTabs({ workspaceId, currentWorkspaceSlug, permissions, req
   const tab = requestedTab ?? defaultTab;
   const slack = available.slack && (
     <SlackChannels key="slack" workspaceId={workspaceId} slug={currentWorkspaceSlug}
-      hasSupport={permissions.canAccessModule('support')} hasPM={permissions.canAccessModule('pm')} />
+      hasCRM={permissions.canAccessModule('crm') && permissions.has('crm.read')} hasSupport={permissions.canAccessModule('support')} hasPM={permissions.canAccessModule('pm')} />
   );
   const telegram = available.telegram && <SupportChannels key="telegram" workspaceId={workspaceId} editable />;
   return (
