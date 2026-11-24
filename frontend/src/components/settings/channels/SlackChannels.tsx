@@ -19,7 +19,7 @@ import {
   QuietTextAction,
 } from '@/components/design-system/quiet'
 import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker'
-import { SlackIcon } from '@/lib/icons'
+import { InformationCircleIcon, SlackIcon } from '@/lib/icons'
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useEpics } from '@/hooks/queries/useEpics'
 import { useInboxScopes } from '@/hooks/queries/useSupport'
@@ -33,6 +33,11 @@ const purposes = {
   support: 'Customer support',
   mixed: 'Support on request',
   pm: 'Project work',
+}
+const purposeTooltips: Record<SlackPurpose, string> = {
+  support: 'Turn every new customer thread into a support request.',
+  mixed: 'Open a support request only when someone asks.',
+  pm: 'Create and follow tasks in this channel.',
 }
 const emptyRoute: SlackRoute = {
   channel_id: '',
@@ -252,6 +257,13 @@ function RouteDialog({
   const options = (items: { id: string; name: string }[] = []) =>
     items.map((item) => ({ value: item.id, label: item.name }))
   const selected = channels.data?.find((c) => c.id === route.channel_id)
+  const descriptions: Record<SlackPurpose, string> = {
+    support: 'Each new customer thread opens a conversation in Helpin. Replies stay in that conversation.',
+    mixed: 'Mention @Helpin or choose “Create support request” to open a conversation from a thread.',
+    pm: selected?.is_private
+      ? 'Create or link tasks and share task discussion replies in this channel.'
+      : 'Create tasks and ask @Helpin for private task updates.',
+  }
   const pending = save.isPending || remove.isPending
   return (
     <Dialog
@@ -310,13 +322,17 @@ function RouteDialog({
                       !selected?.is_pending_ext_shared
                     : hasSupport,
                 )
-                .map(([value, label]) => ({ value, label }))}
+                .map(([value, label]) => ({ value, label, tooltip: purposeTooltips[value as SlackPurpose] }))}
               onChange={(value) =>
                 setRoute({ ...route, purpose: value as SlackPurpose })
               }
             />
           }
         />
+        <div className="-mt-2 flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
+          <InformationCircleIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <span>{descriptions[route.purpose]}</span>
+        </div>
         {route.purpose === 'pm' ? (
           <>
             <QuietPropertyRow
@@ -364,7 +380,7 @@ function RouteDialog({
                 label="Support inbox"
                 value={route.mailbox_id ?? 'default'}
                 options={[
-                  { value: 'default', label: 'Workspace default' },
+                  { value: 'default', label: 'Main inbox' },
                   ...options(scopes?.mailboxes),
                 ]}
                 onChange={(id) =>
@@ -397,15 +413,6 @@ function RouteDialog({
             }
           />
         )}
-        <p className="text-xs text-muted-foreground">
-          {route.purpose === 'pm'
-            ? selected?.is_private
-              ? 'Teammates can link tasks and share discussion replies here.'
-              : 'Teammates can create tasks and ask for private updates here.'
-            : route.purpose === 'mixed'
-              ? 'A mention of @Helpin opens a support conversation.'
-              : 'Each new customer thread opens a support conversation.'}
-        </p>
         {(save.error || remove.error) && (
           <p role="alert" className="text-sm text-destructive">
             {errorText(save.error || remove.error)}

@@ -82,6 +82,7 @@ export function Select(props: ComponentProps<typeof Legacy.Select>) {
           children?: ReactNode;
           value?: string;
           textValue?: string;
+          title?: string;
           disabled?: boolean;
           className?: string;
         }>(child)
@@ -97,6 +98,7 @@ export function Select(props: ComponentProps<typeof Legacy.Select>) {
             </span>
           ),
           disabled: child.props.disabled,
+          tooltip: child.props.title,
           className: child.props.className,
         };
         current.options.push(option);

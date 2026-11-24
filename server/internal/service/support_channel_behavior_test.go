@@ -95,7 +95,7 @@ func TestSupportChannelMatrixDefaultMailbox(t *testing.T) {
 	if shouldUseDefaultMailboxForChannel(nil, "email") {
 		t.Fatal("nil settings must not use the default inbox")
 	}
-	for _, channel := range supportChannelMatrixInputs {
+	for _, channel := range append(supportChannelMatrixInputs, "slack") {
 		for _, tc := range []struct {
 			triage, widget, email, internal bool
 			fallback                        string
@@ -109,11 +109,11 @@ func TestSupportChannelMatrixDefaultMailbox(t *testing.T) {
 				TriageEnabled: tc.triage, TriageWidgetEnabled: tc.widget, TriageEmailEnabled: tc.email,
 				TriageInternalEnabled: tc.internal, TriageFallbackBehavior: tc.fallback,
 			}
-			// Widget conversations never take the default inbox; any other channel
-			// does unless triage handles it with a shared fallback.
+			// Widget and Slack conversations skip the default inbox. Any other channel
+			// uses it unless triage handles it with a shared fallback.
 			want := true
 			switch channel {
-			case "widget", "Widget":
+			case "widget", "Widget", "slack":
 				want = false
 			default:
 				if tc.triage && tc.fallback == "shared" {

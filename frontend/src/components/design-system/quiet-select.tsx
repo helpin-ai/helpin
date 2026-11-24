@@ -35,7 +35,7 @@ export function QuietSelect({ label, placeholder, value, options, onChange, disa
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+          <SelectItem key={option.value} value={option.value} disabled={option.disabled} title={option.tooltip}>
             {option.leading}
             <span className={cn('truncate', option.labelClassName)}>{option.label}</span>
           </SelectItem>
