@@ -114,7 +114,7 @@ func (s *SlackService) updateReadProgress(ctx context.Context, a *model.SupportC
 
 // After a failed retry, surface an actionable outcome to the requester. Ordinary
 // inbound customer messages continue to use the support delivery retry policy.
-func (s *SlackService) reportRequestFailure(ctx context.Context, job *model.SupportInboundJob) bool {
+func (s *SlackService) reportRequestFailure(ctx context.Context, job *model.SupportInboundJob, cause error) bool {
 	if job.ChannelAccountID == nil || job.Attempts < 2 || s.channels.now().Sub(job.CreatedAt) < time.Minute {
 		return false
 	}
@@ -146,7 +146,8 @@ func (s *SlackService) reportRequestFailure(ctx context.Context, job *model.Supp
 		return false
 	}
 	progressCtx := context.WithValue(ctx, slackProgressKey{}, &slackProgress{TS: progressTS})
-	err = s.private(progressCtx, token, message, "I couldn’t confirm the result of this request. Check the record in Helpin before retrying a change. If it keeps happening, share this thread with Helpin support.")
+	notice := slackFailureReason(cause, "I couldn’t confirm the result of this request. Check the record in Helpin before retrying a change. If it keeps happening, share this thread with Helpin support.")
+	err = s.private(progressCtx, token, message, notice)
 	s.sessionStatus(ctx, token, message, "active")
 	if err != nil {
 		s.channels.logger.WarnContext(ctx, "Slack failure notice unavailable", "job_id", job.ID, "error", err)
