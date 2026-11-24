@@ -57,7 +57,7 @@ func (access slackAccess) chatID(account string, m slack.Message, actor *authori
 func (access slackAccess) help(edit, ai bool) string {
 	var sections []string
 	if access.PM {
-		tasks := "Catch up on tasks\n• “What’s the latest on ENG-123?” (Use your task’s key.)"
+		tasks := "*Catch up on tasks*\n• “What’s the latest on ENG-123?” (Use your task’s key.)"
 		if ai {
 			tasks += "\n• “Which tasks are blocked on my team?”"
 		}
@@ -68,10 +68,10 @@ func (access slackAccess) help(edit, ai bool) string {
 		if ai {
 			example = "Paste a Helpin support conversation link and ask, “What did the customer report, and what’s the next step?”"
 		}
-		sections = append(sections, "Get support context\n"+example)
+		sections = append(sections, "*Get support context*\n"+example)
 	}
 	if access.PM && edit {
-		sections = append(sections, "Turn a discussion into a task\nIn a connected project channel, mention @Helpin and say, “Create a task from this thread.” Review the draft before saving.")
+		sections = append(sections, "*Turn a discussion into a task*\nIn a connected project channel, mention @Helpin and say, “Create a task from this thread.” Review the draft before saving.")
 	}
 	if len(sections) == 0 {
 		return "Your Helpin account needs access to PM or Support to ask about workspace records."
@@ -83,7 +83,7 @@ func (access slackAccess) help(edit, ai bool) string {
 }
 
 func slackUnlinkedWelcome(ai bool) string {
-	const intro = "👋 Welcome to Helpin! Here are a few things you can try, depending on your workspace access."
+	const intro = "👋 *Welcome to Helpin!*\nHere are a few things you can try, depending on your workspace access."
 	const pairing = "Send your first request here and I’ll help you link your account."
 	return strings.Join([]string{intro, (slackAccess{PM: true, Support: true}).help(true, ai), pairing}, "\n\n")
 }
@@ -94,13 +94,13 @@ func (s *SlackService) welcome(ctx context.Context, a *model.SupportChannelAccou
 		return err
 	}
 	if actor == nil {
-		return s.private(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled))
+		return s.sendPrivate(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled), true)
 	}
 	access, err := slackMemberAccess(ctx, s.authz, actor)
 	if err != nil {
 		return err
 	}
-	return s.private(ctx, token, m, "👋 Welcome to Helpin!\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled))
+	return s.sendPrivate(ctx, token, m, "👋 *Welcome to Helpin!*\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled), true)
 }
 
 func isSlackDockRun(run *model.AgentRun) bool {
@@ -152,7 +152,7 @@ func (s *SlackService) directAgent(ctx context.Context, a *model.SupportChannelA
 	}
 	if actor == nil {
 		if slackHelp(m.Text, a.Handle) {
-			return s.private(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled))
+			return s.sendPrivate(ctx, token, m, slackUnlinkedWelcome(!a.AIRepliesDisabled), true)
 		}
 		return s.promptLink(ctx, a, token, m)
 	}
@@ -183,10 +183,10 @@ func (s *SlackService) agentQuestion(ctx context.Context, a *model.SupportChanne
 		return err
 	}
 	if slackHelp(m.Text, a.Handle) || access == (slackAccess{}) {
-		return s.private(ctx, token, m, access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled))
+		return s.sendPrivate(ctx, token, m, access.help(s.authz.Can(actor, authorization.PermPMEdit), !a.AIRepliesDisabled), true)
 	}
 	if a.AIRepliesDisabled || s.dock == nil {
-		return s.private(ctx, token, m, "Workspace questions require Slack AI replies to be enabled in Helpin. "+access.help(s.authz.Can(actor, authorization.PermPMEdit), false))
+		return s.sendPrivate(ctx, token, m, "Workspace questions require Slack AI replies to be enabled in Helpin.\n\n"+access.help(s.authz.Can(actor, authorization.PermPMEdit), false), true)
 	}
 	chatID := access.chatID(a.ID, m, actor)
 	content := strings.TrimSpace(strings.ReplaceAll(m.Text, "<@"+a.Handle+">", ""))

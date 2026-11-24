@@ -42,7 +42,12 @@ func (s *SlackService) LinkMember(ctx context.Context, workspace, user, raw stri
 }
 
 func (s *SlackService) private(ctx context.Context, token string, m slack.Message, text string, blocks ...any) error {
-	input := map[string]any{"channel": m.Destination(), "user": m.User, "thread_ts": m.Root(), "text": text, "mrkdwn": false}
+	return s.sendPrivate(ctx, token, m, text, false, blocks...)
+}
+
+// sendPrivate enables Slack formatting only for callers supplying authored message text.
+func (s *SlackService) sendPrivate(ctx context.Context, token string, m slack.Message, text string, mrkdwn bool, blocks ...any) error {
+	input := map[string]any{"channel": m.Destination(), "user": m.User, "thread_ts": m.Root(), "text": text, "mrkdwn": mrkdwn}
 	if len(blocks) > 0 {
 		input["blocks"] = blocks
 	}
