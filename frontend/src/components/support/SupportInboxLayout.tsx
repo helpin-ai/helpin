@@ -122,6 +122,7 @@ export function SupportInboxLayout() {
   const location = useLocation();
   const params = useParams({ strict: false }) as { conversationId?: string };
   const routeConversationId = params.conversationId ?? null;
+  const linkedMessageId = /^message-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.exec(location.hash)?.[1];
   const isMultiPanel = useMinWidth(768);
   useNotificationView(workspaceId, 'support_conversation', isMultiPanel ? selectedConversationId : routeConversationId);
   const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId && !selectedConversationUnavailable;
@@ -434,6 +435,7 @@ export function SupportInboxLayout() {
     void navigate({
       to: '/w/$slug/support/$conversationId',
       params: { slug, conversationId: routeConversationId },
+      hash: location.hash,
       search: buildSupportInboxSearch({
         navFilter: 'inbox',
         selectedMailboxId: nextMailboxId,
@@ -443,7 +445,7 @@ export function SupportInboxLayout() {
       }),
       replace: true,
     });
-  }, [inboxScopes, inboxScopesFetched, navigate, routeConversationId, selectConversation, selectedConversation, selectedMailboxId, slug, supportRouteSearch]);
+  }, [inboxScopes, inboxScopesFetched, location.hash, navigate, routeConversationId, selectConversation, selectedConversation, selectedMailboxId, slug, supportRouteSearch]);
 
   if (!workspace) {
     return <p className="p-4 text-sm text-muted-foreground">Workspace not found.</p>;
@@ -506,6 +508,7 @@ export function SupportInboxLayout() {
           <MessageThread
             workspaceId={workspaceId}
             conversationId={selectedConversationId}
+            linkedMessageId={isMultiPanel && selectedConversationId === routeConversationId ? linkedMessageId : undefined}
             onBackToInbox={handleBackToInbox}
             inboxEmptyState={inboxEmptyState}
             onWidgetSettingsClick={handleWidgetSettingsClick}
@@ -572,6 +575,7 @@ export function SupportInboxLayout() {
           <MessageThread
             workspaceId={workspaceId}
             conversationId={routeConversationId}
+            linkedMessageId={linkedMessageId}
             presentation="mobile-sheet"
             onBackToInbox={handleCloseMobileConversation}
             onOpenDetails={() => setMobileDetailsOpen(true)}

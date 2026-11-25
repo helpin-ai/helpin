@@ -32,8 +32,15 @@ func (s *SlackService) acceptShortcut(ctx context.Context, v SlackAction) (any, 
 	if !m.HumanMessage() {
 		return map[string]any{}, nil
 	}
-	route, err := s.repo.Route(ctx, a.ID, m.Channel)
+	route, err := s.repo.EffectiveRoute(ctx, a.ID, m.Channel)
 	if err != nil || route == nil {
+		return map[string]any{}, err
+	}
+	if route.Purpose == "inbox" {
+		return map[string]any{}, nil
+	}
+	thread, err := s.repo.FeedByRoot(ctx, a.ID, route.ChannelID, firstNonEmptyString(m.ThreadTS, m.TS))
+	if err != nil || thread != nil {
 		return map[string]any{}, err
 	}
 	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
@@ -59,7 +66,7 @@ func (s *SlackService) shortcutJob(ctx context.Context, job *model.SupportInboun
 		return err
 	}
 	m := payload.Message
-	route, err := s.repo.Route(ctx, a.ID, m.Channel)
+	route, err := s.repo.EffectiveRoute(ctx, a.ID, m.Channel)
 	if err != nil || route == nil {
 		return err
 	}
@@ -76,7 +83,7 @@ func (s *SlackService) shortcutJob(ctx context.Context, job *model.SupportInboun
 		}
 		return s.receiveSupport(ctx, a, token, route, m, job, true)
 	}
-	actor, err := s.linkedActor(ctx, a, payload.Requester)
+	actor, err := s.requestingActor(ctx, a, token, payload.Requester)
 	if err != nil {
 		return err
 	}
@@ -91,15 +98,19 @@ func (s *SlackService) shortcutJob(ctx context.Context, job *model.SupportInboun
 	if !allowed || !s.authz.Can(actor, authorization.PermPMEdit) {
 		return s.private(ctx, token, request, "You need permission to edit tasks in Helpin.")
 	}
-	if route.Purpose == "pm" {
-		return s.offerDraft(ctx, a, token, route, request, actor, nil)
+	id, err := s.referencedConversation(ctx, token, request)
+	if err != nil {
+		return s.private(ctx, token, request, err.Error())
+	}
+	if id != "" {
+		return s.internalSupportAnswer(ctx, a, token, route, request, actor, id, true)
 	}
 	conv, err := s.repo.SupportThread(ctx, a, m.Channel+":"+m.Root())
 	if err != nil {
 		return err
 	}
 	if conv == nil {
-		return s.private(ctx, token, request, "Create a support conversation for this thread first.")
+		return s.offerDraft(ctx, a, token, route, request, actor, nil)
 	}
 	return s.internalSupportAnswer(ctx, a, token, route, request, actor, conv.ID, true)
 }
@@ -116,11 +127,11 @@ func slackCommand(text string) string {
 }
 
 func (s *SlackService) linkView(ctx context.Context, a *model.SupportChannelAccount, v SlackAction, route *model.SlackRoute, m slack.Message) (any, error) {
-	actor, err := s.linkedActor(ctx, a, v.User.ID)
+	token, err := s.channels.decryptToken(a)
 	if err != nil {
 		return nil, err
 	}
-	token, err := s.channels.decryptToken(a)
+	actor, err := s.requestingActor(ctx, a, token, v.User.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -179,14 +190,23 @@ func (s *SlackService) submitLink(ctx context.Context, v SlackAction) (any, erro
 	if err != nil || task == nil {
 		return invalid("This task is unavailable.")
 	}
-	route, err := s.repo.Route(ctx, a.ID, thread.Channel)
+	route, err := s.repo.EffectiveRoute(ctx, a.ID, thread.Channel)
 	if err != nil {
 		return nil, err
 	}
 	if route == nil {
 		return invalid("This channel is no longer connected.")
 	}
-	if route.Purpose == "pm" {
+	c, err := s.repo.SupportThread(ctx, a, thread.Channel+":"+thread.Root)
+	if err != nil {
+		return nil, err
+	}
+	token, err := s.channels.decryptToken(a)
+	if err != nil {
+		return nil, err
+	}
+	ctx = model.WithSlackSource(ctx, s.sourceURL(ctx, token, route.CurrentChannelID, thread.Root))
+	if c == nil {
 		current, err := s.repo.ThreadTask(ctx, a.ID, thread.Channel, thread.Root)
 		if err != nil {
 			return nil, err
@@ -207,16 +227,9 @@ func (s *SlackService) submitLink(ctx context.Context, v SlackAction) (any, erro
 		if !allowed || !s.authz.Can(actor, authorization.PermSupportEdit) {
 			return invalid("You need permission to edit this support conversation.")
 		}
-		c, err := s.repo.SupportThread(ctx, a, thread.Channel+":"+thread.Root)
-		if err != nil {
-			return nil, err
-		}
-		if c == nil {
-			return invalid("Create a support conversation for this thread first.")
-		}
 		if err = s.channels.inbox.LinkConversationTask(ctx, a.WorkspaceID, c.ID, task.Task.ID, actor.UserID); err != nil {
 			return invalid("The conversation or task is unavailable.")
 		}
 	}
-	return map[string]string{"response_action": "clear"}, nil
+	return s.taskReviewReceipt(ctx, a.WorkspaceID, task.Task.ID, task.Task.TaskKey, "Task linked"), nil
 }

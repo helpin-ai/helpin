@@ -21,6 +21,46 @@ function hrefs(instance: Editor) {
   return [...element.querySelectorAll('a')].map(link => link.getAttribute('href'));
 }
 
+describe('support composer table paste', () => {
+  const rows = [['Invoice', 'Status'], ['INV-101', 'Paid'], ['INV-102', 'Pending']];
+  const markdown = '| Invoice | Status |\n| --- | --- |\n| INV-101 | Paid |\n| INV-102 | Pending |';
+  const html = '<table><tr><th>Invoice</th><th>Status</th></tr><tr><td>INV-101</td><td>Paid</td></tr><tr><td>INV-102</td><td>Pending</td></tr></table>';
+
+  function tableRows(root: Element) {
+    return [...root.querySelectorAll<HTMLTableRowElement>('table tr')].map(row => [...row.cells].map(cell => cell.textContent));
+  }
+
+  it.each([
+    ['Markdown source', 'text/plain', markdown],
+    ['a copied table', 'text/html', html],
+    ['cells copied without header formatting', 'text/html', html.replaceAll('th>', 'td>')],
+  ])('preserves %s in the editor, sent message, and reopened draft', (_, mime, value) => {
+    const instance = createEditor();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: {
+      getData: (type: string) => type === mime ? value : '',
+    } });
+    instance.view.dom.dispatchEvent(event);
+    expect(tableRows(instance.view.dom)).toEqual(rows);
+
+    const saved = (instance.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+    const message = document.createElement('div');
+    message.innerHTML = renderToStaticMarkup(createElement(Markdown, { remarkPlugins: [remarkGfm] }, saved));
+    expect(tableRows(message)).toEqual(rows);
+    instance.commands.setContent(saved);
+    expect(tableRows(instance.view.dom)).toEqual(rows);
+  });
+
+  it('keeps formatting, literal pipes and empty cells when saving a draft', () => {
+    const instance = createEditor('| Invoice | Amount |\n| --- | ---: |\n| **A \\| B** | |');
+    const saved = (instance.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+    instance.commands.setContent(saved);
+    expect(tableRows(instance.view.dom)).toEqual([['Invoice', 'Amount'], ['A | B', '']]);
+    expect(instance.view.dom.querySelector('td strong')?.textContent).toBe('A | B');
+    expect(instance.view.dom.querySelectorAll('th')[1]?.style.textAlign).toBe('right');
+  });
+});
+
 describe('support composer links', () => {
   it('uses HTTPS when a bare domain is typed', () => {
     const instance = createEditor();

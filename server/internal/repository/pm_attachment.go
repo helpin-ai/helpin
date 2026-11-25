@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -67,6 +71,89 @@ func (r *PMAttachmentRepository) List(ctx context.Context, entityType, entityID 
 		return nil, fmt.Errorf("list attachments: %w", err)
 	}
 	return attachments, nil
+}
+
+// TaskAttachments projects uploaded files from tasks, their comments and the task editor.
+// A negative limit returns the complete metadata array for a context response.
+func (r *PMTaskRepository) TaskAttachments(ctx context.Context, workspaceID string, tasks []model.PMTask, attachmentID string, offset, limit int) ([]model.TaskAttachment, error) {
+	files := []model.TaskAttachment{}
+	if len(tasks) == 0 {
+		return files, nil
+	}
+	db := r.db.WithContext(ctx)
+	const columns = "a.id AS attachment_id, a.file_name, a.file_size, a.content_type, a.uploaded_by_id, a.uploaded_by_agent_id, a.created_at, a.storage_key"
+	uploads := func() *gorm.DB {
+		q := db.Table("pm_attachments AS a").Where("a.workspace_id = ? AND a.is_uploaded = ?", workspaceID, true)
+		if attachmentID != "" {
+			q = q.Where("a.id = ?", attachmentID)
+		}
+		return q
+	}
+	taskIDs := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		taskIDs = append(taskIDs, task.ID)
+	}
+	owned := uploads().Select("COALESCE(c.entity_id, a.entity_id) AS task_id, a.entity_type, a.entity_id, "+columns).
+		Joins("LEFT JOIN pm_comments AS c ON a.entity_type = 'comment' AND c.id = a.entity_id AND c.entity_type = 'task'").
+		Where("((a.entity_type = 'task' AND a.entity_id IN ?) OR c.entity_id IN ?)", taskIDs, taskIDs)
+	parts, args := []string{"?"}, []any{owned}
+	for _, task := range tasks {
+		ids := inlineEditorUploadIDs(task.Description)
+		if len(ids) == 0 {
+			continue
+		}
+		// The task editor stages these uploads under the workspace. A pasted
+		// link cannot claim an upload owned by another task, comment or document.
+		inline := uploads().Select("? AS task_id, 'task' AS entity_type, ? AS entity_id, "+columns, task.ID, task.ID).
+			Where("a.entity_type = 'editor_upload' AND a.entity_id = a.workspace_id AND a.id IN ?", ids)
+		parts = append(parts, "?")
+		args = append(args, inline)
+	}
+	rows := db.Raw(strings.Join(parts, " UNION ALL "), args...)
+	err := db.Table("(?) AS files", rows).Order("created_at, attachment_id").Limit(limit).Offset(offset).Scan(&files).Error
+	return files, err
+}
+
+// The PM editor writes an attachment attribute on images and a stable content URL on file links.
+func inlineEditorUploadIDs(description *string) []string {
+	if description == nil || !strings.Contains(*description, "<") {
+		return nil
+	}
+	tokens := html.NewTokenizer(strings.NewReader(*description))
+	var ids []string
+	for {
+		switch tokens.Next() {
+		case html.ErrorToken:
+			return ids
+		case html.StartTagToken, html.SelfClosingTagToken:
+			tag := tokens.Token()
+			if tag.Data != "img" && tag.Data != "a" {
+				continue
+			}
+			for _, attr := range tag.Attr {
+				raw := attr.Val
+				switch {
+				case attr.Key == "data-attachment-id":
+				case (tag.Data == "img" && attr.Key == "src") || (tag.Data == "a" && attr.Key == "href"):
+					u, err := url.Parse(raw)
+					if err != nil || (u.Scheme != "" && u.Scheme != "https" && u.Scheme != "http") {
+						continue
+					}
+					path := strings.TrimPrefix(u.Path, "/api")
+					id, ok := strings.CutPrefix(path, "/pm/attachments/")
+					if !ok || !strings.HasSuffix(id, "/content") {
+						continue
+					}
+					raw = strings.TrimSuffix(id, "/content")
+				default:
+					continue
+				}
+				if id, err := uuid.Parse(raw); err == nil {
+					ids = append(ids, id.String())
+				}
+			}
+		}
+	}
 }
 
 // ConfirmUpload marks an attachment as uploaded.

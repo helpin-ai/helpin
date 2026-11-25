@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"slices"
@@ -51,6 +52,7 @@ type InternalCommandService struct {
 	imageService          *AgentImageService
 	jevDecisions          *JevDecisionService
 	agentService          *AgentService
+	taskFileStore         taskFileStore
 	taskService           *PMTaskService
 	labelService          *PMLabelService
 	commentService        *PMCommentService
@@ -84,7 +86,7 @@ type InternalCommandService struct {
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportAttachmentRepo     *repository.SupportAttachmentRepository
-	supportMediaProvider      dockChatMediaLLM
+	attachmentMediaProvider   dockChatMediaLLM
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
 	supportInboxService       *SupportInboxService
@@ -115,9 +117,9 @@ type InternalCommandService struct {
 	definitions map[string]InternalCommandDefinition
 }
 
-// SetSupportMediaAnalyzer shares the metered media reader with Ask.
-func (s *InternalCommandService) SetSupportMediaAnalyzer(provider dockChatMediaLLM) {
-	s.supportMediaProvider = provider
+// SetAttachmentMediaAnalyzer configures the metered media reader for task and support tools.
+func (s *InternalCommandService) SetAttachmentMediaAnalyzer(provider dockChatMediaLLM) {
+	s.attachmentMediaProvider = provider
 }
 
 func (s *InternalCommandService) SetSupportAttachmentRepository(repo *repository.SupportAttachmentRepository) {
@@ -420,10 +422,41 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 	if err := s.authorizeCommandActor(meta, def); err != nil {
 		return nil, err
 	}
+	slackMutationAuthorized := false
 	if meta.RunID != "" && s.agentRunRepo != nil {
 		run, err := s.resolveCommandRun(ctx, meta)
 		if err != nil {
 			return nil, err
+		}
+		if isSlackDockRun(run) {
+			var saved model.AgentRunInputPayload
+			if json.Unmarshal(run.Input, &saved) != nil || saved.Trigger == nil || saved.Trigger.ActorID == nil || *saved.Trigger.ActorID != meta.ActorID || !slices.Contains(saved.AllowedTools, def.toolAlias()) || meta.WorkspaceID != run.WorkspaceID || meta.AgentID != run.AgentID {
+				return nil, errors.New("Slack request scope changed")
+			}
+			var origin struct {
+				URL string `json:"slack_permalink"`
+			}
+			if err := json.Unmarshal(saved.Trigger.Context, &origin); err != nil {
+				return nil, err
+			}
+			ctx = model.WithSlackSource(ctx, origin.URL)
+			if def.Mutating {
+				actor := authorization.GetActor(ctx)
+				if actor == nil || actor.UserID != meta.ActorID || s.authz == nil {
+					return nil, errors.New("Slack member access unavailable")
+				}
+				access, err := slackMemberAccess(ctx, s.authz, actor)
+				if err != nil {
+					return nil, err
+				}
+				pm := access.PM && s.authz.Can(actor, authorization.PermPMEdit) && slices.Contains(slackPMWriteTools, def.toolAlias())
+				support := access.Support && s.authz.Can(actor, authorization.PermSupportEdit) && slices.Contains(slackSupportWriteTools, def.toolAlias())
+				if !pm && !support {
+					return nil, errors.New("Slack action unavailable for this member")
+				}
+				slackMutationAuthorized = true
+				meta.AuditActorID = actor.UserID
+			}
 		}
 		if run.TargetType == supportPreviewTarget {
 			if meta.TargetType != run.TargetType || meta.TargetID != run.TargetID || meta.AgentID != run.AgentID {
@@ -449,7 +482,7 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 			return nil, err
 		}
 	}
-	if def.Mutating {
+	if def.Mutating && !slackMutationAuthorized {
 		if err := s.authorizeDockMutation(ctx, meta, def, input); err != nil {
 			return nil, err
 		}

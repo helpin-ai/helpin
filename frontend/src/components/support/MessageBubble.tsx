@@ -8,7 +8,7 @@ import { getSupportAIActivity, getSupportCodeCheck } from './supportAIActivityMo
 import { SupportCodeCheckCard } from './SupportCodeCheckCard';
 import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
-import { SlackMessageSource } from './SlackMessageSource';
+import { SlackMessageSource, SlackSourceLabel } from './SlackMessageSource';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
@@ -437,6 +437,9 @@ export const MessageBubble = memo(function MessageBubble({
   const isAI = effectiveSenderType === 'ai';
   const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
+  const slackAttribution = supportMetadataString(message.metadata, 'via') === 'slack'
+    ? <SlackSourceLabel href={supportMetadataString(message.metadata, 'slack_permalink')} />
+    : null;
   const visitorFeedback = useMemo<boolean | undefined>(() => {
     if (!isAI || isInternal) return undefined;
     try {
@@ -522,7 +525,7 @@ export const MessageBubble = memo(function MessageBubble({
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const hasDisplayContent = visibleContent.trim().length > 0;
-  const showBubble = !!visibleContent || fileAttachments.length > 0 || imageAttachments.length > 0 || linkPreviews.length > 0;
+  const showBubble = !!visibleContent || fileAttachments.length > 0 || imageAttachments.length > 0 || linkPreviews.length > 0 || !!slackAttribution;
   const hasEmailBody = translatedContent === undefined && message.via_channel === 'email' && !!message.html_body;
   const renderEmailBodyAsForwardedText = hasEmailBody && !!forwardedDisplayContent;
 
@@ -624,6 +627,11 @@ export const MessageBubble = memo(function MessageBubble({
     </div>
   );
 
+  const renderCardMarkdown = (text: string) => (
+    <div className="prose-chat [overflow-wrap:anywhere]">
+      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{text}</Markdown>
+    </div>
+  );
   const aiActivity = getSupportAIActivity(message);
   if (aiActivity) {
     return <SupportAIActivity
@@ -631,7 +639,7 @@ export const MessageBubble = memo(function MessageBubble({
       activity={aiActivity}
       teammateName={teammateDisplayName}
       avatarUrl={resolvedAvatarUrl}
-      detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
+      renderMarkdown={renderCardMarkdown}
       readOnly={readOnly}
       folded={folded}
     />;
@@ -644,7 +652,7 @@ export const MessageBubble = memo(function MessageBubble({
       linkedTaskId={linkedTaskId}
       readOnly={readOnly}
       folded={folded}
-      renderMarkdown={(markdown) => <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{markdown}</Markdown>}
+      renderMarkdown={renderCardMarkdown}
     />;
   }
 
@@ -710,6 +718,10 @@ export const MessageBubble = memo(function MessageBubble({
     const viaAgent = isTaskEvent ? supportMetadataString(message.metadata, 'via_agent') : null;
     const taskHref = taskID && workspaceSlug ? buildTaskPath(workspaceSlug, taskID) : null;
     const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent, taskHref, taskID);
+
+    const sourceLabel = supportMetadataString(message.metadata, 'via') === 'slack'
+      ? <SlackSourceLabel href={supportMetadataString(message.metadata, 'slack_permalink')} />
+      : null;
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -801,6 +813,7 @@ export const MessageBubble = memo(function MessageBubble({
               <div className="text-xs">{fullTimestamp}</div>
             </TooltipContent>
           </Tooltip>
+          {sourceLabel}
         </div>
       );
     }
@@ -822,6 +835,7 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           </TooltipContent>
         </Tooltip>
+          {sourceLabel}
       </div>
     );
   }
@@ -930,6 +944,7 @@ export const MessageBubble = memo(function MessageBubble({
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
                   {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
                   <span className="float-right ml-2 mt-1 inline-flex items-center gap-1 text-[10px] text-amber-700/70 dark:text-amber-300/70">
+                    {slackAttribution}
                     {noteEditedAt && <><Tooltip><TooltipTrigger asChild><span tabIndex={0}>Edited</span></TooltipTrigger><TooltipContent>Edited {formatTimestamp(noteEditedAt)}</TooltipContent></Tooltip><span>·</span></>}
                     {renderBubbleTime()}
                   </span>
@@ -966,6 +981,13 @@ export const MessageBubble = memo(function MessageBubble({
   const showSlackSource = isCustomer && !message.is_internal && message.via_channel === 'slack';
   const showTelegramSource = isCustomer && !message.is_internal && message.via_channel === 'telegram';
   const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource || showTelegramSource;
+  const timePosition = translationFooter ? 'ml-auto shrink-0' : 'float-right ml-2 mt-1';
+  const replyTimestamp = slackAttribution ? (
+    <span className={`${timePosition} inline-flex items-center gap-1 whitespace-nowrap leading-4 text-muted-foreground`}>
+      {slackAttribution}
+      {renderBubbleTime()}
+    </span>
+  ) : renderBubbleTime(`${timePosition} text-muted-foreground`);
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
@@ -1048,8 +1070,8 @@ export const MessageBubble = memo(function MessageBubble({
                       {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
                       {translationFooter ? <div data-slot="support-message-footer" className="mt-1 flex items-end justify-between gap-3">
                         {translationFooter}
-                        {renderBubbleTime('ml-auto shrink-0 text-muted-foreground')}
-                      </div> : renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
+                        {replyTimestamp}
+                      </div> : replyTimestamp}
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top">

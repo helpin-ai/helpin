@@ -45,6 +45,11 @@ export function supportChannelLabel(key: string): string {
   return supportChannel(key)?.label ?? key.charAt(0).toUpperCase() + key.slice(1)
 }
 
+export function slackChannelLabel(name: string): string {
+  const channel = name.trim().replace(/^#+/, '')
+  return channel ? `#${channel}` : ''
+}
+
 /** A conversation source with a live chat session (the widget). */
 export function hasChatTransport(source: string | null | undefined): boolean {
   return supportChannel(source)?.transport === 'chat'

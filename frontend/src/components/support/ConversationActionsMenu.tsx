@@ -1,3 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
+import { slackService } from '@/lib/services/slackService';
+import { SlackIcon } from '@/lib/icons';
 import { ConversationMergeDialog } from './ConversationMergeDialog';
 import { LiveTranslateBar } from './LiveTranslateBar';
 import { useWorkspaceAccess } from '@/hooks/queries/useSession';
@@ -98,6 +101,12 @@ export function ConversationActionsMenu({
   onSubjectDialogOpenChange,
 }: ConversationActionsMenuProps) {
   const confirm = useConfirm();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const {data: slackThread} = useQuery({
+    queryKey: ['slack-inbox-thread', workspaceId, conversation.id],
+    queryFn: () => slackService.thread(workspaceId, conversation.id),
+    enabled: open ?? menuOpen,
+  });
   const [mergeOpen, setMergeOpen] = useState(false);
   const { data: mergeAccess } = useWorkspaceAccess(workspaceId);
   const [translationOpen, setTranslationOpen] = useState(false);
@@ -220,12 +229,15 @@ export function ConversationActionsMenu({
   return (
     <>
       {mergeOpen && <ConversationMergeDialog workspaceId={workspaceId} conversations={[conversation]} open={mergeOpen} onOpenChange={setMergeOpen} />}
-      <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenu open={open ?? menuOpen} onOpenChange={next => { setMenuOpen(next); onOpenChange?.(next); }}>
         <DropdownMenuTrigger asChild>
           {trigger}
         </DropdownMenuTrigger>
         <DropdownMenuContent align={align} className="w-64">
           <DropdownMenuGroup aria-label="Sharing">
+            {slackThread?.permalink && <DropdownMenuItem asChild className={itemClassName}>
+              <a href={slackThread.permalink} target="_blank" rel="noopener noreferrer"><SlackIcon className={iconClassName} />Open Slack thread</a>
+            </DropdownMenuItem>}
             <DropdownMenuItem onClick={handleCopyLink} className={itemClassName}>
               <Link01Icon className={iconClassName} />
               Copy link

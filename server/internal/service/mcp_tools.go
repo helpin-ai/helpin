@@ -328,18 +328,11 @@ func (s *MCPService) executeSpecialMCPTool(
 		return &MCPToolResult{Summary: "Workspace search completed.", Data: result}, nil
 
 	case "get_task":
-		var input struct {
-			TaskID string `json:"task_id"`
-		}
-		if err := decodeMCPArguments(arguments, &input); err != nil {
-			return nil, err
-		}
-		task, err := s.accessibleMCPTask(ctx, principal, input.TaskID)
+		task, err := s.commands.getAgentTaskDetail(ctx, model.InternalCommandContext{
+			WorkspaceID: principal.WorkspaceID, ActorID: principal.UserID, ActorRole: actor.Role,
+		}, arguments)
 		if err != nil {
-			return nil, err
-		}
-		if task == nil {
-			return nil, ErrMCPNotFound
+			return nil, mcpCommandError(err)
 		}
 		return &MCPToolResult{Summary: "Task " + task.Task.Name + " loaded.", Data: task}, nil
 

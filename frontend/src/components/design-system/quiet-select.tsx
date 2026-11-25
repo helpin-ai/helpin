@@ -58,8 +58,11 @@ interface QuietFilterDropdownBaseProps {
   /** Search matches option labels; enabled by default in both selection modes. */
   searchable?: boolean;
   popoverClassName?: string;
+  footer?: ReactNode;
   /** Hairline border for a filter that stands alone beside content rather than in a filter toolbar. */
   bordered?: boolean;
+  /** Name selected items in a form where the field already has a visible label. */
+  showSelectedNames?: boolean;
 }
 
 export type QuietFilterDropdownProps = QuietFilterDropdownBaseProps & (
@@ -82,7 +85,9 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
     ? emptyLabel
     : selected.length === 1
       ? (options.find((option) => option.value === selected[0])?.label ?? selected[0]) || emptyLabel
-      : `${selected.length} selected`;
+      : props.showSelectedNames
+        ? selected.map(value => options.find(option => option.value === value)?.label ?? value).join(', ')
+        : `${selected.length} selected`;
 
   const select = (value: string) => {
     if (props.multiple) {
@@ -100,7 +105,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
         <QuietDropdown label={label} open={open} onOpenChange={setOpen} disabled={disabled}
           selected={selected} options={options.map(option => ({ ...option, className: option.labelClassName }))}
           multiple={props.multiple} onSelect={select} searchMode={searchable ? 'auto' : 'off'}
-          searchPlaceholder={`Search ${label.toLowerCase()}…`} contentClassName={popoverClassName}
+          searchPlaceholder={`Search ${label.toLowerCase()}…`} contentClassName={popoverClassName} footer={props.footer}
           trigger={(
             <button
               ref={triggerRef}
@@ -113,7 +118,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
               {icon && <span className="shrink-0" aria-hidden="true">{icon}</span>}
               {selected.length === 1 && options.find(option => option.value === selected[0])?.leading}
               {showLabel === 'inline' && <span className="shrink-0 text-quiet-text-tertiary">{label}:</span>}
-              <span className="truncate">{props.multiple && selected.length > 1 && !showLabel ? `${label}: ` : ''}{summary}</span>
+              <span className="truncate">{props.multiple && selected.length > 1 && !showLabel && !props.showSelectedNames ? `${label}: ` : ''}{summary}</span>
               <ArrowDown01Icon aria-hidden="true" className="size-3.5 shrink-0 text-quiet-text-tertiary" />
             </button>
           )} />

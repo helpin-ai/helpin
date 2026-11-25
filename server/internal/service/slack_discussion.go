@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/channels/slack"
@@ -41,6 +42,7 @@ func (s *SlackService) ingestComment(ctx context.Context, a *model.SupportChanne
 	if err != nil || task == nil || task.Task.WorkspaceID != a.WorkspaceID {
 		return nil
 	}
+	ctx = model.WithSlackSource(ctx, s.sourceURL(ctx, token, m.Destination(), m.TS))
 	key := a.ID + ":" + m.Channel + ":" + m.TS
 	_, err = s.comments.Create(ctx, model.CreateCommentRequest{EntityType: "task", EntityID: d.TaskID, ParentID: &d.CommentID, Body: m.Text, SlackSourceKey: &key}, actor.UserID, a.WorkspaceID)
 	if err != nil && isUniqueConstraintViolation(err) {
@@ -218,9 +220,30 @@ func (s *SlackService) notifySupportOwner(ctx context.Context, a *model.SupportC
 	})
 }
 
-func (s *SlackService) shareAnswer(ctx context.Context, a *model.SupportChannelAccount, token string, m slack.Message, info string, allowed bool) error {
-	if !allowed {
-		return s.private(ctx, token, m, "Only you can see this answer. Sharing requires a private internal channel where everyone can read the record.\n"+truncate(info, 2500))
+// Check Slack at delivery time because a channel can become externally shared while the agent works.
+func (s *SlackService) reply(ctx context.Context, token string, m slack.Message, text string, mrkdwn bool, blocks ...any) error {
+	if slackDirect(m) || strings.HasPrefix(m.Channel, "D") {
+		return s.sendPrivate(ctx, token, m, text, mrkdwn, blocks...)
 	}
-	return s.api.Call(ctx, token, "chat.postMessage", map[string]any{"channel": m.Destination(), "thread_ts": m.Root(), "text": truncate(info, 2800), "mrkdwn": false, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID(a.ID + m.Channel + m.TS + "share")}, nil)
+	var info struct {
+		Channel struct {
+			ID       string
+			External *bool `json:"is_ext_shared"`
+			Pending  bool  `json:"is_pending_ext_shared"`
+			Member   bool  `json:"is_member"`
+		}
+	}
+	err := s.api.Get(ctx, token, "conversations.info", url.Values{"channel": {m.Destination()}}, &info)
+	if err != nil {
+		s.channels.logger.WarnContext(ctx, "Slack channel visibility unavailable", "error", err)
+	}
+	channel := info.Channel
+	if err != nil || channel.ID != m.Destination() || channel.External == nil || *channel.External || channel.Pending || !channel.Member {
+		return s.sendPrivate(ctx, token, m, text, mrkdwn, blocks...)
+	}
+	post := map[string]any{"channel": m.Destination(), "thread_ts": m.Root(), "text": text, "mrkdwn": mrkdwn, "unfurl_links": false, "unfurl_media": false, "client_msg_id": inboundStableID("slack-response:" + m.Channel + ":" + m.TS + ":" + m.Type)}
+	if len(blocks) > 0 {
+		post["blocks"] = blocks
+	}
+	return s.api.Call(ctx, token, "chat.postMessage", post, nil)
 }

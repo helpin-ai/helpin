@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { formatDistanceToNowStrict } from 'date-fns'
+import { QuietStatusText } from '@/components/design-system/quiet'
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -86,7 +87,11 @@ export function SupportChannels({ workspaceId, editable }: { workspaceId: string
               return (
                 <li key={account.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 py-3 last:pb-0 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">@{account.handle}</p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <p className="min-w-0 truncate text-sm font-medium">@{account.handle}</p>
+                      {account.status === 'active' && <QuietStatusText tone="positive">Connected</QuietStatusText>}
+                      {account.status === 'reauthorization_required' && <QuietStatusText tone="blocker">Reconnect required</QuietStatusText>}
+                    </div>
                     <p className={`break-words text-xs ${TONE_CLASS[state.tone]}`}>{account.display_name ? `${account.display_name} · ` : ''}{state.text}</p>
                   </div>
                   <div className="col-span-2 row-start-2 flex min-w-0 flex-wrap items-center gap-3 sm:col-span-1 sm:col-start-2 sm:row-start-1">

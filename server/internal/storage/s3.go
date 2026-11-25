@@ -204,6 +204,9 @@ func (s *S3Client) GeneratePresignedGetURL(key, filename string) (string, error)
 
 // GeneratePresignedGetURLWithExpiry signs a private download for up to seven days.
 func (s *S3Client) GeneratePresignedGetURLWithExpiry(key, filename string, expiry time.Duration) (string, error) {
+	if s == nil || s.presignClient == nil {
+		return "", fmt.Errorf("file storage is unavailable")
+	}
 	if expiry < time.Second || expiry > 7*24*time.Hour {
 		return "", fmt.Errorf("download link expiry must be between one second and seven days")
 	}
@@ -257,6 +260,24 @@ func (s *S3Client) OpenObject(ctx context.Context, key string) (io.ReadCloser, i
 		size = *result.ContentLength
 	}
 	return result.Body, size, nil
+}
+
+// ReadObjectChunk returns up to limit bytes from a stored object at offset.
+func (s *S3Client) ReadObjectChunk(ctx context.Context, key string, offset int64, limit int) ([]byte, error) {
+	if s == nil {
+		return nil, fmt.Errorf("file storage is unavailable")
+	}
+	input := &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)}
+	// An un-ranged first read also works for empty files.
+	if offset > 0 {
+		input.Range = aws.String(fmt.Sprintf("bytes=%d-", offset))
+	}
+	result, err := s.client.GetObject(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("open attachment chunk: %w", err)
+	}
+	defer result.Body.Close()
+	return io.ReadAll(io.LimitReader(result.Body, int64(limit)))
 }
 
 // GetObject downloads an object from S3 and returns its contents.

@@ -8759,7 +8759,7 @@
     },
     "/tasks/context": {
       "get": {
-        "description": "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs or human task keys.\n\n**Required scope:** `helpin.pm.read`.",
+        "description": "Load task context including uploaded task and comment attachment metadata. Use read_task_attachment for file content. Optionally include linked docs, document content, comments, and git links for specific task IDs or human task keys.\n\n**Required scope:** `helpin.pm.read`.",
         "operationId": "getTaskContext",
         "parameters": [
           {
@@ -8883,7 +8883,7 @@
     },
     "/tasks/{task_id}": {
       "get": {
-        "description": "Get one Helpin task by ID.\n\n**Required scope:** `helpin.pm.read`.",
+        "description": "Get one Helpin task by ID or task key. Includes uploaded task and comment file metadata. Use read_task_attachment for content.\n\n**Required scope:** `helpin.pm.read`.",
         "operationId": "getTask",
         "parameters": [
           {

@@ -14,6 +14,7 @@ const (
 	ActionCuratedGuidanceEmbed       = "support.curated_guidance.embed.v1"
 	ActionPlatformRerank             = "platform.rerank.v1"
 	ActionSupportMediaEnrichment     = "support.media_enrichment.v1"
+	ActionTaskAttachmentAnalysis     = "pm.task_attachment_analysis.v1"
 	ActionAskMediaEnrichment         = "agents.ask.media_enrichment.v1"
 	ActionAgentImageGenerate         = "agents.image.generate.v1"
 	ActionAgentImageEdit             = "agents.image.edit.v1"
@@ -39,24 +40,9 @@ func defaultActions() []Action {
 		embeddingAction(ActionSupportKnowledgeEmbed, "Support knowledge embedding", CategorySupportAI, "support"),
 		embeddingAction(ActionHelpcenterSearchEmbed, "Help-center search embedding", CategorySupportAI, "helpcenter"),
 		embeddingAction(ActionCuratedGuidanceEmbed, "Curated guidance embedding", CategorySupportAI, "support"),
-		{
-			Key: ActionAskMediaEnrichment, PolicyVersion: "v2", FeatureKey: "ask_chat",
-			Label: "Ask media enrichment", Category: CategoryAgents, Origin: "ask",
-			Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.8-flash",
-			AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash", "qwen/qwen3.8-omni-flash"}}, Timeout: 4 * time.Minute,
-			MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
-			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
-			DataClass: DataClassWorkspaceData, Chargeable: true,
-		},
-		{
-			Key: ActionSupportMediaEnrichment, PolicyVersion: "v2", FeatureKey: "support_ai_reply",
-			Label: "Support media enrichment", Category: CategorySupportAI, Origin: "support",
-			Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.8-flash",
-			AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash", "qwen/qwen3.8-omni-flash"}}, Timeout: 4 * time.Minute,
-			MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
-			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
-			DataClass: DataClassCustomerContent, Chargeable: true,
-		},
+		mediaAction(ActionAskMediaEnrichment, "ask_chat", "Ask media enrichment", CategoryAgents, "ask", DataClassWorkspaceData, MediaEnrichmentMaxOutputTokens),
+		mediaAction(ActionTaskAttachmentAnalysis, "ask_chat", "Task attachment analysis", CategoryProjectAI, "task", DataClassWorkspaceData, TaskAttachmentMaxOutputTokens),
+		mediaAction(ActionSupportMediaEnrichment, "support_ai_reply", "Support media enrichment", CategorySupportAI, "support", DataClassCustomerContent, MediaEnrichmentMaxOutputTokens),
 		imageAction(ActionAgentImageGenerate, "Agent image generation"),
 		imageAction(ActionAgentImageEdit, "Agent image editing"),
 		{
@@ -185,5 +171,20 @@ func imageAction(key, label string) Action {
 		AllowedModels: map[string][]string{"openai": {"gpt-image-2.5-flare", "gpt-image-2.5-sunburst"}},
 		Timeout:       4 * time.Minute, RetryClass: RetryNone, Autonomy: AutonomyAssist,
 		DataClass: DataClassWorkspaceData, Chargeable: false,
+	}
+}
+
+const (
+	MediaEnrichmentMaxOutputTokens = 700
+	TaskAttachmentMaxOutputTokens  = 2048
+)
+
+func mediaAction(key, feature, label string, category Category, origin string, dataClass DataClass, maxOutput int) Action {
+	return Action{
+		Key: key, PolicyVersion: "v2", FeatureKey: feature, Label: label, Category: category, Origin: origin,
+		Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.8-flash",
+		AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash", "qwen/qwen3.8-omni-flash"}}, Timeout: 4 * time.Minute,
+		MaxInputTokens: 200000, MaxOutputTokens: maxOutput, MaxReasoningTokens: 32000,
+		RetryClass: RetryTransient, Autonomy: AutonomyAnalyze, DataClass: dataClass, Chargeable: true,
 	}
 }

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { formatMessageTime, formatTimestamp } from './helpers';
 
@@ -12,8 +14,8 @@ export function CardRow({ label, children }: { label: string; children: ReactNod
   </div>;
 }
 
-export function CardList({ items }: { items: string[] }) {
-  return items.length === 1 ? <>{items[0]}</> : <ul className="space-y-1">{items.map((item, index) => <li key={index}>{item}</li>)}</ul>;
+export function CardList({ items, renderMarkdown }: { items: string[]; renderMarkdown: (text: string) => ReactNode }) {
+  return items.length === 1 ? <>{renderMarkdown(items[0])}</> : <ul className="space-y-1">{items.map((item, index) => <li key={index}>{renderMarkdown(item)}</li>)}</ul>;
 }
 
 /**
@@ -34,7 +36,7 @@ export function SupportAICard({ kind, title, timestamp, folded = false, summary,
     <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" />
     <span className="shrink-0 text-xs font-semibold">{title}</span>
     {folded && summary
-      ? <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
+      ? <span className="min-w-0 truncate text-xs text-muted-foreground"><Markdown remarkPlugins={[remarkGfm]} allowedElements={[]} unwrapDisallowed skipHtml>{summary}</Markdown></span>
       : <span className="text-[11px] text-muted-foreground">Team only</span>}
     <time dateTime={timestamp} title={formatTimestamp(timestamp)} className="ml-auto shrink-0 text-[11px] text-muted-foreground">{formatMessageTime(timestamp)}</time>
   </>;

@@ -12,12 +12,13 @@ import { CardList, CardRow, SupportAICard } from './SupportAICardParts';
 import { CREATE_SUPPORT_TASK_EVENT, cardAction, restoreReplyDraft } from './supportAICardActions';
 import type { SupportCodeCheck, SupportCodeCheckTask } from './supportAIActivityModel';
 
-function TaskStep({ task, workspaceId, conversationId, linkedTaskId, readOnly }: {
+function TaskStep({ task, workspaceId, conversationId, linkedTaskId, readOnly, renderMarkdown }: {
   task: SupportCodeCheckTask;
   workspaceId: string;
   conversationId: string;
   linkedTaskId?: string | null;
   readOnly: boolean;
+  renderMarkdown: (text: string) => ReactNode;
 }) {
   const queryClient = useQueryClient();
   const [linking, setLinking] = useState(false);
@@ -37,7 +38,7 @@ function TaskStep({ task, workspaceId, conversationId, linkedTaskId, readOnly }:
   };
   const createTask = () => window.dispatchEvent(new CustomEvent(CREATE_SUPPORT_TASK_EVENT, { detail: { conversationId } }));
   return <CardRow label="Task">
-    <p>{existing ? <>Already covered by {task.key}{task.text ? `: ${task.text}` : ''}</> : task.text}</p>
+    {renderMarkdown(existing ? `Already covered by ${task.key}${task.text ? `: ${task.text}` : ''}` : task.text)}
     {!readOnly && (existing
       ? task.id && (linkedTaskId === task.id
         ? <p className="mt-1 text-xs text-muted-foreground">Linked to this conversation</p>
@@ -71,36 +72,36 @@ export function SupportCodeCheckCard({ message, check, linkedTaskId, readOnly = 
   let body: ReactNode;
   if (running) {
     body = <div className="text-sm">
-      <p className="flex items-center gap-2"><Loading03Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 motion-reduce:animate-none" />{runningText(check)}</p>
+      <div className="flex items-center gap-2"><Loading03Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 motion-reduce:animate-none" />{renderMarkdown(runningText(check))}</div>
       <p className="mt-0.5 pl-[1.375rem] text-xs text-muted-foreground">Details will appear here when done.</p>
     </div>;
   } else if (check.status === 'failed') {
-    body = <p className="text-sm">{check.message}</p>;
+    body = <div className="text-sm">{renderMarkdown(check.message ?? '')}</div>;
   } else {
     body = <div className="text-sm [overflow-wrap:anywhere]">
-      {check.found && <><h3 className="mb-1 text-sm font-semibold">What AI found</h3><p className="whitespace-pre-wrap">{check.found}</p></>}
-      {unavailable.length > 0 && <dl className="mt-2"><CardRow label="Couldn't check"><CardList items={unavailable} /></CardRow></dl>}
+      {check.found && <><h3 className="mb-1 text-sm font-semibold">What AI found</h3>{renderMarkdown(check.found)}</>}
+      {unavailable.length > 0 && <dl className="mt-2"><CardRow label="Couldn't check"><CardList items={unavailable} renderMarkdown={renderMarkdown} /></CardRow></dl>}
       {hasSteps && <div className="mt-3">
         <h3 className="mb-1 text-sm font-semibold">Next steps</h3>
         <dl>
           {check.reply && <CardRow label="Reply">
-            <p className="line-clamp-2">{check.reply.replace(/\s+/g, ' ')}</p>
+            <div className="line-clamp-2">{renderMarkdown(check.reply)}</div>
             {!readOnly && <button type="button" onClick={() => restoreReplyDraft(conversationId, check.reply ?? '')} className={cardAction}><ArrowTurnBackwardIcon className="h-3.5 w-3.5" />Use this reply</button>}
           </CardRow>}
           {check.docs && <CardRow label="Docs">
-            <p>{check.docs}</p>
+            {renderMarkdown(check.docs)}
             {!readOnly && <button type="button" onClick={() => askAgentWithDraft(conversationId, `Update our help articles so they cover this: ${check.docs}. Use this conversation and the code check findings as the source.`)} className={cardAction}><AskAgentAvatar plateStyle="solid" radius={50} className="h-3.5 w-3.5 shrink-0" />Ask Agent to update docs</button>}
           </CardRow>}
-          {check.task && <TaskStep task={check.task} workspaceId={message.workspace_id} conversationId={conversationId} linkedTaskId={linkedTaskId} readOnly={readOnly} />}
+          {check.task && <TaskStep task={check.task} workspaceId={message.workspace_id} conversationId={conversationId} linkedTaskId={linkedTaskId} readOnly={readOnly} renderMarkdown={renderMarkdown} />}
           {check.investigate && <CardRow label="Investigate">
-            <p>{check.investigate}</p>
+            {renderMarkdown(check.investigate)}
             {!readOnly && <button type="button" onClick={() => askAgentWithDraft(conversationId, `Look into this for the conversation: ${check.investigate}`)} className={cardAction}><AskAgentAvatar plateStyle="solid" radius={50} className="h-3.5 w-3.5 shrink-0" />Ask Agent</button>}
           </CardRow>}
         </dl>
       </div>}
       {check.engineering && <details className="mt-2 text-xs text-muted-foreground">
         <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Engineering details</summary>
-        <div className="prose-chat mt-2 text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">{renderMarkdown(check.engineering)}</div>
+        <div className="mt-2 text-sm leading-relaxed text-foreground">{renderMarkdown(check.engineering)}</div>
       </details>}
     </div>;
   }

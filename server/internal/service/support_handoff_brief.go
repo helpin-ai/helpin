@@ -13,6 +13,8 @@ import (
 // SupportHandoffBrief carries a bounded, optional agent-authored briefing.
 // Missing context stays missing; the card never fills gaps with guesses.
 type SupportHandoffBrief struct {
+	codeCheckID           string
+	codeCheckPending      bool
 	InvestigationKind     string `json:"investigation_kind,omitempty"`
 	InvestigationQuestion string `json:"investigation_question,omitempty"`
 	// InvestigationFocus says in plain words what the code check looks at.
@@ -51,6 +53,10 @@ type SupportHandoffCheck struct {
 // supportHandoffCard is the structured AI handoff the inbox renders. Each
 // fact appears once; empty parts are left out rather than filled with fallbacks.
 type supportHandoffCard struct {
+	// Record whether the linked report was pending at handoff so deliveries and
+	// retries agree on whether its result belongs in a separate update.
+	CodeCheckID            string                `json:"code_check_id,omitempty"`
+	CodeCheckPending       bool                  `json:"code_check_pending,omitempty"`
 	Issue                  string                `json:"issue,omitempty"`
 	Reason                 string                `json:"reason"`
 	Checked                []SupportHandoffCheck `json:"checked,omitempty"`
@@ -128,6 +134,7 @@ func buildSupportHandoffNote(conv *model.SupportConversation, history []model.Su
 		}
 	}
 	card := supportHandoffCard{
+		CodeCheckID: brief.codeCheckID, CodeCheckPending: brief.codeCheckPending,
 		Issue:                  briefText(brief.Issue),
 		Reason:                 briefText(brief.ReasonNote),
 		OpenQuestions:          briefItems(brief.UnresolvedQuestions),

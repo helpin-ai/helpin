@@ -41,6 +41,9 @@ var supportChildReadOnlyTools = map[string]bool{
 	// Product reads.
 	"list_tasks":                 true,
 	"get_task_context":           true,
+	"list_task_attachments":      true,
+	"read_task_attachment":       true,
+	"analyze_task_attachment":    true,
 	"list_workspace_teams":       true,
 	"list_conversation_messages": true,
 }

@@ -18,6 +18,7 @@ import (
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -322,6 +323,40 @@ func TestExternalA2ATargetContextOnlyForExternalRuns(t *testing.T) {
 	}
 	if data, _ := env.svc.TargetContextData(ctx, req); data != nil {
 		t.Fatal("disabled external agents must not receive data.a2a")
+	}
+}
+
+func TestExternalA2ATaskAttachmentDownloads(t *testing.T) {
+	env := newExternalA2ATestEnv(t)
+	authz := authorization.NewAuthzService(env.db, authorization.NewGORMMemberRepository(env.db), repository.NewWorkspaceModuleGrantRepository(env.db))
+	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, env.agents.taskRepo, nil)
+	commands.SetAuthorizationService(authz)
+	commands.SetTaskFileStore(testMCPFileStore("test"))
+	host := NewAgentRuntimeHostService("helpin", env.agents.runRepo, nil, env.agents.taskRepo, nil, nil, nil, nil, nil, nil, commands, nil).
+		SetAgentRepository(env.agents.agentRepo).SetAuthorizationService(authz).SetExternalA2AService(env.svc)
+	record := env.connect(t, "")
+	run := env.seedRun(t, record.AgentID, model.AgentRuntimeKindA2A, model.AgentRunStatusRunning, nil)
+	req := agentruntime.TargetContextRequest{AppID: "helpin", RunID: *run.ExternalRuntimeID, AgentID: record.AgentID, Target: agentruntime.TargetRef{Type: "task", ID: env.taskID}}
+	seedWorkspaceMember(t, env.db, "review-member", env.workspaceID, env.userID, "member@example.com", "Member", model.RoleAdmin)
+	mustExec(t, env.db, `INSERT INTO pm_attachments(id,workspace_id,entity_type,entity_id,file_name,content_type,file_size,storage_key,is_uploaded) VALUES('file-1',?,'task',?,'plan.md','text/markdown',15,'private-plan',true)`, env.workspaceID, env.taskID)
+	data, err := host.ResolveTargetContext(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := data.Data["a2a"].(map[string]any)["message_appendix"].(string)
+	if !strings.Contains(message, "plan.md") || !strings.Contains(message, "download_url") || !strings.Contains(message, "text/markdown") {
+		t.Fatal("missing task file reference")
+	}
+	// Reading a task's files also works when the remote upload endpoint is disabled.
+	env.svc.publicAPI = ""
+	data, err = host.ResolveTargetContext(context.Background(), req)
+	if err != nil || !strings.Contains(data.Data["a2a"].(map[string]any)["message_appendix"].(string), "download_url") {
+		t.Fatalf("missing read-only download reference: %v", err)
+	}
+	mustExec(t, env.db, "UPDATE workspace_members SET status = 'revoked' WHERE id='review-member'")
+	data, err = host.ResolveTargetContext(context.Background(), req)
+	if err == nil || data != nil {
+		t.Fatal("expected revoked member to be denied task files")
 	}
 }
 

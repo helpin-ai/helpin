@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -67,6 +68,15 @@ func (c *Client) DownloadFile(ctx context.Context, token, id string, limit int64
 
 // Upload finalizes the uploaded bytes in the original thread.
 func (c *Client) Upload(ctx context.Context, token, channel, root, name string, data []byte) (string, error) {
+	id, err := c.PrepareUpload(ctx, token, name, data)
+	if err != nil {
+		return "", err
+	}
+	return id, c.ShareUpload(ctx, token, channel, root, name, id)
+}
+
+// PrepareUpload stages the bytes without sharing the file with a channel.
+func (c *Client) PrepareUpload(ctx context.Context, token, name string, data []byte) (string, error) {
 	var ticket struct {
 		ID  string `json:"file_id"`
 		URL string `json:"upload_url"`
@@ -97,6 +107,33 @@ func (c *Client) Upload(ctx context.Context, token, channel, root, name string, 
 	if res.StatusCode != 200 {
 		return "", errors.New("Slack file upload failed")
 	}
-	err = c.Call(ctx, token, "files.completeUploadExternal", map[string]any{"channel_id": channel, "thread_ts": root, "files": []map[string]string{{"id": ticket.ID, "title": name}}}, nil)
-	return ticket.ID, err
+	return ticket.ID, nil
+}
+
+// ShareUpload finalizes the same staged file on retries without uploading a duplicate.
+func (c *Client) ShareUpload(ctx context.Context, token, channel, root, name, id string) error {
+	err := c.Call(ctx, token, "files.completeUploadExternal", map[string]any{"channel_id": channel, "thread_ts": root, "files": []map[string]string{{"id": id, "title": name}}}, nil)
+	return err
+}
+
+// FileSharedInChannel reconciles a staged upload after an interrupted completion call.
+// Each staged ID belongs to one file and one feed thread.
+func (c *Client) FileSharedInChannel(ctx context.Context, token, channel, id string) (bool, error) {
+	var info struct {
+		File struct {
+			ID               string
+			Channels, Groups []string
+			Shares           struct {
+				Public, Private map[string][]struct{ TS string }
+			}
+		}
+	}
+	if err := c.Get(ctx, token, "files.info", url.Values{"file": {id}}, &info); err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Code == "file_not_found" {
+			return false, nil
+		}
+		return false, err
+	}
+	return info.File.ID == id && (slices.Contains(info.File.Channels, channel) || slices.Contains(info.File.Groups, channel) || len(info.File.Shares.Public[channel]) > 0 || len(info.File.Shares.Private[channel]) > 0), nil
 }

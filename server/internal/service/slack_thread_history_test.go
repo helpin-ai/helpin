@@ -42,3 +42,38 @@ func TestSlackDraftThreadCoverage(t *testing.T) {
 		})
 	}
 }
+
+func TestSlackReferencedConversation(t *testing.T) {
+	const first = "11111111-1111-4111-8111-111111111111"
+	const second = "22222222-2222-4222-8222-222222222222"
+	const prefix = "https://app.helpin.ai/w/example/support/"
+	for _, tc := range []struct {
+		name, text, root, ts, want string
+		lookup, fail               bool
+	}{
+		{"thread follow-up", "What's the latest?", "<" + prefix + first + "|ticket>", "1", first, true, false},
+		{"explicit overrides parent", prefix + second, prefix + first, "1", second, false, false},
+		{"two conversations", "Summarize this", prefix + first + " " + prefix + second, "1", "", true, true},
+		{"adjacent message", "Summarize this", prefix + first, "0", "", true, false},
+		{"repeated link", "Summarize this", prefix + first + " " + prefix + first, "1", first, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				q := r.URL.Query()
+				if r.URL.Path != "/conversations.history" || q.Get("channel") != "current" || q.Get("latest") != "1" || q.Get("inclusive") != "true" || q.Get("limit") != "1" {
+					t.Errorf("unexpected request %s", r.URL)
+				}
+				fmt.Fprintf(w, `{"ok":true,"messages":[{"ts":%q,"text":%q}]}`, tc.ts, tc.root)
+			}))
+			defer ts.Close()
+			api := slack.NewClient()
+			api.BaseURL = ts.URL + "/"
+			got, err := (&SlackService{api: api}).referencedConversation(context.Background(), "token", slack.Message{Channel: "original", CurrentChannelID: "current", ThreadTS: "1", TS: "2", Text: tc.text})
+			if got != tc.want || (err != nil) != tc.fail || (calls == 1) != tc.lookup {
+				t.Fatalf("id=%q error=%v calls=%d", got, err, calls)
+			}
+		})
+	}
+}

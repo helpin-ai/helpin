@@ -1,4 +1,5 @@
 type ExternalToolsSearch = {
+  slack_inbox?: string;
   tab?: 'apps' | 'mcp';
   external_mcp_oauth?: 'connected' | 'failed';
   external_mcp_server_id?: string;
@@ -12,6 +13,7 @@ function optionalString(value: unknown) {
 
 export function validateExternalToolsSearch(search: Record<string, unknown>): ExternalToolsSearch {
   return {
+    ...(optionalString(search.slack_inbox) && { slack_inbox: optionalString(search.slack_inbox) }),
     tab: search.tab === 'apps' || search.tab === 'mcp' ? search.tab : undefined,
     external_mcp_oauth: search.external_mcp_oauth === 'connected' || search.external_mcp_oauth === 'failed' ? search.external_mcp_oauth : undefined,
     external_mcp_server_id: optionalString(search.external_mcp_server_id),

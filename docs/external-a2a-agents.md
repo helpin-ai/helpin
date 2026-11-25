@@ -102,7 +102,7 @@ Errors use `{ "error": "message" }`.
    receives the connection (without upload instructions) so Agent Runtime can
    cancel the remote task.
 3. **Message.** The first message is the task launch context plus the upload
-   instructions. Later messages are the human replies.
+   instructions. For a task with uploaded files, the message also includes file metadata and temporary download links for that task and its comments. Helpin checks the agent’s team scope and the initiating user’s current task access before issuing links. Later messages are the human replies.
 4. **Progress.** Agent Runtime emits an `a2a.task` event on each remote state
    change. Helpin stores the remote `context_id`, posts the agent's question
    (`input_required`, `auth_required`) or final answer (`completed`) as a task

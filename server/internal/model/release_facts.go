@@ -115,6 +115,7 @@ type TaskContextGitLink struct {
 }
 
 type TaskContextItem struct {
+	Attachments     []TaskAttachment      `json:"attachments"`
 	TaskID          string                `json:"task_id"`
 	TaskKey         string                `json:"task_key,omitempty"`
 	Title           string                `json:"title"`

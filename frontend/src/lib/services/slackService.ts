@@ -1,12 +1,13 @@
 import { api } from '../api'
 import { unwrap } from '../queryUtils'
 
-export type SlackPurpose = 'support' | 'mixed' | 'pm'
+export type SlackPurpose = 'support' | 'mixed' | 'pm' | 'inbox'
 export interface SlackRoute {
   channel_id: string
   channel_name: string
   crm_company_id?: string | null
   purpose: SlackPurpose
+  mailbox_ids?: string[]
   mailbox_id: string | null
   team_id: string | null
   epic_id: string | null
@@ -29,6 +30,7 @@ export interface SlackChannel {
 const path = (ws: string, suffix = '') =>
   `/slack/${suffix}?workspace_id=${encodeURIComponent(ws)}`
 export const slackService = {
+  thread: (ws: string, id: string) => api.get<{permalink: string}>(`/support/inbox/conversations/${encodeURIComponent(id)}/slack-thread?workspace_id=${encodeURIComponent(ws)}`).then(unwrap),
   settings: (ws: string) => api.get<SlackSettings>(path(ws)).then(unwrap),
   channels: (ws: string) =>
     api.get<SlackChannel[]>(path(ws, 'channels')).then(unwrap),

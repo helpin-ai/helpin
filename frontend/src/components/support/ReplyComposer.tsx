@@ -79,9 +79,13 @@ import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { QuietSelect } from '@/components/design-system/quiet-select';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
 import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery, saveReplyDestination, useReplyDestination, type ReplyDestination } from './replyDelivery';
-import { hasChatTransport, supportChannel, supportChannelLabel } from '@/lib/supportChannels';
+import { hasChatTransport, slackChannelLabel, supportChannel, supportChannelLabel } from '@/lib/supportChannels';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
+
+function replyThreadLabel(thread: { provider: string; name: string }) {
+  return thread.provider === 'slack' ? slackChannelLabel(thread.name) : thread.name.trim();
+}
 
 interface ReplyComposerProps {
   workspaceId: string;
@@ -1906,7 +1910,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const hasContent = content.trim().length > 0;
   const showThreadPicker = deliveryMode !== 'email_only' && (threads.length > 1 || originNeeded);
   const showProviderNotice = deliveryMode !== 'email_only' && !!providerChannel;
-  const recipient = origin?.name.trim();
+  const recipient = origin && replyThreadLabel(origin);
   const replyNotice = providerChannel ? `Reply on ${providerChannel}` : 'Reply';
   const deliveryNoticeError = originNeeded && deliveryMode !== 'email_only' ? undefined : deliveryUnavailableReason;
   const sendLabel = editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes')
@@ -2010,7 +2014,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
                       const thread = destinations.find(d => d.id === id);
                       if (thread) saveReplyDestination(workspaceId, conversationId, { reply_transport: thread.provider, provider_origin_id: id });
                     }}
-                    options={threads.map(d => ({ value: d.id, label: `${!selectedProvider ? supportChannelLabel(d.provider) + ' · ' : ''}${d.name || 'Direct message'} · Conversation ${d.display_id}` }))}
+                    options={threads.map(d => ({ value: d.id, label: `${!selectedProvider ? supportChannelLabel(d.provider) + ' · ' : ''}${replyThreadLabel(d) || 'Direct message'} · Conversation ${d.display_id}` }))}
                   />
                 </div>
               ) : showProviderNotice && (

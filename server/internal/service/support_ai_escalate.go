@@ -163,7 +163,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	var replyMsg *model.SupportMessage
 	var escalationSystemMsg *model.SupportMessage
 	escalationAlreadyMessaged := false
-	codeCheckedThisTurn := false
+	var priorCodeCheck *model.SupportMessage
 	// Load with includeInternal=true so dedupe can see the new internal
 	// handoff system events (and the legacy ai_escalated rows that were
 	// public but are still recognized).
@@ -185,7 +185,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			}
 		}
 		escalationAlreadyMessaged = hasEscalationMessageInHistory(recent)
-		codeCheckedThisTurn = supportCodeCheckedThisTurn(recent)
+		priorCodeCheck = supportCodeCheckThisTurn(recent)
 	}
 
 	// 1. Create escalation messages — a customer-facing reply plus an
@@ -292,12 +292,24 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		}
 	}
 	investigation := newSupportInvestigation(conv, issueKey, brief, now)
-	if codeCheckedThisTurn {
+	if priorCodeCheck != nil {
 		// The team already has this message's code-check card.
 		investigation = nil
+		brief.codeCheckID = priorCodeCheck.ID
+		brief.codeCheckPending = supportCodeCheckCardStatus(priorCodeCheck.Metadata) == supportCodeCheckRunning
+	} else if investigation != nil {
+		brief.codeCheckID = investigation.ID
+		brief.codeCheckPending = true
 	}
 	brief.InvestigationRequested = investigation != nil
 	note := buildSupportHandoffNote(conv, history, reason, brief, now)
+	if escalationSystemMsg != nil {
+		raw, err := json.Marshal(map[string]string{"handoff_note_id": note.ID})
+		if err != nil {
+			return err
+		}
+		escalationSystemMsg.Metadata = string(raw)
+	}
 	messages := []*model.SupportMessage{replyMsg, escalationSystemMsg, note}
 	if systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman {
 		messages = []*model.SupportMessage{escalationSystemMsg, note, replyMsg}

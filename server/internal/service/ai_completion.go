@@ -31,6 +31,7 @@ type AICompletionRequest struct {
 	IdempotencyKey     string
 	Metadata           map[string]interface{}
 	PreferredRoute     *AICompletionRoute
+	PrimaryOnly        bool // The request requires a capability specific to the primary route.
 	RequireComplete    bool
 	RetryInvalidOutput bool
 	ValidateResponse   func(*llm.ChatResponse) error
@@ -106,7 +107,7 @@ func (s *AICompletionService) Complete(ctx context.Context, input AICompletionRe
 		)
 	}
 
-	routes := completionCandidateRoutes(policy, input.PreferredRoute)
+	routes := completionCandidateRoutes(policy, input)
 	var attemptErrors []error
 	for index, route := range routes {
 		response, retry, err := s.completeAttempt(ctx, input, policy, route, index)
@@ -135,7 +136,7 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 	if !ok {
 		return nil, fmt.Errorf("no AI completion route for feature %q", input.FeatureKey)
 	}
-	routes := completionCandidateRoutes(policy, input.PreferredRoute)
+	routes := completionCandidateRoutes(policy, input)
 	if len(routes) == 0 {
 		return nil, fmt.Errorf("no AI completion route for feature %q", input.FeatureKey)
 	}
@@ -400,10 +401,13 @@ func completionChatRequest(input llm.ChatRequest, route AICompletionRoute) (llm.
 	return input, nil
 }
 
-func completionCandidateRoutes(policy AICompletionRoutePolicy, preferred *AICompletionRoute) []AICompletionRoute {
+func completionCandidateRoutes(policy AICompletionRoutePolicy, input AICompletionRequest) []AICompletionRoute {
+	if input.PrimaryOnly {
+		return []AICompletionRoute{policy.Primary}
+	}
 	routes := make([]AICompletionRoute, 0, 2+len(policy.Fallbacks))
-	if preferred != nil && policy.PreferRequestRoute {
-		routes = append(routes, *preferred)
+	if input.PreferredRoute != nil && policy.PreferRequestRoute {
+		routes = append(routes, *input.PreferredRoute)
 	}
 	routes = append(routes, policy.Primary)
 	routes = append(routes, policy.Fallbacks...)

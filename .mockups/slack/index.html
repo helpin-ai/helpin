@@ -36,23 +36,24 @@
     <div class="heading"><h1>Slack in Helpin</h1><span>Northstar · Fictional workspace</span></div>
     <nav aria-label="Screenshots">
       <a href="#inbox">Conversation</a><a href="#mixed-channels">Reply channels</a><a href="#list">Inbox list</a><a href="#task">Linked task</a>
-      <a href="#channels">Channels</a><a href="#routing">Support routing</a><a href="#project-routing">PM defaults</a>
+      <a href="#channels">Support channels</a><a href="#channel-rules">Slack channel rules</a><a href="#routing">Support routing</a><a href="#project-routing">PM defaults</a>
     </nav>
   </header>
   <figure>
-    <a id="full" href="inbox.png?v=7" title="Open full-resolution screenshot">
-      <img id="screen" src="inbox.png?v=7" alt="Helpin support inbox showing Lena’s Slack thread and its linked task.">
+    <a id="full" href="inbox.png?v=8" title="Open full-resolution screenshot">
+      <img id="screen" src="inbox.png?v=8" alt="Helpin support inbox showing Lena’s Slack thread and its linked task.">
     </a>
-    <figcaption aria-live="polite"><span id="caption"></span><a id="incoming" href="incoming-detail.png?v=7" hidden>Enlarge message</a><a id="detail" hidden></a></figcaption>
+    <figcaption aria-live="polite"><span id="caption"></span><a id="incoming" href="incoming-detail.png?v=8" hidden>Enlarge message</a><a id="detail" hidden></a></figcaption>
   </figure>
 </main>
 <script>
   const captions = {
-    inbox: 'Lena’s messages link to their originals in Slack. Sam’s draft goes to #acme-support.',
+    inbox: 'Lena’s messages and Sam’s assignment link back to Slack. The next reply goes to #acme-support.',
     'mixed-channels': 'Lena can receive a reply in Chat, Slack, Telegram, or email. Sam has selected #acme-support with an email copy.',
     list: 'The Customer support inbox on a narrow screen. Slack, email, and chat conversations share the same queue.',
-    task: 'Ana’s update on PAY-142 shows where replies will sync in Slack.',
-    channels: 'Slack’s Manage shortcut opens External tools → Apps. Chat, Email, and Telegram are also available here.',
+    task: 'Sam changed PAY-142’s priority from Slack. The source link opens the thread, and Ana’s discussion syncs to #payments.',
+    'channel-rules': 'Invite @Helpin to ask a question. Add a rule for automatic support intake or channel defaults.',
+    channels: 'Settings → Support → Channels. Each channel has a Manage link. Telegram’s opens its bot settings in External tools → Apps.',
     routing: 'Customer threads in #acme-support go to the Customer support inbox.',
     'project-routing': 'Tasks drafted from #payments start with the Payments team and the Checkout reliability epic.'
   }
@@ -63,7 +64,8 @@
       if (link.hash === '#' + id) link.setAttribute('aria-current', 'page')
       else link.removeAttribute('aria-current')
     }
-    const file = id + '.png?v=7'
+    const version = { channels: 9, 'channel-rules': 11, routing: 11, 'project-routing': 11 }[id] ?? 8
+    const file = id + '.png?v=' + version
     document.getElementById('screen').src = file
     document.getElementById('screen').alt = captions[id]
     document.getElementById('full').href = file
@@ -73,7 +75,7 @@
     const detailName = { inbox: 'composer', task: 'comment' }[id]
     detail.hidden = !detailName
     if (detailName) {
-      detail.href = detailName + '-detail.png?v=7'
+      detail.href = detailName + '-detail.png?v=8'
       detail.textContent = 'Enlarge ' + detailName
     }
   }

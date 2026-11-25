@@ -138,16 +138,12 @@ function parseTableCells(line: string): string[] {
   const trimmed = line.trim();
   if (!trimmed.includes('|')) return [];
 
-  let parts = trimmed.split('|');
+  let parts = trimmed.split(/(?<!\\)\|/);
   if (parts.length < 2) return [];
   if (parts[0]?.trim() === '') parts = parts.slice(1);
   if (parts[parts.length - 1]?.trim() === '') parts = parts.slice(0, -1);
 
-  const cells = parts.map(part => part.trim());
-  if (cells.length < 2 || cells.some(cell => cell === '')) {
-    return [];
-  }
-  return cells;
+  return parts.map(part => part.trim().replace(/\\\|/g, '|'));
 }
 
 function isTableSeparatorLine(line: string, expectedColumns: number): boolean {
@@ -183,7 +179,7 @@ function processBlocks(lines: string[], inlineCodeMap: PlaceholderMap): string {
     // GitHub-style tables
     const headerCells = parseTableCells(line);
     if (
-      headerCells.length >= 2 &&
+      headerCells.length > 0 &&
       i+1 < lines.length &&
       isTableSeparatorLine(lines[i+1], headerCells.length)
     ) {

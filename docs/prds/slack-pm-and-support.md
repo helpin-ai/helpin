@@ -2,6 +2,30 @@
 
 **Product direction · November 20, 2026.** This document records the intended first release of `@Helpin`. Customers can get support in a Slack Connect thread, teammates can create and follow PM work from Slack, and support owners can bring an engineering outcome back to the customer. The sections below describe the product contract. Implementation coverage and remaining release checks are recorded at the end.
 
+## Implementation plan · November 24, 2026
+
+These nine items track the current behavior on `waqar-fixes`. The original launch notes below provide historical context.
+
+1. [x] **Use Helpin on the first mention.** Install the app once. When Slack invites Helpin into a channel and delivers the mention, process the original request once. An ordinary message in an unconfigured channel does not open a support conversation.
+2. [x] **Recognize teammates.** Reuse an existing link. Otherwise match the Slack user’s confirmed email to one verified, active Helpin member in the connected workspace. If matching fails, offer the private, one-time eight-character code, grouped four and four.
+3. [x] **Make channel rules optional.** In **Settings → External tools → Apps → Slack**, add a rule for automatic customer intake, an inbox or company, or PM team and epic defaults. With no rule, an explicit support request uses Main inbox. Agents can reply to its original thread.
+4. [x] **Choose the right reply audience.** An answer requested by an authorized teammate appears in the internal Slack thread. In Slack Connect, internal answers go privately to the requester. Pairing codes and task reviews are private. Customers receive an explicitly sent reply or a published customer update.
+5. [x] **Carry context into follow-ups.** Use explicit Helpin links and task keys, the linked conversation or task, and links in the original Slack message. Ask which record the teammate means when references conflict. In a channel, mention @Helpin again in the thread. In a DM, reply directly.
+6. [x] **Create a task from Support anywhere Helpin participates.** DMs, channel mentions and message shortcuts reuse the reviewed Support task draft. Recheck permissions and source evidence on save. Link the task and support conversation and show the requester an **Open task in Helpin** receipt.
+7. [x] **Act in everyday language.** The existing Ask Agent can read and summarize PM and Support records, draft a reply, assign work, or change priority and status using the linked member’s permissions. Ambiguous names or targets require clarification. Customer delivery stays explicit. CRM actions are outside this plan.
+8. [x] **Show who acted and link back.** Keep the linked Helpin teammate as the author. Show **via Slack** below supported task updates and on Support timeline events. Link to the source thread or message when Slack supplies a permalink. Slack record answers include buttons back to Helpin.
+9. [x] **Show progress and recover clearly.** Use Slack’s native working indicator when available. In DMs without native status, a single editable progress message can carry the observed read phase and the final answer. Explain a failure, cancellation or timeout. On a timed-out change, tell the teammate to check the record before retrying.
+
+**Local verification.** Signed Slack event intake, duplicate delivery, account matching, internal and external reply visibility, reviewed task creation and assignment, progress and failure paths are covered by focused backend checks. Helpin UI screenshots use fictional Northstar data in the built app. [Channel rules](../../.mockups/slack/channel-rules.png) · [Edit a rule](../../.mockups/slack/routing.png) · [Task activity](../../.mockups/slack/task.png) · [Support inbox](../../.mockups/slack/inbox.png)
+
+**Release checklist**
+
+- [ ] Promote the application changes and run the database migration.
+- [ ] Apply the Slack app manifest. A workspace admin reauthorizes the installation for the new email-read scope. Manual pairing is available in the meantime. [Slack user email scope](https://docs.slack.dev/reference/scopes/users.read.email/)
+- [ ] In a Slack test workspace, verify the invite prompt, a real-model follow-up after task creation, and the reply audience in an actual Slack Connect channel.
+
+## Original launch behavior
+
 ## Installation and intake
 
 A workspace admin connects the Helpin Slack app once and configures each participating channel. The admin can see the Helpin destination and whether new customer threads automatically open conversations.
@@ -51,7 +75,7 @@ Use the inbound email footer’s position and type size for a single **Received 
 - **“Give me an update on PAY-142.”** Resolve the task key, link, or current thread. Read status, owner, and due date from Helpin. Summarize recent progress, blockers, and the next step when recorded. Include an accessible source link. Ask which record the requester means when the reference is ambiguous.
 - **Customer asks “Any update?”** In their own support thread, answer immediately from the latest published customer-visible information. If there is nothing new, say so and notify the support owner once. Repeated asks in the same thread share one owner notification until a new customer-facing update is published.
 
-Use a fast LLM for natural-language requests, drafting, and summarization when enabled. Resolve records, check the requester and audience, and select permissible evidence before invoking the model. Apply existing AI usage checks. Manual task creation, factual published updates, message routing, and human replies must keep working when AI is disabled or usage is exhausted. [AI usage metering](../ai-usage-metering.md)
+On first connection, **AI questions, drafts, and summaries** starts enabled if the workspace has a shared default AI model. Admins can change it, and reauthorizing or reconnecting the same Slack workspace preserves their choice. Use a fast LLM for natural-language requests, drafting, and summarization when enabled. Resolve records, check the requester and audience, and select permissible evidence before invoking the model. Apply existing AI usage checks. Manual task creation, factual published updates, message routing, and human replies must keep working when AI is disabled or usage is exhausted. [AI usage metering](../ai-usage-metering.md)
 
 In a merged inbox conversation, the Send picker offers Chat for a widget session and Slack or Telegram for connected destinations in that conversation. When several channels can receive a reply, the teammate chooses one. Slack replies stay in the selected thread and Telegram replies in the selected DM. Only a “+ email” or “Email only” choice sends email. The closed picker shows the selected icons beside Send.
 
@@ -61,7 +85,7 @@ Opening Helpin’s Messages tab sends a one-time welcome. A teammate can DM Help
 
 With Slack AI enabled, workspace questions such as “Which tasks are blocked on my team?” use the in-app Ask Agent and its model selection and usage checks. Follow up in the same Slack thread. Slack shows a working indicator during processing. Fast answers go straight to the thread. In a DM, an observed PM or Support read can create one activity message that becomes the final answer. Failed requests show a reason when available and a next step. Each member has a private conversation with PM and Support read tools. Task creation uses the review form. Answers in PM channels are visible to the requester. Customer threads continue through the support inbox.
 
-For rollout, apply the updated manifest, choose **Reauthorize** in the connected Slack settings to grant DM history and agent permissions, and enable AI replies in Slack settings in Helpin. Verify the welcome, account pairing, a follow-up question, and private channel delivery in a test workspace.
+For rollout, apply the updated manifest, choose **Reauthorize** in the connected Slack settings to grant DM history and agent permissions, and check the AI setting in Helpin. Verify the welcome, account pairing, a follow-up question, and private channel delivery in a test workspace.
 
 ## What to reuse from Telegram
 

@@ -125,6 +125,30 @@ describe('MessageThread', () => {
     document.body.innerHTML = ''
   })
 
+  it('loads earlier pages for a linked report and scrolls to it', async () => {
+    const client = createTestQueryClient()
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    const fetchNextPage = vi.fn()
+    const reportId = 'ed1267e8-70ae-44ea-a557-412d8bd5d926'
+    const reply = { id: 'latest', conversation_id: 'conv-1', sender_type: 'customer', content: 'Later', created_at: '2026-09-11T12:00:00Z' }
+    const report = { ...reply, id: reportId, sender_type: 'agent', is_internal: true, message_type: 'note', content: 'Code check', created_at: '2026-09-10T12:00:00Z' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open' } })
+    const render = async (loaded: boolean) => {
+      supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages((loaded ? [report, reply] : [reply]) as never), hasNextPage: !loaded, fetchNextPage })
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" linkedMessageId={reportId} /></QueryClientProvider>))
+    }
+    const offset = vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.supportMessageId === reportId ? 120 : 0
+    })
+    try {
+      await render(false)
+      expect(fetchNextPage).toHaveBeenCalledOnce()
+      await render(true)
+      expect(host.querySelector('[data-slot="scroll-area-viewport"]')?.scrollTop).toBe(96)
+    } finally { act(() => root.unmount()); client.clear(); offset.mockRestore() }
+  })
+
   it('shows a temporary date while scrolling up and yields to the inline day separator', async () => {
     const messages = [
       { id: 'older', conversation_id: 'conv-1', sender_type: 'customer', content: 'Earlier', is_internal: false, created_at: '2026-09-10T12:00:00Z' },

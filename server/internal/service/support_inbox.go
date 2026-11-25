@@ -1860,6 +1860,12 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		}
 	}
 
+	if _, fromSlack := model.SlackSource(ctx); fromSlack && oldStatus != status && status != model.SupportConversationStatusResolved && !(oldStatus == model.SupportConversationStatusResolved && status == model.SupportConversationStatusOpen) {
+		s.teammateSystemEvent(ctx, ticket, actorID, model.SystemEventStatusChanged, func(actor string) string {
+			return actor + " marked this conversation as " + strings.ReplaceAll(status, "_", " ") + "."
+		}, map[string]any{"status": status})
+	}
+
 	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
 	s.refreshMergedVisitors(ctx, ticket)
 	// An open widget learns of the new status (and offers CSAT on resolve)
@@ -2338,19 +2344,20 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	msg := &model.SupportMessage{
-		ExpectedMergeRevision: req.ExpectedMergeRevision,
-		ID:                    replyID,
-		WorkspaceID:           workspaceID,
-		ConversationID:        ticketID,
-		SenderType:            senderType,
-		SenderUserID:          senderUserID,
-		SenderAgentID:         senderAgentID,
-		SenderDisplayName:     senderDisplayName,
-		SenderAvatarURL:       senderAvatarURL,
-		Content:               strings.TrimSpace(req.Content),
-		IsInternal:            req.IsInternal,
-		MessageType:           messageType,
-		ClientMessageID:       clientMessageID,
+		ExpectedMergeRevision:     req.ExpectedMergeRevision,
+		ExpectedLatestPublicReply: req.ExpectedLatestPublicReply,
+		ID:                        replyID,
+		WorkspaceID:               workspaceID,
+		ConversationID:            ticketID,
+		SenderType:                senderType,
+		SenderUserID:              senderUserID,
+		SenderAgentID:             senderAgentID,
+		SenderDisplayName:         senderDisplayName,
+		SenderAvatarURL:           senderAvatarURL,
+		Content:                   strings.TrimSpace(req.Content),
+		IsInternal:                req.IsInternal,
+		MessageType:               messageType,
+		ClientMessageID:           clientMessageID,
 	}
 	if senderType == "customer" && ctx.Value(portalReplySourceKey{}) == true {
 		channel := "portal"
@@ -2403,6 +2410,25 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	msg.Metadata = withSupportDeliveryMode(msg.Metadata, req.DeliveryMode)
+	if source, ok := model.SlackSource(ctx); ok && senderType == "user" {
+		msg.Metadata = withSupportMessageMetadataValue(msg.Metadata, "via", "slack")
+		if source != "" {
+			msg.Metadata = withSupportMessageMetadataValue(msg.Metadata, "slack_permalink", source)
+		}
+		if req.IsInternal && req.SourceSlackThreadID != "" {
+			msg.Metadata = withSupportMessageMetadataValue(msg.Metadata, "slack_feed_thread", req.SourceSlackThreadID)
+		}
+		if req.IsInternal && clientMessageID != "" {
+			msg.ID = inboundStableID("slack-note:" + workspaceID + ":" + ticketID + ":" + clientMessageID)
+			existing, err := s.messageRepo.GetByID(ctx, msg.ID)
+			if err != nil {
+				return nil, err
+			}
+			if existing != nil {
+				return existing, nil
+			}
+		}
+	}
 	portalReply := senderType == "customer" && ctx.Value(portalReplySourceKey{}) == true
 	if senderType == "user" && !msg.IsInternal && messageType == "reply" {
 		if err := s.pauseForTeammate(ctx, conv, derefString(senderUserID), "teammate_replied", map[string]any{"opened_by_user_id": senderUserID}); err != nil {

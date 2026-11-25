@@ -69,6 +69,7 @@ import type { UpgradeRequiredReason } from '@edition';
 interface MessageThreadProps {
   workspaceId: string;
   conversationId: string | null;
+  linkedMessageId?: string;
   presentation?: 'panel' | 'mobile-sheet';
   onBackToInbox?: () => void;
   onOpenDetails?: () => void;
@@ -328,6 +329,7 @@ function ThreadLoadProblem({
 export function MessageThread({
   workspaceId,
   conversationId,
+  linkedMessageId,
   presentation = 'panel',
   onBackToInbox,
   onOpenDetails,
@@ -346,6 +348,7 @@ export function MessageThread({
   const isNearBottomRef = useRef(true);
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const pendingInitialScrollRef = useRef(false);
+  const openedMessageLink = useRef<string | undefined>(undefined);
   const olderPageScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const threadScrollStateRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
     conversationId: null,
@@ -641,6 +644,7 @@ export function MessageThread({
     }
     return null;
   }, [messages]);
+  const linkedMessageLoaded = !!linkedMessageId && messages.some(message => message.id === linkedMessageId);
   const initialScrollTargetMessageId = useMemo(
     () => getInitialThreadScrollTarget(messages, conversation?.team_last_seen_at),
     [conversation?.team_last_seen_at, messages],
@@ -648,9 +652,18 @@ export function MessageThread({
 
   useLayoutEffect(() => {
     if (!conversationId) {
+      openedMessageLink.current = undefined;
       pendingInitialScrollRef.current = false;
       isNearBottomRef.current = true;
       threadScrollStateRef.current = { conversationId: null, messageCount: 0, lastMessageId: null };
+      return;
+    }
+
+    if (!linkedMessageId) openedMessageLink.current = undefined;
+    const openingLink = !!linkedMessageId && linkedMessageId !== openedMessageLink.current && !isFetchNextPageError;
+    if (openingLink && (conversation?.id !== conversationId || isThreadLoading)) return;
+    if (openingLink && !linkedMessageLoaded && hasNextPage) {
+      if (!isFetchingNextPage) void fetchNextPage();
       return;
     }
 
@@ -666,7 +679,8 @@ export function MessageThread({
     const initialLoad = previous.conversationId === conversationId && previous.messageCount === 0;
     const messageCountIncreased = previous.conversationId === conversationId && messages.length > previous.messageCount;
 
-    if (conversationChanged || initialLoad) {
+    if (openingLink) openedMessageLink.current = linkedMessageId;
+    if (conversationChanged || initialLoad || openingLink) {
       pendingInitialScrollRef.current = true;
       isNearBottomRef.current = true;
     }
@@ -686,7 +700,9 @@ export function MessageThread({
     let cancelled = false;
     const frames: number[] = [];
     const timeouts: number[] = [];
-    const shouldUseInitialTarget = pendingInitialScrollRef.current && initialScrollTargetMessageId && initialScrollTargetMessageId !== lastMessageId;
+    const linkTarget = openingLink && linkedMessageLoaded ? linkedMessageId : undefined;
+    const scrollTarget = linkTarget ?? initialScrollTargetMessageId;
+    const shouldUseInitialTarget = pendingInitialScrollRef.current && scrollTarget && (linkTarget || scrollTarget !== lastMessageId);
 
     const scrollToTarget = () => {
       if (cancelled) return;
@@ -694,7 +710,7 @@ export function MessageThread({
       const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
       if (viewport) {
         if (shouldUseInitialTarget) {
-          const target = viewport.querySelector(`[data-support-message-id="${initialScrollTargetMessageId}"]`) as HTMLDivElement | null;
+          const target = viewport.querySelector(`[data-support-message-id="${scrollTarget}"]`) as HTMLDivElement | null;
           if (target) {
             viewport.scrollTop = Math.max(0, target.offsetTop - 24);
             isNearBottomRef.current = isNearThreadBottom(viewport);
@@ -707,7 +723,7 @@ export function MessageThread({
       }
 
       if (shouldUseInitialTarget) {
-        document.querySelector(`[data-support-message-id="${initialScrollTargetMessageId}"]`)?.scrollIntoView({ block: 'start' });
+        document.querySelector(`[data-support-message-id="${scrollTarget}"]`)?.scrollIntoView({ block: 'start' });
         isNearBottomRef.current = false;
         return;
       }
@@ -735,7 +751,7 @@ export function MessageThread({
       frames.forEach((frame) => window.cancelAnimationFrame(frame));
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
-  }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, mergeHistory?.length]);
+  }, [conversation?.id, conversationId, fetchNextPage, hasNextPage, initialScrollTargetMessageId, isFetchNextPageError, isFetchingNextPage, isThreadLoading, lastMessageId, linkedMessageId, linkedMessageLoaded, messages.length, mergeHistory?.length]);
 
   useLayoutEffect(() => {
     // A new schedule can arrive without a new message. Keep it visible only
@@ -1172,6 +1188,7 @@ export function MessageThread({
             conversationId={conversationId || ''}
             conversation={conversation}
             messages={messages}
+            linkedMessageId={linkedMessageId}
             merges={mergeHistory ?? EMPTY_MERGES}
             readOnly={!!conversation?.merged_into_id || !!conversation?.anonymized_at || !!editingNote}
             canUnmerge={!!access?.permissions.includes('support.merge')}

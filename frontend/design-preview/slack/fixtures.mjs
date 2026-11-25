@@ -14,9 +14,12 @@ const members = people.map((person, i) => ({
 }))
 const team = { id: 'payments', workspace_id: ws, name: 'Payments', key: 'PAY', handle: 'payments', team_type: 'engineering', color: '#4674c5' }
 const epic = { id: 'checkout', team_id: team.id, name: 'Checkout reliability', display_id: 18, workspace_id: ws, ...timestamps }
-const mailbox = { id: 'support', name: 'Customer support', handle: 'support', icon: 'inbox', is_shared: true, is_default: false, active: true, unread_count: 3, total_count: 8 }
+const mailbox = { id: 'support', workspace_id: ws, name: 'Customer support', handle: 'support', icon: 'inbox', is_shared: true, is_default: false, active: true, unread_count: 3, total_count: 8 }
+const billingMailbox = { ...mailbox, id: 'billing', name: 'Billing', handle: 'billing' }
 const routes = [
+  { channel_id: 'C3', channel_name: 'support-desk', purpose: 'inbox', mailbox_ids: [mailbox.id, billingMailbox.id] },
   { channel_id: 'C1', crm_company_id: 'acme', channel_name: 'acme-support', purpose: 'support', mailbox_id: mailbox.id, team_id: null, epic_id: null },
+  { channel_id: 'C5', channel_name: 'partner-requests', purpose: 'mixed', mailbox_id: null, team_id: null, epic_id: null },
   { channel_id: 'C2', channel_name: 'payments', purpose: 'pm', mailbox_id: null, team_id: team.id, epic_id: epic.id },
 ]
 export const taskId = '6ec87beb-8360-4101-a805-19077bbcf142'
@@ -32,7 +35,7 @@ const workflow = { workflow: { id: task.workflow_id, name: 'Payments workflow', 
 const detail = { task, state, owners: [people[1]], followers: [], requester_member: members[0], labels: [], epic_name: epic.name }
 const comments = [{
   author: people[1], reply_count: 0, reactions: [], replies: [],
-  comment: { id: 'comment-1', entity_type: 'task', entity_id: task.id, author_id: people[1].id, body: 'The discount calculation is fixed. The regression check passes with FALL20. Ready for review.', created_at: time('10:18'), updated_at: time('10:18'), slack_discussion_channel: 'payments' },
+  comment: { id: 'comment-1', entity_type: 'task', entity_id: task.id, author_id: people[1].id, body: 'The discount calculation is fixed. The regression check passes with FALL20. Ready for review.', created_at: time('10:18'), updated_at: time('10:18'), slack_discussion_channel: 'payments', slack_permalink: 'https://northstar-example.slack.com/archives/C2/p1795169880000000' },
 }]
 const thread = [
   ['10:02', 'Lena Park', 'We’re seeing an error at checkout when a customer applies FALL20. The same order goes through without the code.'],
@@ -46,6 +49,10 @@ const messages = thread.map(([at, name, content], i) => ({
   message_type: 'reply', via_channel: 'slack', channel_delivery: i % 2 ? { provider: 'slack', status: 'sent', retryable: false } : null,
   created_at: time(at), updated_at: time(at),
 }))
+const slackOrigin = JSON.stringify({ via: 'slack', slack_permalink: 'https://northstar-example.slack.com/archives/C3/p1795169880000000' })
+messages[3].metadata = slackOrigin
+messages.push({ ...messages[3], id: 'internal-note', content: 'Payments reproduced this on a fresh cart. Ana is checking the discount rule.', is_internal: true, channel_delivery: null, message_type: 'note', created_at: time('10:13') })
+messages.push({ ...messages[1], id: 'slack-assignment', content: 'Sam assigned this conversation to Ana.', is_internal: true, message_type: 'system', system_event_type: 'assigned', metadata: JSON.stringify({ via: 'slack', slack_permalink: 'https://northstar-example.slack.com/archives/C2/p1795169880000000' }), created_at: time('10:14') })
 const rows = [
   ['Lena Park', 'Checkout returns an error', 'slack', thread[3][2], '10:12'],
   ['Owen Mills', 'October invoice copy', 'email', 'Could you send a copy to our billing address?', '10:07'],
@@ -61,7 +68,7 @@ const conversations = rows.map(([name, subject, source, preview, at], i) => ({
   display_id: 1042 - i, customer_name: name, customer_email: name.split(' ')[0].toLowerCase() + (i ? '@customer.example' : '@acme.example'),
   anonymous_id: source === 'widget' ? 'visitor-' + i : null,
   provider_destinations: source === 'slack' ? [{ provider: source, id: i ? 'conversation-' + i : CONVERSATION_ID, display_id: 1042 - i, name: i ? '#partner-support' : '#acme-support' }] : undefined,
-  subject, source, channel: source, flow_state: i % 3 === 0 ? 'assigned_to_human' : 'queued_for_human', human_takeover: true, assigned_user_id: i % 3 === 0 ? 'sam' : undefined, priority: i ? 'medium' : 'high',
+  subject, source, channel: source, flow_state: i % 3 === 0 ? 'assigned_to_human' : 'queued_for_human', human_takeover: true, assigned_user_id: i === 0 ? 'ana' : i % 3 === 0 ? 'sam' : undefined, priority: i ? 'medium' : 'high',
   mailbox_id: mailbox.id, mailbox_name: mailbox.name, last_message: preview, list_last_message_preview: preview,
   list_last_message_at: time(at), list_last_activity_at: time(at), created_at: time(i ? '08:30' : '10:02'), updated_at: time(at),
   last_message_sender_type: i ? 'customer' : 'user', last_message_sender_display_name: i ? name : 'Sam Ellis',
@@ -85,14 +92,15 @@ const fixtures = new Map(Object.entries({
   '/api/settings': { settings: { id: 'settings', workspace_id: ws, notifications_enabled: true }, teams: [team], people: [], memberships: [], user_memberships: [], managers: [], job_role_criteria: [], invitation_team_preassignments: [], team_estimate_settings: [], team_field_visibility: [], team_repo_defaults: [] },
   '/api/slack/': { configured: true, connected: true, ai_enabled: true, workspace_name: workspace.name, routes },
   '/api/crm/companies/acme': { id: 'acme', name: 'Acme', domain: 'acme.example' },
-  '/api/slack/channels': routes.map(r => ({ id: r.channel_id, name: r.channel_name, is_ext_shared: r.purpose === 'support', is_private: true })),
+  '/api/slack/channels': routes.map(r => ({ id: r.channel_id, name: r.channel_name, is_ext_shared: ['support', 'mixed'].includes(r.purpose), is_private: true, is_member: true })).concat([{ id: 'C4', name: 'customer-support', is_private: false, is_member: false, is_ext_shared: false }]),
   '/api/support/channels': [{ provider: 'telegram', id: 'telegram-1', workspace_id: ws, handle: 'northstar_support_bot', display_name: 'Northstar Support', status: 'active', mailbox_id: mailbox.id, ai_replies_disabled: true, last_event_at: time('09:54') }],
-  '/api/settings/module-access': { modules: [], grants: [] }, [inbox + '/mailboxes']: [mailbox], [inbox + '/routing-usage']: { triage_enabled: false, exhausted: false },
+  '/api/settings/module-access': { modules: [], grants: [] }, [inbox + '/mailboxes']: [mailbox, billingMailbox], [inbox + '/routing-usage']: { triage_enabled: false, exhausted: false },
   [inbox + '/attachments/policy']: { max_bytes: 10485760, content_types: ['image/png', 'application/pdf'] },
-  [inbox + '/installations']: { ...SUPPORT_INSTALLATION, settings: { ...SUPPORT_INSTALLATION.settings, email_fallback_enabled: true } }, [inbox + '/mailboxes/scopes']: { shared_inbox: sharedInbox, mailboxes: [mailbox] },
+  [inbox + '/installations']: { ...SUPPORT_INSTALLATION, settings: { ...SUPPORT_INSTALLATION.settings, email_fallback_enabled: true } }, [inbox + '/mailboxes/scopes']: { shared_inbox: sharedInbox, mailboxes: [mailbox, billingMailbox] },
   [inbox + '/unread-stats']: counts, [inbox + '/conversations']: { ...paged(conversations), meta: { unread: counts } },
   [inbox + '/messages/message-0/slack-source']: { permalink: 'https://northstar-example.slack.com/archives/CACME/p1795168920000001' },
   [inbox + '/messages/message-2/slack-source']: { permalink: 'https://northstar-example.slack.com/archives/CACME/p1795169280000002?thread_ts=1795168920.000001&cid=CACME' },
+  [conversation + '/slack-thread']: { permalink: 'https://northstar-example.slack.com/archives/C3/p1795169880000000' },
   [conversation + '/visitor-context']: {
     device: null, location: null, contact: { id: 'lena', name: 'Lena Park', email: 'lena@acme.example', job_title: 'Operations lead', lifecycle_stage: 'customer', source: 'slack' },
     company: { id: 'acme', display_id: 'ACME', name: 'Acme', domain: 'acme.example', custom_properties: {}, updated_at: now }, company_context_status: 'ok',
@@ -111,7 +119,7 @@ const fixtures = new Map(Object.entries({
   })),
   [taskPath]: detail, '/api/pm/comments': comments, '/api/pm/epics': [{ epic, owners: [], labels: [] }],
   '/api/pm/workflows': [workflow], '/api/pm/workflows/resolve': workflow, '/api/pm/tasks': paged([task]),
-  [taskPath + '/updates']: { data: [], high_water: '', read_initialized: true, unread_count: 0 },
+  [taskPath + '/updates']: { data: [{ id: 'priority-change', kind: 'change', occurred_at: time('10:19'), actor: people[0], activity: { id: 'activity', action: 'updated', field_name: 'priority', old_value: 'medium', new_value: 'high', metadata: { via: 'slack', slack_permalink: 'https://northstar-example.slack.com/archives/C2/p1795169880000000' } } }], high_water: '', read_initialized: true, unread_count: 0 },
 }))
 
 export function responseFor(path) {

@@ -43,6 +43,7 @@ type Event struct {
 	DefaultCompanyID   *string `json:"-"`
 	ExistingThreadOnly bool
 	Teammate           bool
+	TeammateUserID     *string
 	// ExternalMessageKey identifies the message within the connected account.
 	ExternalMessageKey string
 	DisplayName        string
@@ -73,6 +74,7 @@ type AccountInfo struct {
 
 // OutgoingFile is an attachment to send.
 type OutgoingFile struct {
+	ID          string
 	Name        string
 	ContentType string
 	Data        []byte

@@ -603,6 +603,9 @@ func main() {
 		taskLinkRepo,
 	)
 	commandService.SetPMLabelService(pmLabelService)
+	commandService.SetAuthorizationService(notificationAuthz)
+	commandService.SetTaskFileStore(s3Client)
+	commandService.SetAttachmentMediaAnalyzer(supportLLMProvider)
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetPMOperationalServices(workspaceRepo, nil, nil, nil, nil, nil)

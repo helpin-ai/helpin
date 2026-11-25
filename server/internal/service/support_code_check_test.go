@@ -177,7 +177,7 @@ func TestSupportCodeCheckResultPostsOneCardForTheTeam(t *testing.T) {
 	if cards != 1 {
 		t.Fatalf("cards = %d, want 1", cards)
 	}
-	if !supportCodeCheckedThisTurn(history) {
+	if supportCodeCheckThisTurn(history) == nil {
 		t.Fatal("a handoff now would start a second code check")
 	}
 }

@@ -10,7 +10,7 @@ import (
 
 func (s *InternalCommandService) analyzeSupportMessageMedia(ctx context.Context, meta model.InternalCommandContext, messages []model.SupportMessage) (string, error) {
 	// Ask already reads its attached conversation's media before launching a turn.
-	if commandConversationTargetID(meta) == "" || s.supportMediaProvider == nil {
+	if commandConversationTargetID(meta) == "" || s.attachmentMediaProvider == nil {
 		return "", nil
 	}
 	var attachments []mediaAttachment
@@ -30,5 +30,5 @@ func (s *InternalCommandService) analyzeSupportMessageMedia(ctx context.Context,
 			attachments = append(attachments, mediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType, FileSize: attachment.FileSize, URL: attachment.URL})
 		}
 	}
-	return analyzeAttachmentMedia(ctx, s.supportMediaProvider, meta.WorkspaceID, BillingFeatureSupportAIReply, aipolicy.ActionSupportMediaEnrichment, contextText.String(), attachments)
+	return analyzeAttachmentMedia(ctx, s.attachmentMediaProvider, meta.WorkspaceID, BillingFeatureSupportAIReply, aipolicy.ActionSupportMediaEnrichment, contextText.String(), attachments)
 }

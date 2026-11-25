@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,6 +30,27 @@ func (s *SlackService) SetPM(tasks *PMTaskService, comments *PMCommentService, a
 	s.appURL = strings.TrimRight(base, "/")
 }
 
+var slackLinkEncoding = base32.NewEncoding("23456789ABCDEFGHJKLMNPQRSTUVWXYZ").WithPadding(base32.NoPadding)
+
+func newSlackLinkCode() (string, error) {
+	var random [5]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	code := slackLinkEncoding.EncodeToString(random[:])
+	return code[:4] + "-" + code[4:], nil
+}
+
+func slackLinkCodeHash(raw string) string {
+	code := strings.TrimSpace(raw)
+	// Legacy grants are 43 case-sensitive characters, including possible hyphens.
+	if len(code) < 43 {
+		code = strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(code, "-", ""), " ", ""))
+	}
+	digest := sha256.Sum256([]byte(code))
+	return hex.EncodeToString(digest[:])
+}
+
 // LinkMember completes an explicitly accepted account-link grant.
 func (s *SlackService) LinkMember(ctx context.Context, workspace, user, raw string) error {
 	a, err := s.repo.Installation(ctx, workspace)
@@ -37,12 +60,16 @@ func (s *SlackService) LinkMember(ctx context.Context, workspace, user, raw stri
 	if a == nil || raw == "" {
 		return ErrChannelInvalid
 	}
-	digest := sha256.Sum256([]byte(raw))
-	return s.repo.Link(ctx, a.ID, user, hex.EncodeToString(digest[:]))
+	return s.repo.Link(ctx, a.ID, user, slackLinkCodeHash(raw))
 }
 
 func (s *SlackService) private(ctx context.Context, token string, m slack.Message, text string, blocks ...any) error {
-	input := map[string]any{"channel": m.Destination(), "user": m.User, "thread_ts": m.Root(), "text": text, "mrkdwn": false}
+	return s.sendPrivate(ctx, token, m, text, false, blocks...)
+}
+
+// sendPrivate enables Slack formatting only for callers supplying authored message text.
+func (s *SlackService) sendPrivate(ctx context.Context, token string, m slack.Message, text string, mrkdwn bool, blocks ...any) error {
+	input := map[string]any{"channel": m.Destination(), "user": m.User, "thread_ts": m.Root(), "text": text, "mrkdwn": mrkdwn}
 	if len(blocks) > 0 {
 		input["blocks"] = blocks
 	}
@@ -75,12 +102,42 @@ func (s *SlackService) linkedActor(ctx context.Context, a *model.SupportChannelA
 	return s.authz.ResolveActor(ctx, a.WorkspaceID, id)
 }
 
+func (s *SlackService) requestingActor(ctx context.Context, a *model.SupportChannelAccount, token, user string) (*authorization.Actor, error) {
+	actor, err := s.linkedActor(ctx, a, user)
+	if err != nil || actor != nil {
+		return actor, err
+	}
+	var profile struct {
+		User struct {
+			ID        string
+			Team      string `json:"team_id"`
+			Confirmed bool   `json:"is_email_confirmed"`
+			Bot       bool   `json:"is_bot"`
+			Deleted   bool
+			Profile   struct{ Email string }
+		}
+	}
+	if err := s.api.Get(ctx, token, "users.info", url.Values{"user": {user}}, &profile); err != nil {
+		s.channels.logger.WarnContext(ctx, "Slack email verification unavailable", "workspace_id", a.WorkspaceID, "error", err)
+		return nil, nil
+	}
+	u := profile.User
+	if u.ID != user || u.Team != a.ExternalAccountID || !u.Confirmed || u.Bot || u.Deleted || strings.TrimSpace(u.Profile.Email) == "" {
+		return nil, nil
+	}
+	id, err := s.repo.MatchMember(ctx, a, user, strings.TrimSpace(u.Profile.Email))
+	if err != nil || id == "" {
+		return nil, err
+	}
+	return s.authz.ResolveActor(ctx, a.WorkspaceID, id)
+}
+
 func (s *SlackService) promptLink(ctx context.Context, a *model.SupportChannelAccount, token string, m slack.Message) error {
-	raw, hash, err := newWebhookSecret()
+	raw, err := newSlackLinkCode()
 	if err != nil {
 		return err
 	}
-	if err = s.repo.GrantLink(ctx, a.ID, m.User, hash); err != nil {
+	if err = s.repo.GrantLink(ctx, a.ID, m.User, slackLinkCodeHash(raw)); err != nil {
 		return err
 	}
 	address := s.appURL + "/oauth/slack/callback?" + url.Values{"workspace": {a.WorkspaceID}, "pair": {"1"}}.Encode()
@@ -90,11 +147,17 @@ func (s *SlackService) promptLink(ctx context.Context, a *model.SupportChannelAc
 func slackText(text string) map[string]string {
 	return map[string]string{"type": "plain_text", "text": text}
 }
+func slackMarkdown(text string) map[string]string {
+	return map[string]string{"type": "markdown", "text": truncate(text, 12000)}
+}
+
 func slackButtons(buttons ...any) map[string]any {
 	return map[string]any{"type": "actions", "elements": buttons}
 }
 
 var slackSupportLink = regexp.MustCompile(`/support/([a-fA-F0-9-]{36})\b`)
+
+var slackTaskLink = regexp.MustCompile(`/pm/tasks/([a-fA-F0-9-]{36})\b`)
 
 var slackTaskKey = regexp.MustCompile(`(?i)\b([a-z][a-z0-9]*)-([1-9][0-9]*)\b`)
 
@@ -102,7 +165,7 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 	if !slackDirect(m) && !s.mentionsBot(m.Text, a.Handle) && m.Type != "app_mention" {
 		return s.ingestComment(ctx, a, token, m)
 	}
-	actor, err := s.linkedActor(ctx, a, m.User)
+	actor, err := s.requestingActor(ctx, a, token, m.User)
 	if err != nil {
 		return err
 	}
@@ -112,24 +175,51 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 	if slackHelp(m.Text, a.Handle) {
 		return s.agentQuestion(authorization.WithActor(ctx, actor), a, token, m, actor)
 	}
+	linked, err := s.repo.ThreadTask(ctx, a.ID, m.Channel, m.Root())
+	if err != nil {
+		return err
+	}
+	reference := m.Text
+	if linked == "" {
+		reference, err = s.slackReferenceText(ctx, token, m)
+	}
+	if err != nil {
+		return s.private(ctx, token, m, err.Error())
+	}
+	conversationID, err := slackConversationInText(reference)
+	if err != nil {
+		return s.private(ctx, token, m, err.Error())
+	}
+	if conversationID != "" {
+		return s.internalSupportAnswer(ctx, a, token, route, m, actor, conversationID, slackDraftRequest(m.Text, a.Handle))
+	}
 	allowed, err := s.authz.CanAccessModule(ctx, actor, model.ModulePM)
 	if err != nil {
 		return err
 	}
 	if !allowed || !s.authz.Can(actor, authorization.PermPMRead) {
-		return s.private(ctx, token, m, "You need access to project management in this workspace.")
+		return s.agentQuestion(authorization.WithActor(ctx, actor), a, token, m, actor)
 	}
 	ctx = authorization.WithActor(ctx, actor)
-	if id := slackSupportLink.FindStringSubmatch(m.Text); len(id) > 1 {
-		return s.internalSupportAnswer(ctx, a, token, route, m, actor, id[1], false)
+
+	keys := slackTaskKey.FindAllStringSubmatch(slackTaskLink.ReplaceAllString(reference, ""), -1)
+	links := slackTaskLink.FindAllStringSubmatch(reference, -1)
+	var key []string
+	var targetID string
+	for _, match := range links {
+		if targetID != "" && targetID != match[1] {
+			return s.private(ctx, token, m, "Which task do you mean? Reply with its key or link.")
+		}
+		targetID = match[1]
 	}
-	linked, err := s.repo.ThreadTask(ctx, a.ID, m.Channel, m.Root())
-	if err != nil {
-		return err
+	for _, match := range keys {
+		if key != nil && !strings.EqualFold(key[0], match[0]) {
+			return s.private(ctx, token, m, "Which task do you mean? Reply with its key or link.")
+		}
+		key = match
 	}
-	key := slackTaskKey.FindStringSubmatch(m.Text)
 	var task *model.TaskDetail
-	if len(key) > 0 {
+	if len(key) > 0 && targetID == "" {
 		if !strings.EqualFold(key[1], s.tasks.GetWorkspaceKey(ctx, a.WorkspaceID)) {
 			return s.private(ctx, token, m, "No accessible task matches that key.")
 		}
@@ -141,20 +231,25 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 		if err != nil || task == nil {
 			return s.private(ctx, token, m, "No accessible task matches that key.")
 		}
-	} else if linked != "" {
-		task, err = s.tasks.GetByID(ctx, linked)
+	} else if targetID != "" || linked != "" {
+		if targetID == "" {
+			targetID = linked
+		}
+		task, err = s.tasks.GetByID(ctx, targetID)
 		if err != nil || task == nil || task.Task.WorkspaceID != a.WorkspaceID {
 			return s.private(ctx, token, m, "This task is unavailable.")
 		}
 	}
 	if task != nil {
-		ctx, progress := s.startProgress(ctx, token, m, "Reading the task…")
-		defer s.finishProgress(ctx, token, m, progress)
-		if slackCommand(m.Text) == "link" && len(key) > 0 && s.authz.Can(actor, authorization.PermPMEdit) {
+		if key != nil && !strings.EqualFold(key[0], task.Task.TaskKey) {
+			return s.private(ctx, token, m, "The task key and link refer to different tasks. Which one do you mean?")
+		}
+		if slackCommand(m.Text) == "link" && (len(key) > 0 || len(links) > 0) && s.authz.Can(actor, authorization.PermPMEdit) {
 			if linked != "" && linked != task.Task.ID {
 				return s.private(ctx, token, m, "This thread is already linked to another task.")
 			}
 			if linked == "" {
+				ctx = model.WithSlackSource(ctx, s.sourceURL(ctx, token, m.Destination(), m.Root()))
 				if err = s.repo.LinkTask(ctx, a.ID, m.Channel, m.Root(), task.Task.ID, actor.UserID); err != nil {
 					return err
 				}
@@ -164,6 +259,11 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 		if err != nil {
 			return err
 		}
+		if !a.AIRepliesDisabled && s.dock != nil && slackCommand(m.Text) != "link" {
+			return s.agentQuestion(ctx, a, token, m, actor, slackRecord{Kind: "task", ID: task.Task.ID, Label: task.Task.TaskKey, URL: s.appURL + "/w/" + ws.Slug + "/pm/tasks/" + task.Task.ID})
+		}
+		ctx, progress := s.startProgress(ctx, token, m, "Reading the task…")
+		defer s.finishProgress(ctx, token, m, progress)
 		info := task.Task.TaskKey + " · " + task.Task.Name
 		if task.State != nil {
 			info += "\nStatus: " + task.State.Name
@@ -183,23 +283,19 @@ func (s *SlackService) processPM(ctx context.Context, a *model.SupportChannelAcc
 		if task.Task.Blocked {
 			info += "\nBlocked: " + derefString(task.Task.Blocker)
 		}
+		blocks := []any{map[string]any{"type": "section", "text": slackText(truncate(info, 2800))}}
 		if !a.AIRepliesDisabled && slackCommand(m.Text) != "link" && s.channels.inbox.supportAIService != nil {
 			evidence, err := json.Marshal(map[string]string{"question": m.Text, "task": info, "description": truncate(tiptap.RichTextToMarkdown(derefString(task.Task.Description)), 1800)})
 			if err != nil {
 				return err
 			}
 			if answer, err := s.ask(ctx, a, m, evidence, "Answer the teammate's question about this task. Name its key and give the current status when asked for an update."); err == nil && answer != nil && answer.Content != "" {
-				info = truncate(answer.Content, 2700)
+				info = truncate(answer.Content, 3900)
+				blocks = []any{slackMarkdown(answer.Content)}
 			}
 		}
-		if slackCommand(m.Text) == "share" {
-			allowed, err := s.audienceCanRead(ctx, a, token, m.Destination(), task)
-			if err != nil {
-				return err
-			}
-			return s.shareAnswer(ctx, a, token, m, info, allowed)
-		}
-		return s.private(ctx, token, m, info, map[string]any{"type": "section", "text": slackText(info)}, slackButtons(map[string]any{"type": "button", "text": slackText("Open task"), "url": s.appURL + "/w/" + ws.Slug + "/pm/tasks/" + task.Task.ID, "action_id": "open_task"}))
+		blocks = append(blocks, slackButtons(map[string]any{"type": "button", "text": slackText("Open " + task.Task.TaskKey), "url": s.appURL + "/w/" + ws.Slug + "/pm/tasks/" + task.Task.ID, "action_id": "open_task"}))
+		return s.reply(ctx, token, m, info, false, blocks...)
 	}
 	if !s.authz.Can(actor, authorization.PermPMEdit) {
 		return s.agentQuestion(ctx, a, token, m, actor)
@@ -247,6 +343,8 @@ type SlackAction struct {
 				Value    string
 				Selected struct{ Value string }   `json:"selected_option"`
 				Multiple []struct{ Value string } `json:"selected_options"`
+				Files    []slack.File             `json:"files"`
+				User     string                   `json:"selected_user"`
 			}
 		}
 	}
@@ -282,6 +380,9 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return map[string]any{}, nil
 		}
 		action := v.Actions[0]
+		if strings.HasPrefix(action.ID, "feed_") {
+			return s.feedAction(ctx, v, false)
+		}
 		if action.ID == "draft_task" {
 			meta = action.Value
 		} else if v.View.Callback == "helpin_task" && (action.ID == "draft_more" || action.BlockID == "team") {
@@ -290,6 +391,9 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return map[string]any{}, nil
 		}
 	case "view_submission":
+		if v.View.Callback == "feed_reply" || v.View.Callback == "feed_manage" {
+			return s.feedAction(ctx, v, true)
+		}
 		if v.View.Callback == "helpin_link_task" {
 			return s.submitLink(ctx, v)
 		}
@@ -333,14 +437,12 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 		return nil, ErrChannelInvalid
 	}
 	thread := draft.Thread
-	route, err := s.repo.Route(ctx, a.ID, thread.Channel)
+	ctx = model.WithSlackSource(ctx, thread.Permalink)
+	route, err := s.repo.EffectiveRoute(ctx, a.ID, thread.Channel)
 	if err != nil {
 		return nil, err
 	}
-	if route == nil && draft.Direct && strings.HasPrefix(thread.Channel, "D") {
-		route = &model.SlackRoute{Purpose: "pm", ChannelID: thread.Channel, CurrentChannelID: thread.Channel}
-	}
-	if route == nil || (route.Purpose == "pm") != (draft.ConversationID == "") {
+	if route == nil {
 		return nil, ErrChannelInvalid
 	}
 	ctx = authorization.WithActor(ctx, actor)
@@ -391,14 +493,14 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return nil, ErrChannelInvalid
 		}
 		if draft.ConversationID != "" {
-			err = s.channels.inbox.linkReviewedConversationTask(ctx, a.WorkspaceID, draft.ConversationID, candidate, actor.UserID, draft.SourceHash, task.Task.UpdatedAt)
+			err = s.channels.inbox.linkReviewedConversationTask(ctx, a.WorkspaceID, draft.ConversationID, candidate, actor.UserID, draft.SourceHash, task.Task.UpdatedAt, &thread)
 		} else {
 			err = s.repo.LinkTask(ctx, a.ID, thread.Channel, thread.Root, candidate, actor.UserID)
 		}
 		if err != nil {
 			return map[string]any{"response_action": "errors", "errors": map[string]string{"existing": "This match changed. Request a fresh draft."}}, nil
 		}
-		return map[string]string{"response_action": "clear"}, nil
+		return s.taskReviewReceipt(ctx, a.WorkspaceID, candidate, task.Task.TaskKey, "Task linked"), nil
 	}
 	team := values["team"]["value"].Selected.Value
 	title := strings.TrimSpace(values["title"]["value"].Value)
@@ -410,7 +512,7 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 		return nil, err
 	}
 	if existing != "" {
-		return map[string]string{"response_action": "clear"}, nil
+		return s.taskReviewReceipt(ctx, a.WorkspaceID, existing, "", "Thread already linked"), nil
 	}
 	req := model.CreateTaskRequest{WorkspaceID: a.WorkspaceID, Name: title, Description: supportTaskDescriptionToRichText(values["description"]["value"].Value), TeamID: &team, SlackThread: &thread}
 	req.EpicID = nilIfEmpty(values["epic_"+team]["value"].Selected.Value)
@@ -425,15 +527,43 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 	}
 	req.TaskType = values["type"]["value"].Selected.Value
 	req.Priority = nilIfEmpty(values["priority"]["value"].Selected.Value)
+	var taskID, taskKey string
 	if draft.ConversationID != "" {
-		_, err = s.channels.inbox.CreateTaskFromConversation(ctx, a.WorkspaceID, draft.ConversationID, actor.UserID, model.CreateTaskFromConversationRequest{ReviewedDraft: true, SourceHash: draft.SourceHash, TeamID: &team, Name: &title, Description: req.Description, TaskType: &req.TaskType, Priority: req.Priority, EpicID: req.EpicID, WorkflowStateID: nilIfEmpty(req.WorkflowStateID), SprintID: req.SprintID, OwnerMemberIDs: req.OwnerMemberIDs, LabelIDs: req.LabelIDs, TemplateID: req.TemplateID, SlackThread: &thread})
+		if req.Description == nil {
+			return map[string]any{"response_action": "errors", "errors": map[string]string{"description": "Add a description for this support task."}}, nil
+		}
+		var created *model.CreateTaskFromConversationResponse
+		created, err = s.channels.inbox.CreateTaskFromConversation(ctx, a.WorkspaceID, draft.ConversationID, actor.UserID, model.CreateTaskFromConversationRequest{ReviewedDraft: true, SourceHash: draft.SourceHash, TeamID: &team, Name: &title, Description: req.Description, TaskType: &req.TaskType, Priority: req.Priority, EpicID: req.EpicID, WorkflowStateID: nilIfEmpty(req.WorkflowStateID), SprintID: req.SprintID, OwnerMemberIDs: req.OwnerMemberIDs, LabelIDs: req.LabelIDs, TemplateID: req.TemplateID, SlackThread: &thread})
+		if err == nil {
+			taskID, taskKey = created.TaskID, created.TaskKey
+		}
 	} else {
-		_, err = s.tasks.Create(ctx, req, actor.UserID)
+		var created *model.TaskDetail
+		created, err = s.tasks.Create(ctx, req, actor.UserID)
+		if err == nil {
+			taskID, taskKey = created.Task.ID, created.Task.TaskKey
+		}
 	}
 	if err != nil {
 		return map[string]any{"response_action": "errors", "errors": map[string]string{"title": "Could not create this task. Check team access and try again."}}, nil
 	}
-	return map[string]string{"response_action": "clear"}, nil
+	return s.taskReviewReceipt(ctx, a.WorkspaceID, taskID, taskKey, "Task created"), nil
+}
+
+// Keep the successful commit visible even if its navigation link cannot be resolved.
+func (s *SlackService) taskReviewReceipt(ctx context.Context, workspaceID, taskID, key, title string) any {
+	label := title
+	if key != "" {
+		label += " · " + key
+	}
+	blocks := []any{map[string]any{"type": "section", "text": slackText(label)}}
+	ws, err := s.tasks.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		s.channels.logger.WarnContext(ctx, "Slack task receipt link unavailable", "error", err)
+	} else if ws != nil && taskID != "" {
+		blocks = append(blocks, slackButtons(map[string]any{"type": "button", "action_id": "open_task", "text": slackText("Open task in Helpin"), "url": s.appURL + "/w/" + ws.Slug + "/pm/tasks/" + taskID}))
+	}
+	return map[string]any{"response_action": "update", "view": map[string]any{"type": "modal", "title": slackText(title), "close": slackText("Done"), "blocks": blocks}}
 }
 
 func (s *SlackService) openTask(ctx context.Context, token string, v SlackAction, draft slackDraft, actor *authorization.Actor, meta string) error {
