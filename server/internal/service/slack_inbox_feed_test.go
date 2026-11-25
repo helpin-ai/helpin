@@ -2,11 +2,22 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestSlackInboxFeedExcerpt(t *testing.T) {
+	long := strings.Repeat("Export ", 19)
+	if got := feedExcerpt("Trouble exporting", long); got != strings.TrimSpace(strings.Repeat("Export ", 14))+"…" {
+		t.Fatalf("long excerpt = %q", got)
+	}
+	if got := feedExcerpt(" Checkout failed ", "Checkout\nfailed"); got != "" {
+		t.Fatalf("repeated subject = %q", got)
+	}
+}
 
 func TestSlackInboxFeedVisibility(t *testing.T) {
 	for _, tc := range []struct {

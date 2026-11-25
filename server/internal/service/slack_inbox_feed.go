@@ -281,7 +281,7 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	if c.Status == "open" {
 		switch derefString(c.FlowState) {
 		case "waiting_for_human", "queued_for_human", "after_hours_queue":
-			status = "Needs human reply"
+			status = "🙋 Needs human reply"
 		}
 	}
 	if c.SnoozedUntil != nil && c.SnoozedUntil.After(s.channels.now()) {
@@ -297,18 +297,39 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 			owner = u.FullName
 		}
 	}
-	title := fmt.Sprintf("#%d · %s", c.DisplayID, c.Subject)
-	customer := firstNonEmptyString(derefString(c.CustomerName), derefString(c.CustomerEmail), "Customer")
-	details := customer + " · " + c.Channel + " · " + status + " · " + owner
-	preview, err := s.repo.FeedPreview(ctx, c.ID)
+	title := fmt.Sprintf("Conversation #%d", c.DisplayID)
+	if subject := feedOneLine(c.Subject); subject != "" {
+		title = fmt.Sprintf("#%d · %s", c.DisplayID, truncate(subject, 80))
+	}
+	customer := firstNonEmptyString(derefString(c.CustomerName), derefString(c.CustomerEmail), "Visitor")
+	mailbox := firstNonEmptyString(derefString(c.MailboxName), "Shared Inbox")
+	details := strings.Join([]string{truncate(feedOneLine(customer), 80), truncate(feedOneLine(mailbox), 80), status}, " · ")
+	switch c.Priority {
+	case "urgent":
+		details += " · 🔴 Urgent"
+	case "high":
+		details += " · 🟠 High"
+	}
+	preview, attachment, err := s.repo.FeedPreview(ctx, c.WorkspaceID, c.ID)
 	if err != nil {
 		return err
 	}
-	blocks := []any{map[string]any{"type": "section", "text": slackText(truncate(title, 800))}, map[string]any{"type": "context", "elements": []any{slackText(truncate(details, 1200))}}}
-	if preview != "" {
-		blocks = append(blocks, map[string]any{"type": "section", "text": slackText(truncate(tiptap.RichTextToMarkdown(preview), 500))})
+	blocks := []any{feedRichText("rich_text_section", map[string]any{"type": "link", "url": f.conversationURL, "text": title, "style": map[string]bool{"bold": true}}), map[string]any{"type": "context", "elements": []any{slackText(details)}}}
+	fallback := title + "\n" + details
+	if preview != nil {
+		visible := supportTranscriptPlainText(renderSupportTranscriptMessageHTML(tiptap.RichTextToMarkdown(preview.Content)))
+		if strings.TrimSpace(visible) == "" && attachment != "" {
+			visible = "📎 Attachment: " + attachment
+		}
+		if excerpt := feedExcerpt(c.Subject, visible); excerpt != "" {
+			blocks = append(blocks, feedRichText("rich_text_quote", map[string]string{"type": "text", "text": excerpt}))
+			fallback += "\n" + excerpt
+		}
 	}
-	blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText("Thread replies are internal notes. Use Reply to customer to send a response.")}})
+	if c.Status != "spam" {
+		blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText("Thread replies are internal notes.")}})
+	}
+	fallback += "\n" + owner + " · " + f.conversationURL
 	buttons := []any{}
 	if c.Status != "spam" {
 		buttons = append(buttons, feedButton("feed_reply", "Reply to customer", t.ID), feedButton("feed_manage", "Manage", t.ID))
@@ -317,7 +338,7 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 		}
 	}
 	blocks = append(blocks, slackButtons(append(buttons, feedOpenButton(t.ID, f.conversationURL))...))
-	payload := map[string]any{"channel": f.channel, "text": truncate(title+" · "+details, 2000), "mrkdwn": false, "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
+	payload := map[string]any{"channel": f.channel, "text": fallback, "mrkdwn": false, "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err

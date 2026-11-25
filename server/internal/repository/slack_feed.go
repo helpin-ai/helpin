@@ -106,10 +106,20 @@ func latestPublicReply(db *gorm.DB, conv string) (string, error) {
 	return id, err
 }
 
-func (r *SlackRepository) FeedPreview(ctx context.Context, conv string) (string, error) {
-	var body string
-	err := r.db.WithContext(ctx).Raw("SELECT content FROM support_messages WHERE conversation_id=? AND sender_type='customer' AND NOT is_internal AND deleted_at IS NULL ORDER BY created_at,id LIMIT 1", conv).Scan(&body).Error
-	return body, err
+func (r *SlackRepository) FeedPreview(ctx context.Context, workspace, conv string) (*model.SupportMessage, string, error) {
+	var first struct {
+		model.SupportMessage
+		AttachmentName string
+	}
+	result := r.db.WithContext(ctx).Raw(`SELECT m.*,
+		COALESCE((SELECT a.file_name FROM support_attachments a WHERE a.workspace_id=m.workspace_id
+			AND a.message_id=m.id AND a.is_uploaded AND a.content_id='' ORDER BY a.created_at,a.id LIMIT 1),'') AS attachment_name
+		FROM support_messages m WHERE m.workspace_id=? AND m.conversation_id=? AND m.sender_type='customer'
+		AND m.message_type='reply' AND NOT m.is_internal AND m.deleted_at IS NULL ORDER BY m.created_at,m.id LIMIT 1`, workspace, conv).Scan(&first)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return nil, "", result.Error
+	}
+	return &first.SupportMessage, first.AttachmentName, nil
 }
 
 // FeedHandoffForCheck finds the handoff that shared this code check with this thread.
