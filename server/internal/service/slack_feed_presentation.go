@@ -2,18 +2,21 @@ package service
 
 import (
 	"encoding/json"
-	"github.com/helpin-ai/helpin/server/internal/model"
 	"net/mail"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 func feedOneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
 
 func feedExcerpt(subject, text string) string {
 	text = feedOneLine(text)
-	if strings.EqualFold(feedOneLine(subject), text) {
+	title := strings.TrimRight(feedOneLine(subject), "….")
+	if title != "" && (strings.EqualFold(title, strings.TrimRight(text, "….")) ||
+		utf8.RuneCountInString(title) >= 45 && strings.HasPrefix(strings.ToLower(text), strings.ToLower(title))) {
 		return ""
 	}
 	if utf8.RuneCountInString(text) <= 100 {
@@ -73,7 +76,7 @@ func (f *feedContext) feedAuthor(m *model.SupportMessage) feedSpeaker {
 				a.name = address.Name
 			}
 		}
-		primary := from == "" || strings.EqualFold(from, derefString(f.conv.CustomerEmail))
+		primary := from == "" && f.conv.MergeRevision == 0 || from != "" && strings.EqualFold(from, derefString(f.conv.CustomerEmail))
 		if a.name == "" {
 			a.name = from
 		}
@@ -86,7 +89,7 @@ func (f *feedContext) feedAuthor(m *model.SupportMessage) feedSpeaker {
 		} else if channel == "widget" || model.SupportChannelHasChatSession(channel) {
 			a.role = "Visitor"
 		}
-		if f.contact != nil && (from == "" && primary || strings.EqualFold(from, derefString(f.contact.Email))) {
+		if f.contact != nil && (from == "" && f.conv.MergeRevision == 0 || from != "" && strings.EqualFold(from, derefString(f.contact.Email))) {
 			if f.contact.LifecycleStage == "customer" {
 				a.role = "Customer"
 			}
@@ -132,7 +135,7 @@ func feedReplyBody(body string, formatted bool) ([]any, bool) {
 	}
 	runes := []rune(body)
 	var blocks []any
-	for len(runes) > 0 && len(blocks) < 40 {
+	for len(runes) > 0 && len(blocks) < 12 {
 		end := min(2800, len(runes))
 		blocks = append(blocks, map[string]any{"type": "section", "text": slackText(string(runes[:end]))})
 		runes = runes[end:]

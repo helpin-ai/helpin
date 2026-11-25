@@ -35,7 +35,7 @@ func (s *SlackService) feedContent(ctx context.Context, f *feedContext, m *model
 	body = tiptap.RichTextToMarkdown(m.Content)
 	email = m.MessageType == "reply" && !m.IsInternal && firstNonEmptyString(derefString(m.ViaChannel), f.conv.Channel) == "email"
 	if !email {
-		return body, false, false, nil
+		return body, body != strings.TrimSpace(m.Content), false, nil
 	}
 	var log *model.SupportEmailLog
 	if s.channels.inbox.emailLogRepo != nil {
@@ -51,6 +51,9 @@ func (s *SlackService) feedContent(ctx context.Context, f *feedContext, m *model
 		messages := []model.SupportMessage{*m}
 		hydrateEmailBodiesFromLogs(messages, []model.SupportEmailLog{*log})
 		*m = messages[0]
+		if strings.TrimSpace(derefString(m.SenderDisplayName)) == "" && log.FromDisplayName != "" {
+			m.SenderDisplayName = &log.FromDisplayName
+		}
 		// Forwarded messages have their own authored attribution and projected body.
 		var meta map[string]any
 		if json.Unmarshal([]byte(m.Metadata), &meta) == nil && forwardedAttributionFromMetadata(meta) != nil {

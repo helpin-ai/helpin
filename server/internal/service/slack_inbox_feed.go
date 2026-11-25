@@ -288,9 +288,18 @@ func feedOpenButton(threadID, link string) map[string]any {
 
 func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) error {
 	c, t := f.conv, f.thread
-	status := strings.ReplaceAll(c.Status, "_", " ")
-	if c.Status == "open" {
+	status := "Open"
+	switch c.Status {
+	case model.SupportConversationStatusWaitingOnCustomer:
+		status = "Waiting on customer"
+	case model.SupportConversationStatusResolved:
+		status = "Resolved"
+	case model.SupportConversationStatusSpam:
+		status = "Spam"
+	case model.SupportConversationStatusOpen:
 		switch derefString(c.FlowState) {
+		case model.SupportConversationFlowStateAIHandling:
+			status = "🤖 AI handling"
 		case "waiting_for_human", "queued_for_human", "after_hours_queue":
 			status = "🙋 Needs human reply"
 		}
@@ -314,25 +323,27 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	}
 	customer := firstNonEmptyString(derefString(c.CustomerName), derefString(c.CustomerEmail), "Visitor")
 	mailbox := firstNonEmptyString(derefString(c.MailboxName), "Shared Inbox")
-	details := strings.Join([]string{truncate(feedOneLine(customer), 80), truncate(feedOneLine(mailbox), 80), status}, " · ")
+	identity := truncate(feedOneLine(customer), 80) + " · " + truncate(feedOneLine(mailbox), 80)
+	labels := []string{status}
 	switch c.Priority {
 	case "urgent":
-		details += " · 🔴 Urgent"
+		labels = append(labels, "🔴 Urgent")
 	case "high":
-		details += " · 🟠 High"
+		labels = append(labels, "🟠 High")
 	}
+	metadata := []any{slackText(identity + " ·"), map[string]any{"type": "mrkdwn", "text": "*" + strings.Join(labels, "* · *") + "*", "verbatim": true}}
 	preview, attachment, err := s.repo.FeedPreview(ctx, c.WorkspaceID, c.ID)
 	if err != nil {
 		return err
 	}
-	blocks := []any{feedRichText("rich_text_section", map[string]any{"type": "link", "url": f.conversationURL, "text": title, "style": map[string]bool{"bold": true}}), map[string]any{"type": "context", "elements": []any{slackText(details)}}}
-	fallback := title + "\n" + details
+	blocks := []any{feedRichText("rich_text_section", map[string]any{"type": "link", "url": f.conversationURL, "text": title, "style": map[string]bool{"bold": true}}), map[string]any{"type": "context", "elements": metadata}}
+	fallback := title + "\n" + identity + " · " + strings.Join(labels, " · ")
 	if preview != nil {
-		visible, rich, email, err := s.feedContent(ctx, f, preview)
+		visible, rich, _, err := s.feedContent(ctx, f, preview)
 		if err != nil {
 			return err
 		}
-		if rich || !email {
+		if rich {
 			visible = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(visible))
 		}
 		if strings.TrimSpace(visible) == "" && attachment != "" {
@@ -347,14 +358,15 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 		blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText("Thread replies are internal notes.")}})
 	}
 	fallback += "\n" + owner + " · " + f.conversationURL
-	buttons := []any{}
-	if c.Status != "spam" {
-		buttons = append(buttons, feedButton("feed_reply", "Reply to customer", t.ID), feedButton("feed_manage", "Manage", t.ID))
-		if c.AssignedUserID == nil {
-			buttons = append(buttons, feedButton("feed_claim", "Assign to me", t.ID))
+	if c.Status == "spam" {
+		blocks = append(blocks, slackButtons(feedOpenButton(t.ID, f.conversationURL)))
+	} else {
+		actions, err := s.feedCardActions(ctx, f, owner)
+		if err != nil {
+			return err
 		}
+		blocks = append(blocks, actions)
 	}
-	blocks = append(blocks, slackButtons(append(buttons, feedOpenButton(t.ID, f.conversationURL))...))
 	payload := map[string]any{"channel": f.channel, "text": fallback, "mrkdwn": false, "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -415,6 +427,20 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if err != nil {
 		return err
 	}
+	if m.SenderUserID != nil && m.MessageType != "system" && (m.SenderDisplayName == nil || m.SenderAvatarURL == nil) {
+		user, err := s.channels.inbox.userRepo.GetByID(ctx, *m.SenderUserID)
+		if err != nil {
+			return err
+		}
+		if user != nil {
+			if m.SenderDisplayName == nil {
+				m.SenderDisplayName = &user.FullName
+			}
+			if m.SenderAvatarURL == nil {
+				m.SenderAvatarURL = user.AvatarURL
+			}
+		}
+	}
 	author := f.feedAuthor(m)
 	if m.MessageType == "system" {
 		body = tiptap.RichTextToMarkdown(m.Content)
@@ -456,7 +482,9 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 		buttons = append(buttons, feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID))
 	}
 	if clipped || email {
-		buttons = append(buttons, feedOpenButton(f.thread.ID, f.conversationURL+"#message-"+m.ID))
+		link := f.conversationURL + "#message-" + m.ID
+		buttons = append(buttons, feedOpenButton(f.thread.ID, link))
+		body = truncate(body, 3500) + "\n" + link
 	}
 	if len(buttons) > 0 {
 		blocks = append(blocks, slackButtons(buttons...))
