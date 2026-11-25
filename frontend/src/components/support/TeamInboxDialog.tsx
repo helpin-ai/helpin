@@ -46,8 +46,7 @@ import {
   splitMailboxMembersBySelection,
 } from './teamInboxDialogMembers';
 import { TeamInboxAssignmentFields } from './TeamInboxAssignmentFields';
-import { InboxSlackChannelRow } from '@/components/settings/channels/InboxSlackChannelRow';
-import { TeamInboxEmailSetup } from './TeamInboxEmailSetup';
+import { TeamInboxChannelSetup } from './TeamInboxChannelSetup';
 import { filterInboxAssignmentMembers, resolveInboxAssignmentSelection, type InboxAssignmentMode } from './teamInboxAssignment';
 import { getTeamInboxDialogSteps } from './teamInboxDialogFlow';
 
@@ -238,13 +237,11 @@ export function TeamInboxDialog({
   open,
   onOpenChange,
   mailbox,
-  showSlackChannel = true,
 }: {
   workspaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mailbox?: SupportMailbox | null;
-  showSlackChannel?: boolean;
 }) {
   const [step, setStep] = useState<DialogStepNumber>(1);
   const [form, setForm] = useState<MailboxFormState>(DEFAULT_FORM);
@@ -448,7 +445,7 @@ export function TeamInboxDialog({
   ));
 
   const canProceedToStep2 = form.name.trim().length > 0 && form.handle.trim().length > 0;
-  // A new inbox reaches Email only after it is created; going back would create it twice.
+  // Channel setup follows inbox creation. Going back would create the inbox twice.
   const createdNewInbox = !mailbox && step === 4;
   const canOpenStep = (target: DialogStepNumber) => {
     if (createdNewInbox) return target === 4;
@@ -752,7 +749,6 @@ export function TeamInboxDialog({
                 </div>
               </div>
 
-              {showSlackChannel && mailbox && workspaceSlug && <InboxSlackChannelRow workspaceId={workspaceId} mailboxId={mailbox.id} />}
               <div className="space-y-1.5">
                 <FieldLabel htmlFor="team-inbox-description" tip="An internal note for your team explaining what this inbox is for. Not shown to customers.">
                   Description <span className="font-normal text-muted-foreground">(optional)</span>
@@ -1216,11 +1212,11 @@ export function TeamInboxDialog({
             <DialogHeader className="mb-4">
               <DialogTitle>{createdNewInbox ? 'Your team inbox is ready' : DIALOG_STEPS[3].label}</DialogTitle>
               <DialogDescription>
-                {createdNewInbox ? 'You can start using it now. Set up email when you’re ready.' : DIALOG_STEPS[3].description}
+                {createdNewInbox ? 'You can set up email and Slack whenever you’re ready.' : DIALOG_STEPS[3].description}
               </DialogDescription>
             </DialogHeader>
 
-            <TeamInboxEmailSetup workspaceId={workspaceId} mailboxId={mailbox?.id ?? createdMailboxId} />
+            <TeamInboxChannelSetup workspaceId={workspaceId} mailboxId={mailbox?.id ?? createdMailboxId} />
           </div>
         )}
 

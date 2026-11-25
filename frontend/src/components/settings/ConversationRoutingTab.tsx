@@ -22,7 +22,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useInboxSlackChannel } from '@/components/settings/channels/InboxSlackChannelRow';
+import { useInboxSlackChannel } from '@/hooks/queries/useInboxSlackChannel';
 import { TeamInboxDialog } from '@/components/support/TeamInboxDialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -1308,7 +1308,6 @@ export function ConversationRoutingTab({
 
       <TeamInboxDialog
         workspaceId={workspaceId}
-        showSlackChannel={false}
         open={mailboxDialogOpen}
         onOpenChange={(open) => {
           setMailboxDialogOpen(open);

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useSupportEmailRoutes, useSupportEmailSenders } from '@/hooks/queries/useSupport';
+import { useInboxSlackChannel } from '@/hooks/queries/useInboxSlackChannel';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { getInboxForwardingRoutes, getInboxSenderAddress, isSenderVerified } from './inboxEmailRouting';
 
@@ -12,7 +13,7 @@ function StatusBadge({ tone, children }: { tone: 'success' | 'warning'; children
   return <Badge variant="outline" className={`shrink-0 ${className}`}>{children}</Badge>;
 }
 
-function EmailSetupSection({
+function SetupSection({
   title,
   children,
   action,
@@ -48,12 +49,12 @@ function AddressRow({ primary, secondary, badge }: { primary: string; secondary?
   );
 }
 
-// Shows the inbox's current forwarding and sender address, or the action that sets each up.
 // Settings open in a new tab; the queries refetch on window focus, so status updates on return.
-export function TeamInboxEmailSetup({ workspaceId, mailboxId }: { workspaceId: string; mailboxId?: string | null }) {
+export function TeamInboxChannelSetup({ workspaceId, mailboxId }: { workspaceId: string; mailboxId?: string | null }) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
   const routesQuery = useSupportEmailRoutes(workspaceId);
   const sendersQuery = useSupportEmailSenders(workspaceId);
+  const slack = useInboxSlackChannel(workspaceId, mailboxId);
   const settingsHref = (search: string) =>
     workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?${search}` : '/workspaces';
 
@@ -136,12 +137,19 @@ export function TeamInboxEmailSetup({ workspaceId, mailboxId }: { workspaceId: s
 
   return (
     <div className="space-y-3">
-      <EmailSetupSection title="Email forwarding" action={forwarding.action}>
+      <SetupSection title="Email forwarding" action={forwarding.action}>
         {forwarding.body}
-      </EmailSetupSection>
-      <EmailSetupSection title="Sender address" action={sender.action}>
+      </SetupSection>
+      <SetupSection title="Sender address" action={sender.action}>
         {sender.body}
-      </EmailSetupSection>
+      </SetupSection>
+      {slack && (
+        <SetupSection title="Slack channel" action={{ label: slack.channelName ? 'Manage Slack channel' : 'Connect Slack', href: slack.href }}>
+          {slack.channelName
+            ? <p className="break-words font-medium text-foreground">{slack.channelName}</p>
+            : <p>Share new conversations from this inbox in Slack.</p>}
+        </SetupSection>
+      )}
     </div>
   );
 }

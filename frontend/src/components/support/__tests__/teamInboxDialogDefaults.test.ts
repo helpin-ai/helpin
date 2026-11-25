@@ -12,11 +12,11 @@ describe('TeamInboxDialog defaults', () => {
   it('shows optional email setup after a new inbox is created', () => {
     const source = readFileSync(resolve(__dirname, '../TeamInboxDialog.tsx'), 'utf8');
 
-    const emailSetupSource = readFileSync(resolve(__dirname, '../TeamInboxEmailSetup.tsx'), 'utf8');
+    const emailSetupSource = readFileSync(resolve(__dirname, '../TeamInboxChannelSetup.tsx'), 'utf8');
 
     expect(source).toContain('setStep(4);');
     expect(source).toContain('Your team inbox is ready');
-    expect(source).toContain('<TeamInboxEmailSetup');
+    expect(source).toContain('<TeamInboxChannelSetup');
     expect(emailSetupSource).toContain('Send messages received at your existing email address to this Helpin inbox.');
     expect(emailSetupSource).toContain('Choose and verify the email address customers see when your team replies.');
     expect(emailSetupSource).toContain('Set up forwarding');
