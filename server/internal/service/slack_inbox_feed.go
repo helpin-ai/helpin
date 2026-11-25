@@ -104,6 +104,7 @@ type feedContext struct {
 	thread          *repository.FeedThread
 	conv            *model.SupportConversation
 	account         *model.SupportChannelAccount
+	contact         *model.CRMContact
 	token, channel  string
 	conversationURL string
 }
@@ -156,7 +157,17 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 	if !ok || err != nil {
 		return nil, err
 	}
-	return &feedContext{thread: t, conv: conv, account: a, token: token, channel: route.CurrentChannelID, conversationURL: conversationURL}, nil
+	f := &feedContext{thread: t, conv: conv, account: a, token: token, channel: route.CurrentChannelID, conversationURL: conversationURL}
+	if conv.CRMContactID != nil && s.channels.inbox.contactRepo != nil {
+		contacts, err := s.channels.inbox.contactRepo.ListByIDs(ctx, conv.WorkspaceID, []string{*conv.CRMContactID})
+		if err != nil {
+			return nil, err
+		}
+		if len(contacts) == 1 {
+			f.contact = &contacts[0]
+		}
+	}
+	return f, nil
 }
 
 type slackNoticePart struct {
@@ -394,11 +405,8 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if m.IsInternal && m.MessageType != "system" && meta.SourceThread == f.thread.ID {
 		return nil
 	}
-	author := firstNonEmptyString(derefString(m.SenderDisplayName), m.SenderType)
-	if m.IsInternal && m.MessageType != "system" {
-		author += " · Internal note"
-	}
-	body := author + "\n" + tiptap.RichTextToMarkdown(m.Content)
+	author := f.feedAuthor(m)
+	body := tiptap.RichTextToMarkdown(m.Content)
 	if m.MessageType == "system" {
 		body = tiptap.RichTextToMarkdown(m.Content)
 		if strings.TrimSpace(body) == "" {
@@ -427,19 +435,24 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if meta.EmailStatus != "" {
 		body += "\nEmail · " + meta.EmailStatus
 	}
-	var blocks []any
-	if !m.IsInternal && m.MessageType == "reply" && (m.SenderType == "ai" || m.SenderType == "agent") {
-		markdown := slackMarkdown(body)
-		blocks = []any{markdown}
-		body = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(markdown["text"]))
+	blocks := []any{author.header()}
+	formatted := !m.IsInternal && author.role == "AI reply"
+	display, clipped := feedReplyBody(body, formatted)
+	blocks = append(blocks, display...)
+	if formatted {
+		body = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(body))
 	}
+	var buttons []any
 	if delivery != nil && delivery.Status == "failed" {
-		if len(blocks) == 0 {
-			blocks = append(blocks, map[string]any{"type": "section", "text": slackText(truncate(body, 2900))})
-		}
-		blocks = append(blocks, slackButtons(feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID)))
+		buttons = append(buttons, feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID))
 	}
-	if err := s.writeFeedReply(ctx, f, m.ID, body, blocks); err != nil {
+	if clipped {
+		buttons = append(buttons, feedOpenButton(f.thread.ID, f.conversationURL+"#message-"+m.ID))
+	}
+	if len(buttons) > 0 {
+		blocks = append(blocks, slackButtons(buttons...))
+	}
+	if err := s.writeFeedReply(ctx, f, m.ID, author.label()+"\n"+body, blocks); err != nil {
 		return err
 	}
 	files, err := s.channels.replyFiles(ctx, m, 25<<20)

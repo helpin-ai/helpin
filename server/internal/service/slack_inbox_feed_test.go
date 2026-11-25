@@ -19,6 +19,22 @@ func TestSlackInboxFeedExcerpt(t *testing.T) {
 	}
 }
 
+func TestSlackInboxFeedAuthor(t *testing.T) {
+	f := feedContext{conv: &model.SupportConversation{Channel: "widget"}}
+	name := "Maya Patel"
+	for _, tc := range []struct {
+		kind, role string
+		internal   bool
+	}{
+		{"customer", "Visitor", false}, {"user", "Team reply", false}, {"ai", "AI reply", false}, {"agent", "AI reply", false}, {"user", "📝 Internal note", true},
+	} {
+		m := model.SupportMessage{SenderType: tc.kind, SenderDisplayName: &name, IsInternal: tc.internal}
+		if got := f.feedAuthor(&m); got.role != tc.role || got.name != name {
+			t.Fatalf("%s author = %+v", tc.kind, got)
+		}
+	}
+}
+
 func TestSlackInboxFeedVisibility(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

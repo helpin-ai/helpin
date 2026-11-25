@@ -147,7 +147,10 @@ func (s *SlackService) writeFeedAIUpdate(ctx context.Context, f *feedContext, id
 	if strings.TrimSpace(summary) == "" {
 		return nil
 	}
-	title := "Internal · " + kind
+	title := "🙋 Needs human reply · Internal AI handoff"
+	if kind == "Code check" {
+		title = "🔎 Code check · Internal"
+	}
 	reportURL := f.conversationURL + "#message-" + target
 	blocks := []any{
 		map[string]any{"type": "context", "elements": []any{slackText(title)}},
