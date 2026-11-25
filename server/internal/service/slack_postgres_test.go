@@ -760,6 +760,9 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	if len(posts) != 2 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "Checkout issue") {
 		t.Fatal("moving back did not restore the original thread")
 	}
+	// Exercise both worker orderings against real feed jobs and receipts.
+	testSlackFeedAIReports(t, f, conv, trow.RootTS, deliver, func() []map[string]any { return posts })
+	beforeRemoval := len(posts)
 	if err := s.Remove(owner, f.workspace, "Cdesk"); err != nil {
 		t.Fatal(err)
 	}
@@ -768,8 +771,83 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 		t.Fatalf("removed rule lost inactive thread identity: %+v %v", trow, err)
 	}
 	deliver(&next.ID)
-	if len(posts) != 2 {
+	if len(posts) != beforeRemoval {
 		t.Fatal("replayed after rule removal")
+	}
+}
+
+func testSlackFeedAIReports(t *testing.T, f *outboxFixture, conv, root string, deliver func(*string), posts func() []map[string]any) {
+	t.Helper()
+	ctx := context.Background()
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprintf("code check pending at handoff %t", pending), func(t *testing.T) {
+			mustExec(t, f.db, "UPDATE support_conversations SET status='open',human_takeover=false,ai_state='pending' WHERE id=?", conv)
+			before := len(posts())
+			now := time.Now().UTC()
+			planID := uuid.NewString()
+			result := supportCodeCheck{Status: supportCodeCheckDone, Found: "Confirmed **export limit**.", Investigate: "Check the job date.", Engineering: "Private engineering detail"}
+			check := newSupportCodeCheckCard(f.workspace, conv, planID, uuid.NewString(), result, now)
+			if pending {
+				check = newSupportCodeCheckCard(f.workspace, conv, planID, uuid.NewString(), supportCodeCheck{Status: supportCodeCheckRunning}, now)
+			}
+			if err := f.inbox.messageRepo.Create(ctx, check); err != nil {
+				t.Fatal(err)
+			}
+			deliver(&check.ID)
+			if len(posts()) != before {
+				t.Fatal("posted an AI-only code check")
+			}
+			mustExec(t, f.db, "UPDATE support_conversations SET human_takeover=true,ai_state='escalated' WHERE id=?", conv)
+			c := &model.SupportConversation{ID: conv, WorkspaceID: f.workspace}
+			brief := SupportHandoffBrief{Issue: "Export missing.", AttemptedSteps: []string{"Checked history."}, UnresolvedQuestions: []string{"Which job?"}, HeldReply: "Unsent draft", codeCheckID: check.ID, codeCheckPending: pending}
+			handoff := buildSupportHandoffNote(c, nil, "customer_requested", brief, now)
+			if err := f.inbox.messageRepo.Create(ctx, handoff); err != nil {
+				t.Fatal(err)
+			}
+			event := f.reply(t, conv, "agent", "", func(m *model.SupportMessage) {
+				m.MessageType, m.IsInternal, m.SystemEventType = "system", true, strPtr(model.SystemEventCustomerRequestedHuman)
+				m.Metadata = fmt.Sprintf(`{"handoff_note_id":%q}`, handoff.ID)
+			})
+			deliver(&event.ID)
+			if pending {
+				deliver(&handoff.ID)
+				if len(posts()) != before+1 || strings.Contains(fmt.Sprint(posts()[before]), "export limit") {
+					t.Fatal("running check was shared with the handoff")
+				}
+				finished := newSupportCodeCheckCard(f.workspace, conv, planID, uuid.NewString(), result, now)
+				if ok, err := f.inbox.messageRepo.FillNote(ctx, f.workspace, conv, check.ID, finished.Content, finished.Metadata); err != nil || !ok {
+					t.Fatalf("finish code check: %v %v", ok, err)
+				}
+			}
+			deliver(&check.ID)
+			deliver(&handoff.ID)
+			deliver(&check.ID)
+			got := posts()[before:]
+			want := 1
+			if pending {
+				want = 2
+			}
+			if len(got) != want {
+				t.Fatalf("got %d Slack posts for this handoff, want %d", len(got), want)
+			}
+			if first := fmt.Sprint(got[0]["blocks"]); !strings.Contains(first, "AI handoff") || !strings.Contains(first, "Checked history.") || !strings.Contains(first, "Which job?") {
+				t.Fatalf("handoff missing context: %s", first)
+			}
+			fallback := fmt.Sprint(got[want-1]["text"])
+			if !strings.Contains(fallback, "export limit") || strings.Contains(fallback, "**") {
+				t.Fatalf("unreadable notification fallback: %s", fallback)
+			}
+			last := fmt.Sprint(got[want-1]["blocks"])
+			if !strings.Contains(last, "type:markdown") || !strings.Contains(last, "Confirmed **export limit**.") || !strings.Contains(last, "Check the job date.") || !strings.Contains(last, "/support/"+conv+"#message-"+check.ID) {
+				t.Fatalf("code check missing finding, action, or link: %s", last)
+			}
+			for _, post := range got {
+				body := fmt.Sprint(post)
+				if post["thread_ts"] != root || strings.Contains(body, "Private engineering detail") || strings.Contains(body, "Unsent draft") {
+					t.Fatalf("incorrect audience or content: %s", body)
+				}
+			}
+		})
 	}
 }
 

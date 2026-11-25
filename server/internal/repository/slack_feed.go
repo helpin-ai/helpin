@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -76,4 +78,19 @@ func (r *SlackRepository) FeedPreview(ctx context.Context, conv string) (string,
 	var body string
 	err := r.db.WithContext(ctx).Raw("SELECT content FROM support_messages WHERE conversation_id=? AND sender_type='customer' AND NOT is_internal AND deleted_at IS NULL ORDER BY created_at,id LIMIT 1", conv).Scan(&body).Error
 	return body, err
+}
+
+// FeedHandoffForCheck finds the handoff that shared this code check with this thread.
+// The job or receipt prevents a late result from importing a handoff from another inbox.
+func (r *SlackRepository) FeedHandoffForCheck(ctx context.Context, workspace string, thread *FeedThread, checkID string) (*model.SupportMessage, error) {
+	var m model.SupportMessage
+	err := r.db.WithContext(ctx).Where("workspace_id=? AND conversation_id=? AND message_type='note' AND is_internal AND sender_type='agent' AND sender_user_id IS NULL", workspace, thread.ConversationID).
+		Where("metadata->'handoff'->>'code_check_id' = ?", checkID).
+		Where(`EXISTS (SELECT 1 FROM support_inbound_jobs j WHERE j.message_id=support_messages.id AND j.kind='slack_inbox_feed' AND j.channel_account_id=? AND j.payload::jsonb->>'thread'=?)
+			OR EXISTS (SELECT 1 FROM slack_feed_receipts r WHERE r.thread_id=? AND r.part_key=support_messages.id::text)`, thread.AccountID, thread.ID, thread.ID).
+		Order("created_at DESC, id DESC").Limit(1).Find(&m).Error
+	if m.ID == "" {
+		return nil, err
+	}
+	return &m, err
 }

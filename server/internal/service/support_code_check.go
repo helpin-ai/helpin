@@ -373,17 +373,22 @@ func replaceChildRunSummaries(block, summary string) (string, error) {
 	return dockChildResultOpenTag + string(encoded) + dockChildResultCloseTag, nil
 }
 
-// supportCodeCheckedThisTurn reports a code-check card posted after the
-// customer's latest message, so a handoff does not start a second check.
-func supportCodeCheckedThisTurn(history []model.SupportMessage) bool {
+// supportCodeCheckThisTurn finds the pre-reply check for the current customer turn.
+func supportCodeCheckThisTurn(history []model.SupportMessage) *model.SupportMessage {
 	for i := len(history) - 1; i >= 0; i-- {
-		message := history[i]
-		if message.SenderType == "customer" && !message.IsInternal {
-			return false
+		m := &history[i]
+		if m.SenderType == "customer" && !m.IsInternal {
+			break
 		}
-		if message.IsInternal && message.MessageType == "note" && strings.Contains(message.Metadata, `"code_check_phase":"`+supportCodeCheckPhaseBeforeReply+`"`) {
-			return true
+		if !m.IsInternal || m.MessageType != "note" || m.SenderType != "agent" || m.DeletedAt.Valid {
+			continue
+		}
+		var meta struct {
+			Phase string `json:"code_check_phase"`
+		}
+		if json.Unmarshal([]byte(m.Metadata), &meta) == nil && meta.Phase == supportCodeCheckPhaseBeforeReply {
+			return m
 		}
 	}
-	return false
+	return nil
 }

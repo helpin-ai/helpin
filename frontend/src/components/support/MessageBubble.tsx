@@ -627,6 +627,11 @@ export const MessageBubble = memo(function MessageBubble({
     </div>
   );
 
+  const renderCardMarkdown = (text: string) => (
+    <div className="prose-chat [overflow-wrap:anywhere]">
+      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{text}</Markdown>
+    </div>
+  );
   const aiActivity = getSupportAIActivity(message);
   if (aiActivity) {
     return <SupportAIActivity
@@ -634,7 +639,7 @@ export const MessageBubble = memo(function MessageBubble({
       activity={aiActivity}
       teammateName={teammateDisplayName}
       avatarUrl={resolvedAvatarUrl}
-      detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
+      renderMarkdown={renderCardMarkdown}
       readOnly={readOnly}
       folded={folded}
     />;
@@ -647,7 +652,7 @@ export const MessageBubble = memo(function MessageBubble({
       linkedTaskId={linkedTaskId}
       readOnly={readOnly}
       folded={folded}
-      renderMarkdown={(markdown) => <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{markdown}</Markdown>}
+      renderMarkdown={renderCardMarkdown}
     />;
   }
 

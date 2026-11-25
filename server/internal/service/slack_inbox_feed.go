@@ -71,7 +71,14 @@ func slackFeedThreadUpdate(m *model.SupportMessage) bool {
 		return false
 	}
 	if m.MessageType == "note" {
-		return m.IsInternal && m.SenderType == "user"
+		if !m.IsInternal {
+			return false
+		}
+		if m.SenderType == "user" {
+			return true
+		}
+		meta := slackFeedAINote(m)
+		return meta.Handoff != nil || meta.finishedCodeCheck()
 	}
 	if m.MessageType == "reply" {
 		return !m.IsInternal || m.SenderType == "user"
@@ -80,14 +87,24 @@ func slackFeedThreadUpdate(m *model.SupportMessage) bool {
 		// The customer's reply already explains why the parent reopened.
 		return false
 	}
-	return slices.Contains([]string{"resolved", "reopened", "ai_escalated", "customer_requested_human"}, derefString(m.SystemEventType))
+	switch derefString(m.SystemEventType) {
+	case model.SystemEventAIEscalated, model.SystemEventCustomerRequestedHuman:
+		var meta struct {
+			HandoffNoteID string `json:"handoff_note_id"`
+		}
+		return json.Unmarshal([]byte(m.Metadata), &meta) != nil || meta.HandoffNoteID == ""
+	case "resolved", "reopened":
+		return true
+	}
+	return false
 }
 
 type feedContext struct {
-	thread         *repository.FeedThread
-	conv           *model.SupportConversation
-	account        *model.SupportChannelAccount
-	token, channel string
+	thread          *repository.FeedThread
+	conv            *model.SupportConversation
+	account         *model.SupportChannelAccount
+	token, channel  string
+	conversationURL string
 }
 
 func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAccount, t *repository.FeedThread) (*feedContext, error) {
@@ -129,7 +146,7 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 	if !ok || err != nil {
 		return nil, err
 	}
-	return &feedContext{t, conv, a, token, route.CurrentChannelID}, nil
+	return &feedContext{thread: t, conv: conv, account: a, token: token, channel: route.CurrentChannelID}, nil
 }
 func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInboundJob) error {
 	var p struct{ Thread string }
@@ -161,6 +178,9 @@ func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInb
 		m, err := s.channels.inbox.messageRepo.GetByID(ctx, *j.MessageID)
 		if err != nil || m == nil || m.ConversationID != f.conv.ID || !slackFeedThreadUpdate(m) {
 			return err
+		}
+		if m.MessageType == "note" && m.SenderType != "user" {
+			return s.mirrorFeedAINote(ctx, f, m)
 		}
 		return s.mirrorFeedMessage(ctx, f, m)
 	})
@@ -207,7 +227,8 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	}
 	blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText("Thread replies are internal notes. Use Reply to customer to send a response.")}})
 	open := feedButton("open_support", "Open in Helpin", t.ID)
-	open["url"] = s.appURL + "/w/" + ws.Slug + "/support/" + c.ID
+	f.conversationURL = s.appURL + "/w/" + ws.Slug + "/support/" + c.ID
+	open["url"] = f.conversationURL
 	buttons := []any{}
 	if c.Status != "spam" {
 		buttons = append(buttons, feedButton("feed_reply", "Reply to customer", t.ID), feedButton("feed_manage", "Manage", t.ID))
@@ -279,6 +300,14 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	body := author + "\n" + tiptap.RichTextToMarkdown(m.Content)
 	if m.MessageType == "system" {
 		body = tiptap.RichTextToMarkdown(m.Content)
+		if strings.TrimSpace(body) == "" {
+			switch derefString(m.SystemEventType) {
+			case model.SystemEventAIEscalated:
+				body = "AI handed this conversation to a teammate."
+			case model.SystemEventCustomerRequestedHuman:
+				body = "The customer asked for a teammate."
+			}
+		}
 	}
 	var delivery *model.SupportChannelDelivery
 	if m.SenderType != "customer" && !m.IsInternal {
@@ -297,34 +326,20 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if meta.EmailStatus != "" {
 		body += "\nEmail · " + meta.EmailStatus
 	}
-	prior, err := s.repo.FeedReceipt(ctx, f.thread.ID, m.ID)
-	if err != nil {
-		return err
+	var blocks []any
+	if !m.IsInternal && m.MessageType == "reply" && (m.SenderType == "ai" || m.SenderType == "agent") {
+		markdown := slackMarkdown(body)
+		blocks = []any{markdown}
+		body = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(markdown["text"]))
 	}
-	payload := map[string]any{"channel": f.channel, "text": truncate(body, 3900), "mrkdwn": false, "unfurl_links": false, "unfurl_media": false}
 	if delivery != nil && delivery.Status == "failed" {
-		payload["blocks"] = []any{map[string]any{"type": "section", "text": slackText(truncate(body, 2900))}, slackButtons(feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID))}
-	} else if prior != "" {
-		payload["blocks"] = []any{}
+		if len(blocks) == 0 {
+			blocks = append(blocks, map[string]any{"type": "section", "text": slackText(truncate(body, 2900))})
+		}
+		blocks = append(blocks, slackButtons(feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID)))
 	}
-	if prior == "" {
-		var out struct{ TS string }
-		payload["thread_ts"] = f.thread.RootTS
-		payload["client_msg_id"] = inboundStableID(f.thread.ID + ":" + m.ID)
-		if err = s.api.Call(ctx, f.token, "chat.postMessage", payload, &out); err != nil {
-			return err
-		}
-		if out.TS == "" {
-			return errors.New("Slack did not confirm the message")
-		}
-		if err = s.repo.SaveFeedReceipt(ctx, f.thread.ID, m.ID, out.TS); err != nil {
-			return err
-		}
-	} else {
-		payload["ts"] = prior
-		if err = s.api.Call(ctx, f.token, "chat.update", payload, nil); err != nil {
-			return err
-		}
+	if err := s.writeFeedReply(ctx, f, m.ID, body, blocks); err != nil {
+		return err
 	}
 	files, err := s.channels.replyFiles(ctx, m, 25<<20)
 	if err != nil {
@@ -368,6 +383,35 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 		}
 	}
 	return nil
+}
+
+// writeFeedReply uses the Helpin message ID for both the Slack retry key and the delivery receipt.
+func (s *SlackService) writeFeedReply(ctx context.Context, f *feedContext, id, body string, blocks []any) error {
+	prior, err := s.repo.FeedReceipt(ctx, f.thread.ID, id)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{"channel": f.channel, "text": truncate(body, 3900), "mrkdwn": false, "unfurl_links": false, "unfurl_media": false}
+	if blocks != nil {
+		payload["blocks"] = blocks
+	}
+	if prior != "" {
+		payload["ts"] = prior
+		if blocks == nil {
+			payload["blocks"] = []any{}
+		}
+		return s.api.Call(ctx, f.token, "chat.update", payload, nil)
+	}
+	payload["thread_ts"] = f.thread.RootTS
+	payload["client_msg_id"] = inboundStableID(f.thread.ID + ":" + id)
+	var out struct{ TS string }
+	if err := s.api.Call(ctx, f.token, "chat.postMessage", payload, &out); err != nil {
+		return err
+	}
+	if out.TS == "" {
+		return errors.New("Slack did not confirm the message")
+	}
+	return s.repo.SaveFeedReceipt(ctx, f.thread.ID, id, out.TS)
 }
 
 func (s *SlackService) InboxThreadLink(ctx context.Context, workspace, id string) (string, error) {

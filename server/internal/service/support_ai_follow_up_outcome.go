@@ -265,13 +265,18 @@ func (s *SupportFollowUpService) finishHandoff(ctx context.Context, tx *gorm.DB,
 	if err := s.handoff(ctx, tx, conv, settings, now); err != nil {
 		return nil, err
 	}
-	history, err := s.chat.messageRepo.WithTx(tx).ListForSupportAI(ctx, conv.WorkspaceID, conv.ID, false)
+	history, err := s.chat.messageRepo.WithTx(tx).ListForSupportAI(ctx, conv.WorkspaceID, conv.ID, true)
 	if err != nil {
 		return nil, err
 	}
 	// Separate the note from the event at browser timestamp precision too.
-	sent := buildSupportHandoffNote(conv, history, "Follow-up assessment: "+reason, SupportHandoffBrief{}, now.Add(time.Millisecond))
-	metadata, _ := json.Marshal(map[string]any{"reason": reason, "support_follow_up_id": e.ID, "ai_handoff_brief": true})
+	brief := SupportHandoffBrief{}
+	if check := supportCodeCheckThisTurn(history); check != nil && (conv.AIResumedAt == nil || check.CreatedAt.After(*conv.AIResumedAt)) {
+		brief.codeCheckID = check.ID
+		brief.codeCheckPending = supportCodeCheckCardStatus(check.Metadata) == supportCodeCheckRunning
+	}
+	sent := buildSupportHandoffNote(conv, history, "Follow-up assessment: "+reason, brief, now.Add(time.Millisecond))
+	metadata, _ := json.Marshal(map[string]any{"reason": reason, "support_follow_up_id": e.ID, "ai_handoff_brief": true, "handoff_note_id": sent.ID})
 	// Keep the structured card the builder added.
 	var noteMetadata map[string]any
 	if json.Unmarshal([]byte(sent.Metadata), &noteMetadata) == nil {

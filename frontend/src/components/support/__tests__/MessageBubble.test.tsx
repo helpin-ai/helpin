@@ -416,6 +416,26 @@ describe('MessageBubble', () => {
     }
   }
 
+  it.each([
+    ['handoff', handoffCardMessage({
+      issue: '**Payment failed**', reason: 'Missing `receipt`',
+      open_questions: ['Verify **billing**'], held_reply: 'Try **again**',
+    })],
+    ['code check', codeCheckMessage({
+      status: 'done', found: '**Payment failed**', investigate: 'Missing `receipt`',
+      unavailable_data: ['Verify **billing**'], reply: 'Try **again**',
+    })],
+  ] as const)('renders Markdown in the %s card and its folded preview', (_, message) => {
+    const rendered = renderBubble(message, undefined, { folded: true })
+    try {
+      const card = rendered.container.querySelector('details')!
+      expect(card.querySelector('code')?.textContent).toBe('receipt')
+      expect(card.textContent).not.toMatch(/\*\*|`receipt`/)
+      expect(card.querySelector('summary')?.textContent).toContain('Payment failed')
+      expect([...card.querySelectorAll('strong')].map(node => node.textContent)).toEqual(expect.arrayContaining(['Payment failed', 'billing', 'again']))
+    } finally { rendered.cleanup() }
+  })
+
   it('shows a running code check card with what it is checking', () => {
     const rendered = renderBubble(codeCheckMessage({ status: 'running', focus: 'How approving a post sets its publishing time' }))
     try {
