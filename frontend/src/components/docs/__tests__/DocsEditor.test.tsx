@@ -267,7 +267,7 @@ vi.mock('@/lib/icons', () => {
 import { DocsEditor } from '../DocsEditor'
 import { prepareAppRefresh } from '@/lib/appLoadRecovery'
 
-vi.mock('@tanstack/react-router', () => ({ useRouter: () => null }))
+vi.mock('@tanstack/react-router', () => ({ useRouter: () => null }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
