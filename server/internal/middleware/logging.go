@@ -21,6 +21,10 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the connection, so streamed
+// responses can flush through the logger.
+func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
 // RequestLogger logs incoming HTTP requests with structured slog output.
 // 4xx responses are logged at Warn, 5xx at Error, and all others at Info.
 func RequestLogger(next http.Handler) http.Handler {

@@ -316,8 +316,8 @@ const allSettingsSections: SettingsSectionMeta[] = [
   },
   {
     id: 'mcp',
-    label: 'MCP access',
-    description: 'Connect outside MCP clients to Helpin and control their workspace access.',
+    label: 'API & MCP access',
+    description: 'Connect MCP clients and API service accounts to Helpin and control their workspace access.',
     icon: MCP,
     group: 'Integrations & data',
     requiredPermission: 'workspace.read',

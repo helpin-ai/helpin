@@ -20,6 +20,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/intercom"
 	"github.com/helpin-ai/helpin/server/internal/intercom/intercomtest"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/publichelp"
 )
 
 // countingImageUploader stores nothing and hands back a stable address.
@@ -89,13 +90,19 @@ func seedPublicImportSite() *intercomtest.PublicSite {
 
 func runPublicDocsImport(t *testing.T, svc *DocsImportService, sourceURL, workspaceID, spaceID, userID, status string) model.DocsImportJob {
 	t.Helper()
+	return runPublicDocsImportFrom(t, svc, docsImportSourceIntercomPublic, sourceURL, workspaceID, spaceID, userID, status)
+}
+
+// runPublicDocsImportFrom runs one import by address for the given job source.
+func runPublicDocsImportFrom(t *testing.T, svc *DocsImportService, source, sourceURL, workspaceID, spaceID, userID, status string) model.DocsImportJob {
+	t.Helper()
 	ctx := context.Background()
-	job := &model.DocsImportJob{ID: uuid.NewString(), WorkspaceID: workspaceID, SpaceID: &spaceID, Source: docsImportSourceIntercomPublic,
+	job := &model.DocsImportJob{ID: uuid.NewString(), WorkspaceID: workspaceID, SpaceID: &spaceID, Source: source,
 		Status: model.DocsImportStatusPending, Failures: json.RawMessage("[]"), Config: json.RawMessage("{}"), StartedBy: userID}
 	if err := svc.importRepo.Create(ctx, job); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.runPublicIntercomImport(ctx, job.ID, model.DocsImportStartRequest{SourceURL: sourceURL, ImportStatus: status}, spaceID, workspaceID, userID, nil); err != nil {
+	if err := svc.runPublicImport(ctx, job, model.DocsImportStartRequest{SourceURL: sourceURL, ImportStatus: status}, spaceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	done, err := svc.importRepo.GetByID(ctx, job.ID)
@@ -442,9 +449,11 @@ func TestPublicHelpCenterImportUnusableSourcePostgres(t *testing.T) {
 	defer site.Close()
 	site.NotHelpCenter = true
 	svc := newIntercomDocsImportService(db, "")
-	svc.publicIntercom = intercom.NewPublicClientWithHTTP(&http.Client{Timeout: 10 * time.Second})
+	plain := &http.Client{Timeout: 10 * time.Second}
+	svc.publicIntercom = intercom.NewPublicClientWithHTTP(plain)
+	svc.publicFetch = publichelp.NewFetcherWithHTTP(plain)
 
-	if _, err := svc.PreviewPublicHelpCenter(ctx, model.PublicHelpCenterImportRequest{URL: site.URL}); err == nil || !strings.Contains(err.Error(), "not an Intercom help center") {
+	if _, err := svc.PreviewPublicHelpCenter(ctx, model.PublicHelpCenterImportRequest{URL: site.URL}); err == nil || !strings.Contains(err.Error(), "no help center that can be imported") {
 		t.Fatalf("preview error = %v", err)
 	}
 	space, err := svc.spaceSvc.Create(ctx, workspaceID, model.CreateDocsSpaceRequest{Name: "Help", Visibility: model.SpaceVisibilityWorkspaceWide, Type: model.SpaceTypeExternalCapable}, userID)
@@ -452,7 +461,7 @@ func TestPublicHelpCenterImportUnusableSourcePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := runPublicDocsImport(t, svc, site.URL, workspaceID, space.ID, userID, "published")
-	if job.Status != model.DocsImportStatusFailed || job.Error == nil || !strings.Contains(*job.Error, "not an Intercom help center") {
+	if job.Status != model.DocsImportStatusFailed || job.Error == nil || !strings.Contains(*job.Error, "no help center that can be imported") {
 		t.Fatalf("job: status=%s error=%v", job.Status, job.Error)
 	}
 	var documents, collections int64

@@ -13,7 +13,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-// Support writes for teammates and automation accounts: status, priority,
+// Support writes for teammates and service accounts: status, priority,
 // snooze, replies and new conversations. They run through the same inbox
 // methods as the web app, so permissions, inbox access, timeline events and
 // delivery behave the same.
@@ -162,7 +162,7 @@ func (s *InternalCommandService) executeSupportUnsnoozeConversation(ctx context.
 func requireTeammateActor(meta model.InternalCommandContext) (string, error) {
 	actor := strings.TrimSpace(meta.ActorID)
 	if actor == "" {
-		return "", errCommandInput("replies need a teammate or automation account to send them")
+		return "", errCommandInput("replies need a teammate or service account to send them")
 	}
 	return actor, nil
 }

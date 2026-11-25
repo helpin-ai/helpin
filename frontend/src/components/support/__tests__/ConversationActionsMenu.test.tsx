@@ -7,6 +7,12 @@ import type { SupportConversation } from '@/lib/pmTypes'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { ConversationActionsMenu } from '../ConversationActionsMenu'
 
+// The menu asks for the conversation's Slack thread; these tests have none.
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQuery: () => ({ data: undefined }),
+}))
+
 vi.mock('../SupportAIControl', () => ({ useSupportAIControl: () => ({ item: null, confirmation: null }) }))
 
 const mockUpdateStatusMutate = vi.fn()

@@ -12,7 +12,7 @@ const service = vi.hoisted(() => ({
   resumePublicHelpCenter: vi.fn(),
 }))
 const access = vi.hoisted(() => ({ permissions: ['docs.import'] as string[] }))
-vi.mock('@/lib/services/docsImportService', () => ({ docsImportService: service, PUBLIC_HELP_CENTER_IMPORT_SOURCE: 'intercom_public' }))
+vi.mock('@/lib/services/docsImportService', () => ({ docsImportService: service }))
 vi.mock('@/hooks/queries/useSession', () => ({ useWorkspaceAccess: () => ({ data: { permissions: access.permissions }, isLoading: false }) }))
 vi.mock('@/hooks/queries', () => ({
   useDocsSpaces: () => ({ data: [
@@ -67,7 +67,7 @@ describe('PublicHelpCenterImportWizard', () => {
   let container: HTMLDivElement
   let unmount: () => void
 
-  function render(props: { activeJobId?: string } = {}) {
+  function render(props: { activeJobId?: string; zendesk?: boolean } = {}) {
     container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -106,10 +106,10 @@ describe('PublicHelpCenterImportWizard', () => {
     expect(button('Check address')!.disabled).toBe(true)
     await checkAddress('  docs.acme.com ')
 
-    expect(service.previewPublicHelpCenter).toHaveBeenCalledWith('ws', 'docs.acme.com')
+    expect(service.previewPublicHelpCenter).toHaveBeenCalledWith('ws', 'docs.acme.com', undefined)
     const found = container.querySelector('[data-testid="public-help-center-preview"]')!
     expect(found.textContent).toContain('Acme Help Center')
-    expect(found.textContent).toContain('124 articles in 9 collections at docs.acme.com/en')
+    expect(found.textContent).toContain('124 articles in 9 collections at docs.acme.com/en · Intercom')
     expect(found.textContent).toContain('1 collection is nested deeper than Helpin supports; its articles move into the collection above.')
     // A long collection list starts collapsed.
     expect(found.querySelectorAll('li')).toHaveLength(6)
@@ -139,12 +139,12 @@ describe('PublicHelpCenterImportWizard', () => {
   })
 
   it('shows why an address was refused and keeps it for correction', async () => {
-    service.previewPublicHelpCenter.mockResolvedValue({ data: null, error: 'This address is not an Intercom help center.' })
+    service.previewPublicHelpCenter.mockResolvedValue({ data: null, error: 'No help center that can be imported was found at this address.' })
     render()
     await checkAddress('https://example.com')
 
     const alert = container.querySelector('[role="alert"]')!
-    expect(alert.textContent).toBe('This address is not an Intercom help center.')
+    expect(alert.textContent).toBe('No help center that can be imported was found at this address.')
     expect(addressInput().value).toBe('https://example.com')
     expect(addressInput().getAttribute('aria-invalid')).toBe('true')
     expect(addressInput().getAttribute('aria-describedby')).toBe(alert.id)
@@ -154,6 +154,58 @@ describe('PublicHelpCenterImportWizard', () => {
     // Typing clears the error.
     act(() => setInput(addressInput(), 'https://help.example.com'))
     expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('asks for a Zendesk token when the help center refuses to be read without one', async () => {
+    service.previewPublicHelpCenter.mockResolvedValueOnce({ data: null, error: 'This Zendesk help center cannot be read without signing in.', status: 428 })
+    render()
+    await checkAddress('acme.zendesk.com')
+
+    expect(container.querySelector('[role="alert"]')!.textContent).toContain('cannot be read without signing in')
+    const email = container.querySelector('#public-help-center-email') as HTMLInputElement
+    const token = container.querySelector('#public-help-center-token') as HTMLInputElement
+    expect(token.type).toBe('password')
+    // The address alone was already refused, so checking again waits for both fields.
+    expect(button('Check address')!.disabled).toBe(true)
+
+    act(() => setInput(email, ' admin@acme.com '))
+    act(() => setInput(token, 'secret'))
+    service.previewPublicHelpCenter.mockResolvedValue({ data: { ...preview, platform: 'zendesk' }, error: null })
+    await act(async () => {
+      container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await flush()
+    expect(service.previewPublicHelpCenter).toHaveBeenLastCalledWith('ws', 'acme.zendesk.com', { email: 'admin@acme.com', api_token: 'secret' })
+    const found = container.querySelector('[data-testid="public-help-center-preview"]')!
+    expect(found.textContent).toContain('· Zendesk')
+    // Only Intercom has public articles outside every collection.
+    expect(found.textContent).not.toContain('Other articles')
+
+    await act(async () => button('Import 124 articles')!.click())
+    await flush()
+    expect(service.startPublicHelpCenter).toHaveBeenCalledWith('ws', {
+      url: 'https://docs.acme.com/en/', import_status: 'published', new_space_name: 'Acme Help Center', email: 'admin@acme.com', api_token: 'secret',
+    })
+  })
+
+  it('opens as the Zendesk import with the token fields ready but optional', async () => {
+    service.previewPublicHelpCenter.mockResolvedValue({ data: { ...preview, platform: 'zendesk' }, error: null })
+    render({ zendesk: true })
+    expect(container.textContent).toContain('Import from Zendesk')
+    const email = container.querySelector('#public-help-center-email') as HTMLInputElement
+    const token = container.querySelector('#public-help-center-token') as HTMLInputElement
+
+    // A public help center is read without a token.
+    await checkAddress('acme.zendesk.com')
+    expect(service.previewPublicHelpCenter).toHaveBeenLastCalledWith('ws', 'acme.zendesk.com', undefined)
+
+    act(() => setInput(email, 'admin@acme.com'))
+    act(() => setInput(token, 'secret'))
+    await checkAddress('acme.zendesk.com')
+    expect(service.previewPublicHelpCenter).toHaveBeenLastCalledWith('ws', 'acme.zendesk.com', { email: 'admin@acme.com', api_token: 'secret' })
+    // The fields stay while the address is edited.
+    act(() => setInput(addressInput(), 'other.zendesk.com'))
+    expect(container.querySelector('#public-help-center-token')).not.toBeNull()
   })
 
   it('hides a preview once the address is edited', async () => {

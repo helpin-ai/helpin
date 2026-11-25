@@ -35,7 +35,7 @@ describe('workspace setup handoff', () => {
   expect(workspaceSetupAccess(['sales_crm']).scopes).toContain('helpin.crm.write');
   expect(new Set(support.scopes).size).toBe(support.scopes.length);
  });
- it('adds setup permissions without removing other grants or changing automation account policy', () => {
+ it('adds setup permissions without removing other grants or changing service account policy', () => {
   const required = workspaceSetupAccess(['internal_docs']);
   const dashboard = {platform_enabled:true,workspace_setup_available:true,can_manage:true,policy:{enabled:true,enforce_read_only:true,service_accounts_enabled:false,allowed_toolsets:['context','crm'],allowed_scopes:['helpin.context.read','helpin.crm.read']},available_toolsets:[...required.toolsets,'crm'],available_scopes:[...required.scopes,'helpin.crm.read']} as MCPDashboard;
   expect(workspaceSetupNeedsAccess(dashboard,['internal_docs'])).toBe(true);

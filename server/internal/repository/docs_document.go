@@ -35,6 +35,19 @@ func (r *DocsDocumentRepository) docOrderBy() string {
 	return "position ASC, created_at ASC, id ASC"
 }
 
+// LatestTitleInSpace returns the title of the document created most recently
+// in a space, or "" when the space is empty.
+func (r *DocsDocumentRepository) LatestTitleInSpace(ctx context.Context, workspaceID, spaceID string) (string, error) {
+	var titles []string
+	err := r.db.WithContext(ctx).Model(&model.DocsDocument{}).
+		Where("workspace_id = ? AND space_id = ?", workspaceID, spaceID).
+		Order("created_at DESC").Limit(1).Pluck("title", &titles).Error
+	if err != nil || len(titles) == 0 {
+		return "", err
+	}
+	return titles[0], nil
+}
+
 // LastSortKeyInBucket returns the highest sort_key among docs in the
 // given bucket (space + collection), or "" if the bucket is empty.
 func (r *DocsDocumentRepository) LastSortKeyInBucket(ctx context.Context, spaceID string, collectionID *string) (string, error) {

@@ -23,6 +23,11 @@ const (
 	// most; each one starts an agent run.
 	helpAssistantPerMinutePerIP = 10
 	helpAssistantPerDayPerIP    = 100
+
+	onboardingReadPerMinutePerIP   = 6
+	onboardingReadPerDayPerIP      = 30
+	onboardingAnswerPerMinutePerIP = 3
+	onboardingAnswerPerDayPerIP    = 12
 )
 
 // HelpcenterAnswerRateLimit limits POSTs to the public answer endpoints.
@@ -33,6 +38,18 @@ func HelpcenterAnswerRateLimit(redisClient *redis.Client) func(http.Handler) htt
 // HelpAssistantRateLimit limits questions to the help assistant.
 func HelpAssistantRateLimit(redisClient *redis.Client) func(http.Handler) http.Handler {
 	return ipRateLimit(redisClient, "hca:rl", helpAssistantPerMinutePerIP, helpAssistantPerDayPerIP)
+}
+
+// OnboardingReadRateLimit limits the public onboarding previews, which each
+// read a visitor's website and help center and may cost one AI call.
+func OnboardingReadRateLimit(redisClient *redis.Client) func(http.Handler) http.Handler {
+	return ipRateLimit(redisClient, "onb:rl", onboardingReadPerMinutePerIP, onboardingReadPerDayPerIP)
+}
+
+// OnboardingAnswerRateLimit limits the public onboarding preview answers,
+// which each cost an AI call.
+func OnboardingAnswerRateLimit(redisClient *redis.Client) func(http.Handler) http.Handler {
+	return ipRateLimit(redisClient, "onba:rl", onboardingAnswerPerMinutePerIP, onboardingAnswerPerDayPerIP)
 }
 
 // ipRateLimit applies per-IP minute and day windows under a key prefix.

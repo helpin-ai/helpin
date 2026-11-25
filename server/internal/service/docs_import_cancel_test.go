@@ -142,3 +142,34 @@ func TestDocsImportJobEndpointsHideOtherWorkspaces(t *testing.T) {
 		t.Fatalf("GetRedirectMap(owner workspace) = %s, %v", data, err)
 	}
 }
+
+type recordingSpaceIndexer struct{ queued []string }
+
+func (r *recordingSpaceIndexer) QueueSpaceSync(_ context.Context, workspaceID, spaceID string) error {
+	r.queued = append(r.queued, workspaceID+"/"+spaceID)
+	return nil
+}
+
+func TestDocsImportCloseJobQueuesIndexingOnlyWhenDone(t *testing.T) {
+	svc, repo := newDocsImportCancelTestService(t)
+	indexer := &recordingSpaceIndexer{}
+	svc.SetSpaceIndexer(indexer)
+	space := "space-1"
+	for _, id := range []string{"done-1", "failed-1"} {
+		if err := repo.Create(context.Background(), &model.DocsImportJob{
+			ID: id, WorkspaceID: "workspace-1", SpaceID: &space, Status: model.DocsImportStatusRunning,
+			Failures: []byte("[]"), Config: []byte("{}"), StartedBy: "user-1",
+		}); err != nil {
+			t.Fatalf("create import job: %v", err)
+		}
+	}
+	if err := svc.closeJob(context.Background(), "done-1", model.DocsImportStatusDone, nil); err != nil {
+		t.Fatalf("closeJob(done) error = %v", err)
+	}
+	if err := svc.closeJob(context.Background(), "failed-1", model.DocsImportStatusFailed, nil); err != nil {
+		t.Fatalf("closeJob(failed) error = %v", err)
+	}
+	if len(indexer.queued) != 1 || indexer.queued[0] != "workspace-1/space-1" {
+		t.Errorf("queued = %v, want only the finished import's space", indexer.queued)
+	}
+}

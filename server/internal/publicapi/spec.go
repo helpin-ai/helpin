@@ -20,7 +20,7 @@ const apiDescription = `The Helpin API lets you read and change your workspace's
 
 ## Authentication
 
-Create an **automation account** in Helpin under **Settings → MCP access → Service accounts** (a workspace manager must first allow automation accounts in the Permissions tab), choose its scopes, toolsets, and whether it is read-only, then create a token and copy it (it starts with ` + "`hmp_`" + ` and is shown once). Send it on every request:
+Create a **service account** in Helpin under **Settings → API & MCP access → Service accounts** (a workspace manager must first allow service accounts in the Permissions tab), choose its scopes, toolsets, and whether it is read-only, then create a token and copy it (it starts with ` + "`hmp_`" + ` and is shown once). Send it on every request:
 
 ` + "```" + `
 Authorization: Bearer hmp_...
@@ -111,7 +111,7 @@ func BuildSpec(serverURL string) (map[string]any, error) {
 					"type":         "http",
 					"scheme":       "bearer",
 					"bearerFormat": "Helpin service token (hmp_…)",
-					"description":  "A workspace-bound automation-account token created in Settings → MCP access → Service accounts.",
+					"description":  "A workspace-bound service-account token created in Settings → API & MCP access → Service accounts.",
 				},
 			},
 			"parameters": map[string]any{

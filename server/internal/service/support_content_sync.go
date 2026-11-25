@@ -206,6 +206,7 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		keepURLs      []string
 		indexedPages  int
 		indexedChunks int
+		embedFailures int
 	)
 
 	if err := s.sourceRepo.UpdateSyncWarning(ctx, source.ID, nil); err != nil {
@@ -272,6 +273,7 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "skipping page: embedding failed", "page_id", savedPage.ID, "url", savedPage.URL, "error", err)
+			embedFailures++
 			keepPageIDs = append(keepPageIDs, savedPage.ID)
 			keepURLs = append(keepURLs, savedPage.URL)
 			return nil
@@ -361,6 +363,10 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 	crawledCount, err := s.crawler.Crawl(ctx, *source, onPage)
 	if err == nil && crawledCount == 0 && len(skippedURLs) == 0 {
 		err = errors.New("no pages could be retrieved; check the website URL and crawler access")
+	}
+	// A sync that read pages and indexed none is not ready: the AI has nothing to answer from.
+	if err == nil && indexedPages == 0 && embedFailures > 0 {
+		err = fmt.Errorf("%d pages were read but none could be indexed; check the embedding model connection, then sync again", embedFailures)
 	}
 	if len(skippedURLs) > 0 {
 		warning := fmt.Sprintf("%d URLs skipped because the site disallows crawling. Check robots.txt and the crawler access instructions before re-syncing.", len(skippedURLs))
