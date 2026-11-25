@@ -167,13 +167,21 @@ func (s *SlackService) feedStopReason(ctx context.Context, conv *model.SupportCo
 	case conv.MergedIntoID != nil:
 		return "This conversation was merged into another conversation in Helpin."
 	}
+	name := strings.TrimSpace(derefString(conv.MailboxName))
+	if key == "shared" {
+		name = "Shared Inbox"
+	}
+	destination := "an inbox this channel doesn’t follow"
+	if name != "" {
+		destination = fmt.Sprintf("“%s”, which this channel doesn’t follow", truncate(name, 2800))
+	}
 	event, err := s.repo.FeedMoveEvent(ctx, conv.WorkspaceID, conv.ID, key, followed)
 	if err != nil {
 		// Remove the stale card even when routing history is unavailable.
 		slog.WarnContext(ctx, "could not attribute Slack inbox move", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
 	}
 	if event != nil {
-		const move = " moved this conversation to an inbox this channel doesn’t follow."
+		move := " moved this conversation to " + destination + "."
 		if event.ActorUserID != nil {
 			return "A teammate" + move
 		}
@@ -186,7 +194,7 @@ func (s *SlackService) feedStopReason(ctx context.Context, conv *model.SupportCo
 			}
 		}
 	}
-	return "This conversation is in an inbox this channel doesn’t follow."
+	return "This conversation is in " + destination + "."
 }
 
 func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInboundJob) error {

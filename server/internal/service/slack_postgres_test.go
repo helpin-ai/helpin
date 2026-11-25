@@ -746,19 +746,19 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 		t.Fatal("shared another message after Slack Connect change")
 	}
 	external = false
-	box := model.SupportMailbox{WorkspaceID: f.workspace, Name: "Private", Handle: "private", CreatedByID: f.userID}
+	box := model.SupportMailbox{WorkspaceID: f.workspace, Name: "Partner requests", Handle: "partners", CreatedByID: f.userID}
 	if err := f.db.Create(&box).Error; err != nil {
 		t.Fatal(err)
 	}
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", box.ID, conv)
 	deliver(nil)
 	link := "https://helpin.example/w/ops-" + f.workspace[:8] + "/support/" + conv
-	checkNotice := func(reason string) {
+	checkNotice := func(prefix string) {
 		t.Helper()
 		update := updates[len(updates)-1]
 		body := fmt.Sprint(update["blocks"])
-		if update["ts"] != trow.RootTS || !strings.Contains(body, reason) || !strings.Contains(body, "Updates have stopped in this thread.") ||
-			!strings.Contains(fmt.Sprint(update["text"]), reason) || !strings.Contains(fmt.Sprint(update["text"]), link) {
+		notice := fmt.Sprintf("%s “%s”, which this channel doesn’t follow. Updates have stopped in this thread.", prefix, box.Name)
+		if update["ts"] != trow.RootTS || !strings.Contains(body, notice) || update["text"] != notice+"\n"+link {
 			t.Fatalf("wrong root notice: %+v", update)
 		}
 		var buttons []any
@@ -770,11 +770,11 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 		}
 		if len(buttons) != 1 || buttons[0].(map[string]any)["url"] != link || !strings.Contains(body, "Open in Helpin") ||
 			update["unfurl_links"] != false || update["unfurl_media"] != false ||
-			strings.Contains(fmt.Sprint(update), "Checkout issue") || strings.Contains(fmt.Sprint(update), box.Name) {
-			t.Fatalf("expected only the original conversation link and no customer or destination details: %+v", update)
+			strings.Contains(fmt.Sprint(update), "Checkout issue") {
+			t.Fatalf("expected the original conversation link without customer details: %+v", update)
 		}
 	}
-	checkNotice("This conversation is in an inbox this channel doesn’t follow.")
+	checkNotice("This conversation is in")
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
 	deliver(nil)
 	if len(posts) != 2 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "Checkout issue") {
@@ -803,9 +803,9 @@ func testSlackFeedMoveNotices(t *testing.T, f *outboxFixture, conv, boxID string
 		event, source, reason string
 		actor                 *string
 	}{
-		{"auto_moved", "ai", "Helpin AI moved this conversation", nil},
-		{"auto_moved", "rule", "A routing rule moved this conversation", nil},
-		{"corrected", "ai", "A teammate moved this conversation", &f.userID},
+		{"auto_moved", "ai", "Helpin AI moved this conversation to", nil},
+		{"auto_moved", "rule", "A routing rule moved this conversation to", nil},
+		{"corrected", "ai", "A teammate moved this conversation to", &f.userID},
 	} {
 		mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", boxID, conv)
 		ev := model.SupportConversationTriageEvent{WorkspaceID: f.workspace, ConversationID: conv, EventType: tc.event, Source: &tc.source, ToMailboxID: &boxID, ActorUserID: tc.actor}
@@ -822,7 +822,7 @@ func testSlackFeedMoveNotices(t *testing.T, f *outboxFixture, conv, boxID string
 	}
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", boxID, conv)
 	deliver(nil)
-	checkNotice("This conversation is in an inbox this channel doesn’t follow.")
+	checkNotice("This conversation is in")
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
 	deliver(nil)
 }
