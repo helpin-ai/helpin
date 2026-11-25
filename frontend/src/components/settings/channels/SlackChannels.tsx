@@ -20,6 +20,7 @@ import {
 } from '@/components/design-system/quiet'
 import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker'
 import { SlackIcon } from '@/lib/icons'
+import { slackChannelLabel } from '@/lib/supportChannels'
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useEpics } from '@/hooks/queries/useEpics'
 import { useInboxScopes } from '@/hooks/queries/useSupport'
@@ -210,7 +211,7 @@ export function SlackChannels({
                 className="flex h-auto w-full items-center justify-between gap-3 rounded-none border-b py-3 text-left last:border-b-0"
               >
                 <span className="truncate font-medium">
-                  #{route.channel_name}
+                  {slackChannelLabel(route.channel_name)}
                 </span>
                 <span className="shrink-0 text-xs font-normal text-muted-foreground">
                   {route.purpose === 'inbox' ? inboxNames(route) + ' → Slack' : route.purpose === 'mixed' ? 'Customer requests on demand' : purposes[route.purpose]}
@@ -284,9 +285,10 @@ function RouteDialog({
   const options = (items: { id: string; name: string }[] = []) =>
     items.map((item) => ({ value: item.id, label: item.name }))
   const selected = channels.data?.find(c => c.id === route.channel_id)
+  const isSlackConnectIntake = selected?.is_ext_shared && (route.purpose === 'support' || route.purpose === 'mixed')
   const inboxOptions = [{ value: 'shared', label: 'Main inbox' }, ...options(scopes?.mailboxes)].map(option => {
     const other = rules.find(rule => rule.channel_id !== initial.channel_id && rule.purpose === 'inbox' && rule.mailbox_ids?.includes(option.value))
-    return other ? { ...option, disabled: true, label: option.label + ' · #' + other.channel_name } : option
+    return other ? { ...option, disabled: true, label: option.label + ' · ' + slackChannelLabel(other.channel_name) } : option
   })
   const restrictedInPublic = route.purpose === 'inbox' && selected && !selected.is_private && route.mailbox_ids?.some(id => id !== 'shared')
   const readOnly = initial.purpose === 'inbox' && !!initial.channel_id && !canManageFeed
@@ -298,7 +300,7 @@ function RouteDialog({
         if (!open && !pending) onClose()
       }}
     >
-      <DialogContent>
+      <DialogContent className={isSlackConnectIntake ? 'grid-cols-1 sm:max-w-2xl' : undefined}>
         <DialogHeader>
           <DialogTitle>
             {initial.channel_id ? 'Edit channel rule' : 'Add channel rule'}
@@ -319,7 +321,7 @@ function RouteDialog({
           <QuietFilterDropdown label="Slack channel" value={route.channel_id} emptyLabel="Choose channel"
             disabled={!!initial.channel_id}
             options={(channels.data ?? []).filter(c => !(c.is_ext_shared || c.is_pending_ext_shared) || route.purpose === 'support' || route.purpose === 'mixed')
-              .map(c => ({value:c.id, label:'#' + c.name + (c.is_ext_shared ? ' · Slack Connect' : c.is_private ? ' · Private' : ' · Public')}))}
+              .map(c => ({value:c.id, label:slackChannelLabel(c.name) + (c.is_ext_shared ? ' · Slack Connect' : c.is_private ? ' · Private' : ' · Public')}))}
             onChange={channel_id => setRoute({ ...route, channel_id })} />
         } />
         {!initial.channel_id && <details className="text-xs text-muted-foreground">
@@ -330,7 +332,7 @@ function RouteDialog({
         {route.purpose === 'inbox' && selected && !selected.is_private &&
           <p className="text-xs text-muted-foreground">{restrictedInPublic
             ? 'Team inboxes require a private Slack channel whose members have access to those inboxes.'
-            : `Everyone with access to #${selected.name} can read shared conversations, files and internal notes.`}</p>}
+            : `Everyone with access to ${slackChannelLabel(selected.name)} can read shared conversations, files and internal notes.`}</p>}
         {(route.purpose === 'support' || route.purpose === 'mixed') && <QuietPropertyRow label="Create a conversation" value={
           <QuietSelect label="Create a conversation" value={route.purpose}
             options={[{value:'support', label:'Every new customer thread'}, {value:'mixed', label:'Only on request'}]}

@@ -525,7 +525,7 @@ export const MessageBubble = memo(function MessageBubble({
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const hasDisplayContent = visibleContent.trim().length > 0;
-  const showBubble = !!visibleContent || fileAttachments.length > 0 || imageAttachments.length > 0 || linkPreviews.length > 0;
+  const showBubble = !!visibleContent || fileAttachments.length > 0 || imageAttachments.length > 0 || linkPreviews.length > 0 || !!slackAttribution;
   const hasEmailBody = translatedContent === undefined && message.via_channel === 'email' && !!message.html_body;
   const renderEmailBodyAsForwardedText = hasEmailBody && !!forwardedDisplayContent;
 
@@ -975,7 +975,14 @@ export const MessageBubble = memo(function MessageBubble({
   const showStandaloneEmailBadge = isCustomer && hasEmailBadge;
   const showSlackSource = isCustomer && !message.is_internal && message.via_channel === 'slack';
   const showTelegramSource = isCustomer && !message.is_internal && message.via_channel === 'telegram';
-  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource || !!slackAttribution || showTelegramSource;
+  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource || showTelegramSource;
+  const timePosition = translationFooter ? 'ml-auto shrink-0' : 'float-right ml-2 mt-1';
+  const replyTimestamp = slackAttribution ? (
+    <span className={`${timePosition} inline-flex items-center gap-1 whitespace-nowrap leading-4 text-muted-foreground`}>
+      {slackAttribution}
+      {renderBubbleTime()}
+    </span>
+  ) : renderBubbleTime(`${timePosition} text-muted-foreground`);
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
@@ -1058,8 +1065,8 @@ export const MessageBubble = memo(function MessageBubble({
                       {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
                       {translationFooter ? <div data-slot="support-message-footer" className="mt-1 flex items-end justify-between gap-3">
                         {translationFooter}
-                        {renderBubbleTime('ml-auto shrink-0 text-muted-foreground')}
-                      </div> : renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
+                        {replyTimestamp}
+                      </div> : replyTimestamp}
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top">
@@ -1081,7 +1088,6 @@ export const MessageBubble = memo(function MessageBubble({
           {message.pending_send && <PendingSendStatus message={message}/>}
           {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
             <div className="mt-0.5">
-              {slackAttribution}
               {showSlackSource && <SlackMessageSource workspaceId={message.workspace_id} messageId={message.id} />}
               {showTelegramSource && (
                 <span className="mb-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">

@@ -1,4 +1,5 @@
 import { SlackSourceLabel } from '@/components/support/SlackMessageSource';
+import { slackChannelLabel } from '@/lib/supportChannels';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { ArrowReloadHorizontalIcon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon, PlusSignCircleIcon, MinusSignIcon, BotIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -1105,7 +1106,7 @@ export function CommentThread({
                 </div>
                 {(entry.comment.slack_discussion_channel || entry.comment.slack_permalink) && (
                   <div className="mt-1.5">
-                    <SlackSourceLabel href={entry.comment.slack_permalink} label={entry.comment.slack_discussion_channel ? `Replies sync to #${entry.comment.slack_discussion_channel}` : 'via Slack'} />
+                    <SlackSourceLabel href={entry.comment.slack_permalink} label={entry.comment.slack_discussion_channel ? `Replies sync to ${slackChannelLabel(entry.comment.slack_discussion_channel)}` : 'via Slack'} />
                   </div>
                 )}
               </>

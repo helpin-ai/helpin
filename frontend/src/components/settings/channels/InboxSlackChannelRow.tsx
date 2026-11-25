@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { QuietPropertyRow } from '@/components/design-system/quiet'
 import { useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { slackService } from '@/lib/services/slackService'
+import { slackChannelLabel } from '@/lib/supportChannels'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 export function InboxSlackChannelRow({ workspaceId, mailboxId, compact = false }: {
@@ -22,7 +23,7 @@ export function InboxSlackChannelRow({ workspaceId, mailboxId, compact = false }
   const link = (
     <a className="text-xs text-muted-foreground hover:text-foreground hover:underline"
       href={`/w/${encodeURIComponent(slug)}/settings/external-tools?tab=apps&slack_inbox=${encodeURIComponent(mailboxId)}`}>
-      {compact ? (channel ? `Slack · #${channel.channel_name}` : 'Connect Slack') : (channel ? `#${channel.channel_name} · Manage` : 'Connect channel')}
+      {compact ? (channel ? `Slack · ${slackChannelLabel(channel.channel_name)}` : 'Connect Slack') : (channel ? `${slackChannelLabel(channel.channel_name)} · Manage` : 'Connect channel')}
     </a>
   )
   return compact ? link : <QuietPropertyRow label="Slack channel" value={link} />
