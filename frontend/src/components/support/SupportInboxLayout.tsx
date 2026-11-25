@@ -106,7 +106,7 @@ export function SupportInboxLayout() {
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
   const { data: routingUsage } = useSupportRoutingUsage(workspaceId);
   const { data: inboxScopes, isFetched: inboxScopesFetched } = useInboxScopes(workspaceId);
-  const { data: selectedConversationData, error: selectedConversationError } = useConversation(workspaceId, selectedConversationId);
+  const { data: selectedConversationData, error: selectedConversationError, isFetching: conversationFetching } = useConversation(workspaceId, selectedConversationId);
   const selectedConversationUnavailable = isConversationUnavailableError(selectedConversationError);
   // Never reveal cached detail for a conversation the viewer was just denied.
   const selectedConversation = selectedConversationUnavailable ? undefined : selectedConversationData;
@@ -398,38 +398,36 @@ export function SupportInboxLayout() {
     }
   }, [isMultiPanel, routeConversationId, selectedConversationId, slug, supportRouteSearch, navigate]);
 
-  // A routed conversation can live in another inbox than the URL hint or the
-  // selected team inbox (it moved, or the link carries a stale team_inbox).
-  // Keep the same conversation open and switch the inbox context to where it
-  // lives now, or to the general inbox when that mailbox is not selectable.
-  // Only the first resolution of a routed ID is corrected; a later mismatch
-  // (moved in-session, or an explicit inbox switch) keeps the old behaviour of
-  // closing the thread beside the selected inbox.
-  const routeReconcileRef = useRef<{ conversationId: string; pendingMailboxId: string | null } | null>(null);
+  // On entry, keep the linked thread open in the view that contains it.
+  // Later moves out of the selected mailbox still close the open thread.
+  const routeResolution = useRef<'redirecting' | 'settled' | null>(null);
   useEffect(() => {
-    if (!slug || !routeConversationId || !inboxScopesFetched) return;
+    routeResolution.current = null;
+  }, [routeConversationId, routeSearch]);
+
+  useEffect(() => {
+    if (!slug || !routeConversationId || routeResolution.current === 'redirecting') return;
     // Read the store directly: the URL sync above may have just updated it.
     const current = useSupportInboxStore.getState();
     if (current.selectedConversationId !== routeConversationId) return;
     if (!selectedConversation || selectedConversation.id !== routeConversationId) return;
-    const reconciled = routeReconcileRef.current;
-    if (reconciled?.conversationId === routeConversationId) {
-      // Wait until the correction's navigation has reached the store.
-      if (reconciled.pendingMailboxId !== null) {
-        if (current.selectedMailboxId !== reconciled.pendingMailboxId) return;
-        reconciled.pendingMailboxId = null;
-      }
+    if (routeResolution.current === 'settled') {
       if (!shouldClearConversationForMailbox(current.selectedMailboxId, selectedConversation.mailbox_id)) return;
       selectConversation(null);
       void navigate({ to: '/w/$slug/support', params: { slug }, search: supportRouteSearch, replace: true });
       return;
     }
-    const nextMailboxId = mailboxContextForRoutedConversation(
+    if (conversationFetching) return;
+    const needsSpamView = selectedConversation.status === 'spam' &&
+      !routeSearch.custom_view && !routeSearch.states?.split(',').includes('spam') &&
+      (current.navFilter !== 'spam' || current.selectedMailboxId !== 'all');
+    if (!needsSpamView && !inboxScopesFetched) return;
+    const nextMailboxId = needsSpamView ? 'all' : mailboxContextForRoutedConversation(
       current.selectedMailboxId,
       selectedConversation.mailbox_id,
       inboxScopes?.mailboxes ?? [],
     );
-    routeReconcileRef.current = { conversationId: routeConversationId, pendingMailboxId: nextMailboxId };
+    routeResolution.current = nextMailboxId === null ? 'settled' : 'redirecting';
     if (nextMailboxId === null) return;
 
     void navigate({
@@ -437,7 +435,7 @@ export function SupportInboxLayout() {
       params: { slug, conversationId: routeConversationId },
       hash: location.hash,
       search: buildSupportInboxSearch({
-        navFilter: 'inbox',
+        navFilter: needsSpamView ? 'spam' : 'inbox',
         selectedMailboxId: nextMailboxId,
         statusFilter: 'all',
         searchQuery: '',
@@ -445,7 +443,7 @@ export function SupportInboxLayout() {
       }),
       replace: true,
     });
-  }, [inboxScopes, inboxScopesFetched, location.hash, navigate, routeConversationId, selectConversation, selectedConversation, selectedMailboxId, slug, supportRouteSearch]);
+  }, [conversationFetching, inboxScopes, inboxScopesFetched, location.hash, navigate, routeConversationId, routeSearch, selectConversation, selectedConversation, selectedMailboxId, slug, supportRouteSearch]);
 
   if (!workspace) {
     return <p className="p-4 text-sm text-muted-foreground">Workspace not found.</p>;
