@@ -38,10 +38,11 @@ try {
   async function go(path) {
     await page.goto(origin + '/w/' + workspace.slug + '/' + path)
   }
-  async function shot(file) {
+  async function shot(file, hovered) {
     await page.waitForLoadState('networkidle')
     await page.evaluate(() => document.fonts.ready)
-    await page.mouse.move(0, 0)
+    if (hovered) await hovered.hover()
+    else await page.mouse.move(0, 0)
     if (await page.getByText('This part of Helpin couldn’t load').count()) throw new Error('App error boundary on ' + file)
     if (errors.length) throw new Error(errors.join('\n'))
     await page.screenshot({ path: resolve(output, file + '.png'), animations: 'disabled' })
@@ -50,9 +51,10 @@ try {
   try {
     if (process.env.INBOX_FEED_REVIEW) {
       await go('settings/external-tools?tab=apps')
-      const rule = page.getByRole('button', { name: /#support-desk/ })
+      const rule = page.getByRole('button', { name: 'Edit rule for #support-desk' })
       await rule.waitFor()
       await shot('channel-rules')
+      await shot('channel-rule-hover', rule)
       await rule.click()
       const dialog = page.getByRole('dialog')
       await dialog.getByText('#support-desk', {exact:true}).waitFor()

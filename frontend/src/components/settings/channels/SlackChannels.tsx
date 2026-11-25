@@ -245,24 +245,35 @@ export function SlackChannels({
                 Add rule
               </Button>
             </div>
-            {data.routes?.map((route) => (
-              <Button
-                key={route.channel_id}
-                variant="ghost"
-                onClick={() => setDraft(route)}
-                className="flex h-auto w-full flex-col items-start gap-1 whitespace-normal rounded-none border-b py-3 text-left last:border-b-0"
-              >
-                <span className="flex max-w-full items-baseline gap-2">
-                  <span className="truncate font-semibold">{slackChannelLabel(route.channel_name)}</span>
-                  {channels.data?.some(channel => channel.id === route.channel_id && channel.is_ext_shared) &&
-                    <span className="shrink-0 text-xs font-normal text-muted-foreground">Slack Connect</span>}
-                </span>
-                <span className="max-w-full text-xs font-normal leading-relaxed text-muted-foreground">
-                  {describeRule(route, inboxName, teams.find(team => team.id === route.team_id)?.name, epics?.find(({ epic }) => epic.id === route.epic_id)?.epic.name)}
-                </span>
-                {hasCRM && route.crm_company_id && <RuleCompany workspaceId={workspaceId} id={route.crm_company_id} />}
-              </Button>
-            ))}
+            {data.routes?.map((route) => {
+              const action = route.purpose === 'inbox' && !canManageFeed ? 'View rule' : 'Edit rule'
+              const channelName = slackChannelLabel(route.channel_name)
+              const descriptionId = `slack-rule-${route.channel_id}-description`
+              return (
+                <Button
+                  key={route.channel_id}
+                  variant="ghost"
+                  aria-label={`${action} for ${channelName}`}
+                  aria-describedby={descriptionId}
+                  aria-haspopup="dialog"
+                  onClick={() => setDraft(route)}
+                  className="flex h-auto w-full items-center justify-between gap-4 whitespace-normal rounded-none border-b py-3 text-left last:border-b-0"
+                >
+                  <span className="flex min-w-0 flex-col items-start gap-1">
+                    <span className="flex max-w-full items-baseline gap-2">
+                      <span className="truncate font-semibold">{channelName}</span>
+                      {channels.data?.some(channel => channel.id === route.channel_id && channel.is_ext_shared) &&
+                        <span className="shrink-0 text-xs font-normal text-muted-foreground">Slack Connect</span>}
+                    </span>
+                    <span id={descriptionId} className="max-w-full text-xs font-normal leading-relaxed text-muted-foreground">
+                      {describeRule(route, inboxName, teams.find(team => team.id === route.team_id)?.name, epics?.find(({ epic }) => epic.id === route.epic_id)?.epic.name)}
+                    </span>
+                    {hasCRM && route.crm_company_id && <RuleCompany workspaceId={workspaceId} id={route.crm_company_id} />}
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-foreground opacity-0 group-hover/button:opacity-100 group-focus-visible/button:opacity-100">{action}</span>
+                </Button>
+              )
+            })}
           </div>
         )}
         {editor && (
@@ -346,17 +357,17 @@ function RouteDialog({
       <DialogContent className="grid-cols-1 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {initial.channel_id ? 'Edit channel rule' : 'Add channel rule'}
+            {readOnly ? 'View channel rule' : initial.channel_id ? 'Edit channel rule' : 'Add channel rule'}
           </DialogTitle>
         </DialogHeader>
         <QuietPropertyRow label="Purpose" value={
-          <QuietSelect label="Channel purpose" value={route.purpose === 'mixed' ? 'support' : route.purpose}
-            options={(['support', 'inbox', 'pm'] as const).filter(purpose => purpose === 'pm' ? hasPM : hasSupport && (purpose !== 'inbox' || canManageFeed))
+          <QuietSelect label="Channel purpose" value={route.purpose === 'mixed' ? 'support' : route.purpose} disabled={readOnly}
+            options={(['support', 'inbox', 'pm'] as const).filter(purpose => readOnly ? purpose === initial.purpose : purpose === 'pm' ? hasPM : hasSupport && (purpose !== 'inbox' || canManageFeed))
               .map(value => ({ value, label: purposes[value], tooltip: purposeTooltips[value] }))}
             onChange={value => setRoute({ ...route, purpose: value as SlackPurpose, channel_id: initial.channel_id || '' })} />
         } />
         {route.purpose === 'inbox' && <QuietPropertyRow label="Inboxes" value={
-          <QuietFilterDropdown label="Inboxes" multiple showSelectedNames selected={route.mailbox_ids ?? []}
+          <QuietFilterDropdown label="Inboxes" multiple showSelectedNames selected={route.mailbox_ids ?? []} disabled={readOnly}
             options={inboxOptions} emptyLabel="Choose inboxes"
             onChange={mailbox_ids => setRoute({ ...route, mailbox_ids })} />
         } />}
@@ -443,7 +454,7 @@ function RouteDialog({
             }
           />
         )}
-        {hasCRM && route.purpose !== 'pm' && selected?.is_ext_shared && (
+        {hasCRM && (route.purpose === 'support' || route.purpose === 'mixed') && selected?.is_ext_shared && (
           <QuietPropertyRow
             label={<span title="Default CRM company for new conversations">CRM company</span>}
             value={
@@ -469,10 +480,10 @@ function RouteDialog({
           </p>
         )}
         <DialogFooter>
-          {initial.channel_id && (
+          {initial.channel_id && !readOnly && (
             <Button
               variant="ghost"
-              disabled={pending || readOnly}
+              disabled={pending}
               onClick={async () => {
                 if (
                   await confirm({
@@ -489,14 +500,14 @@ function RouteDialog({
             </Button>
           )}
           <Button variant="ghost" onClick={onClose} disabled={pending}>
-            Cancel
+            {readOnly ? 'Close' : 'Cancel'}
           </Button>
-          <Button
-            disabled={!route.channel_id || pending || readOnly || !!restrictedInPublic || (route.purpose === 'inbox' && !route.mailbox_ids?.length)}
+          {!readOnly && <Button
+            disabled={!route.channel_id || pending || !!restrictedInPublic || (route.purpose === 'inbox' && !route.mailbox_ids?.length)}
             onClick={() => save.mutate()}
           >
             Save rule
-          </Button>
+          </Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
