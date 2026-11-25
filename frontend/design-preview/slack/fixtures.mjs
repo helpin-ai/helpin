@@ -14,7 +14,7 @@ const members = people.map((person, i) => ({
 }))
 const team = { id: 'payments', workspace_id: ws, name: 'Payments', key: 'PAY', handle: 'payments', team_type: 'engineering', color: '#4674c5' }
 const epic = { id: 'checkout', team_id: team.id, name: 'Checkout reliability', display_id: 18, workspace_id: ws, ...timestamps }
-const mailbox = { id: 'support', name: 'Customer support', handle: 'support', icon: 'inbox', is_shared: true, is_default: false, active: true, unread_count: 3, total_count: 8 }
+const mailbox = { id: 'support', workspace_id: ws, name: 'Customer support', handle: 'support', icon: 'inbox', is_shared: true, is_default: false, active: true, unread_count: 3, total_count: 8 }
 const billingMailbox = { ...mailbox, id: 'billing', name: 'Billing', handle: 'billing' }
 const routes = [
   { channel_id: 'C3', channel_name: 'support-desk', purpose: 'inbox', mailbox_ids: [mailbox.id, billingMailbox.id] },

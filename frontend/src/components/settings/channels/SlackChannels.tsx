@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useQuery, useQueryClient, useMutation, type UseQueryResult } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -56,34 +56,35 @@ const errorText = (error: unknown) =>
   error instanceof Error ? error.message : 'Could not update Slack settings'
 
 const inboxList = new Intl.ListFormat('en', { type: 'disjunction' })
+const ruleNameClass = 'font-semibold text-foreground'
+const entityWords = { inbox: /\binbox(?:es)?\b/i, team: /\bteams?\b/i, epic: /\bepics?\b/i }
+
+function ruleDestination(kind: keyof typeof entityWords, name?: string) {
+  if (!name) return `the selected ${kind}`
+  return <>the <strong className={ruleNameClass}>{name}</strong>{!entityWords[kind].test(name) && ` ${kind}`}</>
+}
 
 function describeRule(route: SlackRoute, inboxName: (id?: string | null) => string | undefined, team?: string, epic?: string) {
   switch (route.purpose) {
     case 'support':
-      return `Each new customer thread opens a conversation in ${inboxName(route.mailbox_id) ?? 'the selected inbox'}.`
+      return <>Each new customer thread opens a conversation in {ruleDestination('inbox', inboxName(route.mailbox_id))}.</>
     case 'mixed':
-      return `Use “Create support request” on a Slack message to open a conversation in ${inboxName(route.mailbox_id) ?? 'the selected inbox'}.`
+      return <>Use “Create support request” on a Slack message to open a conversation in {ruleDestination('inbox', inboxName(route.mailbox_id))}.</>
     case 'inbox': {
-      const names = (route.mailbox_ids ?? []).map(id => inboxName(id))
-      const inboxes = names.length && names.every((name): name is string => !!name)
-        ? inboxList.format(names) : names.length === 1 ? 'the selected inbox' : 'the selected inboxes'
-      return `Each new conversation in ${inboxes} gets its own thread here.`
+      const inboxes = inboxList.formatToParts(route.mailbox_ids ?? []).map((part, index) => (
+        <Fragment key={index}>{part.type === 'element' ? ruleDestination('inbox', inboxName(part.value)) : part.value}</Fragment>
+      ))
+      return <>Each new conversation in {inboxes.length ? inboxes : 'the selected inboxes'} gets its own thread here.</>
     }
-    case 'pm': {
-      const defaults = [
-        route.team_id && (team ? `the ${team} team` : 'the selected team'),
-        route.epic_id && (epic ? `the ${epic} epic` : 'the selected epic'),
-      ].filter(Boolean)
-      return defaults.length
-        ? `Tasks created here default to ${defaults.join(' and ')}.`
-        : 'Create and follow Helpin tasks here. Choose a team when creating a task.'
-    }
+    case 'pm':
+      if (!route.team_id && !route.epic_id) return 'Create and follow Helpin tasks here. Choose a team when creating a task.'
+      return <>Tasks created here default to {route.team_id && ruleDestination('team', team)}{route.team_id && route.epic_id && ' and '}{route.epic_id && ruleDestination('epic', epic)}.</>
   }
 }
 
 function RuleCompany({ workspaceId, id }: { workspaceId: string; id: string }) {
   const { data } = useCompany(workspaceId, id)
-  return data?.name ? <span className="text-xs font-normal text-muted-foreground">Default company · {data.name}</span> : null
+  return data?.name ? <span className="text-xs font-normal text-muted-foreground">Default company · <strong className={ruleNameClass}>{data.name}</strong></span> : null
 }
 
 export function SlackChannels({
@@ -252,7 +253,7 @@ export function SlackChannels({
                 className="flex h-auto w-full flex-col items-start gap-1 whitespace-normal rounded-none border-b py-3 text-left last:border-b-0"
               >
                 <span className="flex max-w-full items-baseline gap-2">
-                  <span className="truncate font-medium">{slackChannelLabel(route.channel_name)}</span>
+                  <span className="truncate font-semibold">{slackChannelLabel(route.channel_name)}</span>
                   {channels.data?.some(channel => channel.id === route.channel_id && channel.is_ext_shared) &&
                     <span className="shrink-0 text-xs font-normal text-muted-foreground">Slack Connect</span>}
                 </span>
@@ -364,12 +365,13 @@ function RouteDialog({
             disabled={!!initial.channel_id}
             options={(channels.data ?? []).filter(c => !(c.is_ext_shared || c.is_pending_ext_shared) || route.purpose === 'support' || route.purpose === 'mixed')
               .map(c => ({value:c.id, label:slackChannelLabel(c.name) + (c.is_ext_shared ? ' · Slack Connect' : '')}))}
+            footer={<div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+              <span>Missing a private channel? Run <code className="whitespace-nowrap">/invite @Helpin</code> there.</span>
+              <button type="button" className="shrink-0 font-medium text-foreground hover:underline disabled:opacity-50" disabled={channels.isFetching}
+                onClick={() => void channels.refetch()}>{channels.isFetching ? 'Refreshing…' : 'Refresh'}</button>
+            </div>}
             onChange={channel_id => setRoute({ ...route, channel_id })} />
         } />
-        {!initial.channel_id && <details className="text-xs text-muted-foreground">
-          <summary className="w-fit cursor-pointer">Missing a private channel?</summary>
-          <p className="mt-1">In Slack, use <code>/invite @Helpin</code>, then <button type="button" className="underline" onClick={() => void channels.refetch()}>refresh channels</button>.</p>
-        </details>}
         {channels.isError && <p role="alert" className="text-xs text-destructive">{errorText(channels.error)}</p>}
         {route.purpose === 'inbox' && <p className="text-xs text-muted-foreground">Thread replies become internal notes. Use “Reply to customer” to send a response.</p>}
         {route.purpose === 'inbox' && selected && !selected.is_private &&

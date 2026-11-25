@@ -58,6 +58,7 @@ interface QuietFilterDropdownBaseProps {
   /** Search matches option labels; enabled by default in both selection modes. */
   searchable?: boolean;
   popoverClassName?: string;
+  footer?: ReactNode;
   /** Hairline border for a filter that stands alone beside content rather than in a filter toolbar. */
   bordered?: boolean;
   /** Name selected items in a form where the field already has a visible label. */
@@ -104,7 +105,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
         <QuietDropdown label={label} open={open} onOpenChange={setOpen} disabled={disabled}
           selected={selected} options={options.map(option => ({ ...option, className: option.labelClassName }))}
           multiple={props.multiple} onSelect={select} searchMode={searchable ? 'auto' : 'off'}
-          searchPlaceholder={`Search ${label.toLowerCase()}…`} contentClassName={popoverClassName}
+          searchPlaceholder={`Search ${label.toLowerCase()}…`} contentClassName={popoverClassName} footer={props.footer}
           trigger={(
             <button
               ref={triggerRef}

@@ -238,11 +238,13 @@ export function TeamInboxDialog({
   open,
   onOpenChange,
   mailbox,
+  showSlackChannel = true,
 }: {
   workspaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mailbox?: SupportMailbox | null;
+  showSlackChannel?: boolean;
 }) {
   const [step, setStep] = useState<DialogStepNumber>(1);
   const [form, setForm] = useState<MailboxFormState>(DEFAULT_FORM);
@@ -750,7 +752,7 @@ export function TeamInboxDialog({
                 </div>
               </div>
 
-              {mailbox && workspaceSlug && <InboxSlackChannelRow workspaceId={workspaceId} mailboxId={mailbox.id} />}
+              {showSlackChannel && mailbox && workspaceSlug && <InboxSlackChannelRow workspaceId={workspaceId} mailboxId={mailbox.id} />}
               <div className="space-y-1.5">
                 <FieldLabel htmlFor="team-inbox-description" tip="An internal note for your team explaining what this inbox is for. Not shown to customers.">
                   Description <span className="font-normal text-muted-foreground">(optional)</span>
