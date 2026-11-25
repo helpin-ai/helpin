@@ -2,7 +2,7 @@ import { InboxAIRepliesCell, InboxSenderCell } from './InboxTableControls';
 import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon, UserGroupIcon } from '@/lib/icons';
+import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, MoreHorizontalIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, SlackIcon, UndoIcon, UserGroupIcon } from '@/lib/icons';
 import {
   DndContext,
   closestCenter,
@@ -22,11 +22,13 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useInboxSlackChannel } from '@/hooks/queries/useInboxSlackChannel';
 import { TeamInboxDialog } from '@/components/support/TeamInboxDialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -655,9 +657,7 @@ function SharedInboxRoutingRow({
       <InboxTableCell label="Sender address"><InboxSenderCell workspaceId={workspaceId} sender={emailSender} /></InboxTableCell>
       <InboxTableCell label="Routing"><NotApplicableCell /></InboxTableCell>
       <InboxTableCell label="AI replies"><InboxAIRepliesCell workspaceId={workspaceId} /></InboxTableCell>
-      <div className="flex items-center justify-center">
-        <NotApplicableCell />
-      </div>
+      <InboxActionsMenu workspaceId={workspaceId} mailboxId="shared" name="Shared inbox" />
     </div>
   );
 }
@@ -733,51 +733,45 @@ function SortableInboxRoutingRow({
         </> : <span className="text-muted-foreground">Disabled</span>}
       </div></InboxTableCell>
       <InboxTableCell label="AI replies"><InboxAIRepliesCell workspaceId={mailbox.workspace_id} mailbox={mailbox} /></InboxTableCell>
-      <div className="flex items-center justify-start gap-1 lg:justify-end">
-        <IconButtonTooltip label="Edit">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(mailbox)} aria-label={`Edit ${mailbox.name}`}>
-            <PencilEdit01Icon className="h-3.5 w-3.5" />
-          </Button>
-        </IconButtonTooltip>
+      <InboxActionsMenu workspaceId={mailbox.workspace_id} mailboxId={mailbox.id} name={mailbox.name}
+        onEdit={() => onEdit(mailbox)}>
         {mailbox.active ? (
-          <IconButtonTooltip label="Archive">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={isArchiving}
-              onClick={() => onArchive(mailbox)}
-              aria-label={`Archive ${mailbox.name}`}
-            >
-              <ArchiveIcon className="h-3.5 w-3.5 text-destructive" />
-            </Button>
-          </IconButtonTooltip>
+          <DropdownMenuItem variant="destructive" disabled={isArchiving} onSelect={() => onArchive(mailbox)}>
+            <ArchiveIcon /> Archive inbox
+          </DropdownMenuItem>
         ) : (
-          <IconButtonTooltip label="Restore">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={isRestoring}
-              onClick={() => onRestore(mailbox)}
-              aria-label={`Restore ${mailbox.name}`}
-            >
-              <UndoIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            </Button>
-          </IconButtonTooltip>
+          <DropdownMenuItem disabled={isRestoring} onSelect={() => onRestore(mailbox)}>
+            <UndoIcon /> Restore inbox
+          </DropdownMenuItem>
         )}
-      </div>
+      </InboxActionsMenu>
     </div>
   );
 }
 
-function IconButtonTooltip({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
-    </Tooltip>
-  );
+function InboxActionsMenu({ workspaceId, mailboxId, name, onEdit, children }: {
+  workspaceId: string; mailboxId: string; name: string; onEdit?: () => void; children?: ReactNode;
+}) {
+  const slack = useInboxSlackChannel(workspaceId, mailboxId);
+  if (!onEdit && !slack) return <InboxTableCell label="Actions"><NotApplicableCell /></InboxTableCell>;
+  return <InboxTableCell label="Actions">
+    <div className="flex @min-[1050px]:justify-center">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for ${name}`}><MoreHorizontalIcon /></Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-max max-w-[calc(100vw-2rem)]">
+          {onEdit && <DropdownMenuItem onSelect={onEdit}><PencilEdit01Icon /> Edit inbox</DropdownMenuItem>}
+          {slack && <DropdownMenuItem asChild>
+            <a href={slack.href}><SlackIcon />{slack.channelName ? 'Manage Slack channel' : 'Connect Slack'}
+              {slack.channelName && <span className="truncate text-xs text-muted-foreground">{slack.channelName}</span>}
+            </a>
+          </DropdownMenuItem>}
+          {children && <><DropdownMenuSeparator />{children}</>}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  </InboxTableCell>;
 }
 
 function ColumnHeaderTooltip({ label, tooltip, className }: { label: string; tooltip?: string; className?: string }) {

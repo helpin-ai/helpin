@@ -52,6 +52,7 @@ type InternalCommandService struct {
 	imageService          *AgentImageService
 	jevDecisions          *JevDecisionService
 	agentService          *AgentService
+	taskFileStore         taskFileStore
 	taskService           *PMTaskService
 	labelService          *PMLabelService
 	commentService        *PMCommentService
@@ -85,7 +86,7 @@ type InternalCommandService struct {
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportAttachmentRepo     *repository.SupportAttachmentRepository
-	supportMediaProvider      dockChatMediaLLM
+	attachmentMediaProvider   dockChatMediaLLM
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
 	supportInboxService       *SupportInboxService
@@ -116,9 +117,9 @@ type InternalCommandService struct {
 	definitions map[string]InternalCommandDefinition
 }
 
-// SetSupportMediaAnalyzer shares the metered media reader with Ask.
-func (s *InternalCommandService) SetSupportMediaAnalyzer(provider dockChatMediaLLM) {
-	s.supportMediaProvider = provider
+// SetAttachmentMediaAnalyzer configures the metered media reader for task and support tools.
+func (s *InternalCommandService) SetAttachmentMediaAnalyzer(provider dockChatMediaLLM) {
+	s.attachmentMediaProvider = provider
 }
 
 func (s *InternalCommandService) SetSupportAttachmentRepository(repo *repository.SupportAttachmentRepository) {

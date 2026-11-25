@@ -58,6 +58,10 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 	switch kind {
 	case "slack_shortcut":
 		workErr = s.slack.shortcutJob(workCtx, job)
+	case SlackFeedActionJob:
+		workErr = s.slack.processFeedAction(workCtx, job)
+	case SlackInboxFeedJob:
+		workErr = s.slack.deliverInboxFeed(workCtx, job)
 	case SlackPMDeliveryJob:
 		workErr = s.slack.deliverDiscussion(workCtx, job)
 	case SlackAgentReplyJob:
@@ -75,6 +79,10 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 	// Shutdown leaves a recoverable lease, never a false completion.
 	if ctx.Err() != nil {
 		return true, ctx.Err()
+	}
+	var slackError *slack.APIError
+	if (kind == SlackFeedActionJob || kind == SlackInboxFeedJob || kind == SlackEventJob) && errors.As(workErr, &slackError) && slackError.Code == "ratelimited" {
+		return true, s.jobs.WaitForResult(ctx, job, s.now().Add(max(time.Second, slackError.RetryAfter)))
 	}
 	if errors.Is(workErr, errSlackAgentPending) {
 		return true, s.jobs.WaitForResult(ctx, job, s.now().Add(3*time.Second))

@@ -151,6 +151,15 @@ describe('renderMarkdown', () => {
     expect(result).toContain('<td><a href="https://example.com" target="_blank" rel="noopener noreferrer">Read more</a></td>');
   });
 
+  it('keeps escaped pipes and empty cells in pasted reply tables', () => {
+    const result = renderMarkdown('| Invoice | Status |\n| --- | --- |\n| **A \\| B** | |');
+    expect(result).toContain('<tr><td><strong>A | B</strong></td><td></td></tr>');
+  });
+
+  it('renders a single-column reply table', () => {
+    expect(renderMarkdown('| Invoice |\n| --- |\n| INV-101 |')).toContain('<tbody><tr><td>INV-101</td></tr></tbody>');
+  });
+
   it('renders horizontal rules', () => {
     const input = 'above\n\n---\n\nbelow';
     const result = renderMarkdown(input);

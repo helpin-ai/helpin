@@ -107,6 +107,15 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 		return err
 	}
 	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
+	if route.Purpose == "inbox" {
+		return s.receiveFeedNote(ctx, a, token, route, m)
+	}
+	if m.ThreadTS != "" {
+		thread, err := s.repo.FeedByRoot(ctx, a.ID, route.ChannelID, m.ThreadTS)
+		if err != nil || thread != nil {
+			return err
+		}
+	}
 	if route.Purpose == "pm" {
 		return s.processPM(ctx, a, token, route, m)
 	}
@@ -168,6 +177,7 @@ func (s *SlackService) receiveSupport(ctx context.Context, a *model.SupportChann
 			return err
 		}
 		e.TeammateUserID = nilIfEmpty(userID)
+		ctx = model.WithSlackSource(ctx, s.sourceURL(ctx, token, m.Destination(), m.TS))
 	}
 	for _, f := range m.Files {
 		e.Files = append(e.Files, channels.InboundFile{FileID: f.ID, FileName: firstNonEmptyString(f.Name, "Attachment"), ContentType: f.Mime, Size: f.Size})
@@ -204,7 +214,7 @@ func (s *SlackService) dispatchSlack(ctx context.Context, a *model.SupportChanne
 	if err != nil {
 		return dispatchOutcome{status: "retry", code: "database"}
 	}
-	if route == nil || route.Purpose == "pm" {
+	if route == nil || route.Purpose == "pm" || route.Purpose == "inbox" {
 		return dispatchOutcome{status: "cancelled", code: "disconnected"}
 	}
 	token, err := s.channels.decryptToken(a)

@@ -22,6 +22,22 @@ type PMAttachment struct {
 
 func (PMAttachment) TableName() string { return "pm_attachments" }
 
+// TaskAttachment describes an uploaded file on a task or one of its comments.
+type TaskAttachment struct {
+	AttachmentID      string    `json:"attachment_id"`
+	TaskID            string    `json:"task_id"`
+	EntityType        string    `json:"entity_type"`
+	EntityID          string    `json:"entity_id"`
+	FileName          string    `json:"file_name"`
+	FileSize          int64     `json:"file_size"`
+	ContentType       string    `json:"content_type"`
+	UploadedByID      string    `json:"uploaded_by_id"`
+	UploadedByAgentID *string   `json:"uploaded_by_agent_id,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	StorageKey        string    `json:"-"`
+	DownloadURL       string    `json:"download_url,omitempty" gorm:"-"`
+}
+
 // CreateAttachmentRequest is the payload for initiating an attachment upload.
 type CreateAttachmentRequest struct {
 	EntityType  string `json:"entity_type"`

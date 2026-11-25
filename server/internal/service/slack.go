@@ -78,7 +78,7 @@ func (s *SlackService) StartInstall(ctx context.Context, workspace, user string)
 	if err = s.repo.SaveState(ctx, hash, workspace, user); err != nil {
 		return "", err
 	}
-	params := url.Values{"client_id": {s.cfg.ClientID}, "redirect_uri": {s.cfg.RedirectURL}, "state": {raw}, "scope": {"assistant:write,im:history,app_mentions:read,channels:read,groups:read,channels:history,groups:history,chat:write,files:read,files:write,users:read,users:read.email,commands"}}
+	params := url.Values{"client_id": {s.cfg.ClientID}, "redirect_uri": {s.cfg.RedirectURL}, "state": {raw}, "scope": {"assistant:write,im:history,app_mentions:read,channels:read,channels:join,groups:read,channels:history,groups:history,chat:write,files:read,files:write,users:read,users:read.email,commands"}}
 	return "https://slack.com/oauth/v2/authorize?" + params.Encode(), nil
 }
 
@@ -162,7 +162,7 @@ type SlackChannel struct {
 	IsMember      bool   `json:"is_member"`
 }
 
-// AvailableChannels lists the bot's joined channels across Slack's paged response.
+// AvailableChannels lists public channels and the bot's private channels across Slack's paged response.
 func (s *SlackService) AvailableChannels(ctx context.Context, workspace string) ([]SlackChannel, error) {
 	_, token, err := s.account(ctx, workspace)
 	if err != nil {
@@ -177,7 +177,7 @@ func (s *SlackService) AvailableChannels(ctx context.Context, workspace string) 
 				Next string `json:"next_cursor"`
 			} `json:"response_metadata"`
 		}
-		if err := s.api.Get(ctx, token, "users.conversations", url.Values{"types": {"public_channel,private_channel"}, "exclude_archived": {"true"}, "limit": {"200"}, "cursor": {cursor}}, &page); err != nil {
+		if err := s.api.Get(ctx, token, "conversations.list", url.Values{"types": {"public_channel,private_channel"}, "exclude_archived": {"true"}, "limit": {"200"}, "cursor": {cursor}}, &page); err != nil {
 			return nil, err
 		}
 		for _, ch := range page.Channels {
@@ -217,15 +217,26 @@ func (s *SlackService) Configure(ctx context.Context, workspace string, row mode
 	if err != nil {
 		return err
 	}
+	if err = s.canChangeRoute(ctx, a.ID, row.ChannelID); err != nil {
+		return err
+	}
 	var info struct{ Channel SlackChannel }
 	if err = s.api.Get(ctx, token, "conversations.info", url.Values{"channel": {row.ChannelID}}, &info); err != nil {
 		return ErrChannelProviderUnavailable
 	}
-	if info.Channel.ID != row.ChannelID || !info.Channel.IsMember || info.Channel.IsArchived {
+	if info.Channel.ID != row.ChannelID || info.Channel.IsArchived || (!info.Channel.IsMember && info.Channel.IsPrivate) {
 		return fmt.Errorf("%w: invite @Helpin to an active channel first", ErrChannelInvalid)
 	}
 	preserveCompany := false
 	switch row.Purpose {
+	case "inbox":
+		if !s.authz.Can(actor, authorization.PermSupportAdmin) {
+			return fmt.Errorf("%w: support admin permission is required", ErrChannelInvalid)
+		}
+		if err = s.validateFeedSelection(ctx, a, token, info.Channel, row.MailboxIDs); err != nil {
+			return err
+		}
+		row.MailboxID, row.TeamID, row.EpicID, row.CRMCompanyID = nil, nil, nil, nil
 	case "support", "mixed":
 		if info.Channel.IsShared {
 			canReadCRM, err := s.authz.CanAccessModule(ctx, actor, model.ModuleCRM)
@@ -275,9 +286,22 @@ func (s *SlackService) Configure(ctx context.Context, workspace string, row mode
 	if err != nil {
 		return err
 	}
+	if !info.Channel.IsMember {
+		if err = s.api.Call(ctx, token, "conversations.join", map[string]string{"channel": row.ChannelID}, nil); err != nil {
+			var provider *slack.APIError
+			if errors.As(err, &provider) && provider.Code == "missing_scope" {
+				return fmt.Errorf("%w: reauthorize Slack or invite @Helpin to this channel, then refresh", ErrChannelInvalid)
+			}
+			return fmt.Errorf("%w: could not join the channel; invite @Helpin and refresh", ErrChannelInvalid)
+		}
+	}
 	row.AccountID = a.ID
 	row.ChannelName = info.Channel.Name
-	return s.repo.SetRoute(ctx, row, preserveCompany)
+	err = s.repo.SetRoute(ctx, row, preserveCompany)
+	if errors.Is(err, repository.ErrSlackInboxAlreadyShared) {
+		return fmt.Errorf("%w: %v", ErrChannelInvalid, err)
+	}
+	return err
 }
 
 // Remove disables one channel binding.
@@ -286,7 +310,22 @@ func (s *SlackService) Remove(ctx context.Context, workspace, channel string) er
 	if err != nil || a == nil {
 		return err
 	}
+	if err = s.canChangeRoute(ctx, a.ID, channel); err != nil {
+		return err
+	}
 	return s.repo.RemoveRoute(ctx, a.ID, channel)
+}
+
+func (s *SlackService) canChangeRoute(ctx context.Context, account, channel string) error {
+	route, err := s.repo.Route(ctx, account, channel)
+	if err != nil || route == nil || route.Purpose != "inbox" {
+		return err
+	}
+	actor := authorization.GetActor(ctx)
+	if actor == nil || !s.authz.Can(actor, authorization.PermSupportAdmin) {
+		return fmt.Errorf("%w: support admin permission is required", ErrChannelInvalid)
+	}
+	return nil
 }
 
 // Disconnect clears the local installation and invalidates its bot token.

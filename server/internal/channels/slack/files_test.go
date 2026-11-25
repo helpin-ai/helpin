@@ -86,3 +86,27 @@ func TestSlackFileExceedsLimit(t *testing.T) {
 		})
 	}
 }
+
+func TestSlackStagedFileReceipt(t *testing.T) {
+	c := NewClient()
+	for _, tc := range []struct {
+		body   string
+		shared bool
+	}{
+		{`{"ok":true,"file":{"id":"F1","shares":{"private":{"C1":[{"ts":"2.0"}]}}}}`, true},
+		{`{"ok":true,"file":{"id":"F1","channels":["C2"]}}`, false},
+		{`{"ok":true,"file":{"id":"F2","channels":["C1"]}}`, false},
+		{`{"ok":false,"error":"file_not_found"}`, false},
+	} {
+		c.HTTP.Transport = slackFileTransport(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Query().Get("file") != "F1" || r.URL.Path != "/api/files.info" {
+				t.Fatalf("unexpected file request %s", r.URL)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
+		})
+		got, err := c.FileSharedInChannel(context.Background(), "token", "C1", "F1")
+		if err != nil || got != tc.shared {
+			t.Fatalf("%s: shared=%t, error=%v", tc.body, got, err)
+		}
+	}
+}

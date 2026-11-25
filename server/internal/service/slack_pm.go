@@ -343,6 +343,8 @@ type SlackAction struct {
 				Value    string
 				Selected struct{ Value string }   `json:"selected_option"`
 				Multiple []struct{ Value string } `json:"selected_options"`
+				Files    []slack.File             `json:"files"`
+				User     string                   `json:"selected_user"`
 			}
 		}
 	}
@@ -378,6 +380,9 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return map[string]any{}, nil
 		}
 		action := v.Actions[0]
+		if strings.HasPrefix(action.ID, "feed_") {
+			return s.feedAction(ctx, v, false)
+		}
 		if action.ID == "draft_task" {
 			meta = action.Value
 		} else if v.View.Callback == "helpin_task" && (action.ID == "draft_more" || action.BlockID == "team") {
@@ -386,6 +391,9 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return map[string]any{}, nil
 		}
 	case "view_submission":
+		if v.View.Callback == "feed_reply" || v.View.Callback == "feed_manage" {
+			return s.feedAction(ctx, v, true)
+		}
 		if v.View.Callback == "helpin_link_task" {
 			return s.submitLink(ctx, v)
 		}

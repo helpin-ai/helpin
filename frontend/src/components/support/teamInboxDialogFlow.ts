@@ -22,9 +22,9 @@ export function getTeamInboxDialogSteps(): TeamInboxDialogStep[] {
       fields: ['ai_replies', 'automated_routing_notice', 'manual_routing_rules', 'ai_routing_prompt'],
     },
     {
-      label: 'Email',
-      description: 'Forward your support email here and choose the sender address customers see.',
-      fields: ['email_forwarding', 'sender_address'],
+      label: 'Email & Slack',
+      description: 'Manage this inbox’s email addresses and Slack connection.',
+      fields: ['email_forwarding', 'sender_address', 'slack_channel'],
     },
   ];
 }

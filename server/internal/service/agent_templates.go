@@ -334,6 +334,9 @@ Raw configuration:
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"get_release_context",
 				"get_task_context",
+				"list_task_attachments",
+				"read_task_attachment",
+				"analyze_task_attachment",
 				"find_tasks_for_git_changes",
 				"read_document",
 				"get_document_blocks",

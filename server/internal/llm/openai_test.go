@@ -148,6 +148,7 @@ func TestBuildOpenAIMessageUsesContentParts(t *testing.T) {
 			{Type: "text", Text: "Inspect this screenshot"},
 			{Type: "image_url", ImageURL: &ImageURLPart{URL: "https://assets.example.com/example.png", Detail: "auto"}},
 			{Type: "video_url", Text: "data:video/mp4;base64,AAAA"},
+			{Type: "file", File: &FilePart{Filename: "scan.pdf", URL: "https://assets.example.com/scan.pdf"}},
 		},
 	})
 
@@ -155,8 +156,8 @@ func TestBuildOpenAIMessageUsesContentParts(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected content parts array, got %#v", message["content"])
 	}
-	if len(content) != 3 {
-		t.Fatalf("expected 3 content parts, got %#v", content)
+	if len(content) != 4 {
+		t.Fatalf("expected 4 content parts, got %#v", content)
 	}
 	if content[0]["type"] != "text" {
 		t.Fatalf("expected first part text, got %#v", content[0])
@@ -170,6 +171,35 @@ func TestBuildOpenAIMessageUsesContentParts(t *testing.T) {
 	video, ok := content[2]["video_url"].(map[string]any)
 	if !ok || video["url"] != "data:video/mp4;base64,AAAA" {
 		t.Fatalf("expected video URL payload, got %#v", content[2])
+	}
+	file, ok := content[3]["file"].(map[string]any)
+	if !ok || content[3]["type"] != "file" || file["filename"] != "scan.pdf" || file["file_data"] != "https://assets.example.com/scan.pdf" {
+		t.Fatalf("unexpected PDF payload: %#v", content[3])
+	}
+}
+
+func TestOpenRouterPDFUsesNativeParsing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Plugins []struct {
+				ID  string
+				PDF struct{ Engine string }
+			}
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if len(body.Plugins) != 1 || body.Plugins[0].ID != "file-parser" || body.Plugins[0].PDF.Engine != "native" {
+			t.Errorf("unexpected file parser: %+v", body.Plugins)
+		}
+		w.Write([]byte(`{"choices":[{"message":{"content":"Friday"}}]}`))
+	}))
+	defer server.Close()
+	provider := NewOpenAICompatibleProvider("", server.URL)
+	file := ContentPart{Type: "file", File: &FilePart{Filename: "scan.pdf", URL: "https://storage.example/scan.pdf"}}
+	_, err := provider.ChatCompletion(context.Background(), ChatRequest{Provider: "openrouter", Messages: []Message{{Role: "user", ContentParts: []ContentPart{file}}}})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

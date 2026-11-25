@@ -122,7 +122,7 @@ func (r *SupportMessageRepository) create(ctx context.Context, message *model.Su
 	if message == nil {
 		return gorm.ErrInvalidData
 	}
-	if link, ok := model.SlackSource(ctx); ok && message.MessageType == "system" {
+	if link, ok := model.SlackSource(ctx); ok && (message.MessageType == "system" || message.SenderType == "user") {
 		metadata := map[string]any{}
 		if message.Metadata != "" {
 			if err := json.Unmarshal([]byte(message.Metadata), &metadata); err != nil {
@@ -1084,8 +1084,8 @@ func (r *SupportConversationRepository) mentionExistsCondition(alias string, use
 			  AND mention_message.metadata LIKE ?
 			  AND mention_message.metadata LIKE ?
 		)))`, alias, alias, model.SupportRelevanceMention, alias, alias, alias), []any{
-			userID, "%mentioned_user_ids%", "%" + userID + "%",
-		}
+				userID, "%mentioned_user_ids%", "%" + userID + "%",
+			}
 	}
 	filterJSON, _ := json.Marshal(map[string][]string{"mentioned_user_ids": {userID}})
 	return fmt.Sprintf(`(EXISTS (
@@ -1103,9 +1103,9 @@ func (r *SupportConversationRepository) mentionExistsCondition(alias string, use
 		  AND mention_message.deleted_at IS NULL
 		  AND mention_message.metadata::jsonb @> ?::jsonb
 	)))`, alias, alias, model.SupportRelevanceMention, alias, alias, alias), []any{
-		userID,
-		string(filterJSON),
-	}
+			userID,
+			string(filterJSON),
+		}
 }
 
 func (r *SupportConversationRepository) conversationListProjectionSelect() string {

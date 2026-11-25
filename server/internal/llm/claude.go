@@ -152,6 +152,10 @@ func buildClaudeMessageContent(message Message) any {
 	blocks := make([]agentcontract.ContentBlock, 0, len(message.ContentParts))
 	for _, part := range message.ContentParts {
 		switch part.Type {
+		case "file":
+			if part.File != nil && part.File.URL != "" {
+				blocks = append(blocks, agentcontract.ContentBlock{Type: "document", Source: map[string]any{"type": "url", "url": part.File.URL}})
+			}
 		case "image_url":
 			if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
 				continue

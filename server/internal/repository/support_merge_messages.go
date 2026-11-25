@@ -27,6 +27,15 @@ func routeSupportMessage(ctx context.Context, tx *gorm.DB, message *model.Suppor
 	if err != nil {
 		return nil, err
 	}
+	if message.ExpectedLatestPublicReply != nil {
+		latest, err := latestPublicReply(tx, conversation.ID)
+		if err != nil {
+			return nil, err
+		}
+		if latest != *message.ExpectedLatestPublicReply {
+			return nil, fmt.Errorf("another reply arrived while you were drafting. Review the latest message before sending")
+		}
+	}
 	if conversation.AnonymizedAt != nil {
 		return nil, fmt.Errorf("this conversation is read-only")
 	}

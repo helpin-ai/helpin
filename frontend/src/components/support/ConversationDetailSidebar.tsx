@@ -3,6 +3,7 @@ import { ConversationPriorityPicker } from './ConversationPriorityPicker';
 import { SupportSLABadge } from './SupportSLABadge';
 import { useUpdateConversationPriority } from '@/hooks/queries/useSupportOperations';
 import { describeSLAItem } from '@/lib/supportSLA';
+import { slackChannelLabel } from '@/lib/supportChannels';
 import { SupportCSATStars } from './SupportCSATEvent';
 import { supportCSATRatingLabel } from './supportCSAT';
 import { formatDistance } from 'date-fns';
@@ -593,7 +594,7 @@ export function ConversationDetailSidebar({
                 </Tooltip>
               </div>
             )}
-            {conversation.channel === 'slack' && conversation.provider_channel_name ? <div className={customerEmailDisplayRowClassName}><SlackIcon className="col-start-1 h-3 w-3 justify-self-center" /><span className="col-start-2 truncate">#{conversation.provider_channel_name}</span></div> : conversation.channel_handle && (
+            {conversation.channel === 'slack' && conversation.provider_channel_name ? <div className={customerEmailDisplayRowClassName}><SlackIcon className="col-start-1 h-3 w-3 justify-self-center" /><span className="col-start-2 truncate">{slackChannelLabel(conversation.provider_channel_name)}</span></div> : conversation.channel_handle && (
               <div className={customerEmailDisplayRowClassName}>
                 <TelegramIcon className="col-start-1 h-3 w-3 justify-self-center" />
                 <span className="col-start-2 min-w-0 truncate">Telegram · via @{conversation.channel_handle}</span>

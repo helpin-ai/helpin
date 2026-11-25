@@ -73,7 +73,7 @@ func TestSupportMessageToolReadsScreenshot(t *testing.T) {
 	svc.SetSupportDependencies(repository.NewSupportMessageRepository(db), repository.NewSupportConversationRepository(db), nil)
 	svc.SetSupportOperationalServices(&SupportInboxService{attachmentService: NewSupportAttachmentService(repo, storage.NewS3Client("test", "test-secret", "bucket", "us-east-1", "https://storage.test", ""))}, nil)
 	calls := 0
-	svc.SetSupportMediaAnalyzer(dockMediaCompletionFunc(func(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	svc.SetAttachmentMediaAnalyzer(dockMediaCompletionFunc(func(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 		calls++
 		if len(req.Messages) != 1 || len(req.Messages[0].ContentParts) < 2 {
 			t.Fatalf("media not delivered: %#v", req.Messages)
@@ -195,7 +195,7 @@ func TestSupportMessageToolPreservesHistoryWhenMediaUnavailable(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	svc.SetSupportDependencies(repository.NewSupportMessageRepository(db), repository.NewSupportConversationRepository(db), nil)
 	svc.SetSupportAttachmentRepository(repository.NewSupportAttachmentRepository(db))
-	svc.SetSupportMediaAnalyzer(dockMediaCompletionFunc(func(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
+	svc.SetAttachmentMediaAnalyzer(dockMediaCompletionFunc(func(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
 		return nil, fmt.Errorf("media unavailable")
 	}))
 	output, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1", TargetType: "support_conversation", TargetID: "conv-1"}, "support.list_conversation_messages", json.RawMessage(`{}`))

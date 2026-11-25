@@ -236,10 +236,11 @@ The [catalog](../server/internal/service/mcp_catalog.go) defines the available t
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `list_tasks` | Read | Lists bounded task records | `PermPMRead` + PM module |
-| `get_task` | Read | Loads one task by ID and verifies workspace ownership | `PermPMRead` + PM module |
-| `get_task_context` | Read | Loads bounded task context; linked Docs/content additionally require Docs read, and Git links require context/integration read | `PermPMRead` + PM module |
-| `list_task_attachments` | Read | Lists uploaded task and comment files by task ID or key, with filenames and attachment IDs | `PermPMRead` + PM module |
-| `read_task_attachment` | Read | Returns a file from that task in chunks. Markdown and UTF-8 text are directly readable. Follow `next_offset` when present. Binary chunks carry an explicit base64 encoding. | `PermPMRead` + PM module |
+| `get_task` | Read | Loads one visible task by ID or key, including its uploaded attachments | `PermPMRead` + PM module |
+| `get_task_context` | Read | Returns task descriptions and an `attachments` array for each task. Linked Docs/content also require Docs read, and Git links require context/integration read | `PermPMRead` + PM module |
+| `list_task_attachments` | Read | Pages through task uploads, files embedded by the task editor, and comment uploads. It returns the same files as `get_task` and `get_task_context`. Each entry includes attachment and task IDs, filename, content type, byte size, uploader ID, creation time, and the owning task or comment | `PermPMRead` + PM module |
+| `read_task_attachment` | Read | Returns Markdown, logs, and other UTF-8 text in 24 KiB chunks. PDFs and DOCX files up to 8 MiB return extracted text (up to 500 pages for PDFs). Follow `next_offset` for more text, use `raw: true` for original bytes, or fetch the signed `download_url`. Scans and unreadable documents include a notice. | `PermPMRead` + PM module |
+| `analyze_task_attachment` | Read | Takes a task ID or key, attachment ID, and question. Sends one supported image, video, or PDF up to 20 MiB to the workspace’s configured vision provider and returns its answer. This uses workspace AI usage only when called. | `PermPMRead` + PM module |
 | `list_task_checklist` | Read | Lists checklist items for an accessible task | `PermPMRead` + PM module |
 | `create_task` | Write | Creates a task through the canonical Helpin command layer | `PermPMEdit` + PM module |
 | `create_task_batch` | Write | Creates up to 50 implementation-ready tasks in one accessible epic | `PermPMEdit` + PM module |

@@ -68,7 +68,9 @@ const (
 	SystemEventReopened SupportSystemEventType = "reopened"
 
 	// SystemEventClosed — conversation closed (e.g., spam).
-	SystemEventClosed SupportSystemEventType = "closed"
+	SystemEventClosed          SupportSystemEventType = "closed"
+	SystemEventStatusChanged   SupportSystemEventType = "status_changed"
+	SystemEventDeliveryRetried SupportSystemEventType = "delivery_retried"
 
 	// SystemEventEmailRecipientsUpdated — primary email recipient or copied
 	// recipients changed. Admin-only.

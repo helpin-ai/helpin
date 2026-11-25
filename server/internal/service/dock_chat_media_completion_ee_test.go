@@ -101,3 +101,26 @@ func TestDockChatMediaFallsBackToQwenOnRateLimit(t *testing.T) {
 		t.Fatalf("audit attempts = %d", len(audit.finished))
 	}
 }
+
+func TestTaskAttachmentAnalysisUsesGovernedMediaRoute(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	audit := &gatewayFakeAudit{}
+	provider := &scriptedAICompletionProvider{}
+	completion := newTestAICompletionService(t, provider, store).SetGovernance(aipolicy.DefaultRegistry(), audit)
+	file := mediaAttachment{ID: "scan", FileName: "scan.pdf", FileType: "application/pdf", URL: "https://storage.example/scan.pdf"}
+	_, err := analyzeAttachmentMedia(context.Background(), completion, "ws", BillingFeatureAskChat, aipolicy.ActionTaskAttachmentAnalysis, "What is the due date?", []mediaAttachment{file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 1 || provider.requests[0].Model != "google/gemini-3.8-flash" || store.reconcile.Entry.CanonicalModel != "gemini-3.8-flash" {
+		t.Fatalf("unexpected task analysis route or ledger: %+v", store.reconcile.Entry)
+	}
+	if len(audit.finished) != 1 || len(audit.started) != 1 || audit.started[0].ActionKey != aipolicy.ActionTaskAttachmentAnalysis {
+		t.Fatalf("unexpected task analysis audit: %+v", audit.started)
+	}
+	provider.errors = map[string]error{"google/gemini-3.8-flash": &llm.ProviderError{StatusCode: 429}}
+	_, err = analyzeAttachmentMedia(context.Background(), completion, "ws", BillingFeatureAskChat, aipolicy.ActionTaskAttachmentAnalysis, "What is the title?", []mediaAttachment{file})
+	if err == nil || len(provider.requests) != 2 || provider.requests[1].Model != "google/gemini-3.8-flash" {
+		t.Fatalf("PDF should only reach the native PDF route: calls=%d err=%v", len(provider.requests), err)
+	}
+}

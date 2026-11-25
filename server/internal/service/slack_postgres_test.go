@@ -573,3 +573,218 @@ func TestSlackMessageSourcePostgres(t *testing.T) {
 		t.Fatalf("looked up inaccessible sources: %d provider calls", calls)
 	}
 }
+
+// Exercise the actual rule save, transactional queue, thread delivery, notes and removal with an isolated provider.
+func TestSlackInboxFeedPostgres(t *testing.T) {
+	ctx := context.Background()
+	f := newOutboxFixture(t)
+	f.inbox.workspaceRepo = repository.NewWorkspaceRepository(f.db)
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", f.account.ID)
+	f.account.Provider = "slack"
+	s := NewSlackService(f.svc, repository.NewSlackRepository(f.db), SlackConfig{})
+	s.SetPM(nil, nil, authorization.NewAuthzService(f.db, slackFixtureMember{f.userID}, nil), nil, nil, "https://helpin.example")
+	owner := authorization.WithActor(ctx, &authorization.Actor{WorkspaceID: f.workspace, Role: "owner", UserID: f.userID})
+	member, external := false, false
+	var posts, updates, views []map[string]any
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/conversations.info":
+			fmt.Fprintf(w, `{"ok":true,"channel":{"id":"Cdesk","name":"support-desk","is_member":%t,"is_ext_shared":%t}}`, member, external)
+		case "/conversations.join":
+			member = true
+			io.WriteString(w, `{"ok":true}`)
+		case "/chat.getPermalink":
+			fmt.Fprintf(w, `{"ok":true,"permalink":"https://example.slack.com/archives/Cdesk/p%s"}`, strings.ReplaceAll(r.URL.Query().Get("message_ts"), ".", ""))
+		case "/views.open":
+			io.WriteString(w, `{"ok":true,"view":{"id":"Vdraft"}}`)
+		case "/views.update":
+			var payload struct{ View map[string]any }
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			views = append(views, payload.View)
+			io.WriteString(w, `{"ok":true}`)
+		case "/chat.postMessage", "/chat.update":
+			var b map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+				t.Error(err)
+			}
+			if r.URL.Path == "/chat.postMessage" {
+				posts = append(posts, b)
+			} else {
+				updates = append(updates, b)
+			}
+			fmt.Fprintf(w, `{"ok":true,"ts":"%d.000001"}`, len(posts))
+		default:
+			t.Errorf("unexpected Slack endpoint %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer fake.Close()
+	s.api.BaseURL = fake.URL + "/"
+	cfg := model.SlackRoute{ChannelID: "Cdesk", Purpose: "inbox", MailboxIDs: []string{"shared"}}
+	external = true
+	if err := s.Configure(owner, f.workspace, cfg); !errors.Is(err, ErrChannelInvalid) || member {
+		t.Fatalf("external feed allowed: %v", err)
+	}
+	external = false
+	if err := s.Configure(owner, f.workspace, cfg); err != nil || !member {
+		t.Fatalf("public auto-join: %v", err)
+	}
+	routes, err := s.repo.Routes(ctx, f.account.ID)
+	if err != nil || len(routes) != 1 || len(routes[0].MailboxIDs) != 1 || routes[0].MailboxIDs[0] != "shared" {
+		t.Fatalf("rule round trip: %+v %v", routes, err)
+	}
+	conv := uuid.NewString()
+	mustExec(t, f.db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,status,channel,source) VALUES(?,?,88,'Checkout issue','open','widget','widget')`, conv, f.workspace)
+	msg := f.reply(t, conv, "customer", "Checkout failed.")
+	deliver := func(messageID *string) {
+		t.Helper()
+		var job model.SupportInboundJob
+		q := f.db.Where("kind=? AND conversation_id=?", SlackInboxFeedJob, conv)
+		if messageID == nil {
+			q = q.Where("message_id IS NULL")
+		} else {
+			q = q.Where("message_id=?", *messageID)
+		}
+		if err := q.First(&job).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.deliverInboxFeed(ctx, &job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deliver(nil)
+	deliver(&msg.ID)
+	deliver(&msg.ID)
+	if len(posts) != 2 || posts[1]["thread_ts"] != "1.000001" || posts[0]["thread_ts"] != nil {
+		t.Fatalf("root or replay isolation: %+v", posts)
+	}
+	trow, err := s.repo.FeedByRoot(ctx, f.account.ID, "Cdesk", "1.000001")
+	if err != nil || trow == nil || trow.Permalink == "" {
+		t.Fatalf("missing binding: %+v %v", trow, err)
+	}
+	mustExec(t, f.db, "INSERT INTO slack_members(account_id,slack_user,user_id) VALUES(?,?,?)", f.account.ID, "Uagent", f.userID)
+	note := slack.Message{Channel: "Cdesk", ThreadTS: trow.RootTS, TS: "3.1", User: "Uagent", Text: "Internal investigation"}
+	for i := 0; i < 2; i++ {
+		if err := s.receiveFeedNote(ctx, f.account, "token", &routes[0], note); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var notes []model.SupportMessage
+	if err := f.db.Where("conversation_id=? AND content=?", conv, note.Text).Find(&notes).Error; err != nil || len(notes) != 1 || !notes[0].IsInternal || !strings.Contains(notes[0].Metadata, "slack_permalink") {
+		t.Fatalf("note attribution or replay: %+v %v", notes, err)
+	}
+	if f.row(t, notes[0].ID) != nil {
+		t.Fatal("internal note queued customer delivery")
+	}
+	deliver(&notes[0].ID)
+	if len(posts) != 2 {
+		t.Fatal("native Slack note was echoed")
+	}
+	var action SlackAction
+	actionPayload := fmt.Sprintf(`{"team":{"id":%q},"user":{"id":"Uagent"},"trigger_id":"TrOpen","channel":{"id":"Cdesk"},"message":{"ts":"1.000001"},"actions":[{"action_id":"feed_reply","value":%q}]}`, f.account.ExternalAccountID, trow.ID)
+	if err := json.Unmarshal([]byte(actionPayload), &action); err != nil {
+		t.Fatal(err)
+	}
+	process := func(v SlackAction, submit bool) {
+		t.Helper()
+		if _, err := s.feedAction(ctx, v, submit); err != nil {
+			t.Fatal(err)
+		}
+		var job model.SupportInboundJob
+		id := inboundStableID("slack-feed-action:" + f.account.ID + ":" + v.Trigger)
+		if err := f.db.Where("id=?", id).First(&job).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.processFeedAction(ctx, &job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	process(action, false)
+	if len(views) != 1 || views[0]["callback_id"] != "feed_reply" {
+		t.Fatalf("missing reply form: %+v", views)
+	}
+	submit := func(trigger string) {
+		t.Helper()
+		data := map[string]any{"team": map[string]string{"id": f.account.ExternalAccountID}, "user": map[string]string{"id": "Uagent"}, "trigger_id": trigger,
+			"view": map[string]any{"id": "Vdraft", "callback_id": "feed_reply", "private_metadata": views[len(views)-1]["private_metadata"],
+				"state": map[string]any{"values": map[string]any{"body": map[string]any{"value": map[string]string{"value": "The checkout fix is ready."}}, "destination": map[string]any{"value": map[string]any{"selected_option": map[string]string{"value": "widget"}}}}}}}
+		raw, err := json.Marshal(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v SlackAction
+		if err = json.Unmarshal(raw, &v); err != nil {
+			t.Fatal(err)
+		}
+		process(v, true)
+	}
+	f.reply(t, conv, "customer", "One more detail.")
+	submit("TrStale")
+	if !strings.Contains(fmt.Sprint(views[len(views)-1]), "while you were drafting") || !strings.Contains(fmt.Sprint(views[len(views)-1]), "The checkout fix is ready.") {
+		t.Fatalf("stale draft discarded: %+v", views)
+	}
+	submit("TrSend")
+	if !strings.Contains(fmt.Sprint(views[len(views)-1]), "Reply saved") {
+		t.Fatalf("reply was not saved: %+v", views[len(views)-1])
+	}
+	var replies []model.SupportMessage
+	if err := f.db.Where("conversation_id=? AND content=? AND NOT is_internal", conv, "The checkout fix is ready.").Find(&replies).Error; err != nil || len(replies) != 1 || !strings.Contains(replies[0].Metadata, "slack_permalink") {
+		t.Fatalf("public reply provenance: %+v %v", replies, err)
+	}
+	mustExec(t, f.db, "UPDATE support_conversations SET status='resolved' WHERE id=?", conv)
+	deliver(nil)
+	if len(updates) == 0 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "resolved") {
+		t.Fatal("status did not update parent")
+	}
+	external = true
+	next := f.reply(t, conv, "customer", "Sensitive follow-up")
+	deliver(&next.ID)
+	if len(posts) != 2 {
+		t.Fatal("shared another message after Slack Connect change")
+	}
+	external = false
+	box := model.SupportMailbox{WorkspaceID: f.workspace, Name: "Private", Handle: "private", CreatedByID: f.userID}
+	if err := f.db.Create(&box).Error; err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", box.ID, conv)
+	deliver(nil)
+	if !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "no longer shared") || strings.Contains(fmt.Sprint(updates[len(updates)-1]), "Checkout issue") {
+		t.Fatal("stale thread kept customer data or actions on its parent")
+	}
+	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
+	deliver(nil)
+	if len(posts) != 2 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "Checkout issue") {
+		t.Fatal("moving back did not restore the original thread")
+	}
+	if err := s.Remove(owner, f.workspace, "Cdesk"); err != nil {
+		t.Fatal(err)
+	}
+	trow, err = s.repo.FeedByRoot(ctx, f.account.ID, "Cdesk", "1.000001")
+	if trow == nil || trow.Active || err != nil {
+		t.Fatalf("removed rule lost inactive thread identity: %+v %v", trow, err)
+	}
+	deliver(&next.ID)
+	if len(posts) != 2 {
+		t.Fatal("replayed after rule removal")
+	}
+}
+
+func TestSlackInboxFeedRetryRejectedPostgres(t *testing.T) {
+	ctx := context.Background()
+	f := newOutboxFixture(t)
+	msg := f.reply(t, f.conv, "user", "A customer reply")
+	for _, tc := range []struct {
+		status  string
+		allowed bool
+	}{{"uncertain", false}, {"rejected", true}, {"pending", false}} {
+		mustExec(t, f.db, "UPDATE support_channel_outbox SET dispatch_status=? WHERE message_id=?", tc.status, msg.ID)
+		conv, err := f.svc.outbox.RetryRejected(ctx, f.workspace, msg.ID)
+		if err != nil || (conv == f.conv) != tc.allowed {
+			t.Fatalf("%s: retry conversation %q, error %v", tc.status, conv, err)
+		}
+	}
+}

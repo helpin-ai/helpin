@@ -165,7 +165,7 @@ func (s *AICompletionService) FeatureAvailable(feature, operation string) bool {
 	if !reports {
 		return true
 	}
-	for _, route := range completionCandidateRoutes(policy, nil) {
+	for _, route := range completionCandidateRoutes(policy, AICompletionRequest{}) {
 		if configured.HasChatProvider(route.Provider) {
 			return true
 		}

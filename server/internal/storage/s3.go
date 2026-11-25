@@ -204,6 +204,9 @@ func (s *S3Client) GeneratePresignedGetURL(key, filename string) (string, error)
 
 // GeneratePresignedGetURLWithExpiry signs a private download for up to seven days.
 func (s *S3Client) GeneratePresignedGetURLWithExpiry(key, filename string, expiry time.Duration) (string, error) {
+	if s == nil || s.presignClient == nil {
+		return "", fmt.Errorf("file storage is unavailable")
+	}
 	if expiry < time.Second || expiry > 7*24*time.Hour {
 		return "", fmt.Errorf("download link expiry must be between one second and seven days")
 	}

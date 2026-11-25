@@ -1,0 +1,379 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/channels/slack"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
+)
+
+const SlackInboxFeedJob = "slack_inbox_feed"
+
+func slackFeedAllowsChannel(ch SlackChannel, visibility string) bool {
+	return !ch.IsArchived && !ch.IsShared && !ch.PendingShared && (ch.IsPrivate || visibility == "workspace")
+}
+func (s *SlackService) validateFeedSelection(ctx context.Context, a *model.SupportChannelAccount, token string, ch SlackChannel, ids []string) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("%w: select at least one inbox", ErrChannelInvalid)
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			return fmt.Errorf("%w: duplicate inbox", ErrChannelInvalid)
+		}
+		seen[id] = true
+		if id != "shared" {
+			if _, err := s.channels.mailboxSelection(ctx, a.WorkspaceID, &id); err != nil {
+				return err
+			}
+		}
+		ok, err := s.feedAudience(ctx, a, token, ch, id)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("%w: use an internal channel. For a team inbox, invite Helpin to a private channel where each member has linked their Helpin account and can read that inbox", ErrChannelInvalid)
+		}
+	}
+	return nil
+}
+func (s *SlackService) feedAudience(ctx context.Context, a *model.SupportChannelAccount, token string, ch SlackChannel, key string) (bool, error) {
+	visibility := "members_only"
+	if key == "shared" {
+		visibility = "workspace"
+	}
+	if !slackFeedAllowsChannel(ch, visibility) {
+		return false, nil
+	}
+	if !ch.IsPrivate {
+		return true, nil
+	}
+	return s.channelAudience(ctx, a, token, ch.ID, func(actor *authorization.Actor) (bool, error) {
+		ok, err := s.authz.CanAccessModule(ctx, actor, model.ModuleSupport)
+		if err != nil || !ok || !s.authz.Can(actor, authorization.PermSupportRead) {
+			return false, err
+		}
+		return key == "shared" || s.channels.inbox.userCanAccessMailbox(ctx, a.WorkspaceID, &key, actor.UserID), nil
+	})
+}
+func slackFeedThreadUpdate(m *model.SupportMessage) bool {
+	if m == nil || m.DeletedAt.Valid {
+		return false
+	}
+	if m.MessageType == "note" {
+		return m.IsInternal && m.SenderType == "user"
+	}
+	if m.MessageType == "reply" {
+		return !m.IsInternal || m.SenderType == "user"
+	}
+	if derefString(m.SystemEventType) == model.SystemEventReopened && m.SenderUserID == nil {
+		// The customer's reply already explains why the parent reopened.
+		return false
+	}
+	return slices.Contains([]string{"resolved", "reopened", "ai_escalated", "customer_requested_human"}, derefString(m.SystemEventType))
+}
+
+type feedContext struct {
+	thread         *repository.FeedThread
+	conv           *model.SupportConversation
+	account        *model.SupportChannelAccount
+	token, channel string
+}
+
+func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAccount, t *repository.FeedThread) (*feedContext, error) {
+	if t == nil || !t.Active || a == nil || a.ID != t.AccountID {
+		return nil, nil
+	}
+	route, err := s.repo.Route(ctx, a.ID, t.ChannelID)
+	if err != nil || route == nil || route.Purpose != "inbox" {
+		return nil, err
+	}
+	conv, err := s.channels.inbox.loadConversationUnscoped(ctx, a.WorkspaceID, t.ConversationID)
+	if err != nil || conv == nil {
+		return nil, err
+	}
+	key := firstNonEmptyString(derefString(conv.MailboxID), "shared")
+	token, err := s.channels.decryptToken(a)
+	if err != nil {
+		return nil, err
+	}
+	if conv.AnonymizedAt != nil || conv.MergedIntoID != nil || !slices.Contains(route.MailboxIDs, key) {
+		if t.RootTS != "" {
+			notice := "This conversation is no longer shared in this channel."
+			err = s.api.Call(ctx, token, "chat.update", map[string]any{"channel": route.CurrentChannelID, "ts": t.RootTS, "text": notice, "blocks": []any{}}, nil)
+			var apiErr *slack.APIError
+			if err != nil && !(errors.As(err, &apiErr) && slices.Contains([]string{"channel_not_found", "message_not_found", "not_in_channel", "is_archived"}, apiErr.Code)) {
+				return nil, err
+			}
+		}
+		return nil, s.repo.DeactivateFeed(ctx, t.ID)
+	}
+	var info struct{ Channel SlackChannel }
+	if err = s.api.Get(ctx, token, "conversations.info", url.Values{"channel": {route.CurrentChannelID}}, &info); err != nil {
+		return nil, err
+	}
+	if info.Channel.ID != route.CurrentChannelID || !info.Channel.IsMember {
+		return nil, nil
+	}
+	ok, err := s.feedAudience(ctx, a, token, info.Channel, key)
+	if !ok || err != nil {
+		return nil, err
+	}
+	return &feedContext{t, conv, a, token, route.CurrentChannelID}, nil
+}
+func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInboundJob) error {
+	var p struct{ Thread string }
+	if err := json.Unmarshal([]byte(j.Payload), &p); err != nil {
+		return err
+	}
+	if j.ChannelAccountID == nil || !isUUIDString(p.Thread) {
+		return errors.New("missing Slack inbox thread")
+	}
+	return s.repo.WithFeedLock(ctx, p.Thread, func() error {
+		a, err := s.channels.accounts.GetForWebhook(ctx, "slack", *j.ChannelAccountID)
+		if err != nil || a == nil {
+			return err
+		}
+		t, err := s.repo.FeedThread(ctx, a.ID, p.Thread)
+		if err != nil {
+			return err
+		}
+		f, err := s.loadFeed(ctx, a, t)
+		if err != nil || f == nil {
+			return err
+		}
+		if err = s.refreshFeedCard(ctx, f); err != nil {
+			return err
+		}
+		if j.MessageID == nil || f.conv.Status == "spam" {
+			return nil
+		}
+		m, err := s.channels.inbox.messageRepo.GetByID(ctx, *j.MessageID)
+		if err != nil || m == nil || m.ConversationID != f.conv.ID || !slackFeedThreadUpdate(m) {
+			return err
+		}
+		return s.mirrorFeedMessage(ctx, f, m)
+	})
+}
+func feedButton(id, label, value string) map[string]any {
+	return map[string]any{"type": "button", "action_id": id, "text": slackText(label), "value": value}
+}
+func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) error {
+	c, t := f.conv, f.thread
+	ws, err := s.channels.inbox.workspaceRepo.GetByID(ctx, c.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	status := strings.ReplaceAll(c.Status, "_", " ")
+	if c.Status == "open" {
+		switch derefString(c.FlowState) {
+		case "waiting_for_human", "queued_for_human", "after_hours_queue":
+			status = "Needs human reply"
+		}
+	}
+	if c.SnoozedUntil != nil && c.SnoozedUntil.After(s.channels.now()) {
+		status = "Snoozed until " + c.SnoozedUntil.UTC().Format(time.RFC822)
+	}
+	owner := "Unassigned"
+	if c.AssignedUserID != nil {
+		u, err := s.channels.inbox.userRepo.GetByID(ctx, *c.AssignedUserID)
+		if err != nil {
+			return err
+		}
+		if u != nil {
+			owner = u.FullName
+		}
+	}
+	title := fmt.Sprintf("#%d · %s", c.DisplayID, c.Subject)
+	customer := firstNonEmptyString(derefString(c.CustomerName), derefString(c.CustomerEmail), "Customer")
+	details := customer + " · " + c.Channel + " · " + status + " · " + owner
+	preview, err := s.repo.FeedPreview(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+	blocks := []any{map[string]any{"type": "section", "text": slackText(truncate(title, 800))}, map[string]any{"type": "context", "elements": []any{slackText(truncate(details, 1200))}}}
+	if preview != "" {
+		blocks = append(blocks, map[string]any{"type": "section", "text": slackText(truncate(tiptap.RichTextToMarkdown(preview), 500))})
+	}
+	blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText("Thread replies are internal notes. Use Reply to customer to send a response.")}})
+	open := feedButton("open_support", "Open in Helpin", t.ID)
+	open["url"] = s.appURL + "/w/" + ws.Slug + "/support/" + c.ID
+	buttons := []any{}
+	if c.Status != "spam" {
+		buttons = append(buttons, feedButton("feed_reply", "Reply to customer", t.ID), feedButton("feed_manage", "Manage", t.ID))
+		if c.AssignedUserID == nil {
+			buttons = append(buttons, feedButton("feed_claim", "Assign to me", t.ID))
+		}
+	}
+	blocks = append(blocks, slackButtons(append(buttons, open)...))
+	payload := map[string]any{"channel": f.channel, "text": truncate(title+" · "+details, 2000), "mrkdwn": false, "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	hash := inboundStableID(string(raw))
+	previous, err := s.repo.FeedReceipt(ctx, t.ID, "card")
+	if err != nil {
+		return err
+	}
+	if t.RootTS != "" && t.Permalink == "" {
+		t.Permalink = s.sourceURL(ctx, f.token, f.channel, t.RootTS)
+		if t.Permalink != "" {
+			if err = s.repo.UpdateFeedRoot(ctx, t.ID, t.RootTS, t.Permalink); err != nil {
+				return err
+			}
+		}
+	}
+	if t.RootTS != "" && previous == hash {
+		return nil
+	}
+	if t.RootTS == "" {
+		var result struct{ TS string }
+		payload["client_msg_id"] = t.ID
+		if err = s.api.Call(ctx, f.token, "chat.postMessage", payload, &result); err != nil {
+			return err
+		}
+		if result.TS == "" {
+			return errors.New("Slack did not confirm thread creation")
+		}
+		t.RootTS = result.TS
+		t.Permalink = s.sourceURL(ctx, f.token, f.channel, result.TS)
+		if err = s.repo.UpdateFeedRoot(ctx, t.ID, t.RootTS, t.Permalink); err != nil {
+			return err
+		}
+	} else {
+		payload["ts"] = t.RootTS
+		if err = s.api.Call(ctx, f.token, "chat.update", payload, nil); err != nil {
+			return err
+		}
+	}
+	return s.repo.SaveFeedReceipt(ctx, t.ID, "card", hash)
+}
+func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m *model.SupportMessage) error {
+	var meta struct {
+		SourceThread string `json:"slack_feed_thread"`
+		EmailStatus  string `json:"email_delivery_status"`
+	}
+	if m.Metadata != "" {
+		if err := json.Unmarshal([]byte(m.Metadata), &meta); err != nil {
+			return err
+		}
+	}
+	if m.IsInternal && m.MessageType != "system" && meta.SourceThread == f.thread.ID {
+		return nil
+	}
+	author := firstNonEmptyString(derefString(m.SenderDisplayName), m.SenderType)
+	if m.IsInternal && m.MessageType != "system" {
+		author += " · Internal note"
+	}
+	body := author + "\n" + tiptap.RichTextToMarkdown(m.Content)
+	if m.MessageType == "system" {
+		body = tiptap.RichTextToMarkdown(m.Content)
+	}
+	var delivery *model.SupportChannelDelivery
+	if m.SenderType != "customer" && !m.IsInternal {
+		rows, err := s.channels.outbox.ListByMessageIDs(ctx, f.account.WorkspaceID, []string{m.ID})
+		if err != nil {
+			return err
+		}
+		if len(rows) > 0 {
+			delivery = channelDeliveryView(rows[0])
+			body += "\n" + delivery.Provider + " · " + delivery.Status
+			if delivery.Status == "unconfirmed" {
+				body += " · Check the original destination before resending."
+			}
+		}
+	}
+	if meta.EmailStatus != "" {
+		body += "\nEmail · " + meta.EmailStatus
+	}
+	prior, err := s.repo.FeedReceipt(ctx, f.thread.ID, m.ID)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{"channel": f.channel, "text": truncate(body, 3900), "mrkdwn": false, "unfurl_links": false, "unfurl_media": false}
+	if delivery != nil && delivery.Status == "failed" {
+		payload["blocks"] = []any{map[string]any{"type": "section", "text": slackText(truncate(body, 2900))}, slackButtons(feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID))}
+	} else if prior != "" {
+		payload["blocks"] = []any{}
+	}
+	if prior == "" {
+		var out struct{ TS string }
+		payload["thread_ts"] = f.thread.RootTS
+		payload["client_msg_id"] = inboundStableID(f.thread.ID + ":" + m.ID)
+		if err = s.api.Call(ctx, f.token, "chat.postMessage", payload, &out); err != nil {
+			return err
+		}
+		if out.TS == "" {
+			return errors.New("Slack did not confirm the message")
+		}
+		if err = s.repo.SaveFeedReceipt(ctx, f.thread.ID, m.ID, out.TS); err != nil {
+			return err
+		}
+	} else {
+		payload["ts"] = prior
+		if err = s.api.Call(ctx, f.token, "chat.update", payload, nil); err != nil {
+			return err
+		}
+	}
+	files, err := s.channels.replyFiles(ctx, m, 25<<20)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		key := m.ID + ":file:" + file.ID
+		got, err := s.repo.FeedReceipt(ctx, f.thread.ID, key)
+		if err != nil {
+			return err
+		}
+		if got != "" {
+			continue
+		}
+		id, err := s.repo.FeedReceipt(ctx, f.thread.ID, key+":staged")
+		if err != nil {
+			return err
+		}
+		shared := false
+		if id != "" {
+			shared, err = s.api.FileSharedInChannel(ctx, f.token, f.channel, id)
+			if err != nil {
+				return err
+			}
+		} else {
+			id, err = s.api.PrepareUpload(ctx, f.token, file.Name, file.Data)
+			if err != nil {
+				return err
+			}
+			if err = s.repo.SaveFeedReceipt(ctx, f.thread.ID, key+":staged", id); err != nil {
+				return err
+			}
+		}
+		if !shared {
+			if err = s.api.ShareUpload(ctx, f.token, f.channel, f.thread.RootTS, file.Name, id); err != nil {
+				return err
+			}
+		}
+		if err = s.repo.SaveFeedReceipt(ctx, f.thread.ID, key, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SlackService) InboxThreadLink(ctx context.Context, workspace, id string) (string, error) {
+	c, err := s.channels.inbox.loadConversationAccessible(ctx, workspace, id)
+	if err != nil || c == nil || c.AnonymizedAt != nil || c.MergedIntoID != nil {
+		return "", err
+	}
+	return s.repo.FeedPermalink(ctx, workspace, id)
+}

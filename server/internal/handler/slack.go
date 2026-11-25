@@ -45,6 +45,10 @@ func (h *SlackHandler) Event(w http.ResponseWriter, r *http.Request) {
 	challenge, err := h.s.AcceptEvent(r.Context(), r.Header.Get("X-Slack-Request-Timestamp"), r.Header.Get("X-Slack-Signature"), body)
 	slackResponse(w, r, map[string]string{"challenge": challenge}, err)
 }
+func (h *SlackHandler) InboxThread(w http.ResponseWriter, r *http.Request) {
+	link, err := h.s.InboxThreadLink(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
+	slackResponse(w, r, map[string]string{"permalink": link}, err)
+}
 func (h *SlackHandler) MessageSource(w http.ResponseWriter, r *http.Request) {
 	link, err := h.s.MessageSource(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
 	slackResponse(w, r, map[string]string{"permalink": link}, err)

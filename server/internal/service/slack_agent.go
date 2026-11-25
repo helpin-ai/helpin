@@ -129,7 +129,7 @@ func isSlackDockTrigger(trigger *model.AgentRunTriggerContext, chatID *string) b
 	return json.Unmarshal(trigger.Context, &c) == nil && c.SlackThread && c.ChatID == *chatID
 }
 
-var slackPMReadTools = []string{"list_workspace_members", "list_tasks", "get_task", "get_task_context", "list_task_checklist", "list_epics", "get_epic", "list_epic_tasks", "list_sprints", "list_sprint_tasks", "list_workspace_teams", "list_team_workflows_with_stages"}
+var slackPMReadTools = []string{"list_workspace_members", "list_tasks", "get_task", "get_task_context", "list_task_attachments", "read_task_attachment", "analyze_task_attachment", "list_task_checklist", "list_epics", "get_epic", "list_epic_tasks", "list_sprints", "list_sprint_tasks", "list_workspace_teams", "list_team_workflows_with_stages"}
 
 var slackPMWriteTools = []string{"update_task", "update_task_state"}
 var slackSupportWriteTools = []string{"assign_support_conversation", "set_support_conversation_status", "set_support_conversation_priority"}
