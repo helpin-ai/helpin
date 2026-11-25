@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTitle } from '@/hooks/useTitle';
+import { trackAnalyticsEvent } from '@/lib/analytics';
 import { buildLoginPathForRedirect } from '@/lib/authRedirect';
 import { helpCenterPlatformName } from '@/lib/helpCenterPlatforms';
 import { Alert01Icon, ArrowDown01Icon, Loading01Icon, Tick01Icon } from '@/lib/icons';
@@ -100,6 +101,25 @@ function SupportPreview({ website }: { website: string }) {
     if (!answered) return;
     answersRef.current?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
   }, [answered]);
+
+  // A website entered here is a lead before any account exists.
+  useEffect(() => {
+    trackAnalyticsEvent('support_preview_started', { website_domain: host });
+  }, [host]);
+  const platform = helpCenter?.counts?.platform;
+  const articleCount = helpCenter?.counts?.articles;
+  const answerCount = run.preview?.answers.length ?? 0;
+  const gapCount = run.preview?.gaps.length ?? 0;
+  useEffect(() => {
+    if (!answered) return;
+    trackAnalyticsEvent('support_preview_finished', {
+      website_domain: host,
+      help_center_platform: platform,
+      article_count: articleCount,
+      answer_count: answerCount,
+      gap_count: gapCount,
+    });
+  }, [answered, host, platform, articleCount, answerCount, gapCount]);
 
   if (!site && run.status === 'stopped') {
     return (

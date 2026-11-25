@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   streamPreview: vi.fn(),
   previewAnswer: vi.fn(),
   mountWidget: vi.fn(),
+  track: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -23,6 +24,7 @@ vi.mock('@/components/layout/PublicPageShell', () => ({
 }));
 // The real chat widget draws itself; the tests read what it was given to show.
 vi.mock('@helpin-ai/widget-core', () => ({ mountWidget: state.mountWidget, unmountWidget: vi.fn() }));
+vi.mock('@/lib/analytics', () => ({ trackAnalyticsEvent: state.track }));
 vi.mock('@/lib/services/supportQuickstartService', () => ({
   supportQuickstartService: { streamPreview: state.streamPreview, previewAnswer: state.previewAnswer },
 }));
@@ -128,6 +130,7 @@ beforeEach(() => {
   streamAll(events.site, events.helpCenter, events.articles, events.preview);
   state.previewAnswer.mockReset();
   state.mountWidget.mockClear();
+  state.track.mockClear();
 });
 
 afterEach(() => {
@@ -335,6 +338,30 @@ describe('SupportStart', () => {
     expect(container?.textContent).not.toContain('customer questions');
     expect(container?.textContent).not.toContain('your articles');
     expect(button('Put this on acme.com')).toBeDefined();
+  });
+
+  it('records the website as a lead when the preview starts and again when it finishes', async () => {
+    render('https://www.acme.com/pricing');
+    await settle();
+
+    expect(state.track.mock.calls).toEqual([
+      ['support_preview_started', { website_domain: 'acme.com' }],
+      ['support_preview_finished', {
+        website_domain: 'acme.com',
+        help_center_platform: 'intercom',
+        article_count: 402,
+        answer_count: 2,
+        gap_count: 1,
+      }],
+    ]);
+  });
+
+  it('records no finish for a website that cannot be read', async () => {
+    state.streamPreview.mockRejectedValue(new Error('Enter a public website address.'));
+    render('localhost');
+    await settle();
+
+    expect(state.track.mock.calls.map(([name]) => name)).toEqual(['support_preview_started']);
   });
 
   it('asks for the website again when it cannot be read at all', async () => {
