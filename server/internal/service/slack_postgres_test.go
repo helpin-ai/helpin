@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -746,27 +747,56 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 		t.Fatal("shared another message after Slack Connect change")
 	}
 	external = false
-	box := model.SupportMailbox{WorkspaceID: f.workspace, Name: "Partner requests", Handle: "partners", CreatedByID: f.userID}
+	box := model.SupportMailbox{WorkspaceID: f.workspace, Name: "Partner *requests* & <reviews>", Handle: "partners", CreatedByID: f.userID}
 	if err := f.db.Create(&box).Error; err != nil {
 		t.Fatal(err)
 	}
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", box.ID, conv)
 	deliver(nil)
 	link := "https://helpin.example/w/ops-" + f.workspace[:8] + "/support/" + conv
-	checkNotice := func(prefix string) {
+	checkNotice := func(actor string) {
 		t.Helper()
 		update := updates[len(updates)-1]
 		body := fmt.Sprint(update["blocks"])
+		prefix := "This conversation is in"
+		var wantBold []string
+		if actor != "" {
+			prefix = actor + " moved this conversation to"
+			wantBold = append(wantBold, actor)
+		}
+		wantBold = append(wantBold, "“"+box.Name+"”")
 		notice := fmt.Sprintf("%s “%s”, which this channel doesn’t follow. Updates have stopped in this thread.", prefix, box.Name)
-		if update["ts"] != trow.RootTS || !strings.Contains(body, notice) || update["text"] != notice+"\n"+link {
+		if update["ts"] != trow.RootTS || update["text"] != notice+"\n"+link || update["mrkdwn"] != false {
 			t.Fatalf("wrong root notice: %+v", update)
 		}
 		var buttons []any
+		var visible strings.Builder
+		var bold []string
 		for _, raw := range update["blocks"].([]any) {
 			block := raw.(map[string]any)
-			if block["type"] == "actions" {
+			switch block["type"] {
+			case "rich_text":
+				section := block["elements"].([]any)[0].(map[string]any)
+				if section["type"] != "rich_text_section" {
+					t.Fatalf("wrong notice section: %+v", section)
+				}
+				for _, rawPart := range section["elements"].([]any) {
+					part := rawPart.(map[string]any)
+					if part["type"] != "text" {
+						t.Fatalf("expected literal text: %+v", part)
+					}
+					partText := part["text"].(string)
+					visible.WriteString(partText)
+					if style, _ := part["style"].(map[string]any); style["bold"] == true {
+						bold = append(bold, partText)
+					}
+				}
+			case "actions":
 				buttons = append(buttons, block["elements"].([]any)...)
 			}
+		}
+		if visible.String() != notice || !slices.Equal(bold, wantBold) {
+			t.Fatalf("rendered notice %q with bold %q, want %q with bold %q", visible.String(), bold, notice, wantBold)
 		}
 		if len(buttons) != 1 || buttons[0].(map[string]any)["url"] != link || !strings.Contains(body, "Open in Helpin") ||
 			update["unfurl_links"] != false || update["unfurl_media"] != false ||
@@ -774,7 +804,7 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 			t.Fatalf("expected the original conversation link without customer details: %+v", update)
 		}
 	}
-	checkNotice("This conversation is in")
+	checkNotice("")
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
 	deliver(nil)
 	if len(posts) != 2 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "Checkout issue") {
@@ -800,12 +830,12 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 func testSlackFeedMoveNotices(t *testing.T, f *outboxFixture, conv, boxID string, deliver func(*string), checkNotice func(string)) {
 	t.Helper()
 	for _, tc := range []struct {
-		event, source, reason string
-		actor                 *string
+		event, source, label string
+		actor                *string
 	}{
-		{"auto_moved", "ai", "Helpin AI moved this conversation to", nil},
-		{"auto_moved", "rule", "A routing rule moved this conversation to", nil},
-		{"corrected", "ai", "A teammate moved this conversation to", &f.userID},
+		{"auto_moved", "ai", "Helpin AI", nil},
+		{"auto_moved", "rule", "A routing rule", nil},
+		{"corrected", "ai", "A teammate", &f.userID},
 	} {
 		mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", boxID, conv)
 		ev := model.SupportConversationTriageEvent{WorkspaceID: f.workspace, ConversationID: conv, EventType: tc.event, Source: &tc.source, ToMailboxID: &boxID, ActorUserID: tc.actor}
@@ -813,7 +843,7 @@ func testSlackFeedMoveNotices(t *testing.T, f *outboxFixture, conv, boxID string
 			t.Fatal(err)
 		}
 		deliver(nil)
-		checkNotice(tc.reason)
+		checkNotice(tc.label)
 		// All fixture operations share one database transaction. Age this audit event
 		// so it predates subsequent moves, as it would in separate transactions.
 		mustExec(t, f.db, "UPDATE support_conversation_triage_events SET created_at=now()-interval '1 day' WHERE id=?", ev.ID)
@@ -822,7 +852,7 @@ func testSlackFeedMoveNotices(t *testing.T, f *outboxFixture, conv, boxID string
 	}
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", boxID, conv)
 	deliver(nil)
-	checkNotice("This conversation is in")
+	checkNotice("")
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
 	deliver(nil)
 }

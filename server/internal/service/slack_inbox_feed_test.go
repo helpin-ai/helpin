@@ -42,8 +42,9 @@ func TestSlackInboxFeedArchivedReason(t *testing.T) {
 		{"anonymized merge", model.SupportConversation{MergedIntoID: &other, AnonymizedAt: &now}, "Personal details were removed from this conversation in Helpin."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := (&SlackService{}).feedStopReason(context.Background(), &tc.conv, "shared", nil); got != tc.want {
-				t.Errorf("reason = %q, want %q", got, tc.want)
+			want := tc.want + " Updates have stopped in this thread."
+			if got, _ := (&SlackService{}).feedStopNotice(context.Background(), &tc.conv, "shared", nil); got != want {
+				t.Errorf("notice = %q, want %q", got, want)
 			}
 		})
 	}

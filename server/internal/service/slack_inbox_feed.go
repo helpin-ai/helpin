@@ -128,13 +128,12 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 	conversationURL := s.appURL + "/w/" + t.WorkspaceSlug + "/support/" + conv.ID
 	if conv.AnonymizedAt != nil || conv.MergedIntoID != nil || !slices.Contains(route.MailboxIDs, key) {
 		if t.RootTS != "" {
-			reason := s.feedStopReason(ctx, conv, key, route.MailboxIDs)
-			notice := reason + " Updates have stopped in this thread."
+			notice, block := s.feedStopNotice(ctx, conv, key, route.MailboxIDs)
 			payload := map[string]any{
 				"channel": route.CurrentChannelID, "ts": t.RootTS,
 				"text": notice + "\n" + conversationURL, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false,
 				"blocks": []any{
-					map[string]any{"type": "section", "text": slackText(notice)},
+					block,
 					slackButtons(feedOpenButton(t.ID, conversationURL)),
 				},
 			}
@@ -160,41 +159,73 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 	return &feedContext{thread: t, conv: conv, account: a, token: token, channel: route.CurrentChannelID, conversationURL: conversationURL}, nil
 }
 
-func (s *SlackService) feedStopReason(ctx context.Context, conv *model.SupportConversation, key string, followed []string) string {
+type slackNoticePart struct {
+	text string
+	bold bool
+}
+
+func renderFeedStopNotice(parts ...slackNoticePart) (string, map[string]any) {
+	var plain strings.Builder
+	var elements []any
+	for _, part := range append(parts, slackNoticePart{text: " Updates have stopped in this thread."}) {
+		plain.WriteString(part.text)
+		element := map[string]any{"type": "text", "text": part.text}
+		if part.bold {
+			element["style"] = map[string]bool{"bold": true}
+		}
+		elements = append(elements, element)
+	}
+	section := map[string]any{"type": "rich_text_section", "elements": elements}
+	return plain.String(), map[string]any{"type": "rich_text", "elements": []any{section}}
+}
+
+func (s *SlackService) feedStopNotice(ctx context.Context, conv *model.SupportConversation, key string, followed []string) (string, map[string]any) {
 	switch {
 	case conv.AnonymizedAt != nil:
-		return "Personal details were removed from this conversation in Helpin."
+		return renderFeedStopNotice(
+			slackNoticePart{text: "Personal details were removed", bold: true},
+			slackNoticePart{text: " from this conversation in Helpin."},
+		)
 	case conv.MergedIntoID != nil:
-		return "This conversation was merged into another conversation in Helpin."
+		return renderFeedStopNotice(
+			slackNoticePart{text: "This conversation was "},
+			slackNoticePart{text: "merged", bold: true},
+			slackNoticePart{text: " into another conversation in Helpin."},
+		)
 	}
 	name := strings.TrimSpace(derefString(conv.MailboxName))
 	if key == "shared" {
 		name = "Shared Inbox"
 	}
 	destination := "an inbox this channel doesn’t follow"
+	afterDestination := "."
 	if name != "" {
-		destination = fmt.Sprintf("“%s”, which this channel doesn’t follow", truncate(name, 2800))
+		destination = "“" + truncate(name, 2800) + "”"
+		afterDestination = ", which this channel doesn’t follow."
 	}
 	event, err := s.repo.FeedMoveEvent(ctx, conv.WorkspaceID, conv.ID, key, followed)
 	if err != nil {
 		// Remove the stale card even when routing history is unavailable.
 		slog.WarnContext(ctx, "could not attribute Slack inbox move", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
 	}
-	if event != nil {
-		move := " moved this conversation to " + destination + "."
-		if event.ActorUserID != nil {
-			return "A teammate" + move
-		}
-		if event.EventType == supportTriageEventAutoMoved {
-			switch derefString(event.Source) {
-			case model.SupportConversationTriageSourceAI:
-				return "Helpin AI" + move
-			case model.SupportConversationTriageSourceRule:
-				return "A routing rule" + move
-			}
+	var actor string
+	switch {
+	case event != nil && event.ActorUserID != nil:
+		actor = "A teammate"
+	case event != nil && event.EventType == supportTriageEventAutoMoved:
+		switch derefString(event.Source) {
+		case model.SupportConversationTriageSourceAI:
+			actor = "Helpin AI"
+		case model.SupportConversationTriageSourceRule:
+			actor = "A routing rule"
 		}
 	}
-	return "This conversation is in " + destination + "."
+	parts := []slackNoticePart{{text: "This conversation is in "}}
+	if actor != "" {
+		parts = []slackNoticePart{{text: actor, bold: true}, {text: " moved this conversation to "}}
+	}
+	parts = append(parts, slackNoticePart{text: destination, bold: true}, slackNoticePart{text: afterDestination})
+	return renderFeedStopNotice(parts...)
 }
 
 func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInboundJob) error {
