@@ -115,6 +115,11 @@ func (h *DocsHandler) ImportStartIntercom(w http.ResponseWriter, r *http.Request
 // problem the caller can fix is shown as written; anything else is logged
 // and reported without internals.
 func writePublicImportError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, service.ErrPublicImportNeedsToken) {
+		// Its own status, so the form can ask for the token.
+		writeError(w, http.StatusPreconditionRequired, strings.TrimPrefix(err.Error(), service.ErrPublicImportInvalid.Error()+": "))
+		return
+	}
 	if errors.Is(err, service.ErrPublicImportInvalid) {
 		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrPublicImportInvalid.Error()+": "))
 		return

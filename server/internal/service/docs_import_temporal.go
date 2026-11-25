@@ -70,9 +70,16 @@ func (s *DocsImportService) executeStoredHelpScoutImport(ctx context.Context, im
 		return nil
 	}
 	heartbeat := func(processed int) { activity.RecordHeartbeat(ctx, processed) }
-	if job.Source == docsImportSourceIntercomPublic {
-		// A public import stores no secret, so its payload is kept for retries.
-		return s.runPublicIntercomImport(ctx, job.ID, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat)
+	if isPublicImportSource(job.Source) {
+		if err := s.runPublicImport(ctx, job, req, *req.TargetSpaceID, heartbeat); err != nil {
+			return err
+		}
+		// An import without a token stores no secret, so its payload is kept
+		// for retries.
+		if req.APIKey != "" {
+			s.clearFinishedPayload(ctx, job.ID)
+		}
+		return nil
 	}
 	if job.Source == docsImportSourceIntercom {
 		if err := s.runIntercomImport(ctx, job.ID, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat); err != nil {

@@ -62,7 +62,7 @@ function SupportSetupAssistantContent({ workspaceId, slug }: { workspaceId: stri
     <section className="space-y-2" aria-label="Connect your assistant">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-medium">1. Connect your assistant</h3>
-        <a href={`/w/${slug}/settings/mcp`} className="text-xs text-muted-foreground underline underline-offset-4">MCP access</a>
+        <a href={`/w/${slug}/settings/mcp`} className="text-xs text-muted-foreground underline underline-offset-4">API &amp; MCP access</a>
       </div>
       {issue ? <p role="status" className="text-sm text-muted-foreground">{issue}</p> : <>
         <div className="flex items-center gap-2">

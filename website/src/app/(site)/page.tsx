@@ -12,7 +12,7 @@ import { SupportStory } from './_components/support-story/SupportStory';
 import { HostingDiagram } from './_components/HostingDiagram';
 import { AgentControlArt } from './_components/AgentControlArt';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
-import { CtaRow, GithubIcon, SectionHead, GITHUB_URL, SIGNUP_URL, LinkArrow } from './_components/ui';
+import { CtaRow, GithubIcon, SectionHead, StartForm, GITHUB_URL, SIGNUP_URL, LinkArrow } from './_components/ui';
 import { DOCS } from './_components/docsLinks';
 import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import { JsonLd, organization, softwareApplication, website } from '@/lib/structured-data';
@@ -52,8 +52,9 @@ export default function HomePage() {
             <span className="eyebrow">AI-first, open-source alternative to <Link className="eyebrow-link" href="/compare/intercom">Intercom</Link></span>
             <HeroHeadline />
             <p className="lede">Customers get answers from your docs right away. Questions that need a person reach your team with the AI’s findings attached, so nobody starts over.</p>
-            <CtaRow primaryLabel="Start free trial" />
-            <p className="cta-note">14-day free trial, no card · Open source, self-host free</p>
+            <StartForm />
+            <p className="start-note">Watch your AI agent answer a customer question from your own docs, before you sign up.</p>
+            <p className="cta-note">Or <Link prefetch={false} href={SIGNUP_URL}>start a free trial</Link> · 14 days, no card · Open source, self-host free</p>
 
           </div>
           <figure className="hero-workflow hero-film">

@@ -3,10 +3,10 @@ import type { SupportSetupGuide } from './setupTypes';
 
 export function supportSetupConnectionIssue(dashboard: MCPDashboard): string | null {
   if (!dashboard.platform_enabled) return 'MCP is unavailable on this deployment. You can continue using the setup links below.';
-  if (!dashboard.can_use_mcp || !dashboard.policy.enabled) return 'MCP access is disabled for this workspace. Ask a workspace admin to enable it in MCP access.';
+  if (!dashboard.can_use_mcp || !dashboard.policy.enabled) return 'MCP access is disabled for this workspace. Ask a workspace admin to enable it in API & MCP access.';
   if (dashboard.support_setup_available === false || !dashboard.available_toolsets.includes('support') || !dashboard.available_scopes.includes('helpin.support.read')) return 'Support setup is unavailable through MCP on this deployment. Continue using the setup links below.';
-  if (!dashboard.policy.allowed_toolsets.includes('support') || !dashboard.policy.allowed_scopes.includes('helpin.support.read')) return 'Support read access is restricted. Ask a workspace admin to allow it in MCP access.';
-  if (!dashboard.mcp_url) return 'The MCP server URL is unavailable. Check MCP access before connecting.';
+  if (!dashboard.policy.allowed_toolsets.includes('support') || !dashboard.policy.allowed_scopes.includes('helpin.support.read')) return 'Support read access is restricted. Ask a workspace admin to allow it in API & MCP access.';
+  if (!dashboard.mcp_url) return 'The MCP server URL is unavailable. Check API & MCP access before connecting.';
   return null;
 }
 

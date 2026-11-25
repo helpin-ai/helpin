@@ -58,8 +58,16 @@ interface ImportFailedImage {
   reason?: string;
 }
 
-/** Job source of an import that read a public help center by its address. */
-export const PUBLIC_HELP_CENTER_IMPORT_SOURCE = 'intercom_public';
+/** Whether a job source is an import that read a help center by its address, such as `zendesk_public`. */
+export function isPublicHelpCenterImport(source: string): boolean {
+  return source.endsWith('_public');
+}
+
+/** Sign-in for a Zendesk help center that refuses anonymous reads. */
+export interface ZendeskCredentials {
+  email: string;
+  api_token: string;
+}
 
 export interface PublicHelpCenterPreview {
   platform: string;
@@ -74,7 +82,7 @@ export interface PublicHelpCenterPreview {
   top_collections: { name: string; articles: number }[];
 }
 
-export interface PublicHelpCenterStartRequest {
+export interface PublicHelpCenterStartRequest extends Partial<ZendeskCredentials> {
   url: string;
   target_space_id?: string;
   new_space_name?: string;
@@ -176,8 +184,9 @@ export const docsImportService = {
   resumePublicHelpCenter: (workspaceId: string, jobId: string) =>
     api.post(`/docs/import/${jobId}/retry${qs(workspaceId)}`, {}),
 
-  previewPublicHelpCenter: (workspaceId: string, url: string) =>
-    api.post<PublicHelpCenterPreview>(`/docs/import/public-help-center/preview${qs(workspaceId)}`, { url }),
+  /** Answers with status 428 when the help center is a Zendesk one that needs `credentials`. */
+  previewPublicHelpCenter: (workspaceId: string, url: string, credentials?: ZendeskCredentials) =>
+    api.post<PublicHelpCenterPreview>(`/docs/import/public-help-center/preview${qs(workspaceId)}`, { url, ...credentials }),
 
   startPublicHelpCenter: (workspaceId: string, data: PublicHelpCenterStartRequest) =>
     api.post<{ job_id: string }>(`/docs/import/public-help-center/start${qs(workspaceId)}`, data),

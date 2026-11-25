@@ -9,21 +9,28 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import {
   docsImportService,
-  PUBLIC_HELP_CENTER_IMPORT_SOURCE,
+  isPublicHelpCenterImport,
   type ImportStatusResponse,
 } from '@/lib/services/docsImportService';
+import { helpCenterPlatformName } from '@/lib/helpCenterPlatforms';
 
 const SOURCE_LABELS: Record<string, string> = {
   helpscout: 'HelpScout',
   intercom: 'Intercom',
   nextra: 'Nextra',
-  [PUBLIC_HELP_CENTER_IMPORT_SOURCE]: 'Public help center',
 };
 
+/** What an import read from, in words. */
+function sourceLabel(source: string): string {
+  if (!isPublicHelpCenterImport(source)) return SOURCE_LABELS[source] ?? source;
+  const platform = helpCenterPlatformName(source.replace(/_public$/, ''));
+  return platform ? `${platform} help center, by address` : 'Public help center';
+}
+
 // Sources whose articles keep their original HTML and can be converted again.
-// A public help center is converted from structured blocks, not HTML.
+// An import by address keeps no source HTML; running it again reads the site.
 function canReconvert(job: ImportStatusResponse): boolean {
-  return job.status === 'done' && job.source !== PUBLIC_HELP_CENTER_IMPORT_SOURCE;
+  return job.status === 'done' && !isPublicHelpCenterImport(job.source);
 }
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Tick01Icon; className: string }> = {
@@ -115,7 +122,7 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
                     </span>
                   </TableCell>
                   <TableCell>
-                    <span className="text-sm">{SOURCE_LABELS[job.source || 'helpscout'] ?? job.source}</span>
+                    <span className="text-sm">{sourceLabel(job.source || 'helpscout')}</span>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">

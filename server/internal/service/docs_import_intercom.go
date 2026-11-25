@@ -486,7 +486,7 @@ func (s *DocsImportService) runIntercomImport(ctx context.Context, jobID string,
 		status = model.DocsImportStatusFailed
 	}
 	doneAt := time.Now()
-	if err := s.importRepo.UpdateStatus(ctx, jobID, status, &doneAt); err != nil {
+	if err := s.closeJob(ctx, jobID, status, &doneAt); err != nil {
 		s.logger.Error("failed to mark job done", "job_id", jobID, "error", err)
 	}
 	return nil

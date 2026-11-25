@@ -98,7 +98,7 @@ export function SetupGitHubStep({ capability, workspaceId, slug, canManage, isOw
  * Starts the installation with Helpin's signed install link, so GitHub
  * returns to this page and the installation is linked automatically.
  */
-export function GitHubInstallAction({ workspaceId, returnTo }: { workspaceId: string; returnTo: GitHubReturnTo }) {
+function GitHubInstallAction({ workspaceId, returnTo }: { workspaceId: string; returnTo: GitHubReturnTo }) {
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<SetupResult | null>(null);
 

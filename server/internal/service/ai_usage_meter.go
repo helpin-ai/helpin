@@ -52,6 +52,7 @@ const (
 	BillingFeatureAgentPromptImprovement  = "agent_prompt_improvement"
 	BillingFeatureDataImportSetup         = "data_import_setup"
 	BillingFeatureCompanyProductContext   = "company_product_context_generation"
+	BillingFeatureOnboardingPreviewAnswer = "onboarding_preview_answer"
 	BillingFeatureDockChatTitle           = "dock_chat_title_generation"
 )
 

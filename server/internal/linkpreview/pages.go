@@ -64,7 +64,7 @@ var workspacePages = map[string]pageContent{
 	"/settings/inboxes-routing":             {title: "Inboxes and routing in Helpin", description: "Open to view details."},
 	"/settings/knowledge":                   {title: "Knowledge sources in Helpin", description: "Open to view details."},
 	"/settings/labels":                      {title: "Label settings in Helpin", description: "Open to view details."},
-	"/settings/mcp":                         {title: "MCP access in Helpin", description: "Open to view details."},
+	"/settings/mcp":                         {title: "API & MCP access in Helpin", description: "Open to view details."},
 	"/settings/members":                     {title: "Workspace members in Helpin", description: "Open to view details."},
 	"/settings/notifications":               {title: "Notification preferences in Helpin", description: "Open to view details."},
 	"/settings/profile":                     {title: "Profile in Helpin", description: "Open to view details."},

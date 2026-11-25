@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 func convert(t *testing.T, html string) *ConversionResult {
@@ -729,5 +732,115 @@ func TestConvertHelpScoutFixture_BioLinksPreservesCalloutsAndLowerHeadings(t *te
 	}
 	if strings.Contains(j, `"type":"heading","attrs":{"level":3}`) && !strings.Contains(j, "Step 1") {
 		t.Fatalf("expected empty nested heading to be dropped, got: %s", j)
+	}
+}
+
+func TestConvertHTMLLiftsImagesOutOfInlineWrappers(t *testing.T) {
+	result, err := ConvertHTML(`<p>Before <strong><img src="https://example.com/a.png" alt="A"></strong> after</p>` +
+		`<h2><span><img src="https://example.com/b.png"></span>Title</h2>` +
+		`<ul><li><p><span><img src="https://example.com/c.png"></span></p></li></ul>`)
+	if err != nil {
+		t.Fatalf("ConvertHTML() error = %v", err)
+	}
+	content, err := result.Doc.ToJSON()
+	if err != nil {
+		t.Fatalf("ToJSON() error = %v", err)
+	}
+	if err := tiptap.ValidateDocument(content); err != nil {
+		t.Fatalf("converted document is invalid: %v\n%s", err, content)
+	}
+	var types []string
+	for _, node := range result.Doc.Content {
+		types = append(types, node.Type)
+	}
+	want := []string{"paragraph", "resizableImage", "paragraph", "resizableImage", "heading", "bulletList"}
+	if !slices.Equal(types, want) {
+		t.Fatalf("top-level nodes = %v, want %v", types, want)
+	}
+}
+
+func TestConvertHTMLKeepsVideoInsideParagraph(t *testing.T) {
+	result, err := ConvertHTML(`<p><iframe src="//www.youtube-nocookie.com/embed/abc123?rel=0"></iframe></p>`)
+	if err != nil {
+		t.Fatalf("ConvertHTML() error = %v", err)
+	}
+	if len(result.Doc.Content) != 1 || result.Doc.Content[0].Type != "videoEmbed" {
+		t.Fatalf("content = %+v, want one videoEmbed", result.Doc.Content)
+	}
+}
+
+func TestConvertHTMLKeepsMarksTheEditorAllows(t *testing.T) {
+	result, err := ConvertHTML(`<p><b><strong>twice bold</strong></b> <strong><code>bold code</code></strong> ` +
+		`<a href="https://example.com/x"><code>linked code</code></a> <code><em>code with emphasis</em></code></p>`)
+	if err != nil {
+		t.Fatalf("ConvertHTML() error = %v", err)
+	}
+	content, err := result.Doc.ToJSON()
+	if err != nil {
+		t.Fatalf("ToJSON() error = %v", err)
+	}
+	if err := tiptap.ValidateDocument(content); err != nil {
+		t.Fatalf("converted document is invalid: %v\n%s", err, content)
+	}
+	want := map[string][]string{
+		"twice bold": {"bold"}, "bold code": {"code"}, "linked code": {"link"}, "code with emphasis": {"code"},
+	}
+	for _, node := range result.Doc.Content[0].Content {
+		expected, ok := want[node.Text]
+		if !ok {
+			continue
+		}
+		var got []string
+		for _, mark := range node.Marks {
+			got = append(got, mark.Type)
+		}
+		if !slices.Equal(got, expected) {
+			t.Errorf("marks of %q = %v, want %v", node.Text, got, expected)
+		}
+		delete(want, node.Text)
+	}
+	if len(want) > 0 {
+		t.Errorf("text not found: %v in %s", want, content)
+	}
+}
+
+func TestConvertHTMLReadsAnArticleInsideAStyledWrapper(t *testing.T) {
+	result, err := ConvertHTML(`<div style="padding: 1px"><div>Lead text</div><h2>Head</h2><p>Para</p></div>`)
+	if err != nil {
+		t.Fatalf("ConvertHTML() error = %v", err)
+	}
+	var types []string
+	for _, node := range result.Doc.Content {
+		types = append(types, node.Type)
+	}
+	if want := []string{"paragraph", "heading", "paragraph"}; !slices.Equal(types, want) {
+		t.Fatalf("top-level nodes = %v, want %v", types, want)
+	}
+	// A styled card without headings is still kept as written.
+	card, err := ConvertHTML(`<div style="border: 1px solid; padding: 8px"><p>Tip</p></div>`)
+	if err != nil || len(card.Doc.Content) != 1 || card.Doc.Content[0].Type != "htmlBlock" {
+		t.Fatalf("card = %+v, %v; want one htmlBlock", card.Doc.Content, err)
+	}
+}
+
+func TestConvertHTMLKeepsAListWrittenStraightInsideAList(t *testing.T) {
+	result, err := ConvertHTML(`<ol><ol><li>first</li></ol><li>step<br></li><ol><li>inner</li><li><img src="https://example.com/a.png"></li></ol><li>after</li></ol><p>end</p>`)
+	if err != nil {
+		t.Fatalf("ConvertHTML() error = %v", err)
+	}
+	content, err := result.Doc.ToJSON()
+	if err != nil {
+		t.Fatalf("ToJSON() error = %v", err)
+	}
+	if err := tiptap.ValidateDocument(content); err != nil {
+		t.Fatalf("invalid document: %v\n%s", err, content)
+	}
+	for _, want := range []string{`"first"`, `"step"`, `"inner"`, `a.png`, `"after"`, `"end"`} {
+		if !strings.Contains(string(content), want) {
+			t.Errorf("%s is missing from %s", want, content)
+		}
+	}
+	if items := result.Doc.Content[0].Content; len(items) != 3 {
+		t.Errorf("outer list has %d items, want 3: %s", len(items), content)
 	}
 }

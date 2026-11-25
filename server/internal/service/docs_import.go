@@ -22,6 +22,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/intercom"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/publichelp"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
@@ -34,8 +35,10 @@ type DocsImportService struct {
 	// intercomBaseURLOverride replaces the Intercom API host for every
 	// region (INTERCOM_API_BASE_URL).
 	intercomBaseURLOverride string
-	// publicIntercom reads help centers by their public address.
+	// publicIntercom reads Intercom help centers by their public address.
 	publicIntercom *intercom.PublicClient
+	// publicFetch fetches the pages of every other help center platform.
+	publicFetch *publichelp.Fetcher
 	// imageUploader, when set, stores imported images instead of the S3
 	// client. Tests use it to run an import without object storage.
 	imageUploader  helpscout.ImageUploader
@@ -51,7 +54,44 @@ type DocsImportService struct {
 	aiConversion   DocsImportAIConversionConfig
 	temporalClient tclient.Client
 	encryptionKey  []byte
-	logger         *slog.Logger
+	// spaceIndexer queues AI indexing of the space an import filled.
+	spaceIndexer docsImportSpaceIndexer
+	logger       *slog.Logger
+}
+
+// docsImportSpaceIndexer queues AI and search indexing of a docs space.
+type docsImportSpaceIndexer interface {
+	QueueSpaceSync(ctx context.Context, workspaceID, spaceID string) error
+}
+
+// SetSpaceIndexer makes every finished import queue indexing of the space it
+// filled. Imported articles are written without the per-document hooks, so
+// without it they reach search and AI answers only after another change
+// reindexes the space.
+func (s *DocsImportService) SetSpaceIndexer(indexer docsImportSpaceIndexer) *DocsImportService {
+	s.spaceIndexer = indexer
+	return s
+}
+
+// closeJob ends an import job and, when it brought articles in, queues
+// indexing of its space.
+func (s *DocsImportService) closeJob(ctx context.Context, jobID, status string, doneAt *time.Time) error {
+	if err := s.importRepo.UpdateStatus(ctx, jobID, status, doneAt); err != nil {
+		return err
+	}
+	if status != model.DocsImportStatusDone || s.spaceIndexer == nil {
+		return nil
+	}
+	job, err := s.importRepo.GetByID(ctx, jobID)
+	if err != nil || job == nil || job.SpaceID == nil {
+		s.logger.WarnContext(ctx, "imported space not indexed: job not read", "job_id", jobID, "error", err)
+		return nil
+	}
+	// The import itself succeeded; a failed queue is retried by the next change to the space.
+	if err := s.spaceIndexer.QueueSpaceSync(ctx, job.WorkspaceID, *job.SpaceID); err != nil {
+		s.logger.WarnContext(ctx, "queue imported space indexing", "job_id", jobID, "space_id", *job.SpaceID, "error", err)
+	}
+	return nil
 }
 
 // SetTemporalClient enables durable HelpScout import execution through Temporal.
@@ -568,7 +608,7 @@ func (s *DocsImportService) runImport(ctx context.Context, jobID, apiKey string,
 	if failed > 0 && completed == 0 {
 		status = model.DocsImportStatusFailed
 	}
-	if err := s.importRepo.UpdateStatus(ctx, jobID, status, &doneTime); err != nil {
+	if err := s.closeJob(ctx, jobID, status, &doneTime); err != nil {
 		s.logger.Error("failed to mark job done", "job_id", jobID, "error", err)
 	}
 
@@ -878,7 +918,7 @@ func (s *DocsImportService) Retry(ctx context.Context, jobID, workspaceID, apiKe
 	// A public import keeps everything it needs and resumes from its
 	// checkpoints, so it can also continue after it was stopped or failed
 	// before reaching any article.
-	resumable := job.Source == docsImportSourceIntercomPublic
+	resumable := isPublicImportSource(job.Source)
 	if job.Status != model.DocsImportStatusDone && job.Status != model.DocsImportStatusFailed &&
 		(!resumable || job.Status != model.DocsImportStatusInterrupted) {
 		return fmt.Errorf("can only retry completed or failed jobs")

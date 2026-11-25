@@ -2,6 +2,7 @@ package docsimport
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -29,12 +30,58 @@ func ConvertHTML(rawHTML string) (*ConversionResult, error) {
 	if len(nodes) == 0 {
 		nodes = []Node{Paragraph()}
 	}
+	nodes = liftImages(nodes)
 	addHeadingAnchorAliases(nodes)
 
 	return &ConversionResult{
 		Doc:      Doc(nodes...),
 		Warnings: c.warnings,
 	}, nil
+}
+
+// liftImages moves images out of paragraphs and headings, which cannot hold
+// them, and opens a list item that starts with anything else with an empty
+// paragraph. An image inside <strong>, <span> or a link with other content
+// arrives in a paragraph through the inline path.
+func liftImages(nodes []Node) []Node {
+	isImage := func(node Node) bool { return node.Type == "resizableImage" }
+	out := make([]Node, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Type != "paragraph" && node.Type != "heading" {
+			if len(node.Content) > 0 {
+				node.Content = liftImages(node.Content)
+				// A list item must open with a paragraph, even an empty one.
+				if node.Type == "listItem" && node.Content[0].Type != "paragraph" {
+					node.Content = append([]Node{Paragraph()}, node.Content...)
+				}
+			}
+			out = append(out, node)
+			continue
+		}
+		if !slices.ContainsFunc(node.Content, isImage) {
+			out = append(out, node)
+			continue
+		}
+		var run []Node
+		flush := func() {
+			if run = trimInlineNodes(run); len(run) > 0 {
+				part := node
+				part.Content = run
+				out = append(out, part)
+			}
+			run = nil
+		}
+		for _, child := range node.Content {
+			if isImage(child) {
+				flush()
+				out = append(out, child)
+				continue
+			}
+			run = append(run, child)
+		}
+		flush()
+	}
+	return out
 }
 
 type converter struct {
@@ -145,7 +192,9 @@ func (c *converter) convertElement(n *html.Node) []Node {
 	}
 	// Help Scout commonly wraps responsive video iframes in a positioned div.
 	// Convert supported embeds inside that wrapper before considering it custom HTML.
-	if isStyledCustomHTMLContainer(n) && !containsSupportedVideoEmbedNode(n) {
+	// A styled box that holds headings is the article itself in a wrapper,
+	// not a decorative card: its content is converted like any other.
+	if isStyledCustomHTMLContainer(n) && !containsSupportedVideoEmbedNode(n) && !containsHeading(n) {
 		raw := renderNode(n)
 		if strings.TrimSpace(raw) != "" {
 			c.warn(warnHTMLBlockFallback())
@@ -311,6 +360,10 @@ func (c *converter) convertParagraph(n *html.Node) []Node {
 			if src != "" {
 				result = append(result, Image(src, alt, ""))
 			}
+		} else if child.Type == html.ElementNode && child.DataAtom == atom.Iframe {
+			// A video placed inside a paragraph is still a block of its own.
+			flushInline()
+			result = append(result, c.convertIframe(child)...)
 		} else if child.Type == html.ElementNode && child.DataAtom == atom.Br {
 			inlineBuffer = append(inlineBuffer, HardBreak())
 		} else if child.Type == html.TextNode {
@@ -430,20 +483,54 @@ func (c *converter) convertInlineElement(n *html.Node, parentMarks []Mark) []Nod
 
 	marks := parentMarks
 	if mark != nil {
-		marks = append(append([]Mark{}, parentMarks...), *mark)
+		marks = withMark(parentMarks, *mark)
 	}
 
 	return c.convertInlineChildren(n, marks)
+}
+
+// withMark adds a mark to the marks of the text around it. A mark already
+// there is not repeated: <b><strong> is bold once. Code stands alone in the
+// editor, so it replaces the other marks, except that a link is kept over
+// code: losing the link loses where it led.
+func withMark(parent []Mark, mark Mark) []Mark {
+	has := func(kind string) bool {
+		return slices.ContainsFunc(parent, func(m Mark) bool { return m.Type == kind })
+	}
+	switch {
+	case has(mark.Type):
+		return parent
+	case mark.Type == "code" && has("link"), has("code") && mark.Type != "link":
+		return parent
+	case mark.Type == "code", has("code"):
+		return []Mark{mark}
+	}
+	return append(append([]Mark{}, parent...), mark)
 }
 
 // convertListItems extracts list items from a list element.
 func (c *converter) convertListItems(list *html.Node) []Node {
 	var items []Node
 	for child := list.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type == html.ElementNode && child.DataAtom == atom.Li {
+		if child.Type != html.ElementNode {
+			continue
+		}
+		if child.DataAtom == atom.Li {
 			content := c.convertChildren(child)
 			content = ensureBlockContent(content)
 			items = append(items, ListItem(content...))
+			continue
+		}
+		// A list written straight inside a list, with no item around it, shows
+		// as part of the item before it.
+		content := c.convertNode(child)
+		switch {
+		case len(content) == 0:
+		case len(items) == 0:
+			items = append(items, ListItem(ensureBlockContent(content)...))
+		default:
+			last := &items[len(items)-1]
+			last.Content = append(last.Content, content...)
 		}
 	}
 	return items
@@ -901,6 +988,17 @@ func containsElement(n *html.Node, tag atom.Atom) bool {
 	found := false
 	walkElements(n, func(candidate *html.Node) {
 		if candidate.DataAtom == tag {
+			found = true
+		}
+	})
+	return found
+}
+
+func containsHeading(n *html.Node) bool {
+	found := false
+	walkElements(n, func(candidate *html.Node) {
+		switch candidate.DataAtom {
+		case atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6:
 			found = true
 		}
 	})
