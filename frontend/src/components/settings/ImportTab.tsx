@@ -162,45 +162,6 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
 
   return (
     <div className="space-y-8">
-      {/* Project Management */}
-      <div className="space-y-4">
-        <h3 className="text-sm font-semibold">Project Management</h3>
-        <p className="text-sm text-muted-foreground">Select a source to import from</p>
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
-          {IMPORT_SOURCES.map((source, idx) => (
-            <button
-              key={source.key}
-              type="button"
-              disabled={source.comingSoon || !editable}
-              onClick={() => setSelected(source.key)}
-              className={cn(
-                'flex w-full items-center gap-4 px-4 py-4 text-left transition-colors',
-                source.comingSoon ? 'cursor-not-allowed opacity-60' : 'hover:bg-muted/40',
-                idx > 0 && 'border-t border-border',
-              )}
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                <img src={source.icon} alt={source.title} className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{source.title}</p>
-                <p className="text-sm text-muted-foreground">{source.description}</p>
-              </div>
-              {source.key === 'shortcut' && shortcutRunning ? (
-                <Badge className="gap-1.5 bg-blue-100 text-blue-700 hover:bg-blue-100">
-                  <Loading01Icon className="h-3 w-3 animate-spin" />
-                  Running
-                </Badge>
-              ) : source.comingSoon ? (
-                <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
-              ) : (
-                <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Support */}
       <div className="space-y-4">
         <h3 className="text-sm font-semibold">Support</h3>
@@ -336,6 +297,44 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
               )}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Project Management */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold">Project Management</h3>
+        <div className="overflow-hidden rounded-lg border border-border bg-background">
+          {IMPORT_SOURCES.map((source, idx) => (
+            <button
+              key={source.key}
+              type="button"
+              disabled={source.comingSoon || !editable}
+              onClick={() => setSelected(source.key)}
+              className={cn(
+                'flex w-full items-center gap-4 px-4 py-4 text-left transition-colors',
+                source.comingSoon ? 'cursor-not-allowed opacity-60' : 'hover:bg-muted/40',
+                idx > 0 && 'border-t border-border',
+              )}
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                <img src={source.icon} alt={source.title} className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{source.title}</p>
+                <p className="text-sm text-muted-foreground">{source.description}</p>
+              </div>
+              {source.key === 'shortcut' && shortcutRunning ? (
+                <Badge className="gap-1.5 bg-blue-100 text-blue-700 hover:bg-blue-100">
+                  <Loading01Icon className="h-3 w-3 animate-spin" />
+                  Running
+                </Badge>
+              ) : source.comingSoon ? (
+                <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
+              ) : (
+                <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+            </button>
+          ))}
         </div>
       </div>
     </div>

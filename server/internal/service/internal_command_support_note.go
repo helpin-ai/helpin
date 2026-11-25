@@ -29,7 +29,7 @@ func (s *InternalCommandService) executeSupportAddConversationNote(ctx context.C
 		return nil, err
 	}
 	if strings.TrimSpace(meta.AgentID) == "" {
-		// A teammate or automation account writes the note in their own name.
+		// A teammate or service account writes the note in their own name.
 		actor, err := requireTeammateActor(meta)
 		if err != nil {
 			return nil, err

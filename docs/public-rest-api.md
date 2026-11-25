@@ -12,18 +12,18 @@ same security model as [Helpin MCP](public-mcp-server.md).
 
 | Concern | Behavior |
 | --- | --- |
-| Identity | A workspace-bound **automation account** (service principal) token, `hmp_…`. OAuth user tokens issued for MCP also work. |
+| Identity | A workspace-bound **service account** (service principal) token, `hmp_…`. OAuth user tokens issued for MCP also work. |
 | Scopes and toolsets | Each operation requires one scope (`x-helpin-scope` in the spec). Tokens, and the workspace policy, limit which scopes and toolsets exist. |
 | Read-only | Read-only tokens and read-only workspace policy reject every write with `403 forbidden`. |
 | Authorization | Workspace role (RBAC), product-module access, and rollout flags are re-checked on every call. |
 | Idempotency | `Idempotency-Key` header on writes; same key and body replays the stored result for 24 hours. |
-| Audit | Calls appear in **Settings → MCP access → Activity** with hashed request and result, never raw payloads. |
+| Audit | Calls appear in **Settings → API & MCP access → Activity** with hashed request and result, never raw payloads. |
 | Rate limits | Shared per-principal limits (`AUTHENTICATED_RATE_LIMIT_PER_MINUTE`, `EXPENSIVE_RATE_LIMIT_PER_MINUTE`); writes and search count as expensive. Bulk writes are charged by size: `POST /crm/records/upsert` costs one unit per 10 records (a 100-record batch costs 10), counted even when the request is rejected. MCP calls share the same budget. `429` carries `Retry-After`. |
 
 ## Getting a token
 
-1. A workspace manager opens **Settings → MCP access → Permissions**, enables AI tool access and **Allow automation accounts**, and picks the allowed product areas and scopes.
-2. Under **Service accounts**, choose **Create automation account**, pick product areas, and turn on **Allow updates** if the workflow writes, then create a token. It is shown once. Updates are available only when **Permissions** allows bounded writes for a selected area; they never include deleting records, Help Center publishing, or agent runs. The API refuses a write request the policy cannot grant instead of creating a read-only account.
+1. A workspace manager opens **Settings → API & MCP access → Permissions**, enables AI tool access and **Allow service accounts**, and picks the allowed product areas and scopes.
+2. Under **Service accounts**, choose **Create service account**, pick product areas, and turn on **Allow updates** if the workflow writes, then create a token. It is shown once. Updates are available only when **Permissions** allows bounded writes for a selected area; they never include deleting records, Help Center publishing, or agent runs. The API refuses a write request the policy cannot grant instead of creating a read-only account.
 3. Send it as `Authorization: Bearer hmp_…`.
 
 ```bash

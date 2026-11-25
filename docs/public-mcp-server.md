@@ -423,7 +423,7 @@ Instructions require a fresh inspection before acting and after saved changes.
 An admin can choose **Enable setup access** in this handoff to allow the read and
 write scopes needed by the selected goals, including their knowledge and agent
 dependencies. The preset and copied prompt use the same scope definition. It
-adds permissions to workspace policy, preserves other grants and automation-account
+adds permissions to workspace policy, preserves other grants and service-account
 settings, and does not upgrade existing connections. Connect or reconnect the
 assistant to approve access. When the client requests writes and the workspace
 allows them, consent starts with those writes selected; the user can narrow the
@@ -518,9 +518,9 @@ These tools expose existing Helpin commands that in-app agents already use, with
 
 Customer-visible sends need `helpin.support.reply`. It is never granted with
 `helpin.support.write`: a workspace manager allows it under **Permissions**,
-and an automation account gets it only when **Allow sending replies** is on.
+and a service account gets it only when **Allow sending replies** is on.
 Replies and notes are attributed to the authenticated person (for an
-automation account, the teammate who created it) and are delivered exactly as
+service account, the teammate who created it) and are delivered exactly as
 replies from the inbox.
 
 Not exposed: CRM enrichment and deleting records.
