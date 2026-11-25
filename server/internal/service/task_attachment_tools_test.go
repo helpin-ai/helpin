@@ -13,6 +13,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -119,7 +120,7 @@ func TestTaskAttachmentsIncludeEditorFilesFromDescription(t *testing.T) {
 
 func TestTaskAttachmentToolsReachAgents(t *testing.T) {
 	tools := agentcontract.ListToolCatalog().Tools
-	for _, name := range []string{"list_task_attachments", "read_task_attachment"} {
+	for _, name := range []string{"list_task_attachments", "read_task_attachment", "analyze_task_attachment"} {
 		if !slices.ContainsFunc(tools, func(t model.ToolCatalogEntry) bool { return t.Name == name }) {
 			t.Errorf("runtime catalog missing %s", name)
 		}
@@ -146,6 +147,16 @@ func TestTaskAttachmentsRuntimeProvider(t *testing.T) {
 		Meta:     agentruntime.CommandExecutionContext{AppID: "helpin", WorkspaceID: "ws-1", AgentID: "ask-agent", ExternalActorID: "actor-1", TargetType: "workspace", TargetID: "ws-1"},
 		ToolName: "read_task_attachment",
 	}
+	analyses := 0
+	env.service.SetAttachmentMediaAnalyzer(dockMediaCompletionFunc(func(_ context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
+		analyses++
+		parts := request.Messages[0].ContentParts
+		if len(parts) != 3 || parts[2].ImageURL == nil || parts[2].ImageURL.URL != "https://storage.example/design.png" {
+			t.Fatalf("expected the signed task image, got %+v", parts)
+		}
+		return &llm.ChatResponse{Content: "Upload timed out."}, nil
+	}))
+
 	for i, tc := range []struct{ name, mime, content string }{
 		{"plan.md", "text/markdown", "# Plan"}, {"notes.txt", "text/plain", "Read this"},
 		{"data.csv", "text/csv", "id,name"}, {"config.json", "application/json", `{"ok":true}`},
@@ -195,20 +206,33 @@ func TestTaskAttachmentsRuntimeProvider(t *testing.T) {
 		t.Fatalf("missing attachments in runtime context: %v", resultContext.Tasks)
 	}
 
+	if analyses != 0 {
+		t.Fatal("ordinary attachment reads invoked the model")
+	}
+	req.ToolName = "analyze_task_attachment"
+	req.Input = mustJSON(map[string]string{"task_id": "TST-123", "attachment_id": "file-5", "question": "What failed?"})
+	result, err = host.CallProviderTool(context.Background(), req)
+	if err != nil || result.IsError || !strings.Contains(string(result.StructuredContent), "Upload timed out.") {
+		t.Fatalf("analyze: %v, %v", result, err)
+	}
+
 	for _, tc := range []struct{ name, actor, targetType, targetID string }{
 		{"member outside task team", "user-2", "workspace", "ws-1"},
 		{"different task target", "actor-1", "task", "another-task"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req.Meta.ExternalActorID, req.Meta.TargetType, req.Meta.TargetID = tc.actor, tc.targetType, tc.targetID
-			for _, name := range []string{"get_task", "get_task_context", "list_task_attachments", "read_task_attachment"} {
+			for _, name := range []string{"get_task", "get_task_context", "list_task_attachments", "read_task_attachment", "analyze_task_attachment"} {
 				req.ToolName = name
 				args := map[string]any{"task_id": "task-b"}
 				if name == "get_task_context" {
 					args = map[string]any{"task_ids": []string{"task-b"}}
 				}
-				if name == "read_task_attachment" {
-					args["attachment_id"] = "file-0"
+				if name == "read_task_attachment" || name == "analyze_task_attachment" {
+					args["attachment_id"] = "file-5"
+				}
+				if name == "analyze_task_attachment" {
+					args["question"] = "What failed?"
 				}
 				req.Input = mustJSON(args)
 				resp, err := host.CallProviderTool(context.Background(), req)
@@ -217,5 +241,8 @@ func TestTaskAttachmentsRuntimeProvider(t *testing.T) {
 				}
 			}
 		})
+	}
+	if analyses != 1 {
+		t.Fatalf("got %d model calls, want one authorized analysis", analyses)
 	}
 }

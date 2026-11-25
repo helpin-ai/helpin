@@ -132,6 +132,13 @@ type ContentPart struct {
 	Type     string
 	Text     string
 	ImageURL *ImageURLPart
+	File     *FilePart
+}
+
+// FilePart references a document for native multimodal input.
+type FilePart struct {
+	Filename string
+	URL      string
 }
 
 // ImageURLPart references an image the model can inspect.

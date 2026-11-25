@@ -1404,7 +1404,7 @@ func main() {
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, supportConversationRepo, wsPublisher)
 	commandService.SetSupportAttachmentRepository(supportAttachmentRepo)
-	commandService.SetSupportMediaAnalyzer(supportLLMProvider)
+	commandService.SetAttachmentMediaAnalyzer(supportLLMProvider)
 	commandService.SetSupportOperationalServices(supportInboxService, supportTagService)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -90,8 +91,12 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	if req.SystemPrompt != "" {
 		messages = append(messages, map[string]any{"role": "system", "content": req.SystemPrompt})
 	}
+	nativePDF := false
 	for _, m := range req.Messages {
 		messages = append(messages, buildOpenAIMessage(m))
+		if req.Provider == "openrouter" && slices.ContainsFunc(m.ContentParts, func(part ContentPart) bool { return part.Type == "file" && part.File != nil }) {
+			nativePDF = true
+		}
 	}
 
 	maxTokens := req.MaxTokens
@@ -105,6 +110,11 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	}
 
 	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.JSONSchema, req.JSONSchemaStrict, req.Reasoning, req.ProviderOptions)
+
+	if nativePDF {
+		// Keep PDFs on the approved model. Automatic OCR adds a separate paid processor.
+		body["plugins"] = []map[string]any{{"id": "file-parser", "pdf": map[string]string{"engine": "native"}}}
+	}
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -263,6 +273,10 @@ func buildOpenAIMessage(message Message) map[string]any {
 				"type":      "image_url",
 				"image_url": image,
 			})
+		case "file":
+			if part.File != nil && part.File.URL != "" {
+				parts = append(parts, map[string]any{"type": "file", "file": map[string]any{"filename": part.File.Filename, "file_data": part.File.URL}})
+			}
 		case "video_url":
 			url := strings.TrimSpace(part.Text)
 			if url == "" {

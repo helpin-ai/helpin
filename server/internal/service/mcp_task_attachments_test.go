@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -104,6 +105,24 @@ func TestMCPTaskAttachmentDiscoveryAndRead(t *testing.T) {
 		if _, err := call("read_task_attachment", map[string]any{"attachment_id": id}); mcpToolErrorCode(err) != MCPErrorCodeNotFound {
 			t.Fatalf("read %s: %v", id, err)
 		}
+	}
+	mustExec(t, db, "UPDATE pm_attachments SET file_name='design.png', content_type='image/png' WHERE id='direct'")
+	calls := 0
+	env.service.SetAttachmentMediaAnalyzer(dockMediaCompletionFunc(func(_ context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
+		calls++
+		return &llm.ChatResponse{Content: "The upload failed."}, nil
+	}))
+	visual, err := call("analyze_task_attachment", map[string]any{"attachment_id": "direct", "question": "What happened?"})
+	if err != nil || visual.Data.(map[string]any)["analysis"] != "The upload failed." {
+		t.Fatalf("MCP visual analysis: %v, %v", visual, err)
+	}
+	for _, id := range []string{"other", "foreign", "pending"} {
+		if _, err := call("analyze_task_attachment", map[string]any{"attachment_id": id, "question": "What happened?"}); mcpToolErrorCode(err) != MCPErrorCodeNotFound {
+			t.Fatalf("analyze %s: %v", id, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("expected one authorized model call, got %d", calls)
 	}
 	// The normal task read includes all files even when discovery needs another page.
 	for i := 0; i < 49; i++ {

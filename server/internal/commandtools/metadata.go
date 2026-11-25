@@ -453,13 +453,26 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 	{
 		CommandName: "pm.read_task_attachment",
 		Alias:       "read_task_attachment", Category: "PM / Tasks",
-		Description: "Read a task or comment attachment in 24 KiB chunks. UTF-8 text is directly readable. Follow next_offset for more bytes or use download_url to fetch the full file.",
+		Description: "Read task attachment text, including text extracted from PDF and DOCX, in 24 KiB chunks. Follow next_offset. Use analyze_task_attachment for visual questions about images, videos or scans.",
 		InputSchema: map[string]any{
 			"type": "object", "properties": map[string]any{
 				"task_id":       map[string]any{"type": "string", "description": "Task ID or human task key."},
 				"attachment_id": map[string]any{"type": "string", "format": "uuid", "description": "Attachment ID from get_task, get_task_context, or list_task_attachments."},
+				"raw":           map[string]any{"type": "boolean", "description": "Return original file bytes, including for PDF and DOCX. Defaults to false."},
 				"offset":        map[string]any{"type": "integer", "minimum": 0, "description": "Byte offset returned by the previous read. Defaults to zero."},
 			}, "required": []string{"task_id", "attachment_id"}, "additionalProperties": false,
+		},
+	},
+	{
+		CommandName: "pm.analyze_task_attachment",
+		Alias:       "analyze_task_attachment", Category: "PM / Tasks",
+		Description: "Ask a visual question about one accessible task image, video, or PDF, including scanned pages. Sends that file to the configured vision provider and uses workspace AI usage. Maximum file size is 20 MiB.",
+		InputSchema: map[string]any{
+			"type": "object", "properties": map[string]any{
+				"task_id":       map[string]any{"type": "string", "description": "Task ID or human task key."},
+				"attachment_id": map[string]any{"type": "string", "format": "uuid", "description": "Attachment ID from get_task, get_task_context, or list_task_attachments."},
+				"question":      map[string]any{"type": "string", "minLength": 1, "maxLength": 2000, "description": "What should the model inspect in this file?"},
+			}, "required": []string{"task_id", "attachment_id", "question"}, "additionalProperties": false,
 		},
 	},
 	{

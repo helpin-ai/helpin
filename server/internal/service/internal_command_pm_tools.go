@@ -571,6 +571,13 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Execute:              s.executeReadTaskAttachment,
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "pm.analyze_task_attachment",
+		Module:               "pm",
+		SupportedTargetTypes: pmDiscoveryTargets,
+		Tool:                 mustCommandToolMetadata("pm.analyze_task_attachment"),
+		Execute:              s.executeAnalyzeTaskAttachment,
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "pm.update_task",
 		Module:               "pm",
 		Mutating:             true,

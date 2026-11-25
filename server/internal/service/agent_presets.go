@@ -75,6 +75,7 @@ var newPMReadToolAliases = []string{
 	"get_task",
 	"list_task_attachments",
 	"read_task_attachment",
+	"analyze_task_attachment",
 	"list_epics",
 	"get_epic",
 	"list_sprints",
@@ -105,6 +106,7 @@ var epicPlannerPMReadToolAliases = []string{
 	"get_task",
 	"list_task_attachments",
 	"read_task_attachment",
+	"analyze_task_attachment",
 	"list_epics",
 	"get_epic",
 }
@@ -115,6 +117,7 @@ var taskPlannerPMReadToolAliases = []string{
 	"get_task",
 	"list_task_attachments",
 	"read_task_attachment",
+	"analyze_task_attachment",
 	"list_sprints",
 	"get_sprint",
 	"list_sprint_tasks",

@@ -93,7 +93,11 @@ func (h *Handler) serverForRequest(r *http.Request) *mcp.Server {
 				h.service.RecordProtocolEvent(ctx, principal, "rate_limit", "denied", "tool_class_limit")
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "This Helpin tool is temporarily rate limited. Retry after 60 seconds."}}}, nil
 			}
-			callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			timeout := 30 * time.Second
+			if definition.Name == "analyze_task_attachment" {
+				timeout = 4 * time.Minute
+			}
+			callCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			result, err := h.service.ExecuteTool(callCtx, principal, definition.Name, request.Params.Arguments)
 			if err != nil {
@@ -254,7 +258,7 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 
 func protocolTool(definition service.MCPToolDefinition) *mcp.Tool {
 	destructive := definition.Destructive
-	openWorld := false
+	openWorld := definition.Name == "analyze_task_attachment"
 	return &mcp.Tool{
 		Name: definition.Name, Title: definition.Title, Description: definition.Description,
 		InputSchema: definition.InputSchema,
@@ -354,7 +358,7 @@ func (l *requestLimiter) Allow(ctx context.Context, principal *model.MCPPrincipa
 }
 
 func (l *requestLimiter) AllowTool(ctx context.Context, principal *model.MCPPrincipal, tool service.MCPToolDefinition, arguments json.RawMessage) bool {
-	if !tool.Mutating && tool.Name != "search_workspace" {
+	if !tool.Mutating && tool.Name != "search_workspace" && tool.Name != "analyze_task_attachment" {
 		return true
 	}
 	return l.shared.AllowN(ctx, "mcp", principalRateKey(principal), true, service.MCPToolRateCost(tool.Name, arguments))
