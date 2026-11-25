@@ -51,7 +51,7 @@ func supportInvestigationObserved(brief SupportHandoffBrief) string {
 }
 
 func supportInvestigationTools() []string {
-	return []string{"list_repositories", "checkout_repositories", "read_files", "list_directory", "repository_search", "list_symbols", "read_symbol", "trace_symbol", "list_commits", "find_skills", "read_skill", "get_release_context", "get_pull_request_diff", "list_tasks", "get_task_context", "list_task_checklist"}
+	return []string{"list_repositories", "checkout_repositories", "read_files", "list_directory", "repository_search", "list_symbols", "read_symbol", "trace_symbol", "list_commits", "find_skills", "read_skill", "get_release_context", "get_pull_request_diff", "list_tasks", "get_task_context", "list_task_attachments", "read_task_attachment", "list_task_checklist"}
 }
 
 const supportInvestigationInstructions = `Perform one background, read-only repository investigation for the human support team. The customer has already been handed over. Never contact the customer, change routing or ownership, launch other agents, modify files, or request approval. Use only the granted tools. Follow applicable workspace skills for repository selection and issue scope. If no connected repository clearly matches, report that limitation and stop; do not guess or search unrelated repositories.

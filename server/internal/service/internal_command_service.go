@@ -52,6 +52,7 @@ type InternalCommandService struct {
 	imageService          *AgentImageService
 	jevDecisions          *JevDecisionService
 	agentService          *AgentService
+	taskFileStore         taskFileStore
 	taskService           *PMTaskService
 	labelService          *PMLabelService
 	commentService        *PMCommentService

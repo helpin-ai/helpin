@@ -472,6 +472,7 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		}
 	}
 	workspaceID := requestedWorkspaceID
+	var externalTaskDownloads []model.TaskAttachment
 
 	previewRun, err := s.helpinRunForRuntimeRun(ctx, req.RunID)
 	if err != nil {
@@ -592,6 +593,35 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		resp.Target.Type = "task"
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: task.Task.Name}
 		resp.Data = runtimeTaskContextData(task)
+		run := previewRun
+		// The first callback can arrive before Helpin saves the external runtime ID.
+		if hostRunID := runtimeMetadataString("helpin_run_id", req.Metadata, req.Target.Metadata); run == nil && s.runRepo != nil && hostRunID != "" {
+			run, err = s.runRepo.GetByID(ctx, workspaceID, hostRunID)
+			if err != nil {
+				return nil, err
+			}
+			if boundID, bound := agentRuntimeRunID(run); bound && boundID != req.RunID {
+				return nil, ErrAgentRuntimeHostForbidden
+			}
+		}
+		if run != nil && s.commandService != nil && run.WorkspaceID == workspaceID &&
+			run.TargetType == "task" && run.TargetID == target.ID && callbackAgentID == run.AgentID &&
+			model.IsAgentRunActiveStatus(run.Status) && !externalA2ARunCancelling(run) {
+			files, err := s.taskRunAttachments(ctx, run, &task.Task)
+			if err != nil {
+				return nil, err
+			}
+			resp.Data["attachments"] = files
+			if s.externalA2A != nil && isExternalA2ARun(run) && derefString(run.TaskID) == task.Task.ID {
+				// A2A agents can fetch files but have no Helpin tool channel.
+				externalTaskDownloads = slices.Clone(files)
+				for i := range externalTaskDownloads {
+					if err := s.commandService.signTaskAttachmentDownload(&externalTaskDownloads[i]); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
 	case "epic":
 		epic, err := s.epicRepo.GetByID(ctx, target.ID)
 		if err != nil {
@@ -810,12 +840,13 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 	if s.externalA2A != nil {
 		// Only runs of an active external agent receive connection details.
 		a2a, err := s.externalA2A.TargetContextData(ctx, ExternalA2AContextRequest{
-			RuntimeRunID: req.RunID,
-			HostRunID:    runtimeMetadataString("helpin_run_id", req.Metadata, req.Target.Metadata),
-			AgentID:      callbackAgentID,
-			WorkspaceID:  workspaceID,
-			TargetType:   resp.Target.Type,
-			TargetID:     resp.Target.ID,
+			RuntimeRunID:  req.RunID,
+			HostRunID:     runtimeMetadataString("helpin_run_id", req.Metadata, req.Target.Metadata),
+			AgentID:       callbackAgentID,
+			WorkspaceID:   workspaceID,
+			TargetType:    resp.Target.Type,
+			TargetID:      resp.Target.ID,
+			taskDownloads: externalTaskDownloads,
 		})
 		if err != nil {
 			return nil, err
@@ -825,6 +856,34 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		}
 	}
 	return resp, nil
+}
+
+// taskRunAttachments applies the agent and human scopes to the persisted task target.
+func (s *AgentRuntimeHostService) taskRunAttachments(ctx context.Context, run *model.AgentRun, task *model.PMTask) ([]model.TaskAttachment, error) {
+	meta := model.InternalCommandContext{WorkspaceID: run.WorkspaceID, AgentID: run.AgentID, ActorID: derefString(run.TriggeredByUserID), TargetType: run.TargetType, TargetID: run.TargetID}
+	if err := s.enrichCommandAgentScope(ctx, &meta); err != nil {
+		return nil, err
+	}
+	actor, err := s.enrichCommandActor(ctx, &meta)
+	if err != nil {
+		return nil, err
+	}
+	if meta.ActorID != "" && actor == nil {
+		return nil, ErrAgentRuntimeHostForbidden
+	}
+	if actor != nil {
+		ctx = authorization.WithActor(ctx, actor)
+	}
+	if err := s.commandService.requireTaskReadAccess(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireTeamAccess(ctx, task.TeamID); err != nil {
+		return nil, err
+	}
+	if err := s.commandService.validateTaskWithinTarget(ctx, meta, task); err != nil {
+		return nil, err
+	}
+	return s.taskRepo.TaskAttachments(ctx, run.WorkspaceID, []model.PMTask{*task}, "", 0, -1)
 }
 
 func runtimeSupportCoverageGapContextData(detail *model.SupportCoverageGapDetail) map[string]interface{} {

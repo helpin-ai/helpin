@@ -1393,6 +1393,7 @@ func main() {
 	)
 	commandService.SetPMAutomationService(pmAutomationService)
 	commandService.SetPMLabelService(pmLabelService)
+	commandService.SetTaskFileStore(s3Client)
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetPMOperationalServices(workspaceRepo, pmEpicService, pmSprintService, pmObjectiveService, pmWorkflowService, pmChecklistItemService)
 	commandService.SetGitService(gitService)
@@ -1855,7 +1856,6 @@ func main() {
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
 	mcpService.SetDocsChangeProposals(docsChangeProposalService)
 	mcpService.SetAttachments(pmAttachmentService)
-	mcpService.SetTaskAttachments(pmAttachmentRepo, s3Client)
 	mcpService.SetDocsContentReader(docsContentRepo)
 	mcpService.SetPMComments(pmCommentService)
 	mcpService.SetCRMRecords(crmCompanyService, crmActivityService, service.NewCRMRecordUpsertService(

@@ -349,9 +349,22 @@ func (s *ReleaseFactsService) GetTaskContext(ctx context.Context, workspaceID st
 	}
 	workspaceKey := s.workspaceKey(ctx, workspaceID)
 
+	files, err := s.taskRepo.TaskAttachments(ctx, workspaceID, tasks, "", 0, -1)
+	if err != nil {
+		return nil, fmt.Errorf("load task attachments: %w", err)
+	}
+	byTask := make(map[string][]model.TaskAttachment, len(tasks))
+	for _, file := range files {
+		byTask[file.TaskID] = append(byTask[file.TaskID], file)
+	}
 	result := &model.GetTaskContextResult{Tasks: make([]model.TaskContextItem, 0, len(tasks))}
 	for _, task := range tasks {
+		attachments := byTask[task.ID]
+		if attachments == nil {
+			attachments = []model.TaskAttachment{}
+		}
 		item := model.TaskContextItem{
+			Attachments:     attachments,
 			TaskID:          task.ID,
 			TaskKey:         model.FormatTaskKey(workspaceKey, task.DisplayID),
 			Title:           task.Name,

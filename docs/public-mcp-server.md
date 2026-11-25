@@ -236,10 +236,10 @@ The [catalog](../server/internal/service/mcp_catalog.go) defines the available t
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `list_tasks` | Read | Lists bounded task records | `PermPMRead` + PM module |
-| `get_task` | Read | Loads one task by ID and verifies workspace ownership | `PermPMRead` + PM module |
-| `get_task_context` | Read | Loads bounded task context; linked Docs/content additionally require Docs read, and Git links require context/integration read | `PermPMRead` + PM module |
-| `list_task_attachments` | Read | Lists uploaded task and comment files by task ID or key, with filenames and attachment IDs | `PermPMRead` + PM module |
-| `read_task_attachment` | Read | Returns a file from that task in chunks. Markdown and UTF-8 text are directly readable. Follow `next_offset` when present. Binary chunks carry an explicit base64 encoding. | `PermPMRead` + PM module |
+| `get_task` | Read | Loads one visible task by ID or key, including its uploaded attachments | `PermPMRead` + PM module |
+| `get_task_context` | Read | Returns task descriptions and an `attachments` array for each task. Linked Docs/content also require Docs read, and Git links require context/integration read | `PermPMRead` + PM module |
+| `list_task_attachments` | Read | Pages through task uploads, files embedded by the task editor, and comment uploads. It returns the same files as `get_task` and `get_task_context`. Each entry includes attachment and task IDs, filename, content type, byte size, uploader ID, creation time, and the owning task or comment | `PermPMRead` + PM module |
+| `read_task_attachment` | Read | Reads up to 24 KiB using `task_id` and `attachment_id`. Markdown and other UTF-8 text are returned directly. Follow `next_offset` for more bytes or fetch the full file with the signed `download_url`. Binary chunks carry an explicit encoding. | `PermPMRead` + PM module |
 | `list_task_checklist` | Read | Lists checklist items for an accessible task | `PermPMRead` + PM module |
 | `create_task` | Write | Creates a task through the canonical Helpin command layer | `PermPMEdit` + PM module |
 | `create_task_batch` | Write | Creates up to 50 implementation-ready tasks in one accessible epic | `PermPMEdit` + PM module |

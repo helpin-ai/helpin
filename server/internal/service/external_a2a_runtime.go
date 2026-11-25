@@ -36,11 +36,12 @@ type ExternalA2AContextRequest struct {
 	RuntimeRunID string
 	// HostRunID is the helpin_run_id metadata hint. Callbacks can arrive
 	// before the runtime run ID is bound; the hint narrows, never widens.
-	HostRunID   string
-	AgentID     string
-	WorkspaceID string
-	TargetType  string
-	TargetID    string
+	HostRunID     string
+	AgentID       string
+	WorkspaceID   string
+	TargetType    string
+	TargetID      string
+	taskDownloads []model.TaskAttachment
 }
 
 // TargetContextData returns the data.a2a object for a non-terminal run of an
@@ -89,6 +90,9 @@ func (s *ExternalA2AService) TargetContextData(ctx context.Context, req External
 		if active && !externalA2ARunCancelling(run) {
 			if appendix, err = s.uploadAppendix(ctx, run, record); err != nil {
 				return nil, err
+			}
+			if len(req.taskDownloads) > 0 && *run.TaskID == req.TargetID {
+				appendix = strings.TrimSpace(appendix + "\n\nTask attachments with temporary download links\n" + string(mustJSON(req.taskDownloads)))
 			}
 		}
 	}

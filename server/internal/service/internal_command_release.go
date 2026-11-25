@@ -224,6 +224,9 @@ func (s *InternalCommandService) executeFindTasksForGitChanges(ctx context.Conte
 }
 
 func (s *InternalCommandService) executeGetTaskContext(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if err := s.requireTaskReadAccess(ctx); err != nil {
+		return nil, err
+	}
 	var req model.GetTaskContextRequest
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {

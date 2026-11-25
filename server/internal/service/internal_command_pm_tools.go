@@ -557,6 +557,20 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Execute:              s.executeGetPMTask,
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "pm.list_task_attachments",
+		Module:               "pm",
+		SupportedTargetTypes: pmDiscoveryTargets,
+		Tool:                 mustCommandToolMetadata("pm.list_task_attachments"),
+		Execute:              s.executeListTaskAttachments,
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.read_task_attachment",
+		Module:               "pm",
+		SupportedTargetTypes: pmDiscoveryTargets,
+		Tool:                 mustCommandToolMetadata("pm.read_task_attachment"),
+		Execute:              s.executeReadTaskAttachment,
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "pm.update_task",
 		Module:               "pm",
 		Mutating:             true,
@@ -768,43 +782,72 @@ func (s *InternalCommandService) checkSupportTaskLink(ctx context.Context, meta 
 	return nil
 }
 
-func (s *InternalCommandService) executeGetPMTask(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-	if s.taskService == nil {
-		return nil, fmt.Errorf("task service is not configured")
+// requireTaskReadAccess applies the PM module and read permission to a human caller.
+// The task service additionally checks team visibility when loading the task.
+func (s *InternalCommandService) requireTaskReadAccess(ctx context.Context) error {
+	actor := authorization.GetActor(ctx)
+	if actor == nil || s.authz == nil {
+		return nil
 	}
+	if !s.authz.Can(actor, authorization.PermPMRead) {
+		return errCommandNotFound("task")
+	}
+	allowed, err := s.authz.CanAccessModule(ctx, actor, model.ModulePM)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errCommandNotFound("task")
+	}
+	return nil
+}
+
+// agentTaskDetail preserves the public get_task response and adds its file metadata.
+type agentTaskDetail struct {
+	*model.TaskDetail
+	Attachments []model.TaskAttachment `json:"attachments"`
+}
+
+func (s *InternalCommandService) executeGetPMTask(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	detail, err := s.getAgentTaskDetail(ctx, meta, input)
+	if err != nil {
+		return nil, err
+	}
+	result := compactCommandTask(detail.TaskDetail)
+	result["attachments"] = detail.Attachments
+	return mustJSON(result), nil
+}
+
+func (s *InternalCommandService) getAgentTaskDetail(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (*agentTaskDetail, error) {
 	var req struct {
 		TaskID  string `json:"task_id"`
 		TaskKey string `json:"task_key"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
-			return nil, fmt.Errorf("parse get task input: %w", err)
+			return nil, errCommandInput("invalid task arguments")
 		}
 	}
 	if strings.TrimSpace(req.TaskID) != "" && strings.TrimSpace(req.TaskKey) != "" {
-		return nil, fmt.Errorf("provide only one of task_id or task_key")
+		return nil, errCommandInput("provide only one of task_id or task_key")
 	}
-	taskID := strings.TrimSpace(req.TaskID)
-	var err error
+	taskID := req.TaskID
 	if strings.TrimSpace(req.TaskKey) != "" {
+		var err error
 		taskID, err = s.resolveCommandTaskKey(ctx, meta, req.TaskKey)
-	} else {
-		taskID, err = resolveCommandEntityID(meta, taskID, "task")
+		if err != nil {
+			return nil, err
+		}
 	}
+	detail, err := s.readCommandTask(ctx, meta, taskID)
 	if err != nil {
 		return nil, err
 	}
-	detail, err := s.taskService.GetByID(ctx, taskID)
+	files, err := s.taskRepo.TaskAttachments(ctx, meta.WorkspaceID, []model.PMTask{detail.Task}, "", 0, -1)
 	if err != nil {
 		return nil, err
 	}
-	if detail.Task.WorkspaceID != meta.WorkspaceID {
-		return nil, errCommandNotFound("task")
-	}
-	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
-		return nil, err
-	}
-	return mustJSON(compactCommandTask(detail)), nil
+	return &agentTaskDetail{TaskDetail: detail, Attachments: files}, nil
 }
 
 func (s *InternalCommandService) resolveCommandTaskKey(ctx context.Context, meta model.InternalCommandContext, taskKey string) (string, error) {
@@ -1266,6 +1309,20 @@ func resolveCommandEntityID(meta model.InternalCommandContext, explicit, entityT
 }
 
 func (s *InternalCommandService) resolveWritableCommandTask(ctx context.Context, meta model.InternalCommandContext, explicitTaskID string) (*model.PMTask, error) {
+	detail, err := s.readCommandTask(ctx, meta, explicitTaskID)
+	if err != nil {
+		return nil, err
+	}
+	return &detail.Task, nil
+}
+
+func (s *InternalCommandService) readCommandTask(ctx context.Context, meta model.InternalCommandContext, explicitTaskID string) (*model.TaskDetail, error) {
+	if err := s.requireTaskReadAccess(ctx); err != nil {
+		return nil, err
+	}
+	if s.taskService == nil {
+		return nil, fmt.Errorf("task service is not configured")
+	}
 	taskID, err := resolveCommandEntityID(meta, explicitTaskID, "task")
 	if err != nil {
 		return nil, err
@@ -1280,7 +1337,7 @@ func (s *InternalCommandService) resolveWritableCommandTask(ctx context.Context,
 	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
 		return nil, err
 	}
-	return &detail.Task, nil
+	return detail, nil
 }
 
 func (s *InternalCommandService) validateTaskWithinTarget(_ context.Context, meta model.InternalCommandContext, task *model.PMTask) error {
