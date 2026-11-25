@@ -57,7 +57,7 @@ export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on G
 export function StartForm() {
   return (
     <form className="start-form" action={START_URL} method="get">
-      <input aria-label="Your company website" name="website" type="text" inputMode="url" autoComplete="url" placeholder="Paste your website, like acme.com" maxLength={300} required />
+      <input aria-label="Your company website" name="website" type="text" inputMode="url" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="go" placeholder="Paste your website, like acme.com" maxLength={300} required />
       <button type="submit" className="btn btn-primary">See your agent</button>
     </form>
   );

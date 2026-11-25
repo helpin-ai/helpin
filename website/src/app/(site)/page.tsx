@@ -54,7 +54,7 @@ export default function HomePage() {
             <p className="lede">Customers get answers from your docs right away. Questions that need a person reach your team with the AI’s findings attached, so nobody starts over.</p>
             <StartForm />
             <p className="start-note">Watch your AI agent answer a customer question from your own docs, before you sign up.</p>
-            <p className="cta-note">Or <Link prefetch={false} href={SIGNUP_URL}>start a free trial</Link> · 14 days, no card · Open source, self-host free</p>
+            <p className="cta-note">Or <Link prefetch={false} href={SIGNUP_URL}>start a free trial</Link> · <span>14 days, no card</span> · <span>Open source, self-host free</span></p>
 
           </div>
           <figure className="hero-workflow hero-film">
