@@ -10,12 +10,19 @@ import (
 // FeedThread is independent of a conversation's customer-facing delivery address.
 type FeedThread struct {
 	ID, AccountID, ChannelID, ConversationID, RootTS, Permalink string
+	WorkspaceSlug                                               string
 	Active                                                      bool
+}
+
+func (r *SlackRepository) feedThreads(ctx context.Context) *gorm.DB {
+	return r.db.WithContext(ctx).Table("slack_feed_threads t").Select("t.*, w.slug AS workspace_slug").
+		Joins("JOIN support_channel_accounts a ON a.id=t.account_id").
+		Joins("JOIN workspaces w ON w.id=a.workspace_id")
 }
 
 func (r *SlackRepository) FeedThread(ctx context.Context, account, id string) (*FeedThread, error) {
 	var row FeedThread
-	err := r.db.WithContext(ctx).Table("slack_feed_threads").Where("account_id=? AND id=?", account, id).Limit(1).Scan(&row).Error
+	err := r.feedThreads(ctx).Where("t.account_id=? AND t.id=?", account, id).Limit(1).Scan(&row).Error
 	if row.ID == "" {
 		return nil, err
 	}
@@ -23,7 +30,7 @@ func (r *SlackRepository) FeedThread(ctx context.Context, account, id string) (*
 }
 func (r *SlackRepository) FeedByRoot(ctx context.Context, account, channel, root string) (*FeedThread, error) {
 	var row FeedThread
-	err := r.db.WithContext(ctx).Table("slack_feed_threads").Where("account_id=? AND channel_id=? AND root_ts=?", account, channel, root).Limit(1).Scan(&row).Error
+	err := r.feedThreads(ctx).Where("t.account_id=? AND t.channel_id=? AND t.root_ts=?", account, channel, root).Limit(1).Scan(&row).Error
 	if row.ID == "" {
 		return nil, err
 	}
@@ -33,6 +40,31 @@ func (r *SlackRepository) FeedPermalink(ctx context.Context, workspace, conv str
 	var link string
 	err := r.db.WithContext(ctx).Raw(`SELECT t.permalink FROM slack_feed_threads t JOIN support_channel_accounts a ON a.id=t.account_id JOIN support_conversations c ON c.id=t.conversation_id JOIN slack_feed_inboxes f ON f.account_id=t.account_id AND f.channel_id=t.channel_id AND f.inbox_key=coalesce(c.mailbox_id::text,'shared') WHERE a.workspace_id=? AND t.conversation_id=? AND a.disabled_at IS NULL AND t.active AND c.anonymized_at IS NULL AND c.merged_into_id IS NULL AND t.permalink IS NOT NULL LIMIT 1`, workspace, conv).Scan(&link).Error
 	return link, err
+}
+
+// FeedMoveEvent matches the latest arrival in the current inbox to its routing
+// history. An earlier visit to the same inbox or a suggestion alone is insufficient.
+func (r *SlackRepository) FeedMoveEvent(ctx context.Context, workspace, conversation, current string, followed []string) (*model.SupportConversationTriageEvent, error) {
+	var event model.SupportConversationTriageEvent
+	err := r.db.WithContext(ctx).Raw(`WITH move AS (
+		SELECT workspace_id, conversation_id, created_at,
+		       old_values->>'mailbox_id' AS previous, new_values->>'mailbox_id' AS destination
+		FROM support_inbox_conversation_changes
+		WHERE workspace_id=? AND conversation_id=? AND mailbox_scope_id=? AND audience_type='shared' AND audience_id='shared'
+		  AND old_values->>'mailbox_id' IS DISTINCT FROM new_values->>'mailbox_id'
+		  AND coalesce(new_values->>'mailbox_id','shared')=mailbox_scope_id
+		ORDER BY source_version DESC LIMIT 1
+	)
+	SELECT e.event_type, e.source, e.actor_user_id
+	FROM move JOIN support_conversation_triage_events e USING (workspace_id, conversation_id)
+	WHERE e.from_mailbox_id::text IS NOT DISTINCT FROM move.previous
+	  AND e.to_mailbox_id::text IS NOT DISTINCT FROM move.destination AND e.created_at >= move.created_at
+	  AND coalesce(move.previous,'shared') IN ? AND e.event_type IN ('auto_moved','accepted','corrected')
+	ORDER BY e.created_at, e.id LIMIT 1`, workspace, conversation, current, followed).Scan(&event).Error
+	if event.EventType == "" || err != nil {
+		return nil, err
+	}
+	return &event, nil
 }
 
 // Different API replicas can claim jobs for the same conversation. Serialize Slack writes,

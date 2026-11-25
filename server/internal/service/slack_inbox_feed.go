@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"slices"
 	"strings"
@@ -124,10 +125,20 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 	if err != nil {
 		return nil, err
 	}
+	conversationURL := s.appURL + "/w/" + t.WorkspaceSlug + "/support/" + conv.ID
 	if conv.AnonymizedAt != nil || conv.MergedIntoID != nil || !slices.Contains(route.MailboxIDs, key) {
 		if t.RootTS != "" {
-			notice := "This conversation is no longer shared in this channel."
-			err = s.api.Call(ctx, token, "chat.update", map[string]any{"channel": route.CurrentChannelID, "ts": t.RootTS, "text": notice, "blocks": []any{}}, nil)
+			reason := s.feedStopReason(ctx, conv, key, route.MailboxIDs)
+			notice := reason + " Updates have stopped in this thread."
+			payload := map[string]any{
+				"channel": route.CurrentChannelID, "ts": t.RootTS,
+				"text": notice + "\n" + conversationURL, "mrkdwn": false, "unfurl_links": false, "unfurl_media": false,
+				"blocks": []any{
+					map[string]any{"type": "section", "text": slackText(notice)},
+					slackButtons(feedOpenButton(t.ID, conversationURL)),
+				},
+			}
+			err = s.api.Call(ctx, token, "chat.update", payload, nil)
 			var apiErr *slack.APIError
 			if err != nil && !(errors.As(err, &apiErr) && slices.Contains([]string{"channel_not_found", "message_not_found", "not_in_channel", "is_archived"}, apiErr.Code)) {
 				return nil, err
@@ -146,8 +157,38 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 	if !ok || err != nil {
 		return nil, err
 	}
-	return &feedContext{thread: t, conv: conv, account: a, token: token, channel: route.CurrentChannelID}, nil
+	return &feedContext{thread: t, conv: conv, account: a, token: token, channel: route.CurrentChannelID, conversationURL: conversationURL}, nil
 }
+
+func (s *SlackService) feedStopReason(ctx context.Context, conv *model.SupportConversation, key string, followed []string) string {
+	switch {
+	case conv.AnonymizedAt != nil:
+		return "Personal details were removed from this conversation in Helpin."
+	case conv.MergedIntoID != nil:
+		return "This conversation was merged into another conversation in Helpin."
+	}
+	event, err := s.repo.FeedMoveEvent(ctx, conv.WorkspaceID, conv.ID, key, followed)
+	if err != nil {
+		// Remove the stale card even when routing history is unavailable.
+		slog.WarnContext(ctx, "could not attribute Slack inbox move", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+	}
+	if event != nil {
+		const move = " moved this conversation to an inbox this channel doesn’t follow."
+		if event.ActorUserID != nil {
+			return "A teammate" + move
+		}
+		if event.EventType == supportTriageEventAutoMoved {
+			switch derefString(event.Source) {
+			case model.SupportConversationTriageSourceAI:
+				return "Helpin AI" + move
+			case model.SupportConversationTriageSourceRule:
+				return "A routing rule" + move
+			}
+		}
+	}
+	return "This conversation is in an inbox this channel doesn’t follow."
+}
+
 func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInboundJob) error {
 	var p struct{ Thread string }
 	if err := json.Unmarshal([]byte(j.Payload), &p); err != nil {
@@ -188,12 +229,15 @@ func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInb
 func feedButton(id, label, value string) map[string]any {
 	return map[string]any{"type": "button", "action_id": id, "text": slackText(label), "value": value}
 }
+
+func feedOpenButton(threadID, link string) map[string]any {
+	open := feedButton("open_support", "Open in Helpin", threadID)
+	open["url"] = link
+	return open
+}
+
 func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) error {
 	c, t := f.conv, f.thread
-	ws, err := s.channels.inbox.workspaceRepo.GetByID(ctx, c.WorkspaceID)
-	if err != nil {
-		return err
-	}
 	status := strings.ReplaceAll(c.Status, "_", " ")
 	if c.Status == "open" {
 		switch derefString(c.FlowState) {
@@ -226,9 +270,6 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 		blocks = append(blocks, map[string]any{"type": "section", "text": slackText(truncate(tiptap.RichTextToMarkdown(preview), 500))})
 	}
 	blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText("Thread replies are internal notes. Use Reply to customer to send a response.")}})
-	open := feedButton("open_support", "Open in Helpin", t.ID)
-	f.conversationURL = s.appURL + "/w/" + ws.Slug + "/support/" + c.ID
-	open["url"] = f.conversationURL
 	buttons := []any{}
 	if c.Status != "spam" {
 		buttons = append(buttons, feedButton("feed_reply", "Reply to customer", t.ID), feedButton("feed_manage", "Manage", t.ID))
@@ -236,7 +277,7 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 			buttons = append(buttons, feedButton("feed_claim", "Assign to me", t.ID))
 		}
 	}
-	blocks = append(blocks, slackButtons(append(buttons, open)...))
+	blocks = append(blocks, slackButtons(append(buttons, feedOpenButton(t.ID, f.conversationURL))...))
 	payload := map[string]any{"channel": f.channel, "text": truncate(title+" · "+details, 2000), "mrkdwn": false, "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
 	raw, err := json.Marshal(payload)
 	if err != nil {

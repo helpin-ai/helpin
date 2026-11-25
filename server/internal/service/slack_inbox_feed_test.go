@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -27,6 +28,27 @@ func TestSlackInboxFeedVisibility(t *testing.T) {
 		})
 	}
 }
+
+func TestSlackInboxFeedArchivedReason(t *testing.T) {
+	other := "merged-conversation"
+	now := time.Now()
+	for _, tc := range []struct {
+		name string
+		conv model.SupportConversation
+		want string
+	}{
+		{"merged", model.SupportConversation{MergedIntoID: &other}, "This conversation was merged into another conversation in Helpin."},
+		{"anonymized", model.SupportConversation{AnonymizedAt: &now}, "Personal details were removed from this conversation in Helpin."},
+		{"anonymized merge", model.SupportConversation{MergedIntoID: &other, AnonymizedAt: &now}, "Personal details were removed from this conversation in Helpin."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := (&SlackService{}).feedStopReason(context.Background(), &tc.conv, "shared", nil); got != tc.want {
+				t.Errorf("reason = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSlackInboxFeedThreadUpdates(t *testing.T) {
 	for _, tc := range []struct {
 		m    model.SupportMessage

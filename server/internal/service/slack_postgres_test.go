@@ -752,9 +752,29 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	}
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", box.ID, conv)
 	deliver(nil)
-	if !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "no longer shared") || strings.Contains(fmt.Sprint(updates[len(updates)-1]), "Checkout issue") {
-		t.Fatal("stale thread kept customer data or actions on its parent")
+	link := "https://helpin.example/w/ops-" + f.workspace[:8] + "/support/" + conv
+	checkNotice := func(reason string) {
+		t.Helper()
+		update := updates[len(updates)-1]
+		body := fmt.Sprint(update["blocks"])
+		if update["ts"] != trow.RootTS || !strings.Contains(body, reason) || !strings.Contains(body, "Updates have stopped in this thread.") ||
+			!strings.Contains(fmt.Sprint(update["text"]), reason) || !strings.Contains(fmt.Sprint(update["text"]), link) {
+			t.Fatalf("wrong root notice: %+v", update)
+		}
+		var buttons []any
+		for _, raw := range update["blocks"].([]any) {
+			block := raw.(map[string]any)
+			if block["type"] == "actions" {
+				buttons = append(buttons, block["elements"].([]any)...)
+			}
+		}
+		if len(buttons) != 1 || buttons[0].(map[string]any)["url"] != link || !strings.Contains(body, "Open in Helpin") ||
+			update["unfurl_links"] != false || update["unfurl_media"] != false ||
+			strings.Contains(fmt.Sprint(update), "Checkout issue") || strings.Contains(fmt.Sprint(update), box.Name) {
+			t.Fatalf("expected only the original conversation link and no customer or destination details: %+v", update)
+		}
 	}
+	checkNotice("This conversation is in an inbox this channel doesn’t follow.")
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
 	deliver(nil)
 	if len(posts) != 2 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "Checkout issue") {
@@ -762,6 +782,7 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	}
 	// Exercise both worker orderings against real feed jobs and receipts.
 	testSlackFeedAIReports(t, f, conv, trow.RootTS, deliver, func() []map[string]any { return posts })
+	testSlackFeedMoveNotices(t, f, conv, box.ID, deliver, checkNotice)
 	beforeRemoval := len(posts)
 	if err := s.Remove(owner, f.workspace, "Cdesk"); err != nil {
 		t.Fatal(err)
@@ -774,6 +795,36 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	if len(posts) != beforeRemoval {
 		t.Fatal("replayed after rule removal")
 	}
+}
+
+func testSlackFeedMoveNotices(t *testing.T, f *outboxFixture, conv, boxID string, deliver func(*string), checkNotice func(string)) {
+	t.Helper()
+	for _, tc := range []struct {
+		event, source, reason string
+		actor                 *string
+	}{
+		{"auto_moved", "ai", "Helpin AI moved this conversation", nil},
+		{"auto_moved", "rule", "A routing rule moved this conversation", nil},
+		{"corrected", "ai", "A teammate moved this conversation", &f.userID},
+	} {
+		mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", boxID, conv)
+		ev := model.SupportConversationTriageEvent{WorkspaceID: f.workspace, ConversationID: conv, EventType: tc.event, Source: &tc.source, ToMailboxID: &boxID, ActorUserID: tc.actor}
+		if err := f.db.Create(&ev).Error; err != nil {
+			t.Fatal(err)
+		}
+		deliver(nil)
+		checkNotice(tc.reason)
+		// All fixture operations share one database transaction. Age this audit event
+		// so it predates subsequent moves, as it would in separate transactions.
+		mustExec(t, f.db, "UPDATE support_conversation_triage_events SET created_at=now()-interval '1 day' WHERE id=?", ev.ID)
+		mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
+		deliver(nil)
+	}
+	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", boxID, conv)
+	deliver(nil)
+	checkNotice("This conversation is in an inbox this channel doesn’t follow.")
+	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=NULL WHERE id=?", conv)
+	deliver(nil)
 }
 
 func testSlackFeedAIReports(t *testing.T, f *outboxFixture, conv, root string, deliver func(*string), posts func() []map[string]any) {
