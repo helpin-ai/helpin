@@ -35,6 +35,14 @@ func TestSlackInboxFeedAuthor(t *testing.T) {
 	}
 }
 
+func TestSlackInboxFeedHTMLReply(t *testing.T) {
+	raw := `<div style="display: none">Tracking preheader</div><p>Please <strong>reset</strong> my account.</p><div class="gmail_quote">Old conversation</div>`
+	md := feedHTMLReply(raw)
+	if strings.Contains(md, "preheader") || strings.Contains(md, "Old conversation") || !strings.Contains(md, "**reset**") {
+		t.Fatalf("visible email = %q", md)
+	}
+}
+
 func TestSlackInboxFeedVisibility(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

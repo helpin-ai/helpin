@@ -328,7 +328,13 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	blocks := []any{feedRichText("rich_text_section", map[string]any{"type": "link", "url": f.conversationURL, "text": title, "style": map[string]bool{"bold": true}}), map[string]any{"type": "context", "elements": []any{slackText(details)}}}
 	fallback := title + "\n" + details
 	if preview != nil {
-		visible := supportTranscriptPlainText(renderSupportTranscriptMessageHTML(tiptap.RichTextToMarkdown(preview.Content)))
+		visible, rich, email, err := s.feedContent(ctx, f, preview)
+		if err != nil {
+			return err
+		}
+		if rich || !email {
+			visible = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(visible))
+		}
 		if strings.TrimSpace(visible) == "" && attachment != "" {
 			visible = "📎 Attachment: " + attachment
 		}
@@ -405,8 +411,11 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if m.IsInternal && m.MessageType != "system" && meta.SourceThread == f.thread.ID {
 		return nil
 	}
+	body, rich, email, err := s.feedContent(ctx, f, m)
+	if err != nil {
+		return err
+	}
 	author := f.feedAuthor(m)
-	body := tiptap.RichTextToMarkdown(m.Content)
 	if m.MessageType == "system" {
 		body = tiptap.RichTextToMarkdown(m.Content)
 		if strings.TrimSpace(body) == "" {
@@ -436,7 +445,7 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 		body += "\nEmail · " + meta.EmailStatus
 	}
 	blocks := []any{author.header()}
-	formatted := !m.IsInternal && author.role == "AI reply"
+	formatted := rich || !m.IsInternal && author.role == "AI reply"
 	display, clipped := feedReplyBody(body, formatted)
 	blocks = append(blocks, display...)
 	if formatted {
@@ -446,7 +455,7 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if delivery != nil && delivery.Status == "failed" {
 		buttons = append(buttons, feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID))
 	}
-	if clipped {
+	if clipped || email {
 		buttons = append(buttons, feedOpenButton(f.thread.ID, f.conversationURL+"#message-"+m.ID))
 	}
 	if len(buttons) > 0 {
