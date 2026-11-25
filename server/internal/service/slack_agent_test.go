@@ -491,6 +491,7 @@ func TestSlackFirstMentionWithoutChannelRule(t *testing.T) {
 	mustExec(t, f.db, "UPDATE support_channel_accounts SET provider='slack' WHERE id=?", account.ID)
 	for _, ddl := range []string{
 		"CREATE TABLE slack_channel_routes(account_id text,channel_id text,channel_name text,purpose text)",
+		"CREATE TABLE slack_feed_inboxes(account_id text,channel_id text,inbox_key text)",
 		"CREATE TABLE slack_channel_ids(account_id text,channel_id text,routing_id text,current_id text)",
 		"CREATE TABLE slack_members(account_id text,slack_user text,user_id text, PRIMARY KEY(account_id,slack_user))",
 		"CREATE TABLE users(id text,email text,email_verified_at datetime)",
@@ -574,6 +575,7 @@ func TestSlackReviewedSupportTaskAndFollowupAssignment(t *testing.T) {
 	ctx = model.WithSlackSource(ctx, permalink)
 	mustExec(t, env.db, "CREATE TABLE slack_task_threads(account_id text,channel_id text,thread_ts text,task_id text,PRIMARY KEY(account_id,channel_id,thread_ts))")
 	mustExec(t, env.db, "CREATE TABLE slack_channel_routes(account_id text,channel_id text,purpose text)")
+	mustExec(t, env.db, "CREATE TABLE slack_feed_inboxes(account_id text,channel_id text,inbox_key text)")
 	conversations := repository.NewSupportConversationRepository(env.db)
 	inbox := NewSupportInboxService(conversations, nil, repository.NewSupportMessageRepository(env.db), nil, repository.NewCRMAssociationRepository(env.db), nil, nil, nil, nil, nil, nil, repository.NewUserRepository(env.db), nil, nil, nil)
 	inbox.SetTaskService(env.svc)

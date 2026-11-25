@@ -36,6 +36,13 @@ func (s *SlackService) acceptShortcut(ctx context.Context, v SlackAction) (any, 
 	if err != nil || route == nil {
 		return map[string]any{}, err
 	}
+	if route.Purpose == "inbox" {
+		return map[string]any{}, nil
+	}
+	thread, err := s.repo.FeedByRoot(ctx, a.ID, route.ChannelID, firstNonEmptyString(m.ThreadTS, m.TS))
+	if err != nil || thread != nil {
+		return map[string]any{}, err
+	}
 	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
 	if v.Callback == "link_task" {
 		return s.linkView(ctx, a, v, route, m)

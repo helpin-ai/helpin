@@ -119,9 +119,17 @@ func (r *SupportChannelOutboxRepository) ListByMessageIDs(ctx context.Context, w
 // Retry queues a reply that was not delivered or not confirmed again, and
 // returns its conversation, or "" when there was nothing to retry.
 func (r *SupportChannelOutboxRepository) Retry(ctx context.Context, workspaceID, messageID string) (string, error) {
+	return r.retry(ctx, workspaceID, messageID, []string{"rejected", "uncertain"})
+}
+
+// RetryRejected only retries an explicitly failed delivery. A lost acknowledgement needs human review.
+func (r *SupportChannelOutboxRepository) RetryRejected(ctx context.Context, workspaceID, messageID string) (string, error) {
+	return r.retry(ctx, workspaceID, messageID, []string{"rejected"})
+}
+func (r *SupportChannelOutboxRepository) retry(ctx context.Context, workspaceID, messageID string, states []string) (string, error) {
 	var rows []model.SupportChannelOutbox
 	err := r.db.WithContext(ctx).Model(&rows).Clauses(clause.Returning{Columns: []clause.Column{{Name: "conversation_id"}}}).
-		Where("workspace_id = ? AND message_id = ? AND dispatch_status IN ?", workspaceID, messageID, []string{"rejected", "uncertain"}).
+		Where("workspace_id = ? AND message_id = ? AND dispatch_status IN ?", workspaceID, messageID, states).
 		Updates(map[string]any{
 			"dispatch_status": "pending", "receipt_status": "none", "attempts": 0, "next_attempt_at": time.Now().UTC(),
 			"last_error_code": nil, "last_error": nil, "updated_at": time.Now().UTC(),

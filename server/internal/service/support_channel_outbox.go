@@ -235,13 +235,13 @@ func (s *SupportChannelService) replyFiles(ctx context.Context, msg *model.Suppo
 	var files []channels.OutgoingFile
 	for _, attachment := range messages[0].Attachments {
 		if maxSize > 0 && attachment.FileSize > maxSize {
-			return nil, errors.New("an attachment is larger than Telegram accepts")
+			return nil, errors.New("an attachment exceeds the channel upload limit")
 		}
 		data, err := s.inbox.attachmentService.DownloadContent(ctx, attachment)
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, channels.OutgoingFile{Name: attachment.FileName, ContentType: attachment.FileType, Data: data})
+		files = append(files, channels.OutgoingFile{ID: attachment.ID, Name: attachment.FileName, ContentType: attachment.FileType, Data: data})
 	}
 	return files, nil
 }

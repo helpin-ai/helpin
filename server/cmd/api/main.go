@@ -2455,6 +2455,8 @@ func main() {
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
 	go supportChannelService.StartWorker(inboundCtx, "slack_shortcut")
 	go supportChannelService.StartWorker(inboundCtx, service.SlackPMDeliveryJob)
+	go supportChannelService.StartWorker(inboundCtx, service.SlackInboxFeedJob)
+	go supportChannelService.StartWorker(inboundCtx, service.SlackFeedActionJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackAgentReplyJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackEventJob)
 	go supportChannelService.RunOutbox(inboundCtx, 2*time.Second)

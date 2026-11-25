@@ -34,7 +34,7 @@ function SlackCallback() {
       )
       sessionStorage.removeItem('slack-install')
       window.location.replace(
-        '/w/' + encodeURIComponent(pending.slug) + '/settings/external-tools?tab=apps',
+        '/w/' + encodeURIComponent(pending.slug) + '/settings/external-tools?tab=apps' + (pending.initialInbox ? '&slack_inbox=' + encodeURIComponent(pending.initialInbox) : ''),
       )
     }
     void finish().catch((e) =>

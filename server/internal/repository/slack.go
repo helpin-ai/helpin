@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -91,7 +93,11 @@ func (r *SlackRepository) Routes(ctx context.Context, account string) ([]model.S
 }
 
 func slackRoutes(db *gorm.DB, account string) *gorm.DB {
-	return db.Table("slack_channel_routes r").Select("r.*, COALESCE(ids.current_id,r.channel_id) AS current_channel_id").
+	aggregate := "jsonb_agg(f.inbox_key ORDER BY f.inbox_key)"
+	if db.Dialector.Name() == "sqlite" {
+		aggregate = "json_group_array(f.inbox_key)"
+	}
+	return db.Table("slack_channel_routes r").Select("r.*, (SELECT "+aggregate+" FROM slack_feed_inboxes f WHERE f.account_id=r.account_id AND f.channel_id=r.channel_id) AS mailbox_ids, COALESCE(ids.current_id,r.channel_id) AS current_channel_id").
 		Joins("LEFT JOIN slack_channel_ids ids ON ids.account_id=r.account_id AND ids.channel_id=r.channel_id").
 		Where("r.account_id=?", account)
 }
@@ -124,6 +130,8 @@ func (r *SlackRepository) EffectiveRoute(ctx context.Context, account, channel s
 	return &model.SlackRoute{AccountID: account, ChannelID: id.RoutingID, CurrentChannelID: id.CurrentID, Purpose: "on_request"}, nil
 }
 
+var ErrSlackInboxAlreadyShared = errors.New("an inbox already has a Slack channel rule")
+
 // SetRoute updates the validated destination for one channel.
 func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, preserveCompany bool) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -144,7 +152,27 @@ func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, pr
 		} else {
 			columns = append(columns, "crm_company_id")
 		}
-		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns(columns)}).Create(&row).Error
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}, {Name: "channel_id"}}, DoUpdates: clause.AssignmentColumns(columns)}).Create(&row).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM slack_feed_inboxes WHERE account_id=? AND channel_id=?", row.AccountID, row.ChannelID).Error; err != nil {
+			return err
+		}
+		if row.Purpose == "inbox" {
+			var conflicting string
+			if err := tx.Raw("SELECT r.channel_name FROM slack_feed_inboxes f JOIN slack_channel_routes r USING(account_id,channel_id) WHERE f.account_id=? AND f.inbox_key IN ? LIMIT 1", row.AccountID, row.MailboxIDs).Scan(&conflicting).Error; err != nil {
+				return err
+			}
+			if conflicting != "" {
+				return fmt.Errorf("%w in #%s", ErrSlackInboxAlreadyShared, conflicting)
+			}
+			for _, id := range row.MailboxIDs {
+				if err := tx.Exec("INSERT INTO slack_feed_inboxes(account_id,channel_id,inbox_key) VALUES(?,?,?)", row.AccountID, row.ChannelID, id).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Exec(`UPDATE slack_feed_threads t SET active=false FROM support_conversations c WHERE c.id=t.conversation_id AND t.account_id=? AND t.channel_id=? AND NOT EXISTS(SELECT 1 FROM slack_feed_inboxes f WHERE f.account_id=t.account_id AND f.channel_id=t.channel_id AND f.inbox_key=coalesce(c.mailbox_id::text,'shared'))`, row.AccountID, row.ChannelID).Error
 	})
 }
 

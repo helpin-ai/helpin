@@ -437,6 +437,9 @@ export const MessageBubble = memo(function MessageBubble({
   const isAI = effectiveSenderType === 'ai';
   const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
+  const slackAttribution = supportMetadataString(message.metadata, 'via') === 'slack'
+    ? <SlackSourceLabel href={supportMetadataString(message.metadata, 'slack_permalink')} />
+    : null;
   const visitorFeedback = useMemo<boolean | undefined>(() => {
     if (!isAI || isInternal) return undefined;
     try {
@@ -936,6 +939,7 @@ export const MessageBubble = memo(function MessageBubble({
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
                   {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
                   <span className="float-right ml-2 mt-1 inline-flex items-center gap-1 text-[10px] text-amber-700/70 dark:text-amber-300/70">
+                    {slackAttribution}
                     {noteEditedAt && <><Tooltip><TooltipTrigger asChild><span tabIndex={0}>Edited</span></TooltipTrigger><TooltipContent>Edited {formatTimestamp(noteEditedAt)}</TooltipContent></Tooltip><span>·</span></>}
                     {renderBubbleTime()}
                   </span>
@@ -971,7 +975,7 @@ export const MessageBubble = memo(function MessageBubble({
   const showStandaloneEmailBadge = isCustomer && hasEmailBadge;
   const showSlackSource = isCustomer && !message.is_internal && message.via_channel === 'slack';
   const showTelegramSource = isCustomer && !message.is_internal && message.via_channel === 'telegram';
-  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource || showTelegramSource;
+  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge || showSlackSource || !!slackAttribution || showTelegramSource;
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
@@ -1077,6 +1081,7 @@ export const MessageBubble = memo(function MessageBubble({
           {message.pending_send && <PendingSendStatus message={message}/>}
           {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
             <div className="mt-0.5">
+              {slackAttribution}
               {showSlackSource && <SlackMessageSource workspaceId={message.workspace_id} messageId={message.id} />}
               {showTelegramSource && (
                 <span className="mb-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">

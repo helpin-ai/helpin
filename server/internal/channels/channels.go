@@ -74,6 +74,7 @@ type AccountInfo struct {
 
 // OutgoingFile is an attachment to send.
 type OutgoingFile struct {
+	ID          string
 	Name        string
 	ContentType string
 	Data        []byte

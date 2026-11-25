@@ -5,6 +5,9 @@ display_information:
     Turn a customer’s Slack thread into a Helpin support conversation. Your team can reply
     and share files from the inbox, and the customer sees the response in the same thread.
 
+    Share new Helpin inbox conversations in a team channel. Each conversation has its own
+    thread for internal notes, customer replies, assignment and status changes.
+
     When an issue needs follow-up, create a task from the discussion or link an existing
     one. Review the draft before saving, then ask @Helpin for a task update or a summary
     of the support conversation.
@@ -43,6 +46,7 @@ oauth_config:
       - im:history
       - app_mentions:read
       - channels:read
+      - channels:join
       - groups:read
       - channels:history
       - groups:history

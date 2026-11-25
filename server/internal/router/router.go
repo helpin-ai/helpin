@@ -1262,6 +1262,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/messages/{id}/email", h.SupportInbox.GetMessageEmailDetail)
 				if h.Slack != nil {
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/messages/{id}/slack-source", h.Slack.MessageSource)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/slack-thread", h.Slack.InboxThread)
 				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/messages/{id}/attachments/{attachmentID}/retry", h.SupportInbox.RetryInboundAttachment)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/messages/{id}/channel-retry", h.SupportInbox.RetryChannelDelivery)

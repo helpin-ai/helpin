@@ -22,6 +22,7 @@ function ExternalToolsTabs({ workspaceId, currentWorkspaceSlug, permissions, req
   onTabChange: (tab: Tab) => void;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const feedInbox = useLocation({ select: location => new URLSearchParams(location.searchStr).get('slack_inbox') ?? undefined });
   const telegramShortcut = useLocation({ select: location => location.hash === 'telegram' });
   const { canManageSettings } = permissions;
   const available = externalToolsAccess(canManageSettings, permissions.permissionSet, permissions.modules);
@@ -35,7 +36,7 @@ function ExternalToolsTabs({ workspaceId, currentWorkspaceSlug, permissions, req
   const tab = requestedTab ?? defaultTab;
   const slack = available.slack && (
     <SlackChannels key="slack" workspaceId={workspaceId} slug={currentWorkspaceSlug}
-      hasCRM={permissions.canAccessModule('crm') && permissions.has('crm.read')} hasSupport={permissions.canAccessModule('support')} hasPM={permissions.canAccessModule('pm')} />
+      canManageFeed={permissions.has('support.admin')} initialInbox={feedInbox} hasCRM={permissions.canAccessModule('crm') && permissions.has('crm.read')} hasSupport={permissions.canAccessModule('support')} hasPM={permissions.canAccessModule('pm')} />
   );
   const telegram = available.telegram && <SupportChannels key="telegram" workspaceId={workspaceId} editable />;
   return (

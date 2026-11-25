@@ -12,7 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm-dialog'
-import { QuietSelect } from '@/components/design-system/quiet-select'
+import { QuietFilterDropdown, QuietSelect } from '@/components/design-system/quiet-select'
 import {
   QuietPropertyRow,
   QuietStatusText,
@@ -30,14 +30,16 @@ import {
 } from '@/lib/services/slackService'
 
 const purposes = {
-  support: 'Customer support',
-  mixed: 'Support on request',
+  support: 'Receive customer requests from Slack',
+  mixed: 'Receive customer requests from Slack',
+  inbox: 'Handle Helpin inboxes in Slack',
   pm: 'Project work',
 }
 const purposeTooltips: Record<SlackPurpose, string> = {
   support: 'New Slack threads become Helpin support conversations.',
   mixed: 'Mention @Helpin or choose “Create support request” in Slack.',
   pm: 'Create and follow Helpin tasks in Slack.',
+  inbox: 'Share new conversations from selected inboxes with your support team.',
 }
 const emptyRoute: SlackRoute = {
   channel_id: '',
@@ -54,12 +56,16 @@ export function SlackChannels({
   workspaceId,
   slug,
   hasSupport,
+  canManageFeed,
+  initialInbox,
   hasCRM,
   hasPM,
 }: {
   workspaceId: string
   slug: string
   hasSupport: boolean
+  canManageFeed: boolean
+  initialInbox?: string
   hasCRM?: boolean
   hasPM: boolean
 }) {
@@ -77,7 +83,7 @@ export function SlackChannels({
     onSuccess: ({ url }) => {
       sessionStorage.setItem(
         'slack-install',
-        JSON.stringify({ workspaceId, slug }),
+        JSON.stringify({ workspaceId, slug, initialInbox }),
       )
       window.location.assign(url)
     },
@@ -94,6 +100,15 @@ export function SlackChannels({
     onError: (e) => toast.error(errorText(e)),
   })
   const data = settings.data
+  const scopes = useInboxScopes(workspaceId, hasSupport)
+  const inboxNames = (route: SlackRoute) => (route.mailbox_ids ?? []).map(id => id === 'shared' ? 'Main inbox' : scopes.data?.mailboxes.find(box => box.id === id)?.name ?? 'Team inbox').join(', ')
+  const [dismissedInbox, setDismissedInbox] = useState<string>()
+  const requestedRule = canManageFeed && initialInbox && initialInbox !== dismissedInbox && data?.connected
+    ? data.routes?.find(rule => rule.purpose === 'inbox' && rule.mailbox_ids?.includes(initialInbox))
+      ?? { ...emptyRoute, purpose: 'inbox' as const, mailbox_ids: [initialInbox] }
+    : null
+  const editor = draft ?? requestedRule
+  const closeEditor = () => { setDraft(null); setDismissedInbox(initialInbox) }
   return (
     <Card className="gap-0 rounded-lg py-0">
       <CardContent className="px-4 py-3">
@@ -173,7 +188,6 @@ export function SlackChannels({
             <div className="flex items-center justify-between gap-3 py-3">
               <div className="min-w-0 space-y-1">
                 <h3 className="text-sm font-medium">Channel rules</h3>
-                <p className="text-xs text-muted-foreground">Invite @Helpin to ask questions in a channel. Add a rule for automatic intake or channel defaults.</p>
               </div>
               <Button
                 size="sm"
@@ -199,22 +213,24 @@ export function SlackChannels({
                   #{route.channel_name}
                 </span>
                 <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                  {purposes[route.purpose]}
+                  {route.purpose === 'inbox' ? inboxNames(route) + ' → Slack' : route.purpose === 'mixed' ? 'Customer requests on demand' : purposes[route.purpose]}
                 </span>
               </Button>
             ))}
           </div>
         )}
-        {draft && (
+        {editor && (
           <RouteDialog
-            initial={draft}
+            initial={editor}
+            canManageFeed={canManageFeed}
+            rules={data?.routes ?? []}
             hasSupport={hasSupport}
             hasCRM={hasCRM}
             hasPM={hasPM}
             workspaceId={workspaceId}
-            onClose={() => setDraft(null)}
+            onClose={closeEditor}
             onSaved={() => {
-              setDraft(null)
+              closeEditor()
               void refresh()
             }}
           />
@@ -226,6 +242,8 @@ export function SlackChannels({
 
 function RouteDialog({
   initial,
+  rules,
+  canManageFeed,
   hasSupport,
   hasCRM,
   hasPM,
@@ -234,6 +252,8 @@ function RouteDialog({
   onSaved,
 }: {
   initial: SlackRoute
+  rules: SlackRoute[]
+  canManageFeed: boolean
   hasSupport: boolean
   hasCRM?: boolean
   hasPM: boolean
@@ -263,7 +283,13 @@ function RouteDialog({
   const confirm = useConfirm()
   const options = (items: { id: string; name: string }[] = []) =>
     items.map((item) => ({ value: item.id, label: item.name }))
-  const selected = channels.data?.find((c) => c.id === route.channel_id)
+  const selected = channels.data?.find(c => c.id === route.channel_id)
+  const inboxOptions = [{ value: 'shared', label: 'Main inbox' }, ...options(scopes?.mailboxes)].map(option => {
+    const other = rules.find(rule => rule.channel_id !== initial.channel_id && rule.purpose === 'inbox' && rule.mailbox_ids?.includes(option.value))
+    return other ? { ...option, disabled: true, label: option.label + ' · #' + other.channel_name } : option
+  })
+  const restrictedInPublic = route.purpose === 'inbox' && selected && !selected.is_private && route.mailbox_ids?.some(id => id !== 'shared')
+  const readOnly = initial.purpose === 'inbox' && !!initial.channel_id && !canManageFeed
   const pending = save.isPending || remove.isPending
   return (
     <Dialog
@@ -278,57 +304,38 @@ function RouteDialog({
             {initial.channel_id ? 'Edit channel rule' : 'Add channel rule'}
           </DialogTitle>
         </DialogHeader>
-        <QuietPropertyRow
-          label="Slack channel"
-          value={
-            <QuietSelect
-              label="Slack channel"
-              placeholder="Choose channel"
-              value={route.channel_id}
-              disabled={!!initial.channel_id}
-              options={options(
-                channels.data
-                  ?.filter((c) => hasSupport || !c.is_ext_shared)
-                  .map((c) => ({ id: c.id, name: '#' + c.name })),
-              )}
-              onChange={(id) =>
-                setRoute({
-                  ...route,
-                  channel_id: id,
-                  purpose: hasSupport ? 'support' : 'pm',
-                })
-              }
-            />
-          }
-        />
-        {!channels.isLoading && !channels.data?.length && (
-          <p className="text-sm text-muted-foreground">
-            {channels.error
-              ? errorText(channels.error)
-              : 'Invite @Helpin to a Slack channel to make it available here.'}
-          </p>
-        )}
-        <QuietPropertyRow
-          label="Use for"
-          value={
-            <QuietSelect
-              label="Channel purpose"
-              value={route.purpose}
-              options={Object.entries(purposes)
-                .filter(([key]) =>
-                  key === 'pm'
-                    ? hasPM &&
-                      !selected?.is_ext_shared &&
-                      !selected?.is_pending_ext_shared
-                    : hasSupport,
-                )
-                .map(([value, label]) => ({ value, label, tooltip: purposeTooltips[value as SlackPurpose] }))}
-              onChange={(value) =>
-                setRoute({ ...route, purpose: value as SlackPurpose })
-              }
-            />
-          }
-        />
+        <QuietPropertyRow label="Purpose" value={
+          <QuietSelect label="Channel purpose" value={route.purpose === 'mixed' ? 'support' : route.purpose}
+            options={(['support', 'inbox', 'pm'] as const).filter(purpose => purpose === 'pm' ? hasPM : hasSupport && (purpose !== 'inbox' || canManageFeed))
+              .map(value => ({ value, label: purposes[value], tooltip: purposeTooltips[value] }))}
+            onChange={value => setRoute({ ...route, purpose: value as SlackPurpose, channel_id: initial.channel_id || '' })} />
+        } />
+        {route.purpose === 'inbox' && <QuietPropertyRow label="Inboxes" value={
+          <QuietFilterDropdown label="Inboxes" multiple showSelectedNames selected={route.mailbox_ids ?? []}
+            options={inboxOptions} emptyLabel="Choose inboxes"
+            onChange={mailbox_ids => setRoute({ ...route, mailbox_ids })} />
+        } />}
+        <QuietPropertyRow label="Slack channel" value={
+          <QuietFilterDropdown label="Slack channel" value={route.channel_id} emptyLabel="Choose channel"
+            disabled={!!initial.channel_id}
+            options={(channels.data ?? []).filter(c => !(c.is_ext_shared || c.is_pending_ext_shared) || route.purpose === 'support' || route.purpose === 'mixed')
+              .map(c => ({value:c.id, label:'#' + c.name + (c.is_ext_shared ? ' · Slack Connect' : c.is_private ? ' · Private' : ' · Public')}))}
+            onChange={channel_id => setRoute({ ...route, channel_id })} />
+        } />
+        {!initial.channel_id && <details className="text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer">Missing a private channel?</summary>
+          <p className="mt-1">In Slack, use <code>/invite @Helpin</code>, then <button type="button" className="underline" onClick={() => void channels.refetch()}>refresh channels</button>.</p>
+        </details>}
+        {channels.isError && <p role="alert" className="text-xs text-destructive">{errorText(channels.error)}</p>}
+        {route.purpose === 'inbox' && selected && !selected.is_private &&
+          <p className="text-xs text-muted-foreground">{restrictedInPublic
+            ? 'Team inboxes require a private Slack channel whose members have access to those inboxes.'
+            : `Everyone with access to #${selected.name} can read shared conversations, files and internal notes.`}</p>}
+        {(route.purpose === 'support' || route.purpose === 'mixed') && <QuietPropertyRow label="Create a conversation" value={
+          <QuietSelect label="Create a conversation" value={route.purpose}
+            options={[{value:'support', label:'Every new customer thread'}, {value:'mixed', label:'Only on request'}]}
+            onChange={value => setRoute({ ...route, purpose: value as SlackPurpose })} />
+        } />}
         {route.purpose === 'pm' ? (
           <>
             <QuietPropertyRow
@@ -368,7 +375,7 @@ function RouteDialog({
               }
             />
           </>
-        ) : (
+        ) : route.purpose !== 'inbox' && (
           <QuietPropertyRow
             label="Support inbox"
             value={
@@ -418,12 +425,12 @@ function RouteDialog({
           {initial.channel_id && (
             <Button
               variant="ghost"
-              disabled={pending}
+              disabled={pending || readOnly}
               onClick={async () => {
                 if (
                   await confirm({
                     title: 'Remove this rule?',
-                    description: 'New requests will use the workspace defaults.',
+                    description: initial.purpose === 'inbox' ? 'Helpin will stop sharing conversations and updates in this channel.' : 'New requests will use the workspace defaults.',
                     confirmText: 'Remove',
                     variant: 'destructive',
                   })
@@ -438,7 +445,7 @@ function RouteDialog({
             Cancel
           </Button>
           <Button
-            disabled={!route.channel_id || pending}
+            disabled={!route.channel_id || pending || readOnly || !!restrictedInPublic || (route.purpose === 'inbox' && !route.mailbox_ids?.length)}
             onClick={() => save.mutate()}
           >
             Save rule

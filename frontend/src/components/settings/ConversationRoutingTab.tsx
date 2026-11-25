@@ -22,6 +22,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { InboxSlackChannelRow } from '@/components/settings/channels/InboxSlackChannelRow';
 import { TeamInboxDialog } from '@/components/support/TeamInboxDialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -648,6 +649,7 @@ function SharedInboxRoutingRow({
           <div className="flex items-center gap-2">
             <span className="block truncate text-sm font-medium text-foreground">Shared inbox</span>
           </div>
+          <InboxSlackChannelRow workspaceId={workspaceId} mailboxId="shared" compact />
         </div>
       </div>
       <InboxTableCell label="Members"><InboxMembersPreview members={supportMembers} /></InboxTableCell>

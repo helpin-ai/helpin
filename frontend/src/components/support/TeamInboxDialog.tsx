@@ -46,6 +46,7 @@ import {
   splitMailboxMembersBySelection,
 } from './teamInboxDialogMembers';
 import { TeamInboxAssignmentFields } from './TeamInboxAssignmentFields';
+import { InboxSlackChannelRow } from '@/components/settings/channels/InboxSlackChannelRow';
 import { TeamInboxEmailSetup } from './TeamInboxEmailSetup';
 import { filterInboxAssignmentMembers, resolveInboxAssignmentSelection, type InboxAssignmentMode } from './teamInboxAssignment';
 import { getTeamInboxDialogSteps } from './teamInboxDialogFlow';
@@ -749,6 +750,7 @@ export function TeamInboxDialog({
                 </div>
               </div>
 
+              {mailbox && workspaceSlug && <InboxSlackChannelRow workspaceId={workspaceId} mailboxId={mailbox.id} />}
               <div className="space-y-1.5">
                 <FieldLabel htmlFor="team-inbox-description" tip="An internal note for your team explaining what this inbox is for. Not shown to customers.">
                   Description <span className="font-normal text-muted-foreground">(optional)</span>

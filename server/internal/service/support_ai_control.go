@@ -78,6 +78,9 @@ func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, c
 	var note *model.SupportMessage
 	previousRun, changed, err := s.conversationRepo.ChangeAIControl(ctx, conv.WorkspaceID, conv.ID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
 		now := time.Now().UTC()
+		if expected, check := ctx.Value(expectedSupportAssigneeKey{}).(string); check && expected != derefString(current.AssignedUserID) {
+			return nil, nil, fmt.Errorf("the assignee changed. Review the conversation before reassigning it")
+		}
 		if current.AnonymizedAt != nil {
 			return nil, nil, fmt.Errorf("this conversation is read-only because its customer was deleted")
 		}

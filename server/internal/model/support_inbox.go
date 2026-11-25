@@ -370,12 +370,13 @@ type SupportConversationSearchParams struct {
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
-	ExpectedMergeRevision *int64   `json:"-" gorm:"-"`
-	WidgetConversationIDs []string `json:"-" gorm:"-"`
-	MergeParticipantEmail *string  `json:"-" gorm:"-"`
-	TrustedInbound        bool     `json:"-" gorm:"-"`
-	OriginConversationID  *string  `json:"origin_conversation_id,omitempty" gorm:"type:uuid;index"`
-	MergeRevision         int64    `json:"-" gorm:"not null;default:0"`
+	ExpectedMergeRevision     *int64   `json:"-" gorm:"-"`
+	ExpectedLatestPublicReply *string  `json:"-" gorm:"-"`
+	WidgetConversationIDs     []string `json:"-" gorm:"-"`
+	MergeParticipantEmail     *string  `json:"-" gorm:"-"`
+	TrustedInbound            bool     `json:"-" gorm:"-"`
+	OriginConversationID      *string  `json:"origin_conversation_id,omitempty" gorm:"type:uuid;index"`
+	MergeRevision             int64    `json:"-" gorm:"not null;default:0"`
 	// Private execution guard, used only while committing a durable staff send.
 	PendingGuard         *SupportPendingSend `json:"-" gorm:"-"`
 	PendingAttachmentIDs []string            `json:"-" gorm:"-"`
@@ -1060,6 +1061,8 @@ type SupportProviderDestination struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
+	SourceSlackThreadID       string   `json:"-"`
+	ExpectedLatestPublicReply *string  `json:"-"`
 	ExpectedMergeRevision     *int64   `json:"expected_merge_revision,omitempty"`
 	SendOriginal              bool     `json:"send_original,omitempty"`
 	AutoTranslate             bool     `json:"auto_translate,omitempty"`
