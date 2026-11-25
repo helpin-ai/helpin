@@ -108,12 +108,13 @@ func TestMCPTaskAttachmentDiscoveryAndRead(t *testing.T) {
 	}
 	mustExec(t, db, "UPDATE pm_attachments SET file_name='design.png', content_type='image/png' WHERE id='direct'")
 	calls := 0
+	reply := llm.ChatResponse{Content: "Upload failed", FinishReason: "stop"}
 	env.service.SetAttachmentMediaAnalyzer(dockMediaCompletionFunc(func(_ context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
 		calls++
-		return &llm.ChatResponse{Content: "The upload failed."}, nil
+		return &reply, nil
 	}))
 	visual, err := call("analyze_task_attachment", map[string]any{"attachment_id": "direct", "question": "What happened?"})
-	if err != nil || visual.Data.(map[string]any)["analysis"] != "The upload failed." {
+	if err != nil || visual.Data.(map[string]any)["analysis"] != "Upload failed" {
 		t.Fatalf("MCP visual analysis: %v, %v", visual, err)
 	}
 	for _, id := range []string{"other", "foreign", "pending"} {
@@ -123,6 +124,20 @@ func TestMCPTaskAttachmentDiscoveryAndRead(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("expected one authorized model call, got %d", calls)
+	}
+	for _, incomplete := range []llm.ChatResponse{
+		{FinishReason: "length", Content: "Based on Attachment ID"},
+		{FinishReason: "max_tokens", Content: "The first row contains"},
+		{FinishReason: "content_filter", Content: "Part one"},
+		{FinishReason: "error", Content: "Part one"},
+		{Content: "Missing finish reason"},
+		{FinishReason: "stop", Content: "  "},
+	} {
+		reply = incomplete
+		result, err := call("analyze_task_attachment", map[string]any{"attachment_id": "direct", "question": "List each field."})
+		if result != nil || mcpToolErrorCode(err) != "INCOMPLETE_OUTPUT" {
+			t.Errorf("finish reason %q: got result=%v, err=%v; want an incomplete-output error", reply.FinishReason, result, err)
+		}
 	}
 	// The normal task read includes all files even when discovery needs another page.
 	for i := 0; i < 49; i++ {

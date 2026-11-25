@@ -335,7 +335,7 @@ func publicToolError(err error) string {
 	case errors.Is(err, service.ErrMCPRateLimited):
 		return "This Helpin operation reached a safety limit. Retry later or wait for an active agent run to finish."
 	case errors.Is(err, context.DeadlineExceeded):
-		return "The Helpin operation exceeded the 30 second synchronous deadline."
+		return "The Helpin operation timed out before it completed."
 	default:
 		return "The Helpin tool could not complete the request. Check the arguments and retry."
 	}

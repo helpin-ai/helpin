@@ -9,6 +9,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -105,7 +106,9 @@ func TestDockChatMediaFallsBackToQwenOnRateLimit(t *testing.T) {
 func TestTaskAttachmentAnalysisUsesGovernedMediaRoute(t *testing.T) {
 	store := &fakeAIUsageStore{}
 	audit := &gatewayFakeAudit{}
-	provider := &scriptedAICompletionProvider{}
+	provider := &scriptedAICompletionProvider{responses: map[string]*llm.ChatResponse{
+		"google/gemini-3.8-flash": {Content: "Friday", FinishReason: "stop", TokensUsed: llm.TokenUsage{InputTokensTotal: 10, CompletionTokensTotal: 5, OutputTokens: 5}},
+	}}
 	completion := newTestAICompletionService(t, provider, store).SetGovernance(aipolicy.DefaultRegistry(), audit)
 	file := mediaAttachment{ID: "scan", FileName: "scan.pdf", FileType: "application/pdf", URL: "https://storage.example/scan.pdf"}
 	_, err := analyzeAttachmentMedia(context.Background(), completion, "ws", BillingFeatureAskChat, aipolicy.ActionTaskAttachmentAnalysis, "What is the due date?", []mediaAttachment{file})
@@ -122,5 +125,15 @@ func TestTaskAttachmentAnalysisUsesGovernedMediaRoute(t *testing.T) {
 	_, err = analyzeAttachmentMedia(context.Background(), completion, "ws", BillingFeatureAskChat, aipolicy.ActionTaskAttachmentAnalysis, "What is the title?", []mediaAttachment{file})
 	if err == nil || len(provider.requests) != 2 || provider.requests[1].Model != "google/gemini-3.8-flash" {
 		t.Fatalf("PDF should only reach the native PDF route: calls=%d err=%v", len(provider.requests), err)
+	}
+	delete(provider.errors, "google/gemini-3.8-flash")
+	provider.responses["google/gemini-3.8-flash"].FinishReason = "length"
+	answer, err := analyzeAttachmentMedia(context.Background(), completion, "ws", BillingFeatureAskChat, aipolicy.ActionTaskAttachmentAnalysis, "List all the fields.", []mediaAttachment{file})
+	if err == nil || answer != "" {
+		t.Fatalf("truncated analysis: answer=%q err=%v", answer, err)
+	}
+	last := audit.finished[len(audit.finished)-1]
+	if last.FailureClass != "llm_contract" || !strings.Contains(last.FailureMessage, `finish_reason="length"`) || last.OutputTokens != 5 {
+		t.Fatalf("expected an audited incomplete answer with token usage, got %+v", last)
 	}
 }
