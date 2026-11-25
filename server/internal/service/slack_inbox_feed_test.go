@@ -1,11 +1,47 @@
 package service
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestSlackInboxFeedExcerpt(t *testing.T) {
+	long := strings.Repeat("Export ", 19)
+	if got := feedExcerpt("Trouble exporting", long); got != strings.TrimSpace(strings.Repeat("Export ", 14))+"…" {
+		t.Fatalf("long excerpt = %q", got)
+	}
+	if got := feedExcerpt(" Checkout failed ", "Checkout\nfailed"); got != "" {
+		t.Fatalf("repeated subject = %q", got)
+	}
+}
+
+func TestSlackInboxFeedAuthor(t *testing.T) {
+	f := feedContext{conv: &model.SupportConversation{Channel: "widget"}}
+	name := "Maya Patel"
+	for _, tc := range []struct {
+		kind, role string
+		internal   bool
+	}{
+		{"customer", "Visitor", false}, {"user", "Team reply", false}, {"ai", "AI reply", false}, {"agent", "AI reply", false}, {"user", "📝 Internal note", true},
+	} {
+		m := model.SupportMessage{SenderType: tc.kind, SenderDisplayName: &name, IsInternal: tc.internal}
+		if got := f.feedAuthor(&m); got.role != tc.role || got.name != name {
+			t.Fatalf("%s author = %+v", tc.kind, got)
+		}
+	}
+}
+
+func TestSlackInboxFeedHTMLReply(t *testing.T) {
+	raw := `<div style="display: none">Tracking preheader</div><p>Please <strong>reset</strong> my account.</p><div class="gmail_quote">Old conversation</div>`
+	md := feedHTMLReply(raw)
+	if strings.Contains(md, "preheader") || strings.Contains(md, "Old conversation") || !strings.Contains(md, "**reset**") {
+		t.Fatalf("visible email = %q", md)
+	}
+}
 
 func TestSlackInboxFeedVisibility(t *testing.T) {
 	for _, tc := range []struct {
@@ -27,6 +63,28 @@ func TestSlackInboxFeedVisibility(t *testing.T) {
 		})
 	}
 }
+
+func TestSlackInboxFeedArchivedReason(t *testing.T) {
+	other := "merged-conversation"
+	now := time.Now()
+	for _, tc := range []struct {
+		name string
+		conv model.SupportConversation
+		want string
+	}{
+		{"merged", model.SupportConversation{MergedIntoID: &other}, "This conversation was merged into another conversation in Helpin."},
+		{"anonymized", model.SupportConversation{AnonymizedAt: &now}, "Personal details were removed from this conversation in Helpin."},
+		{"anonymized merge", model.SupportConversation{MergedIntoID: &other, AnonymizedAt: &now}, "Personal details were removed from this conversation in Helpin."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := tc.want + " Updates have stopped in this thread."
+			if got, _ := (&SlackService{}).feedStopNotice(context.Background(), &tc.conv, "shared", nil); got != want {
+				t.Errorf("notice = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestSlackInboxFeedThreadUpdates(t *testing.T) {
 	for _, tc := range []struct {
 		m    model.SupportMessage

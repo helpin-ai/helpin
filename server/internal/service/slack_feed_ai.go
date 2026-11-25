@@ -147,13 +147,14 @@ func (s *SlackService) writeFeedAIUpdate(ctx context.Context, f *feedContext, id
 	if strings.TrimSpace(summary) == "" {
 		return nil
 	}
-	title := "Internal · " + kind
-	open := feedButton("open_support", "Open in Helpin", f.thread.ID)
+	title := "🙋 Needs human reply · Internal AI handoff"
+	if kind == "Code check" {
+		title = "🔎 Code check · Internal"
+	}
 	reportURL := f.conversationURL + "#message-" + target
-	open["url"] = reportURL
 	blocks := []any{
 		map[string]any{"type": "context", "elements": []any{slackText(title)}},
-		slackMarkdown(summary), slackButtons(open),
+		slackMarkdown(summary), slackButtons(feedOpenButton(f.thread.ID, reportURL)),
 	}
 	fallback := title + " · " + f.conv.Subject + "\n" + supportTranscriptPlainText(renderSupportTranscriptMessageHTML(summary)) + "\n" + reportURL
 	receiptKey := id + ":ai_summary"

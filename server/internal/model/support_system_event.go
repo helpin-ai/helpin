@@ -141,6 +141,8 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventResolved:               {},
 	SystemEventReopened:               {},
 	SystemEventClosed:                 {},
+	SystemEventStatusChanged:          {},
+	SystemEventDeliveryRetried:        {},
 	SystemEventEmailRecipientsUpdated: {},
 	SystemEventTagAdded:               {},
 	SystemEventTagRemoved:             {},

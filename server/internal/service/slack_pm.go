@@ -345,6 +345,7 @@ type SlackAction struct {
 				Multiple []struct{ Value string } `json:"selected_options"`
 				Files    []slack.File             `json:"files"`
 				User     string                   `json:"selected_user"`
+				DateTime int64                    `json:"selected_date_time"`
 			}
 		}
 	}
@@ -391,7 +392,7 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return map[string]any{}, nil
 		}
 	case "view_submission":
-		if v.View.Callback == "feed_reply" || v.View.Callback == "feed_manage" {
+		if feedFormAction(v.View.Callback) {
 			return s.feedAction(ctx, v, true)
 		}
 		if v.View.Callback == "helpin_link_task" {
