@@ -64,13 +64,23 @@ func feedSelectBlock(id, label string, options []map[string]any, initial string,
 }
 func (s *SlackService) feedForm(ctx context.Context, f *feedContext, p *feedActionJob, warning string) (map[string]any, error) {
 	c := f.conv
-	title, submit := "Reply to customer", "Send reply"
+	title, submit := f.replyLabel(), "Send reply"
 	customer := firstNonEmptyString(derefString(c.CustomerName), derefString(c.CustomerEmail), "Customer")
 	blocks := []any{map[string]any{"type": "context", "elements": []any{slackText(truncate(fmt.Sprintf("#%d · %s · %s", c.DisplayID, customer, c.Subject), 1000))}}}
 	if warning != "" {
 		blocks = append(blocks, map[string]any{"type": "section", "text": slackText(truncate(warning, 2000))})
 	}
-	if p.Kind == "feed_manage" {
+	if p.Kind == "feed_assign" || feedMenuAction(p.Kind) {
+		formTitle, button, fields, err := s.feedTriageForm(ctx, f, p)
+		if err != nil {
+			return nil, err
+		}
+		title, submit = formTitle, button
+		blocks = append(blocks, fields...)
+		if submit == "" {
+			return map[string]any{"type": "modal", "title": slackText(title), "close": slackText("Close"), "blocks": blocks}, nil
+		}
+	} else if p.Kind == "feed_manage" {
 		title, submit = "Manage conversation", "Save"
 		options := []map[string]any{feedOption("Unassigned", "unassigned")}
 		members, err := s.channels.inbox.ListConversationAssignableUsers(ctx, c.WorkspaceID, c.ID)

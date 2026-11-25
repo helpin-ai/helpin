@@ -8,11 +8,12 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { SupportInboxLayout } from '../SupportInboxLayout'
 
-type Conversation = { id: string; mailbox_id: string | null }
-type Lookup = { data?: Conversation; error?: Error }
+type Conversation = { id: string; mailbox_id: string | null; status?: string }
+type Lookup = { data?: Conversation; error?: Error; isFetching?: boolean }
+type ConversationRoute = { conversationId?: string; search: Record<string, unknown>; hash?: string }
 
 const harness = vi.hoisted(() => ({
-  route: { conversationId: undefined as string | undefined, search: {} as Record<string, unknown> },
+  route: { search: {} } as ConversationRoute,
   lookups: new Map<string, { data?: unknown; error?: Error }>(),
   scopes: { data: undefined as unknown, isFetched: false },
   navigate: vi.fn(),
@@ -22,7 +23,7 @@ const harness = vi.hoisted(() => ({
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => harness.navigate,
-  useLocation: () => ({ pathname: '/w/acme/support', search: harness.route.search }),
+  useLocation: () => ({ pathname: '/w/acme/support', search: harness.route.search, hash: harness.route.hash }),
   useParams: () => ({ conversationId: harness.route.conversationId }),
 }))
 
@@ -79,7 +80,7 @@ describe('SupportInboxLayout routed conversation context', () => {
   // Apply a replace navigation to the mocked route, as the router would.
   const followNavigation = () => {
     const last = harness.navigate.mock.calls.at(-1)?.[0]
-    harness.route = { conversationId: last.params.conversationId, search: last.search ?? {} }
+    harness.route = { conversationId: last.params.conversationId, search: last.search ?? {}, hash: last.hash }
     render()
   }
 
@@ -111,6 +112,65 @@ describe('SupportInboxLayout routed conversation context', () => {
     expect(useSupportInboxStore.getState().selectedMailboxId).toBe('all')
     expect(correctionCalls()).toEqual([])
     expect(harness.navigate.mock.calls.some(([options]) => options.to === '/w/$slug/support')).toBe(false)
+  })
+
+  it.each([{}, { view: 'team', team_inbox: 'billing' }])('opens a linked spam conversation in Spam with its message anchor (%j)', (search) => {
+    const hash = 'message-a0000000-0000-4000-8000-000000000001'
+    harness.scopes = { data: undefined, isFetched: false }
+    harness.route = { conversationId: 'conv-1', search, hash }
+    render()
+    expect(harness.navigate).not.toHaveBeenCalled()
+
+    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: 'sales', status: 'spam' } })
+    render()
+    expect(correctionCalls()).toEqual([{
+      to: '/w/$slug/support/$conversationId',
+      params: { slug: 'acme', conversationId: 'conv-1' },
+      search: { view: 'spam' }, hash, replace: true,
+    }])
+    followNavigation()
+    expect(useSupportInboxStore.getState()).toMatchObject({
+      navFilter: 'spam', selectedMailboxId: 'all', selectedConversationId: 'conv-1',
+      conversationListFilters: { states: ['spam'] },
+    })
+    expect(correctionCalls()).toHaveLength(1)
+  })
+
+  it('rechecks the same link after leaving the thread and refreshing cached details', () => {
+    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: null, status: 'open' } })
+    harness.route = { conversationId: 'conv-1', search: {} }
+    render()
+    harness.route = { search: {} }
+    render()
+    harness.route = { conversationId: 'conv-1', search: {} }
+    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: null, status: 'open' }, isFetching: true })
+    render()
+    expect(correctionCalls()).toEqual([])
+
+    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: null, status: 'spam' } })
+    render()
+    expect(correctionCalls()).toHaveLength(1)
+    followNavigation()
+    expect(useSupportInboxStore.getState().navFilter).toBe('spam')
+  })
+
+  it('rechecks an Inbox link to a spam conversation already open in another view', () => {
+    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: null, status: 'spam' } })
+    harness.route = { conversationId: 'conv-1', search: { view: 'custom', custom_view: 'review' } }
+    render()
+    harness.route = { conversationId: 'conv-1', search: {} }
+    render()
+    expect(correctionCalls()).toHaveLength(1)
+    followNavigation()
+    expect(useSupportInboxStore.getState().navFilter).toBe('spam')
+  })
+
+  it.each([{ view: 'custom', custom_view: 'review' }, { states: 'spam,open' }, { view: 'spam' }])('retains a chosen view for spam (%j)', (search) => {
+    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: null, status: 'spam' } })
+    harness.route = { conversationId: 'conv-1', search }
+    render()
+    expect(correctionCalls()).toEqual([])
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-1')
   })
 
   it('replaces a stale team_inbox hint with the conversation inbox and keeps the ID', () => {
@@ -170,7 +230,7 @@ describe('SupportInboxLayout routed conversation context', () => {
 
   it('keeps an unavailable conversation selected without revealing a destination or auto-closing', () => {
     // Cached detail from before the denial must not drive a redirect.
-    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: 'sales' }, error: new SupportConversationLoadError('conversation not found', 404) })
+    setLookup('conv-1', { data: { id: 'conv-1', mailbox_id: 'sales', status: 'spam' }, error: new SupportConversationLoadError('conversation not found', 404) })
     harness.route = { conversationId: 'conv-1', search: { view: 'team', team_inbox: 'billing' } }
     render()
 

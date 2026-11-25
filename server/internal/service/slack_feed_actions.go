@@ -22,10 +22,15 @@ type expectedSupportAssigneeKey struct{}
 type feedDraft struct {
 	Thread, Latest, Owner, Status, Primary, CC, Token string
 	Revision                                          int64
+	Priority, Mailbox, Snooze                         string
+	AIControlVersion                                  int64
+	HumanRequested                                    bool
 	Files                                             []slack.File
 }
 type feedActionJob struct {
 	Kind, User, View, Destination, Body, To, CC, Status, Owner, Message string
+	Choice                                                              string
+	CustomTime                                                          int64
 	Submit                                                              bool
 	Draft                                                               feedDraft
 	Files                                                               []slack.File
@@ -66,12 +71,21 @@ func (s *SlackService) feedAction(ctx context.Context, v SlackAction, submit boo
 		p.CC = vals["cc"]["value"].Value
 		p.Owner = vals["owner"]["value"].Selected.Value
 		p.Status = vals["status"]["value"].Selected.Value
+		p.Choice = vals["choice"]["value"].Selected.Value
+		p.CustomTime = vals["custom"]["value"].DateTime
 		if p.Kind == "feed_reply" && strings.TrimSpace(p.Body) == "" && len(p.Files)+len(p.Draft.Files) == 0 {
 			return map[string]any{"response_action": "errors", "errors": map[string]string{"body": "Write a reply or attach a file."}}, nil
 		}
 	} else {
 		p.Kind = v.Actions[0].ID
-		p.Draft.Thread, p.Message, _ = strings.Cut(v.Actions[0].Value, ":")
+		if p.Kind == "feed_more" {
+			p.Draft.Thread, p.Kind, _ = strings.Cut(v.Actions[0].Selected.Value, ":")
+			if !feedMenuAction(p.Kind) {
+				return map[string]any{}, nil
+			}
+		} else {
+			p.Draft.Thread, p.Message, _ = strings.Cut(v.Actions[0].Value, ":")
+		}
 		p.Draft.Token = inboundStableID(v.Trigger)
 	}
 	if !isUUIDString(p.Draft.Thread) {
@@ -99,7 +113,7 @@ func (s *SlackService) feedAction(ctx context.Context, v SlackAction, submit boo
 		if expectedTS == "" || v.Channel.ID != current || v.Message.TS != expectedTS {
 			return map[string]any{}, nil
 		}
-		if p.Kind != "feed_reply" && p.Kind != "feed_manage" && p.Kind != "feed_claim" && p.Kind != "feed_retry" {
+		if !feedFormAction(p.Kind) && p.Kind != "feed_resolve" && p.Kind != "feed_reopen" && p.Kind != "feed_claim" && p.Kind != "feed_retry" {
 			return map[string]any{}, nil
 		}
 		token, err := s.channels.decryptToken(a)
@@ -256,6 +270,11 @@ func (s *SlackService) processFeedAction(ctx context.Context, job *model.Support
 		show := func(warning string) error {
 			p.Draft.Latest = latest
 			p.Draft.Owner = derefString(c.AssignedUserID)
+			p.Draft.Priority = c.Priority
+			p.Draft.Mailbox = derefString(c.MailboxID)
+			p.Draft.Snooze = feedSnoozeStamp(c)
+			p.Draft.AIControlVersion = c.AIControlVersion
+			p.Draft.HumanRequested = c.CustomerRequestedHumanAt != nil
 			p.Draft.Status = c.Status
 			p.Draft.Primary = derefString(c.CustomerEmail)
 			p.Draft.CC = feedEmailAudience(c)
@@ -295,8 +314,30 @@ func (s *SlackService) processFeedAction(ctx context.Context, job *model.Support
 			}
 			return update(feedNotice("Assigned", "This conversation is assigned to you."))
 		}
+		if p.Kind == "feed_resolve" || p.Kind == "feed_reopen" {
+			next := "resolved"
+			if p.Kind == "feed_reopen" {
+				next = "open"
+			}
+			if c.Status != p.Message || (p.Kind == "feed_reopen") != (c.Status == "resolved") {
+				return update(feedNotice("Status changed", "The conversation changed. Check its current status on the card."))
+			}
+			if _, err := inbox.UpdateConversationStatus(ctx, c.WorkspaceID, c.ID, next, actor.UserID); err != nil {
+				return update(feedNotice("Status", err.Error()))
+			}
+			return update(feedNotice("Saved", "Conversation status updated."))
+		}
 		if !p.Submit {
 			return show("")
+		}
+		if feedMenuAction(p.Kind) || p.Kind == "feed_assign" {
+			if p.Draft.Revision != c.MergeRevision {
+				return show("This conversation changed. Review it before saving.")
+			}
+			if err := s.applyFeedTriage(ctx, f, &p, actor.UserID); err != nil {
+				return show(err.Error())
+			}
+			return update(feedNotice("Saved", "Conversation updated in Helpin."))
 		}
 		if p.Kind == "feed_manage" {
 			if p.Draft.Owner != derefString(c.AssignedUserID) || p.Draft.Status != c.Status {
