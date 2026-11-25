@@ -133,6 +133,7 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		common(BillingFeatureHelpcenterAnswer, 4096),
 		common(BillingFeatureCustomAgentDraft, 1600),
 		common(BillingFeatureCompanyProductContext, 2400),
+		common(BillingFeatureOnboardingPreviewAnswer, 3200),
 		common(BillingFeatureDockChatTitle, 80),
 		{
 			FeatureKey: BillingFeatureAskChat, OperationKey: AIUsageOperationMediaEnrichment,

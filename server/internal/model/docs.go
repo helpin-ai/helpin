@@ -600,6 +600,9 @@ type HelpcenterBrandProposal struct {
 	SocialLinks     []HelpcenterSocialLink `json:"social_links"`
 	OfficialDocsURL string                 `json:"official_docs_url,omitempty"`
 	WebsiteURL      string                 `json:"website_url,omitempty"`
+	// HelpCenterURL is a link on a plain website that likely leads to the
+	// company's help center.
+	HelpCenterURL string `json:"help_center_url,omitempty"`
 	// Notes say, in plain words, what could not be found.
 	Notes []string `json:"notes"`
 }

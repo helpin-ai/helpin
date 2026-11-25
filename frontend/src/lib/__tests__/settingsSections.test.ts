@@ -54,10 +54,10 @@ describe('getSettingsSidebarGroups', () => {
     expect(sections.indexOf('mcp')).toBe(sections.indexOf('external-agents') + 1);
   });
 
-  it('labels the inbound workspace surface MCP access', () => {
+  it('labels the inbound workspace surface API & MCP access', () => {
     expect(SETTINGS_ROUTE_SECTIONS.find((section) => section.id === 'mcp')).toMatchObject({
-      label: 'MCP access',
-      description: 'Connect outside MCP clients to Helpin and control their workspace access.',
+      label: 'API & MCP access',
+      description: 'Connect MCP clients and API service accounts to Helpin and control their workspace access.',
     });
   });
 

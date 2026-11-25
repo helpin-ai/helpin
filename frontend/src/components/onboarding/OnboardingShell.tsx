@@ -4,15 +4,9 @@ import type { WorkspaceOnboardingStep } from '@/lib/workspaceOnboardingMode';
 import { cn } from '@/lib/utils';
 
 const stepLabels: Record<WorkspaceOnboardingStep, string> = {
-  workspace: 'Workspace',
-  method: 'Setup method',
-  assistant: 'AI assistant',
+  website: 'Your website',
   ai: 'AI',
-  github: 'GitHub',
-  context: 'Company',
-  teams: 'Teams',
-  invite: 'Invite',
-  finish: 'Done',
+  setup: 'Setup',
 };
 
 type OnboardingShellProps = {
@@ -33,7 +27,7 @@ type OnboardingShellProps = {
 export function OnboardingShell({ steps, current, title, description, headerAction, children }: OnboardingShellProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousStep = useRef<WorkspaceOnboardingStep | undefined>(undefined);
-  const currentIndex = current ? steps.indexOf(current === 'assistant' ? 'method' : current) : -1;
+  const currentIndex = current ? steps.indexOf(current) : -1;
 
   useEffect(() => {
     if (!current) return;
@@ -45,7 +39,7 @@ export function OnboardingShell({ steps, current, title, description, headerActi
   }, [current]);
 
   return (
-    <PublicPageShell headerAction={headerAction} contentWidth="wide" brandPanel={false}>
+    <PublicPageShell headerAction={headerAction} contentWidth="wide" brandPanel={false} themeToggle>
       <div className="space-y-7">
         {currentIndex >= 0 && (
           // One continuous bar, no visible count: the AI step is only known after

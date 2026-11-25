@@ -4,9 +4,9 @@ import type { SetupGoalKey, WorkspaceSetupGuide } from './setupTypes';
 
 export function workspaceSetupConnectionIssue(dashboard: MCPDashboard): string | null {
   if (!dashboard.platform_enabled || dashboard.workspace_setup_available !== true) return 'Workspace setup through MCP is unavailable on this deployment. Continue in Helpin using the setup links below.';
-  if (!dashboard.can_use_mcp || !dashboard.policy.enabled) return 'MCP access is disabled for this workspace. A workspace admin can enable it in MCP access.';
-  if (!dashboard.available_toolsets.includes('context') || !dashboard.available_scopes.includes('helpin.context.read') || !dashboard.policy.allowed_toolsets.includes('context') || !dashboard.policy.allowed_scopes.includes('helpin.context.read')) return 'Context read access is restricted. A workspace admin can allow it in MCP access.';
-  if (!dashboard.mcp_url) return 'The MCP server URL is unavailable. Check MCP access before connecting.';
+  if (!dashboard.can_use_mcp || !dashboard.policy.enabled) return 'MCP access is disabled for this workspace. A workspace admin can enable it in API & MCP access.';
+  if (!dashboard.available_toolsets.includes('context') || !dashboard.available_scopes.includes('helpin.context.read') || !dashboard.policy.allowed_toolsets.includes('context') || !dashboard.policy.allowed_scopes.includes('helpin.context.read')) return 'Context read access is restricted. A workspace admin can allow it in API & MCP access.';
+  if (!dashboard.mcp_url) return 'The MCP server URL is unavailable. Check API & MCP access before connecting.';
   return null;
 }
 

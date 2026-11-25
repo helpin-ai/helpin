@@ -584,7 +584,7 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 	_ = s.importRepo.UpdateProgress(ctx, jobID, completed, failed, failuresJSON)
 
 	now := time.Now()
-	if err := s.importRepo.UpdateStatus(ctx, jobID, model.DocsImportStatusDone, &now); err != nil {
+	if err := s.closeJob(ctx, jobID, model.DocsImportStatusDone, &now); err != nil {
 		return fmt.Errorf("update job status: %w", err)
 	}
 

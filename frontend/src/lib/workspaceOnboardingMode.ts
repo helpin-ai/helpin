@@ -1,27 +1,25 @@
 /**
- * URL-addressable steps of the workspace onboarding at `/onboarding?step=`.
- * Steps after `workspace` also carry `workspace=<slug>` so a reload resumes
+ * URL-addressable steps of the support onboarding at `/onboarding?step=`.
+ * Steps after `website` also carry `workspace=<slug>` so a reload resumes
  * against the workspace that was already created.
  */
-export const workspaceOnboardingSteps = [
-  'workspace',
-  'method',
-  'assistant',
-  'ai',
-  'github',
-  'context',
-  'teams',
-  'invite',
-  'finish',
-] as const;
+export const workspaceOnboardingSteps = ['website', 'ai', 'setup'] as const;
 
 export type WorkspaceOnboardingStep = (typeof workspaceOnboardingSteps)[number];
 
 /** Step names used by earlier versions of the flow, kept so old links still open it. */
 const legacyStepAliases: Record<string, WorkspaceOnboardingStep> = {
-  details: 'workspace',
-  'use-cases': 'workspace',
-  learning: 'context',
+  details: 'website',
+  'use-cases': 'website',
+  workspace: 'website',
+  method: 'setup',
+  assistant: 'setup',
+  github: 'setup',
+  context: 'setup',
+  learning: 'setup',
+  teams: 'setup',
+  invite: 'setup',
+  finish: 'setup',
 };
 
 export function parseWorkspaceOnboardingStep(value: unknown): WorkspaceOnboardingStep | undefined {
@@ -45,16 +43,7 @@ export function shouldShowWorkspaceOnboardingOrganizationSelector({
   return organizationCount > 1;
 }
 
-/**
- * Where the owner lands after creating a workspace. Whenever the API serves the
- * Setup guide, every new workspace opens it; otherwise the owner lands on My Work.
- */
-export function workspaceCreatedDestination({
-  slug,
-  setupGuideEnabled,
-}: {
-  slug: string;
-  setupGuideEnabled: boolean;
-}) {
-  return setupGuideEnabled ? `/w/${slug}/setup` : `/w/${slug}/pm/my-work`;
+/** Where onboarding ends: the support inbox, where conversations arrive. */
+export function workspaceCreatedDestination(slug: string) {
+  return `/w/${slug}/support`;
 }

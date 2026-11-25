@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/crawler"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
@@ -58,6 +60,33 @@ func TestEmptyWebsiteRefreshPreservesKnowledge(t *testing.T) {
 		if err := db.Table(table).Count(&count).Error; err != nil || count == 0 {
 			t.Fatalf("lost indexed knowledge in %s: count=%d err=%v", table, count, err)
 		}
+	}
+}
+
+type failingSyncEmbedder struct{}
+
+func (failingSyncEmbedder) CreateEmbeddings(context.Context, llm.EmbeddingRequest) (*llm.EmbeddingResponse, error) {
+	return nil, errors.New("embedding provider rejected the key")
+}
+
+func TestWebsiteSyncThatIndexesNothingFails(t *testing.T) {
+	db := newSyncReuseDB(t)
+	repo := repository.NewSupportContentSourceRepository(db)
+	ctx := context.Background()
+	if err := repo.Create(ctx, &model.SupportContentSource{ID: "site", WorkspaceID: "ws", Name: "Guide", SourceType: "website", StartURL: "https://example.test/docs"}); err != nil {
+		t.Fatal(err)
+	}
+	crawl := &syncReuseCrawler{text: "# Guide\nConnect your account."}
+	svc := NewSupportContentSyncService(repo, repository.NewSupportContentPageRepository(db), repository.NewSupportContentChunkRepository(db), failingSyncEmbedder{}, "", crawl, nil, nil)
+	if err := svc.RunSourceSync(ctx, "ws", "site"); err == nil {
+		t.Fatal("a sync that indexed nothing reported success")
+	}
+	source, err := repo.GetByID(ctx, "site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.SyncStatus != model.KnowledgeSourceSyncFailed || source.LastSyncError == nil || source.IndexedPages != 0 {
+		t.Fatalf("state after indexing nothing = %+v, want failed with a reason", source)
 	}
 }
 

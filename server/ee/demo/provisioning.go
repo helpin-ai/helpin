@@ -170,7 +170,7 @@ type demoHelpcenter interface {
 }
 
 type demoImports interface {
-	CheckPublicHelpCenter(ctx context.Context, rawURL string) (homeURL, name string, err error)
+	CheckPublicHelpCenter(ctx context.Context, rawURL string) (*model.PublicHelpCenterSite, error)
 	StartPublicHelpCenter(ctx context.Context, req model.PublicHelpCenterImportRequest, workspaceID, userID string) (string, error)
 	GetStatus(ctx context.Context, jobID, workspaceID string) (*model.DocsImportJob, error)
 }
@@ -416,13 +416,14 @@ func (s *Service) Create(ctx context.Context, homeWorkspaceID, userID string, in
 	if strings.TrimSpace(address) == "" {
 		return nil, false, demoInputError("No help center address is known for %s. Pass help_center_url, or set the company's %q property.", company.Name, PropertyHelpCenterURL)
 	}
-	homeURL, _, err := s.deps.Imports.CheckPublicHelpCenter(ctx, address)
+	found, err := s.deps.Imports.CheckPublicHelpCenter(ctx, address)
 	if err != nil {
 		if errors.Is(err, coreservice.ErrPublicImportInvalid) {
 			return nil, false, demoInputError("%s", strings.TrimPrefix(err.Error(), coreservice.ErrPublicImportInvalid.Error()+": "))
 		}
 		return nil, false, fmt.Errorf("check help center: %w", err)
 	}
+	homeURL := found.URL
 	report, err := initialDemoReport(company, input)
 	if err != nil {
 		return nil, false, err

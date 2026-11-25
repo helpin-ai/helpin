@@ -1,12 +1,12 @@
 export type SignupRedirectTarget =
   | { to: string }
-  | { to: '/onboarding'; search: { step: 'workspace' } };
+  | { to: '/onboarding'; search: { step: 'website' } };
 
 export function signupSuccessRedirect(redirect: string | null | undefined): SignupRedirectTarget {
   if (redirect) {
     return { to: redirect };
   }
-  return { to: '/onboarding', search: { step: 'workspace' } };
+  return { to: '/onboarding', search: { step: 'website' } };
 }
 
 /**
@@ -21,9 +21,9 @@ export function loginDestination({
   defaultWorkspaceId?: string | null;
 }):
   | { to: '/w/$slug/pm/my-work'; params: { slug: string } }
-  | { to: '/onboarding'; search: { step: 'workspace' } } {
+  | { to: '/onboarding'; search: { step: 'website' } } {
   if (!workspaces || workspaces.length === 0) {
-    return { to: '/onboarding', search: { step: 'workspace' } };
+    return { to: '/onboarding', search: { step: 'website' } };
   }
   const preferred = defaultWorkspaceId ? workspaces.find((workspace) => workspace.id === defaultWorkspaceId) : undefined;
   return { to: '/w/$slug/pm/my-work', params: { slug: (preferred ?? workspaces[0]).slug } };

@@ -290,7 +290,7 @@ function MCPConnections({ workspaceId, dashboard }: { workspaceId: string; dashb
   const handleRevokeWorkspace = async () => {
     const accepted = await confirm({
       title: 'Revoke all AI tool access?',
-      description: 'Every connected tool, sign-in session, automation account, and credential in this workspace will stop working immediately.',
+      description: 'Every connected tool, sign-in session, service account, and credential in this workspace will stop working immediately.',
       confirmText: 'Revoke all access',
       variant: 'destructive',
     });
@@ -377,12 +377,12 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
   const confirm = useConfirm();
 
   const handleRevoke = async (principal: MCPServicePrincipal) => {
-    if (!await confirm({ title: `Revoke ${principal.name}?`, description: 'All credentials for this automation account will stop working.', confirmText: 'Revoke automation', variant: 'destructive' })) return;
+    if (!await confirm({ title: `Revoke ${principal.name}?`, description: 'All credentials for this service account will stop working.', confirmText: 'Revoke account', variant: 'destructive' })) return;
     try {
       await revoke.mutateAsync(principal.id);
-      toast.success('Automation account revoked');
+      toast.success('Service account revoked');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not revoke automation account');
+      toast.error(error instanceof Error ? error.message : 'Could not revoke service account');
     }
   };
 
@@ -391,15 +391,15 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
-            <div><CardTitle className="text-base">Automation accounts</CardTitle><CardDescription>Restricted tokens for the Helpin REST API, MCP, and workflows that run without a person signing in. Secrets are shown once.</CardDescription></div>
-            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!dashboard.policy.service_accounts_enabled}>Create automation account</Button>
+            <div><CardTitle className="text-base">Service accounts</CardTitle><CardDescription>Restricted tokens for the Helpin REST API, MCP, and workflows that run without a person signing in. Secrets are shown once.</CardDescription></div>
+            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!dashboard.policy.service_accounts_enabled}>Create service account</Button>
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {!dashboard.policy.service_accounts_enabled ? (
-            <EmptyState title="Automation accounts are disabled" description="Allow them in the Permissions tab before creating a credential." />
+            <EmptyState title="Service accounts are disabled" description="Allow them in the Permissions tab before creating a credential." />
           ) : dashboard.service_principals.length === 0 ? (
-            <EmptyState title="No automation accounts" description="Create one for a narrowly scoped workflow that runs without a person signing in." />
+            <EmptyState title="No service accounts" description="Create one for a narrowly scoped workflow that runs without a person signing in." />
           ) : (
             <Table>
               <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Access</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead className="w-28" /></TableRow></TableHeader>
@@ -516,14 +516,14 @@ function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dash
     <div className="space-y-3">
       <MCPPolicySection
         title="AI tool access controls"
-        description="Choose whether members can connect tools, approve writes, or create automation accounts."
+        description="Choose whether members can connect tools, approve writes, or create service accounts."
         expanded={expandedSections.has('access-controls')}
         onToggle={() => toggleSection('access-controls')}
       >
         <div className="divide-y">
           <PolicySwitch label="Allow AI tools and automations" description="Let members connect MCP-compatible tools to this workspace. Their Helpin roles and module permissions still apply." checked={policy.enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enabled: checked }))} />
           <PolicySwitch label="Allow bounded writes" description="Allow new connections to request create and update actions in the selected product areas. Existing connections must reconnect, turn off read-only during consent, and approve the write permissions." checked={!policy.enforce_read_only} onCheckedChange={setBoundedWrites} />
-          <PolicySwitch label="Allow automation accounts" description="Let managers create restricted credentials for workflows that run without a person signing in." checked={policy.service_accounts_enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, service_accounts_enabled: checked }))} />
+          <PolicySwitch label="Allow service accounts" description="Let managers create restricted credentials for workflows that run without a person signing in." checked={policy.service_accounts_enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, service_accounts_enabled: checked }))} />
         </div>
       </MCPPolicySection>
       <MCPPolicySection
@@ -575,13 +575,13 @@ export function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, da
       onSecret(result.secret);
       setName(''); setDescription(''); setAllowWrites(false); setAllowReplies(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not create automation account');
+      toast.error(error instanceof Error ? error.message : 'Could not create service account');
     }
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Create automation account</DialogTitle><DialogDescription>Accounts are read-only unless you allow updates for a workflow that needs to create or change records.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Create service account</DialogTitle><DialogDescription>Accounts are read-only unless you allow updates for a workflow that needs to create or change records.</DialogDescription></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2"><Label htmlFor="service-name">Name</Label><Input id="service-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Release notes workflow" maxLength={100} /></div>
           <div className="space-y-2"><Label htmlFor="service-description">Description</Label><Textarea id="service-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Where this credential is used" /></div>

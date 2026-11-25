@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/helpin-ai/helpin/server/internal/docsimport"
 	"github.com/helpin-ai/helpin/server/internal/helpscout"
 	"github.com/helpin-ai/helpin/server/internal/intercom"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/publichelp"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
@@ -23,7 +24,6 @@ const (
 	// publicImportMaxLinkedLookups bounds how many linked article numbers one
 	// import follows, so a help center full of stale links cannot stall it.
 	publicImportMaxLinkedLookups = 1000
-	publicImportProgressEvery    = 5
 )
 
 // publicImportTarget is the Helpin collection a source collection became.
@@ -38,10 +38,12 @@ type publicImportRun struct {
 	s                                  *DocsImportService
 	jobID, spaceID, workspaceID, actor string
 	mode                               string
-	client                             *intercom.PublicClient
-	site                               *intercom.PublicHelpCenter
-	uploader                           helpscout.ImageUploader
-	heartbeat                          func(int)
+	source                             publicSource
+	// sourceSystem marks this import's redirects and article checkpoints.
+	sourceSystem string
+	site         *publichelp.Site
+	uploader     helpscout.ImageUploader
+	heartbeat    func(int)
 
 	collections []publicImportCollection
 	// targets maps a source collection ID to its Helpin collection.
@@ -57,6 +59,8 @@ type publicImportRun struct {
 	// linked lists the article IDs found through links, in discovery order.
 	linked     []string
 	imageCache map[string]string
+	// movedLinks remembers where links that matched nothing now lead.
+	movedLinks map[string]string
 
 	summary           model.ImportSummary
 	failures          []model.ImportFailure
@@ -64,21 +68,30 @@ type publicImportRun struct {
 	completed, failed int
 }
 
-// runPublicIntercomImport imports a public Intercom help center: collections,
-// articles with their images, links between them, and the source order.
-func (s *DocsImportService) runPublicIntercomImport(ctx context.Context, jobID string, req model.DocsImportStartRequest, spaceID, workspaceID, userID string, heartbeat func(int)) error {
+// runPublicImport imports a public help center read by its address:
+// collections, articles with their images, links between them, and the
+// source order.
+func (s *DocsImportService) runPublicImport(ctx context.Context, job *model.DocsImportJob, req model.DocsImportStartRequest, spaceID string, heartbeat func(int)) error {
+	jobID := job.ID
+	source := s.publicSourceFor(job.Source, publicCredentials{email: req.Email, token: req.APIKey})
+	if source == nil {
+		s.failJob(ctx, jobID, "This help center's platform is no longer supported.")
+		return nil
+	}
 	if err := s.importRepo.UpdateStatus(ctx, jobID, model.DocsImportStatusRunning, nil); err != nil {
 		return err
 	}
 	run := &publicImportRun{
-		s: s, jobID: jobID, spaceID: spaceID, workspaceID: workspaceID, actor: userID,
-		mode:       normalizeDocsImportStatus(req.ImportStatus),
-		client:     s.publicIntercomClient(),
-		heartbeat:  heartbeat,
-		targets:    map[string]publicImportTarget{},
-		documents:  map[string]string{},
-		titles:     map[string]string{},
-		imageCache: map[string]string{},
+		s: s, jobID: jobID, spaceID: spaceID, workspaceID: job.WorkspaceID, actor: job.StartedBy,
+		mode:         normalizeDocsImportStatus(req.ImportStatus),
+		source:       source,
+		sourceSystem: job.Source,
+		heartbeat:    heartbeat,
+		targets:      map[string]publicImportTarget{},
+		documents:    map[string]string{},
+		titles:       map[string]string{},
+		imageCache:   map[string]string{},
+		movedLinks:   map[string]string{},
 	}
 	switch {
 	case s.imageUploader != nil:
@@ -129,7 +142,7 @@ func (r *publicImportRun) beat() {
 }
 
 func (r *publicImportRun) loadSite(ctx context.Context, sourceURL string) error {
-	site, err := r.client.LoadHelpCenter(ctx, sourceURL, r.beat)
+	site, err := r.source.load(ctx, sourceURL, r.beat)
 	if err != nil {
 		friendly := publicImportError(err)
 		if errors.Is(friendly, ErrPublicImportInvalid) {
@@ -145,7 +158,7 @@ func (r *publicImportRun) loadSite(ctx context.Context, sourceURL string) error 
 			r.summary.CollectionsMerged++
 		}
 	}
-	r.summary.SourceSystem = docsImportSourceIntercomPublic
+	r.summary.SourceSystem = r.sourceSystem
 	r.summary.SourceURL = site.BaseURL
 	r.summary.SourceName = site.Name
 	if err := r.s.importRepo.SetTotal(ctx, r.jobID, r.total); err != nil {
@@ -223,7 +236,7 @@ func (r *publicImportRun) ensureCollection(
 	return publicImportTarget{id: created.ID, slug: created.Slug, publicID: created.PublicID}, true, nil
 }
 
-func (r *publicImportRun) redirectCollection(ctx context.Context, source intercom.PublicCollection, target publicImportTarget) {
+func (r *publicImportRun) redirectCollection(ctx context.Context, source publichelp.Collection, target publicImportTarget) {
 	sourcePath := intercomURLPath(source.URL)
 	if sourcePath == "" {
 		return
@@ -231,7 +244,7 @@ func (r *publicImportRun) redirectCollection(ctx context.Context, source interco
 	canonical := buildDocsHelpcenterCollectionCanonicalPath(nil, "", target.slug, target.publicID)
 	created, err := r.s.redirectRepo.UpsertImported(ctx, &model.DocsRedirect{
 		WorkspaceID: r.workspaceID, SourcePath: sourcePath, TargetCollectionSlug: target.slug, TargetPath: &canonical,
-		Type: model.RedirectTypeImported, SourceSystem: stringPtr(docsImportSourceIntercomPublic),
+		Type: model.RedirectTypeImported, SourceSystem: stringPtr(r.sourceSystem),
 		SourceObjectType: stringPtr("collection"), SourceObjectID: stringPtr(source.ID),
 	})
 	if err != nil {
@@ -245,7 +258,7 @@ func (r *publicImportRun) redirectCollection(ctx context.Context, source interco
 
 // loadCheckpoints reads the articles earlier runs finished.
 func (r *publicImportRun) loadCheckpoints(ctx context.Context) error {
-	rows, err := r.s.contentSvc.contentRepo.ListImportSourceDocuments(ctx, r.spaceID, docsImportSourceIntercomPublic)
+	rows, err := r.s.contentSvc.contentRepo.ListImportSourceDocuments(ctx, r.spaceID, r.sourceSystem)
 	if err != nil {
 		return fmt.Errorf("load import checkpoints: %w", err)
 	}
@@ -259,7 +272,6 @@ func (r *publicImportRun) loadCheckpoints(ctx context.Context) error {
 
 // importListedArticles imports the articles that collections list.
 func (r *publicImportRun) importListedArticles(ctx context.Context) error {
-	seen := 0
 	for _, entry := range r.collections {
 		target, ok := r.targets[entry.targetID]
 		if !ok {
@@ -269,18 +281,17 @@ func (r *publicImportRun) importListedArticles(ctx context.Context) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			seen++
 			r.importArticle(ctx, summary, nil, &target, false)
-			r.reportProgress(ctx, seen%publicImportProgressEvery == 0)
+			// Saved after every article so the setup screen's count keeps up.
+			r.reportProgress(ctx)
 		}
 	}
-	r.reportProgress(ctx, true)
 	return nil
 }
 
 // importArticle imports one article unless an earlier run already did, and
 // counts the outcome.
-func (r *publicImportRun) importArticle(ctx context.Context, summary intercom.PublicArticleSummary, fetched *intercom.PublicArticle, target *publicImportTarget, linked bool) {
+func (r *publicImportRun) importArticle(ctx context.Context, summary publichelp.ArticleRef, fetched *publicContent, target *publicImportTarget, linked bool) {
 	r.order = append(r.order, summary.ID)
 	if documentID, done := r.documents[summary.ID]; done {
 		r.completed++
@@ -310,12 +321,16 @@ func (r *publicImportRun) importArticle(ctx context.Context, summary intercom.Pu
 // publicArticleFailure words an article failure for the import report.
 func publicArticleFailure(err error) string {
 	switch {
-	case errors.Is(err, intercom.ErrNotFound):
+	case errors.Is(err, intercom.ErrNotFound), errors.Is(err, publichelp.ErrNotFound):
 		return "The article is no longer available on the source help center."
-	case errors.Is(err, intercom.ErrPublicHelpCenterRestricted):
+	case errors.Is(err, intercom.ErrPublicHelpCenterRestricted), errors.Is(err, publichelp.ErrRestricted):
 		return "The article requires sign-in on the source help center."
-	case errors.Is(err, intercom.ErrPublicHelpCenterUnreachable):
+	case errors.Is(err, publichelp.ErrChallenged):
+		return "The source help center blocked the request for this article. Retry to import it."
+	case errors.Is(err, intercom.ErrPublicHelpCenterUnreachable), errors.Is(err, publichelp.ErrUnreachable):
 		return "The source help center did not respond while this article was read. Retry to import it."
+	case errors.Is(err, publichelp.ErrNotHelpCenter):
+		return "The page has no article content that could be read."
 	}
 	var invalid *publicArticleContentError
 	if errors.As(err, &invalid) {
@@ -332,20 +347,25 @@ func (e *publicArticleContentError) Error() string { return "invalid converted c
 
 // createArticle converts and stores one article. fetched is the article when
 // the caller already read it; otherwise it is read from summary.URL.
-func (r *publicImportRun) createArticle(ctx context.Context, summary intercom.PublicArticleSummary, fetched *intercom.PublicArticle, target *publicImportTarget) (string, error) {
+func (r *publicImportRun) createArticle(ctx context.Context, summary publichelp.ArticleRef, fetched *publicContent, target *publicImportTarget) (string, error) {
 	article := fetched
 	if article == nil {
-		read, err := r.client.Article(ctx, summary.URL)
+		read, err := r.source.read(ctx, summary.URL)
 		if err != nil {
 			return "", err
 		}
 		article = read
 	}
+	// A page that names itself only in its listing takes the listed title.
+	if article.Title == "" || article.Title == "Untitled" {
+		article.Title = cmp.Or(summary.Title, "Untitled")
+	}
 	var failedImages []model.ImportFailedImage
-	converted := docsimport.ConvertIntercomBlocks(article.Blocks, docsimport.IntercomBlockOptions{
-		CopyImage: func(source string) string { return r.copyImage(ctx, source, article.Title, &failedImages) },
-	})
-	content, err := converted.Doc.ToJSON()
+	doc, warnings, err := article.convert(func(source string) string { return r.copyImage(ctx, source, article.Title, &failedImages) })
+	if err != nil {
+		return "", &publicArticleContentError{reason: err.Error()}
+	}
+	content, err := doc.ToJSON()
 	if err != nil {
 		return "", fmt.Errorf("encode article %s: %w", article.ID, err)
 	}
@@ -381,7 +401,7 @@ func (r *publicImportRun) createArticle(ctx context.Context, summary intercom.Pu
 	} else {
 		r.summary.ArticlesDrafted++
 	}
-	if len(converted.Warnings) > 0 {
+	if len(warnings) > 0 {
 		r.summary.ArticlesWithConversionWarnings++
 	}
 	for _, image := range failedImages {
@@ -400,7 +420,7 @@ func (r *publicImportRun) createArticle(ctx context.Context, summary intercom.Pu
 func (r *publicImportRun) fillArticle(
 	ctx context.Context,
 	sourceID string,
-	article *intercom.PublicArticle,
+	article *publicContent,
 	target *publicImportTarget,
 	documentID string,
 	content json.RawMessage,
@@ -427,7 +447,7 @@ func (r *publicImportRun) fillArticle(
 		canonical := buildDocsHelpcenterArticleCanonicalPath(nil, "", hcArticle.Slug, hcArticle.PublicID)
 		created, err := r.s.redirectRepo.UpsertImported(ctx, &model.DocsRedirect{
 			WorkspaceID: r.workspaceID, SourcePath: sourcePath, TargetCollectionSlug: target.slug, TargetArticleSlug: &slug,
-			TargetPath: &canonical, Type: model.RedirectTypeImported, SourceSystem: stringPtr(docsImportSourceIntercomPublic),
+			TargetPath: &canonical, Type: model.RedirectTypeImported, SourceSystem: stringPtr(r.sourceSystem),
 			SourceObjectType: stringPtr("article"), SourceObjectID: stringPtr(sourceID),
 		})
 		if err != nil {
@@ -447,9 +467,9 @@ func (r *publicImportRun) fillArticle(
 			return false, fmt.Errorf("publish imported article externally %s: %w", article.ID, err)
 		}
 	}
-	// The provenance is the resume checkpoint; store it last. No source HTML
-	// is kept: the article was converted from blocks, not HTML.
-	if err := r.s.contentSvc.SetImportProvenance(ctx, saved.ID, "", docsImportSourceIntercomPublic, sourceID); err != nil {
+	// The provenance is the resume checkpoint; store it last. The source
+	// body is not kept; reading the article again gives it.
+	if err := r.s.contentSvc.SetImportProvenance(ctx, saved.ID, "", r.sourceSystem, sourceID); err != nil {
 		return false, fmt.Errorf("store import checkpoint for article %s: %w", article.ID, err)
 	}
 	return publish, nil
@@ -500,8 +520,8 @@ func (r *publicImportRun) addFailedImage(image model.ImportFailedImage) {
 	}
 }
 
-// imageCacheKey identifies an image without the signature Intercom's CDN adds
-// to every address, which differs between two reads of the same image.
+// imageCacheKey identifies an image without the signature some CDNs add to
+// every address, which differs between two reads of the same image.
 func imageCacheKey(source string) string { return stripURLQuery(source) }
 
 func stripURLQuery(raw string) string {
@@ -523,10 +543,7 @@ func hostOfURL(raw string) string {
 
 // reportProgress stores the running counts so the import screen can follow
 // along.
-func (r *publicImportRun) reportProgress(ctx context.Context, write bool) {
-	if !write {
-		return
-	}
+func (r *publicImportRun) reportProgress(ctx context.Context) {
 	failures := json.RawMessage("[]")
 	if len(r.failures) > 0 {
 		encoded, err := json.Marshal(r.failures)
@@ -543,7 +560,7 @@ func (r *publicImportRun) reportProgress(ctx context.Context, write bool) {
 
 // finish stores the report and closes the job.
 func (r *publicImportRun) finish(ctx context.Context) {
-	r.reportProgress(ctx, true)
+	r.reportProgress(ctx)
 	summary, err := json.Marshal(r.summary)
 	if err != nil {
 		r.s.logger.ErrorContext(ctx, "encode import summary", "job_id", r.jobID, "error", err)
@@ -555,7 +572,7 @@ func (r *publicImportRun) finish(ctx context.Context) {
 		status = model.DocsImportStatusFailed
 	}
 	doneAt := time.Now()
-	if err := r.s.importRepo.UpdateStatus(ctx, r.jobID, status, &doneAt); err != nil {
+	if err := r.s.closeJob(ctx, r.jobID, status, &doneAt); err != nil {
 		r.s.logger.ErrorContext(ctx, "close import job", "job_id", r.jobID, "error", err)
 	}
 	r.s.logger.InfoContext(ctx, "public help center import finished",

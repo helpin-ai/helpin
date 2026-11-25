@@ -1235,6 +1235,7 @@ func main() {
 		cfg.OpenAIEmbeddingModel,
 		runEngine,
 	)
+	docsImportService.SetSpaceIndexer(docsEmbeddingService)
 	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceServiceWithScopes(agentKnowledgeSourceRepo, docsSpaceRepo, docsCollectionRepo, docsDocumentRepo, docsEmbeddingService)
 	supportContentSyncService := service.NewSupportContentSyncService(
 		supportContentSourceRepo,
@@ -2006,6 +2007,8 @@ func main() {
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
 		HelpAssistantRateLimit:    middleware.HelpAssistantRateLimit(redisClient),
+		OnboardingReadRateLimit:   middleware.OnboardingReadRateLimit(redisClient),
+		OnboardingAnswerRateLimit: middleware.OnboardingAnswerRateLimit(redisClient),
 		DemoReadOnly:              demoReadOnly,
 		Assets:                    handler.NewAssetHandler(s3Client),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
@@ -2016,11 +2019,16 @@ func main() {
 			AppBaseURL:       cfg.AppBaseURL,
 			MobileAppBaseURL: cfg.MobileAppBaseURL,
 		}),
-		Passkey:             handler.NewPasskeyHandler(passkeyService),
-		Organization:        handler.NewOrganizationHandler(orgService),
-		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
-		LinkPreview:         linkPreviewHandler,
-		Setup:               setupHandler,
+		Passkey:      handler.NewPasskeyHandler(passkeyService),
+		Organization: handler.NewOrganizationHandler(orgService),
+		Workspace:    handler.NewWorkspaceHandler(workspaceService, authzService),
+		LinkPreview:  linkPreviewHandler,
+		Setup:        setupHandler,
+		SupportQuickstart: handler.NewSupportQuickstartHandler(service.NewSupportQuickstartService(service.SupportQuickstartDeps{
+			Brand: docsHelpcenterService, Imports: docsImportService, Workspaces: workspaceService, Support: supportInboxService,
+			ContentSources: supportContentSourceService, AgentContentSources: agentContentSourceService, Chunks: docsChunkRepo, Documents: docsDocumentRepo,
+			AI: supportLLMProvider, Redis: redisClient,
+		})),
 		SampleData:          handler.NewSampleDataHandler(service.NewSampleDataService(db, cfg.DocsOrderingUseSortKey), authzService),
 		Edition:             editionServices.Routes,
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),

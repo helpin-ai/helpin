@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useDocsSpaces } from '@/hooks/queries'
 import { useWorkspaceAccess } from '@/hooks/queries/useSession'
+import { helpCenterPlatformName } from '@/lib/helpCenterPlatforms'
 import { Loading01Icon } from '@/lib/icons'
 import { unwrap } from '@/lib/queryUtils'
 import {
@@ -26,6 +27,8 @@ const ARTICLE_STATUS_OPTIONS: { value: ArticleStatus; label: string; description
 ]
 
 const NEW_SPACE = '__new'
+/** The preview's answer when a Zendesk help center refuses anonymous reads and needs a token. */
+const NEEDS_TOKEN_STATUS = 428
 const FINISHED_STATUSES = ['done', 'failed', 'interrupted']
 
 function plural(count: number, one: string, many: string): string {
@@ -41,10 +44,12 @@ interface PublicHelpCenterImportWizardProps {
   workspaceId: string
   /** An import of this kind that is already running; its progress is shown instead of the form. */
   activeJobId?: string
+  /** Opens as the Zendesk import: the email and API token fields show from the start, and stay optional. */
+  zendesk?: boolean
 }
 
-/** Copies a public Intercom help center into a Help Center space, by its address. */
-export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: PublicHelpCenterImportWizardProps) {
+/** Copies a public help center into a Help Center space, by its address. The platform is detected from the address. */
+export function PublicHelpCenterImportWizard({ workspaceId, activeJobId, zendesk = false }: PublicHelpCenterImportWizardProps) {
   const { data: access, isLoading: accessLoading } = useWorkspaceAccess(workspaceId)
   const canImport = access?.permissions?.includes('docs.import') ?? false
   const { data: spaces } = useDocsSpaces(workspaceId)
@@ -56,6 +61,10 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
   const [preview, setPreview] = useState<PublicHelpCenterPreview | null>(null)
   // The address the preview was read from; editing the field makes it stale.
   const [checkedAddress, setCheckedAddress] = useState('')
+  // Set when the address turned out to be a Zendesk help center that needs sign-in.
+  const [needsToken, setNeedsToken] = useState(false)
+  const [email, setEmail] = useState('')
+  const [apiToken, setApiToken] = useState('')
   const [targetSpaceId, setTargetSpaceId] = useState(NEW_SPACE)
   const [newSpaceName, setNewSpaceName] = useState('')
   const [articleStatus, setArticleStatus] = useState<ArticleStatus>('published')
@@ -78,19 +87,27 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
   const trimmedAddress = address.trim()
   const previewIsCurrent = Boolean(preview) && trimmedAddress === checkedAddress
   const spaceName = newSpaceName.trim()
+  const showToken = zendesk || needsToken
+  const credentials = showToken && email.trim() && apiToken.trim() ? { email: email.trim(), api_token: apiToken.trim() } : undefined
+  const canCheck = Boolean(trimmedAddress) && !checking && (!needsToken || Boolean(credentials))
 
   const check = async () => {
-    if (!trimmedAddress || checking) return
+    if (!canCheck) return
     const seq = ++checkSeq.current
     setChecking(true)
     setError(null)
     setStartError(null)
-    const response = await docsImportService.previewPublicHelpCenter(workspaceId, trimmedAddress)
+    const response = await docsImportService.previewPublicHelpCenter(workspaceId, trimmedAddress, credentials)
     if (seq !== checkSeq.current) return
     setChecking(false)
     if (!response.data) {
       setPreview(null)
       setError(response.error ?? 'The help center could not be read. Try again in a moment.')
+      if (response.status === NEEDS_TOKEN_STATUS) {
+        // The fields appear below; the cursor moves to the first one.
+        setNeedsToken(true)
+        return
+      }
       // Put the cursor back where the fix happens.
       addressRef.current?.focus()
       return
@@ -107,6 +124,7 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
     const response = await docsImportService.startPublicHelpCenter(workspaceId, {
       url: preview.url,
       import_status: articleStatus,
+      ...credentials,
       ...(targetSpaceId === NEW_SPACE ? { new_space_name: spaceName || 'Help Center' } : { target_space_id: targetSpaceId }),
     })
     setStarting(false)
@@ -122,6 +140,9 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
     setPreview(null)
     setCheckedAddress('')
     setAddress('')
+    setNeedsToken(false)
+    setEmail('')
+    setApiToken('')
     setNewSpaceName('')
     setError(null)
     setStartError(null)
@@ -139,9 +160,11 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-base font-semibold">Import a public help center</h3>
+        <h3 className="text-base font-semibold">{zendesk ? 'Import from Zendesk' : 'Import a public help center'}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Copy an Intercom help center by its address. No access token is needed, and running the import again skips what was already imported.
+          {zendesk
+            ? 'Copy your Zendesk help center by its address. A public help center needs no token; add an admin email and API token when yours asks visitors to sign in. Running the import again skips what was already imported.'
+            : 'Copy a help center from Intercom, Zendesk, Crisp, Freshdesk, Help Scout, HubSpot, or a docs site such as Mintlify or GitBook, by its address. No access token is needed, and running the import again skips what was already imported.'}
         </p>
       </div>
 
@@ -169,13 +192,15 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
               onChange={(event) => {
                 setAddress(event.target.value)
                 if (error) setError(null)
+                // Another address may not need the token.
+                if (needsToken) setNeedsToken(false)
               }}
-              placeholder="https://help.example.com"
+              placeholder={zendesk ? 'https://example.zendesk.com' : 'https://help.example.com'}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? errorId : 'public-help-center-address-hint'}
               className="sm:flex-1"
             />
-            <Button type="submit" variant={previewIsCurrent ? 'outline' : 'default'} disabled={!trimmedAddress || checking} className="shrink-0">
+            <Button type="submit" variant={previewIsCurrent ? 'outline' : 'default'} disabled={!canCheck} className="shrink-0">
               {checking ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}
               {checking ? 'Reading…' : previewIsCurrent ? 'Check again' : 'Check address'}
             </Button>
@@ -188,6 +213,21 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
             </p>
           )}
         </div>
+        {showToken ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="public-help-center-email">Zendesk admin email</Label>
+              <Input id="public-help-center-email" type="email" autoComplete="off" autoFocus={needsToken} value={email} onChange={(event) => setEmail(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="public-help-center-token">Zendesk API token</Label>
+              <Input id="public-help-center-token" type="password" autoComplete="off" value={apiToken} onChange={(event) => setApiToken(event.target.value)} />
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Create a token in Zendesk Admin Center under Apps and integrations, Zendesk API. It is used for this import only and deleted when the import finishes. Published articles are imported; drafts are skipped.
+            </p>
+          </div>
+        ) : null}
       </form>
 
       {preview && previewIsCurrent ? (
@@ -197,11 +237,13 @@ export function PublicHelpCenterImportWizard({ workspaceId, activeJobId }: Publi
               <p id="public-help-center-found" className="text-sm font-medium">{preview.name || displayAddress(preview.url)}</p>
               <p className="text-sm text-muted-foreground">
                 {plural(preview.articles, 'article', 'articles')} in {plural(preview.collections, 'collection', 'collections')} at {displayAddress(preview.url)}
+                {helpCenterPlatformName(preview.platform) ? ` · ${helpCenterPlatformName(preview.platform)}` : ''}
               </p>
             </div>
             <CollectionCounts collections={preview.top_collections} />
             <p className="text-xs text-muted-foreground">
-              Images are copied, links between articles are pointed at their new addresses, and the old addresses redirect. Public articles that sit in no collection are found through links and placed in “Other articles”.
+              Images are copied, links between articles are pointed at their new addresses, and the old addresses redirect.
+              {preview.platform === 'intercom' ? ' Public articles that sit in no collection are found through links and placed in “Other articles”.' : ''}
               {preview.collections_merged > 0
                 ? ` ${plural(preview.collections_merged, 'collection is nested deeper than Helpin supports; its', 'collections are nested deeper than Helpin supports; their')} articles move into the collection above.`
                 : ''}

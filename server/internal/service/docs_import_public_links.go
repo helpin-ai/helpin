@@ -9,6 +9,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/docsimport"
 	"github.com/helpin-ai/helpin/server/internal/intercom"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/publichelp"
 )
 
 // publicImportLinkedTargetKey keys the collection for articles found through
@@ -23,7 +24,11 @@ const publicImportContentBatch = 100
 // Intercom lets an article be public without one; such an article is then
 // reachable only through links from other articles. The stored bodies are
 // scanned rather than the source, so a retried run finds the same articles.
+// Platforms that list every public article skip this.
 func (r *publicImportRun) importLinkedArticles(ctx context.Context) error {
+	if r.site.ArticleURL == nil {
+		return nil
+	}
 	r.countEarlierLinkedArticles(ctx)
 	tried := map[string]bool{}
 	queue, err := r.linkedArticleIDs(ctx, r.documentIDs())
@@ -59,7 +64,7 @@ func (r *publicImportRun) importLinkedArticles(ctx context.Context) error {
 		}
 		queue = append(queue, found...)
 	}
-	r.reportProgress(ctx, true)
+	r.reportProgress(ctx)
 	return nil
 }
 
@@ -107,12 +112,12 @@ func (r *publicImportRun) countEarlierLinkedArticles(ctx context.Context) {
 // importLinkedArticle imports the article with the given source ID when the
 // help center still serves it, and returns its document ID or "".
 func (r *publicImportRun) importLinkedArticle(ctx context.Context, id string) (string, error) {
-	article, err := r.client.Article(ctx, r.site.ArticleURL(id))
+	article, err := r.source.read(ctx, r.site.ArticleURL(id))
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		if errors.Is(err, intercom.ErrPublicHelpCenterUnreachable) {
+		if errors.Is(err, intercom.ErrPublicHelpCenterUnreachable) || errors.Is(err, publichelp.ErrUnreachable) {
 			// A link that might lead to an article could not be checked;
 			// say so rather than drop it silently.
 			r.total++
@@ -130,7 +135,7 @@ func (r *publicImportRun) importLinkedArticle(ctx context.Context, id string) (s
 	if err := r.s.importRepo.SetTotal(ctx, r.jobID, r.total); err != nil {
 		r.s.logger.ErrorContext(ctx, "set import total", "job_id", r.jobID, "error", err)
 	}
-	summary := intercom.PublicArticleSummary{ID: id, Title: article.Title, URL: article.URL, Summary: article.Description}
+	summary := publichelp.ArticleRef{ID: id, Title: article.Title, URL: article.URL, Summary: article.Description}
 	r.importArticle(ctx, summary, article, target, true)
 	if documentID := r.documents[id]; documentID != "" {
 		r.linked = append(r.linked, id)
@@ -155,7 +160,7 @@ func (r *publicImportRun) linkedCollectionEntry(ctx context.Context) (entry publ
 		claimed[target.id] = true
 	}
 	entry = publicImportCollection{
-		source: intercom.PublicCollection{
+		source: publichelp.Collection{
 			ID: publicImportLinkedTargetKey, Name: publicImportLinkedCollectionName, Slug: importSlug(publicImportLinkedCollectionName),
 		},
 		targetID: publicImportLinkedTargetKey,
@@ -265,7 +270,7 @@ func (r *publicImportRun) linkedArticleIDs(ctx context.Context, documentIDs []st
 	err := r.eachContent(ctx, documentIDs, func(content model.DocsContent) error {
 		_, _, err := docsimport.RewriteTiptapLinks(content.Content, func(href string) (string, bool) {
 			target, ok := r.site.LinkTarget(href)
-			if ok && target.Kind == intercom.PublicLinkArticle && r.documents[target.ID] == "" && !seen[target.ID] {
+			if ok && target.Kind == publichelp.LinkArticle && r.documents[target.ID] == "" && !seen[target.ID] {
 				seen[target.ID] = true
 				found = append(found, target.ID)
 			}
@@ -323,6 +328,28 @@ func (r *publicImportRun) rewriteLinks(ctx context.Context) error {
 	})
 }
 
+// movedLink follows a link into the help center that matches nothing imported
+// to the address the source now serves it at, or returns "". Each link is
+// looked up once, and an import looks up a bounded number of them.
+func (r *publicImportRun) movedLink(ctx context.Context, href string) string {
+	follower, ok := r.source.(interface {
+		moved(ctx context.Context, address string) string
+	})
+	if !ok {
+		return ""
+	}
+	if now, known := r.movedLinks[href]; known {
+		return now
+	}
+	if len(r.movedLinks) >= publicImportMaxLinkedLookups {
+		return ""
+	}
+	r.beat()
+	now := follower.moved(ctx, href)
+	r.movedLinks[href] = now
+	return now
+}
+
 func (r *publicImportRun) rewriteDocumentLinks(
 	ctx context.Context,
 	content model.DocsContent,
@@ -336,12 +363,21 @@ func (r *publicImportRun) rewriteDocumentLinks(
 		if !ok {
 			return "", false
 		}
-		path := collections[target.ID]
-		if target.Kind == intercom.PublicLinkArticle {
-			path = articles[target.ID].path
+		imported := func(target publichelp.LinkTarget) string {
+			if target.Kind == publichelp.LinkArticle {
+				return articles[target.ID].path
+			}
+			return collections[target.ID]
+		}
+		path := imported(target)
+		if path == "" && target.Certain {
+			// The source may have moved the page and forward the old address.
+			if now, ok := r.site.LinkTarget(r.movedLink(ctx, href)); ok {
+				path = imported(now)
+			}
 		}
 		if path == "" {
-			// A link on Intercom's shared host may belong to another
+			// A link on a platform's shared host may belong to another
 			// company's help center; only report the ones that are ours.
 			if target.Certain && !slices.Contains(unresolved, href) {
 				unresolved = append(unresolved, href)

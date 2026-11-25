@@ -126,12 +126,14 @@ type DocsImportStartRequest struct {
 	IntercomRegion string `json:"intercom_region,omitempty"`
 	// SourceURL is the help center home for imports that read a public site.
 	SourceURL string `json:"source_url,omitempty"`
+	// Email is the Zendesk agent that APIKey, an API token, belongs to, for a
+	// Zendesk help center read by address with a token.
+	Email string `json:"email,omitempty"`
 }
 
-// Platforms a public help center import can read.
-const (
-	PublicHelpCenterPlatformIntercom = "intercom"
-)
+// PublicHelpCenterPlatformIntercom is the platform of an Intercom help
+// center. The other platforms are named by their readers in publichelp.
+const PublicHelpCenterPlatformIntercom = "intercom"
 
 // PublicHelpCenterImportRequest previews or starts an import that reads a
 // public help center by its address, without any access token.
@@ -140,11 +142,27 @@ type PublicHelpCenterImportRequest struct {
 	TargetSpaceID *string `json:"target_space_id"`
 	NewSpaceName  *string `json:"new_space_name"`
 	ImportStatus  string  `json:"import_status"`
+	// Email and APIToken sign the requests to a Zendesk help center that
+	// refuses anonymous reads. Every other help center ignores them.
+	Email    string `json:"email,omitempty"`
+	APIToken string `json:"api_token,omitempty"`
+}
+
+// PublicHelpCenterSite is a help center found at an address.
+type PublicHelpCenterSite struct {
+	// URL is the help center home, after redirects.
+	URL  string `json:"url"`
+	Name string `json:"name,omitempty"`
+	// Platform names the software behind it, such as "intercom" or "zendesk".
+	Platform string `json:"platform"`
 }
 
 // PublicHelpCenterImportPreview summarizes a public help center before import.
 type PublicHelpCenterImportPreview struct {
 	Platform string `json:"platform"`
+	// Source names the reader that listed the help center; reading one of its
+	// articles later takes it.
+	Source string `json:"source,omitempty"`
 	// URL is the help center home the import will read, after redirects.
 	URL         string `json:"url"`
 	Name        string `json:"name"`
@@ -154,6 +172,16 @@ type PublicHelpCenterImportPreview struct {
 	// CollectionsMerged counts collections nested deeper than Helpin allows.
 	CollectionsMerged int                               `json:"collections_merged"`
 	TopCollections    []PublicHelpCenterCollectionCount `json:"top_collections"`
+}
+
+// PublicHelpCenterArticleRef names one public article or page.
+type PublicHelpCenterArticleRef struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	// Summary is the article's one-line description, when it has one.
+	Summary string `json:"summary,omitempty"`
+	// Collection is the top-level collection the article sits under.
+	Collection string `json:"collection,omitempty"`
 }
 
 // PublicHelpCenterCollectionCount is one top-level collection in a preview,
