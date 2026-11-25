@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation, type UseQueryResult } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -23,9 +23,11 @@ import { SlackIcon } from '@/lib/icons'
 import { slackChannelLabel } from '@/lib/supportChannels'
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useEpics } from '@/hooks/queries/useEpics'
+import { useCompany } from '@/hooks/queries/useCRM'
 import { useInboxScopes } from '@/hooks/queries/useSupport'
 import {
   slackService,
+  type SlackChannel,
   type SlackPurpose,
   type SlackRoute,
 } from '@/lib/services/slackService'
@@ -52,6 +54,37 @@ const emptyRoute: SlackRoute = {
 }
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : 'Could not update Slack settings'
+
+const inboxList = new Intl.ListFormat('en', { type: 'disjunction' })
+
+function describeRule(route: SlackRoute, inboxName: (id?: string | null) => string | undefined, team?: string, epic?: string) {
+  switch (route.purpose) {
+    case 'support':
+      return `Each new customer thread opens a conversation in ${inboxName(route.mailbox_id) ?? 'the selected inbox'}.`
+    case 'mixed':
+      return `Use “Create support request” on a Slack message to open a conversation in ${inboxName(route.mailbox_id) ?? 'the selected inbox'}.`
+    case 'inbox': {
+      const names = (route.mailbox_ids ?? []).map(id => inboxName(id))
+      const inboxes = names.length && names.every((name): name is string => !!name)
+        ? inboxList.format(names) : names.length === 1 ? 'the selected inbox' : 'the selected inboxes'
+      return `Each new conversation in ${inboxes} gets its own thread here.`
+    }
+    case 'pm': {
+      const defaults = [
+        route.team_id && (team ? `the ${team} team` : 'the selected team'),
+        route.epic_id && (epic ? `the ${epic} epic` : 'the selected epic'),
+      ].filter(Boolean)
+      return defaults.length
+        ? `Tasks created here default to ${defaults.join(' and ')}.`
+        : 'Create and follow Helpin tasks here. Choose a team when creating a task.'
+    }
+  }
+}
+
+function RuleCompany({ workspaceId, id }: { workspaceId: string; id: string }) {
+  const { data } = useCompany(workspaceId, id)
+  return data?.name ? <span className="text-xs font-normal text-muted-foreground">Default company · {data.name}</span> : null
+}
 
 export function SlackChannels({
   workspaceId,
@@ -102,13 +135,21 @@ export function SlackChannels({
   })
   const data = settings.data
   const scopes = useInboxScopes(workspaceId, hasSupport)
-  const inboxNames = (route: SlackRoute) => (route.mailbox_ids ?? []).map(id => id === 'shared' ? 'Main inbox' : scopes.data?.mailboxes.find(box => box.id === id)?.name ?? 'Team inbox').join(', ')
+  const inboxName = (id?: string | null) => !id || id === 'shared' ? 'Main inbox' : scopes.data?.mailboxes.find(box => box.id === id)?.name
+  const { teams } = useAccessibleTeams(hasPM && data?.routes?.some(rule => rule.team_id) ? workspaceId : '')
+  const { data: epics } = useEpics(hasPM && data?.routes?.some(rule => rule.epic_id) ? workspaceId : '')
   const [dismissedInbox, setDismissedInbox] = useState<string>()
   const requestedRule = canManageFeed && initialInbox && initialInbox !== dismissedInbox && data?.connected
     ? data.routes?.find(rule => rule.purpose === 'inbox' && rule.mailbox_ids?.includes(initialInbox))
       ?? { ...emptyRoute, purpose: 'inbox' as const, mailbox_ids: [initialInbox] }
     : null
   const editor = draft ?? requestedRule
+  const channels = useQuery({
+    queryKey: ['slackChannels', workspaceId],
+    queryFn: () => slackService.channels(workspaceId),
+    enabled: !!editor || !!data?.routes?.some(rule => rule.purpose === 'support' || rule.purpose === 'mixed'),
+    staleTime: 60_000,
+  })
   const closeEditor = () => { setDraft(null); setDismissedInbox(initialInbox) }
   return (
     <Card className="gap-0 rounded-lg py-0">
@@ -208,20 +249,24 @@ export function SlackChannels({
                 key={route.channel_id}
                 variant="ghost"
                 onClick={() => setDraft(route)}
-                className="flex h-auto w-full items-center justify-between gap-3 rounded-none border-b py-3 text-left last:border-b-0"
+                className="flex h-auto w-full flex-col items-start gap-1 whitespace-normal rounded-none border-b py-3 text-left last:border-b-0"
               >
-                <span className="truncate font-medium">
-                  {slackChannelLabel(route.channel_name)}
+                <span className="flex max-w-full items-baseline gap-2">
+                  <span className="truncate font-medium">{slackChannelLabel(route.channel_name)}</span>
+                  {channels.data?.some(channel => channel.id === route.channel_id && channel.is_ext_shared) &&
+                    <span className="shrink-0 text-xs font-normal text-muted-foreground">Slack Connect</span>}
                 </span>
-                <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                  {route.purpose === 'inbox' ? inboxNames(route) + ' → Slack' : route.purpose === 'mixed' ? 'Customer requests on demand' : purposes[route.purpose]}
+                <span className="max-w-full text-xs font-normal leading-relaxed text-muted-foreground">
+                  {describeRule(route, inboxName, teams.find(team => team.id === route.team_id)?.name, epics?.find(({ epic }) => epic.id === route.epic_id)?.epic.name)}
                 </span>
+                {hasCRM && route.crm_company_id && <RuleCompany workspaceId={workspaceId} id={route.crm_company_id} />}
               </Button>
             ))}
           </div>
         )}
         {editor && (
           <RouteDialog
+            channels={channels}
             initial={editor}
             canManageFeed={canManageFeed}
             rules={data?.routes ?? []}
@@ -242,6 +287,7 @@ export function SlackChannels({
 }
 
 function RouteDialog({
+  channels,
   initial,
   rules,
   canManageFeed,
@@ -252,6 +298,7 @@ function RouteDialog({
   onClose,
   onSaved,
 }: {
+  channels: UseQueryResult<SlackChannel[]>
   initial: SlackRoute
   rules: SlackRoute[]
   canManageFeed: boolean
@@ -263,10 +310,6 @@ function RouteDialog({
   onSaved: () => void
 }) {
   const [route, setRoute] = useState(initial)
-  const channels = useQuery({
-    queryKey: ['slackChannels', workspaceId],
-    queryFn: () => slackService.channels(workspaceId),
-  })
   const { teams } = useAccessibleTeams(workspaceId)
   const { data: scopes } = useInboxScopes(workspaceId, hasSupport)
   const { data: epics } = useEpics(route.purpose === 'pm' ? workspaceId : '', {
@@ -285,7 +328,6 @@ function RouteDialog({
   const options = (items: { id: string; name: string }[] = []) =>
     items.map((item) => ({ value: item.id, label: item.name }))
   const selected = channels.data?.find(c => c.id === route.channel_id)
-  const isSlackConnectIntake = selected?.is_ext_shared && (route.purpose === 'support' || route.purpose === 'mixed')
   const inboxOptions = [{ value: 'shared', label: 'Main inbox' }, ...options(scopes?.mailboxes)].map(option => {
     const other = rules.find(rule => rule.channel_id !== initial.channel_id && rule.purpose === 'inbox' && rule.mailbox_ids?.includes(option.value))
     return other ? { ...option, disabled: true, label: option.label + ' · ' + slackChannelLabel(other.channel_name) } : option
@@ -300,7 +342,7 @@ function RouteDialog({
         if (!open && !pending) onClose()
       }}
     >
-      <DialogContent className={isSlackConnectIntake ? 'grid-cols-1 sm:max-w-2xl' : undefined}>
+      <DialogContent className="grid-cols-1 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {initial.channel_id ? 'Edit channel rule' : 'Add channel rule'}
@@ -318,10 +360,10 @@ function RouteDialog({
             onChange={mailbox_ids => setRoute({ ...route, mailbox_ids })} />
         } />}
         <QuietPropertyRow label="Slack channel" value={
-          <QuietFilterDropdown label="Slack channel" value={route.channel_id} emptyLabel="Choose channel"
+          <QuietFilterDropdown label="Slack channel" value={route.channel_id} emptyLabel="Choose channel" popoverClassName="w-80"
             disabled={!!initial.channel_id}
             options={(channels.data ?? []).filter(c => !(c.is_ext_shared || c.is_pending_ext_shared) || route.purpose === 'support' || route.purpose === 'mixed')
-              .map(c => ({value:c.id, label:slackChannelLabel(c.name) + (c.is_ext_shared ? ' · Slack Connect' : c.is_private ? ' · Private' : ' · Public')}))}
+              .map(c => ({value:c.id, label:slackChannelLabel(c.name) + (c.is_ext_shared ? ' · Slack Connect' : '')}))}
             onChange={channel_id => setRoute({ ...route, channel_id })} />
         } />
         {!initial.channel_id && <details className="text-xs text-muted-foreground">
@@ -329,6 +371,7 @@ function RouteDialog({
           <p className="mt-1">In Slack, use <code>/invite @Helpin</code>, then <button type="button" className="underline" onClick={() => void channels.refetch()}>refresh channels</button>.</p>
         </details>}
         {channels.isError && <p role="alert" className="text-xs text-destructive">{errorText(channels.error)}</p>}
+        {route.purpose === 'inbox' && <p className="text-xs text-muted-foreground">Thread replies become internal notes. Use “Reply to customer” to send a response.</p>}
         {route.purpose === 'inbox' && selected && !selected.is_private &&
           <p className="text-xs text-muted-foreground">{restrictedInPublic
             ? 'Team inboxes require a private Slack channel whose members have access to those inboxes.'
