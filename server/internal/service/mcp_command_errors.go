@@ -24,6 +24,8 @@ const (
 	MCPErrorCodeVersionConflict = "VERSION_CONFLICT"
 	// MCPErrorCodeForbidden means the caller may not act on the record.
 	MCPErrorCodeForbidden = "FORBIDDEN"
+	// MCPErrorCodeIncompleteOutput means the model did not return a complete answer.
+	MCPErrorCodeIncompleteOutput = "INCOMPLETE_OUTPUT"
 )
 
 const (
@@ -49,6 +51,8 @@ func mcpCommandError(err error) error {
 	var commandErr *CommandError
 	var forbidden *model.ErrForbidden
 	switch {
+	case errors.Is(err, errIncompleteTaskAttachmentAnswer):
+		return newMCPToolError(MCPErrorCodeIncompleteOutput, "Attachment analysis did not return a complete answer. Try a more focused question.")
 	case errors.Is(err, ErrDocsContentConflict), errors.Is(err, ErrDocsStaleBlockRevision):
 		return newMCPToolError(MCPErrorCodeVersionConflict, _mcpVersionConflictMessage)
 	case errors.Is(err, ErrDocsDocumentLocked):

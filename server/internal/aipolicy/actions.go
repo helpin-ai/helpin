@@ -40,9 +40,9 @@ func defaultActions() []Action {
 		embeddingAction(ActionSupportKnowledgeEmbed, "Support knowledge embedding", CategorySupportAI, "support"),
 		embeddingAction(ActionHelpcenterSearchEmbed, "Help-center search embedding", CategorySupportAI, "helpcenter"),
 		embeddingAction(ActionCuratedGuidanceEmbed, "Curated guidance embedding", CategorySupportAI, "support"),
-		mediaAction(ActionAskMediaEnrichment, "ask_chat", "Ask media enrichment", CategoryAgents, "ask", DataClassWorkspaceData),
-		mediaAction(ActionTaskAttachmentAnalysis, "ask_chat", "Task attachment analysis", CategoryProjectAI, "task", DataClassWorkspaceData),
-		mediaAction(ActionSupportMediaEnrichment, "support_ai_reply", "Support media enrichment", CategorySupportAI, "support", DataClassCustomerContent),
+		mediaAction(ActionAskMediaEnrichment, "ask_chat", "Ask media enrichment", CategoryAgents, "ask", DataClassWorkspaceData, MediaEnrichmentMaxOutputTokens),
+		mediaAction(ActionTaskAttachmentAnalysis, "ask_chat", "Task attachment analysis", CategoryProjectAI, "task", DataClassWorkspaceData, TaskAttachmentMaxOutputTokens),
+		mediaAction(ActionSupportMediaEnrichment, "support_ai_reply", "Support media enrichment", CategorySupportAI, "support", DataClassCustomerContent, MediaEnrichmentMaxOutputTokens),
 		imageAction(ActionAgentImageGenerate, "Agent image generation"),
 		imageAction(ActionAgentImageEdit, "Agent image editing"),
 		{
@@ -173,12 +173,17 @@ func imageAction(key, label string) Action {
 	}
 }
 
-func mediaAction(key, feature, label string, category Category, origin string, dataClass DataClass) Action {
+const (
+	MediaEnrichmentMaxOutputTokens = 700
+	TaskAttachmentMaxOutputTokens  = 2048
+)
+
+func mediaAction(key, feature, label string, category Category, origin string, dataClass DataClass, maxOutput int) Action {
 	return Action{
 		Key: key, PolicyVersion: "v2", FeatureKey: feature, Label: label, Category: category, Origin: origin,
 		Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.8-flash",
 		AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash", "qwen/qwen3.8-omni-flash"}}, Timeout: 4 * time.Minute,
-		MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
+		MaxInputTokens: 200000, MaxOutputTokens: maxOutput, MaxReasoningTokens: 32000,
 		RetryClass: RetryTransient, Autonomy: AutonomyAnalyze, DataClass: dataClass, Chargeable: true,
 	}
 }

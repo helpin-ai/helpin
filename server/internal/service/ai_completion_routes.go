@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 )
 
 const defaultAICompletionServiceTier = "standard"
@@ -145,7 +146,7 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 				Provider: "openrouter", Model: "qwen/qwen3.8-omni-flash", OpenRouterProvider: "alibaba",
 				ProviderOptions:  `{"only":["alibaba"],"max_price":{"prompt":0.15,"completion":0.47}}`,
 				DisableReasoning: true, AttemptTimeout: 2 * time.Minute, ServiceTier: defaultAICompletionServiceTier,
-			}}, MaximumOutputTokens: 700,
+			}}, MaximumOutputTokens: aipolicy.TaskAttachmentMaxOutputTokens,
 		},
 	}
 	registry := AICompletionRouteRegistry{policies: make(map[string]AICompletionRoutePolicy, len(policies))}
@@ -154,6 +155,7 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 	}
 	media := registry.policies[aiCompletionPolicyKey(BillingFeatureAskChat, AIUsageOperationMediaEnrichment)]
 	media.FeatureKey = BillingFeatureSupportAIReply
+	media.MaximumOutputTokens = aipolicy.MediaEnrichmentMaxOutputTokens
 	registry.policies[aiCompletionPolicyKey(media.FeatureKey, media.OperationKey)] = media
 	return registry
 }

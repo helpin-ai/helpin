@@ -3,13 +3,25 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+var errIncompleteTaskAttachmentAnswer = errors.New("attachment analysis did not return a complete answer")
+
+// Both task vision routes use OpenRouter's normalized finish reasons.
+func validateTaskAttachmentAnswer(response *llm.ChatResponse) error {
+	if response.FinishReason != "stop" || strings.TrimSpace(response.Content) == "" {
+		return fmt.Errorf("%w (finish_reason=%q)", errIncompleteTaskAttachmentAnswer, response.FinishReason)
+	}
+	return nil
+}
 
 func (s *InternalCommandService) executeAnalyzeTaskAttachment(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	in, file, err := s.resolveTaskAttachment(ctx, meta, input)

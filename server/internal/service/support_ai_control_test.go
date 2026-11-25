@@ -319,17 +319,24 @@ func TestSupportHandoffRetryCreatesOneBrief(t *testing.T) {
 	raw, _ := json.Marshal(settings)
 	mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('install','ws','key','secret',?,true)`, string(raw))
 	ai := &SupportAIService{conversationRepo: svc.conversationRepo, messageRepo: svc.messageRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), handoffRepo: repository.NewAgentHandoffRepository(db)}
+	check := newSupportCodeCheckCard("ws", conv.ID, "plan", "run", supportCodeCheck{Status: supportCodeCheckDone, Found: "Confirmed: retry is safe."}, time.Now().Add(-time.Minute))
+	if err := svc.messageRepo.Create(ctx, check); err != nil {
+		t.Fatal(err)
+	}
 	for range 2 {
 		if err := ai.EscalateToHumanForMessageWithIssue(ctx, "ws", conv.ID, "", "provider_unavailable", "", "Connection failed", SupportHandoffBrief{AttemptedSteps: []string{"No answer could be generated"}, UnresolvedQuestions: []string{"Customer still needs an answer"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	var notes []model.SupportMessage
-	if err := db.Where("is_internal = true AND message_type = 'note'").Find(&notes).Error; err != nil {
+	if err := db.Where("is_internal = true AND message_type = 'note' AND id <> ?", check.ID).Find(&notes).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0].Content, "Customer still needs an answer") {
 		t.Fatalf("notes = %+v", notes)
+	}
+	if card := slackFeedAINote(&notes[0]).Handoff; card == nil || card.CodeCheckID != check.ID || card.CodeCheckPending {
+		t.Fatal("handoff lost the completed check for this customer turn")
 	}
 }
 
@@ -471,6 +478,9 @@ func TestSupportHandoffEventPrecedesBriefInHistoryAndBroadcast(t *testing.T) {
 			}
 			if eventIndex < 0 || noteIndex != eventIndex+1 {
 				t.Fatalf("handoff event index %d, brief index %d", eventIndex, noteIndex)
+			}
+			if slackFeedThreadUpdate(&rows[eventIndex]) || !slackFeedThreadUpdate(&rows[noteIndex]) {
+				t.Fatal("Slack must mirror the briefing once for this handoff")
 			}
 			if rows[noteIndex].CreatedAt.UnixMilli() <= rows[eventIndex].CreatedAt.UnixMilli() {
 				t.Fatal("handoff and brief must sort correctly at browser timestamp precision")

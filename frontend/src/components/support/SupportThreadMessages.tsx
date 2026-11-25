@@ -28,6 +28,7 @@ export function SupportThreadMessages({
   conversationId,
   conversation,
   messages,
+  linkedMessageId,
   merges,
   readOnly,
   canUnmerge,
@@ -38,6 +39,7 @@ export function SupportThreadMessages({
   conversationId: string;
   conversation?: SupportConversation;
   messages: SupportMessage[];
+  linkedMessageId?: string;
   merges: SupportConversationMerge[];
   readOnly: boolean;
   canUnmerge: boolean;
@@ -123,7 +125,7 @@ export function SupportThreadMessages({
           customerEmail={conversation?.customer_email}
           workspaceSlug={workspaceSlug}
           linkedTaskId={conversation?.linked_task_id}
-          folded={foldedAICardIds.has(item.message.id)}
+          folded={item.message.id !== linkedMessageId && foldedAICardIds.has(item.message.id)}
           fallbackAvatarUrl={
             item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined
           }

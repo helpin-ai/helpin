@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -35,6 +36,12 @@ func TestSlackInboxFeedThreadUpdates(t *testing.T) {
 		{model.SupportMessage{MessageType: "reply", SenderType: "user"}, true},
 		{model.SupportMessage{MessageType: "system", SystemEventType: strForSlackTest("resolved")}, true},
 		{model.SupportMessage{MessageType: "note", SenderType: "user", IsInternal: true}, true},
+		{model.SupportMessage{MessageType: "note", SenderType: "agent", IsInternal: true, Metadata: `{"ai_handoff_brief":true,"handoff":{"reason":"Needs a teammate"}}`}, true},
+		{model.SupportMessage{MessageType: "note", SenderType: "agent", IsInternal: true, Metadata: `{"code_check":{"status":"done"}}`}, true},
+		{model.SupportMessage{MessageType: "note", SenderType: "agent", IsInternal: true, Metadata: `{"code_check":{"status":"running"}}`}, false},
+		{model.SupportMessage{MessageType: "note", SenderType: "agent", IsInternal: true, Content: "Routine internal note"}, false},
+		{model.SupportMessage{MessageType: "note", SenderType: "customer", Metadata: `{"handoff":{"reason":"Customer text"}}`}, false},
+		{model.SupportMessage{MessageType: "system", SystemEventType: strForSlackTest("ai_escalated"), Metadata: `{"handoff_note_id":"brief"}`}, false},
 		{model.SupportMessage{MessageType: "system", SystemEventType: strForSlackTest("reopened")}, false},
 		{model.SupportMessage{MessageType: "system", SystemEventType: strForSlackTest("reopened"), SenderUserID: strForSlackTest("agent")}, true},
 		{model.SupportMessage{MessageType: "system", SystemEventType: strForSlackTest("tag_added")}, false},
@@ -45,3 +52,24 @@ func TestSlackInboxFeedThreadUpdates(t *testing.T) {
 	}
 }
 func strForSlackTest(v string) *string { return &v }
+
+func TestSlackInboxFeedLateCodeCheck(t *testing.T) {
+	handoff := time.Now()
+	resumed := handoff.Add(time.Minute)
+	for _, tc := range []struct {
+		name string
+		conv model.SupportConversation
+		want bool
+	}{
+		{"awaiting teammate", model.SupportConversation{Status: "open", AIState: strPtr("escalated")}, true},
+		{"resolved", model.SupportConversation{Status: "resolved", AIState: strPtr("escalated")}, false},
+		{"returned to AI", model.SupportConversation{Status: "open", AIState: strPtr("pending")}, false},
+		{"later handoff", model.SupportConversation{Status: "open", AIState: strPtr("escalated"), AIResumedAt: &resumed}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := feedStillNeedsCodeCheck(&tc.conv, handoff); got != tc.want {
+				t.Errorf("share late result = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

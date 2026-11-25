@@ -148,13 +148,14 @@ func TestTaskAttachmentsRuntimeProvider(t *testing.T) {
 		ToolName: "read_task_attachment",
 	}
 	analyses := 0
+	reply := llm.ChatResponse{Content: "Upload timed out.", FinishReason: "stop"}
 	env.service.SetAttachmentMediaAnalyzer(dockMediaCompletionFunc(func(_ context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
 		analyses++
 		parts := request.Messages[0].ContentParts
-		if len(parts) != 3 || parts[2].ImageURL == nil || parts[2].ImageURL.URL != "https://storage.example/design.png" {
+		if len(parts) != 2 || parts[1].ImageURL == nil || parts[1].ImageURL.URL != "https://storage.example/design.png" {
 			t.Fatalf("expected the signed task image, got %+v", parts)
 		}
-		return &llm.ChatResponse{Content: "Upload timed out."}, nil
+		return &reply, nil
 	}))
 
 	for i, tc := range []struct{ name, mime, content string }{
@@ -216,6 +217,12 @@ func TestTaskAttachmentsRuntimeProvider(t *testing.T) {
 		t.Fatalf("analyze: %v, %v", result, err)
 	}
 
+	reply = llm.ChatResponse{Content: "The upload timed", FinishReason: "length"}
+	result, err = host.CallProviderTool(context.Background(), req)
+	if err != nil || !result.IsError || len(result.StructuredContent) != 0 {
+		t.Fatalf("expected an error without a partial answer: %v, %v", result, err)
+	}
+
 	for _, tc := range []struct{ name, actor, targetType, targetID string }{
 		{"member outside task team", "user-2", "workspace", "ws-1"},
 		{"different task target", "actor-1", "task", "another-task"},
@@ -242,7 +249,7 @@ func TestTaskAttachmentsRuntimeProvider(t *testing.T) {
 			}
 		})
 	}
-	if analyses != 1 {
-		t.Fatalf("got %d model calls, want one authorized analysis", analyses)
+	if analyses != 2 {
+		t.Fatalf("got %d model calls, want two authorized attempts", analyses)
 	}
 }

@@ -15,7 +15,7 @@ function handoffSections(content: string) {
 }
 
 /** Structured AI handoff: each fact once, rows only when they have content. */
-function SupportHandoffCardBody({ card, conversationId, readOnly }: { card: SupportHandoffCard; conversationId: string; readOnly: boolean }) {
+function SupportHandoffCardBody({ card, conversationId, readOnly, renderMarkdown }: { card: SupportHandoffCard; conversationId: string; readOnly: boolean; renderMarkdown: (text: string) => ReactNode }) {
   const askAgentWithDraft = useSupportInboxStore((state) => state.askAgentWithDraft);
   const checked = (card.checked ?? []).filter((check) => check.source || check.finding);
   const openQuestions = card.open_questions ?? [];
@@ -25,26 +25,26 @@ function SupportHandoffCardBody({ card, conversationId, readOnly }: { card: Supp
   const applyReply = () => restoreReplyDraft(conversationId, heldReply);
   const askToUpdateDocs = () => askAgentWithDraft(conversationId, `Update our help articles so they cover this: ${docsGap}. Use this conversation, including our reply to the customer, as the source.`);
   return <div className="text-sm [overflow-wrap:anywhere]">
-    {card.issue && <p className="mb-2 whitespace-pre-wrap">{card.issue}</p>}
+    {card.issue && <div className="mb-2">{renderMarkdown(card.issue)}</div>}
     <dl>
-      <CardRow label="Reason">{card.reason}</CardRow>
+      <CardRow label="Reason">{renderMarkdown(card.reason)}</CardRow>
       {checked.length > 0 ? <CardRow label="AI checked">
         <ul className="space-y-1">{checked.map((check, index) => <li key={index}>
-          {check.source && <span className="text-muted-foreground">{check.source}{check.finding ? ':' : ''}</span>}{check.source && check.finding ? ' ' : ''}{check.finding}
+          {renderMarkdown([check.source, check.finding].filter(Boolean).join(': '))}
         </li>)}</ul>
       </CardRow> : card.nothing_checked ? <CardRow label="AI checked">Nothing.</CardRow> : null}
-      {openQuestions.length > 0 && <CardRow label="Open question"><CardList items={openQuestions} /></CardRow>}
-      {unavailable.length > 0 && <CardRow label="Couldn't check"><CardList items={unavailable} /></CardRow>}
+      {openQuestions.length > 0 && <CardRow label="Open question"><CardList items={openQuestions} renderMarkdown={renderMarkdown} /></CardRow>}
+      {unavailable.length > 0 && <CardRow label="Couldn't check"><CardList items={unavailable} renderMarkdown={renderMarkdown} /></CardRow>}
     </dl>
     {(heldReply || docsGap) && <div className="mt-3">
       <h3 className="mb-1 text-sm font-semibold">Next steps</h3>
       <dl>
         {heldReply && <CardRow label="Reply">
-          <p className="line-clamp-2">{heldReply.replace(/\s+/g, ' ')}</p>
+          <div className="line-clamp-2">{renderMarkdown(heldReply)}</div>
           {!readOnly && <button type="button" onClick={applyReply} className={cardAction}><ArrowTurnBackwardIcon className="h-3.5 w-3.5" />Use this reply</button>}
         </CardRow>}
         {docsGap && <CardRow label="Docs">
-          <p>{docsGap}</p>
+          {renderMarkdown(docsGap)}
           {!readOnly && <button type="button" onClick={askToUpdateDocs} className={cardAction}><AskAgentAvatar plateStyle="solid" radius={50} className="h-3.5 w-3.5 shrink-0" />Ask Agent to update docs</button>}
         </CardRow>}
       </dl>
@@ -52,12 +52,12 @@ function SupportHandoffCardBody({ card, conversationId, readOnly }: { card: Supp
   </div>;
 }
 
-export function SupportAIActivity({ message, activity, teammateName, avatarUrl, detailsContent, readOnly = false, folded = false }: {
+export function SupportAIActivity({ message, activity, teammateName, avatarUrl, renderMarkdown, readOnly = false, folded = false }: {
   message: SupportMessage;
   activity: AIActivity;
   teammateName?: string;
   avatarUrl?: string;
-  detailsContent?: ReactNode;
+  renderMarkdown: (text: string) => ReactNode;
   readOnly?: boolean;
   /** Older handoffs fold to one line once a newer one exists. */
   folded?: boolean;
@@ -69,7 +69,7 @@ export function SupportAIActivity({ message, activity, teammateName, avatarUrl, 
   const details = (label: string) => (
     <details className="mt-2 text-xs text-muted-foreground">
       <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</summary>
-      <div className="prose-chat mt-2 text-sm leading-relaxed [overflow-wrap:anywhere]">{detailsContent ?? <p className="whitespace-pre-wrap">{message.content}</p>}</div>
+      <div className="mt-2 text-sm leading-relaxed">{renderMarkdown(message.content)}</div>
     </details>
   );
 
@@ -101,16 +101,16 @@ export function SupportAIActivity({ message, activity, teammateName, avatarUrl, 
   const card = getSupportHandoffCard(message);
   const sections = card ? null : handoffSections(message.content);
   return <SupportAICard kind="handoff" title="AI handoff" timestamp={message.created_at} folded={folded} summary={card ? card.issue || card.reason : sections?.issue}>
-    {card ? <SupportHandoffCardBody card={card} conversationId={message.conversation_id} readOnly={readOnly} /> : sections ? <div className="text-sm [overflow-wrap:anywhere]">
-      <p className={`whitespace-pre-wrap ${expanded ? '' : 'line-clamp-2'}`}>{sections.issue}</p>
+    {card ? <SupportHandoffCardBody card={card} conversationId={message.conversation_id} readOnly={readOnly} renderMarkdown={renderMarkdown} /> : sections ? <div className="text-sm [overflow-wrap:anywhere]">
+      <div className={expanded ? undefined : 'line-clamp-2'}>{renderMarkdown(sections.issue)}</div>
       <details className="mt-2 text-xs text-muted-foreground" onToggle={event => setExpanded(event.currentTarget.open)}>
         <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">View details</summary>
         <dl className="mt-2 space-y-2 text-sm text-foreground">
-          {sections.checked !== 'No attempted steps recorded.' && <div><dt className="text-xs font-medium text-muted-foreground">What AI checked / suggested</dt><dd className="whitespace-pre-wrap">{sections.checked}</dd></div>}
-          <div><dt className="text-xs font-medium text-muted-foreground">Still unresolved</dt><dd className="whitespace-pre-wrap">{sections.next}</dd></div>
-          <div><dt className="text-xs font-medium text-muted-foreground">Reason for handoff</dt><dd className="whitespace-pre-wrap">{sections.reason}</dd></div>
+          {sections.checked !== 'No attempted steps recorded.' && <div><dt className="text-xs font-medium text-muted-foreground">What AI checked / suggested</dt><dd>{renderMarkdown(sections.checked)}</dd></div>}
+          <div><dt className="text-xs font-medium text-muted-foreground">Still unresolved</dt><dd>{renderMarkdown(sections.next)}</dd></div>
+          <div><dt className="text-xs font-medium text-muted-foreground">Reason for handoff</dt><dd>{renderMarkdown(sections.reason)}</dd></div>
         </dl>
       </details>
-    </div> : <div className="prose-chat text-sm [overflow-wrap:anywhere]">{detailsContent ?? <p className="whitespace-pre-wrap">{message.content}</p>}</div>}
+    </div> : <div className="text-sm">{renderMarkdown(message.content)}</div>}
   </SupportAICard>;
 }

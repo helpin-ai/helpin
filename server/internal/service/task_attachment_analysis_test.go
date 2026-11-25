@@ -135,10 +135,13 @@ func TestTaskAttachmentVisualAnalysis(t *testing.T) {
 			env.service.SetAttachmentMediaAnalyzer(dockMediaCompletionFunc(func(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 				calls++
 				parts := req.Messages[0].ContentParts
-				if len(parts) != 3 || !strings.Contains(parts[0].Text, "What failed?") || parts[2].Type != tc.part {
+				if len(parts) != 2 || !strings.Contains(parts[0].Text, "What failed?") || strings.Contains(strings.ToLower(parts[0].Text), "attachment id") || parts[1].Type != tc.part {
 					t.Fatalf("unexpected provider request: %+v", parts)
 				}
-				return &llm.ChatResponse{Content: "Upload timed out."}, nil
+				if req.MaxTokens != 2048 || req.Reasoning == nil || req.Reasoning.Effort != "low" {
+					t.Fatalf("unexpected task answer budget: %d, reasoning=%+v", req.MaxTokens, req.Reasoning)
+				}
+				return &llm.ChatResponse{Content: "Upload timed out.", FinishReason: "stop"}, nil
 			}))
 			args := mustJSON(map[string]string{"task_id": "task-a", "attachment_id": tc.name, "question": "What failed?"})
 			if _, err := env.service.Execute(context.Background(), env.meta("task", "task-b"), "pm.analyze_task_attachment", args); err == nil || calls != 0 {
