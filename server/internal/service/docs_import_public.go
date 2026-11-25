@@ -16,18 +16,26 @@ import (
 	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/intercom"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/publichelp"
+	"github.com/helpin-ai/helpin/server/internal/publichelp/zendesk"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 )
 
 // docsImportSourceIntercomPublic marks jobs, redirects, and article
 // checkpoints of an import that read a public Intercom help center. It is
 // kept apart from the token-based Intercom import because the two do not
-// share article identifiers.
+// share article identifiers. The other platforms' sources are named by their
+// readers; see publicImportSourceSuffix.
 const docsImportSourceIntercomPublic = "intercom_public"
 
 // ErrPublicImportInvalid wraps a problem with a public help center import
 // that the person starting it can fix. Its message is safe to show.
 var ErrPublicImportInvalid = errors.New("invalid help center import")
+
+// ErrPublicImportNeedsToken means the help center runs on Zendesk and
+// refuses anonymous reads, so the import needs a Zendesk API token.
+var ErrPublicImportNeedsToken = fmt.Errorf("%w: this Zendesk help center cannot be read without signing in. "+
+	"Enter the email of a Zendesk admin and an API token to import it", ErrPublicImportInvalid)
 
 func (s *DocsImportService) publicIntercomClient() *intercom.PublicClient {
 	if s.publicIntercom == nil {
@@ -40,44 +48,74 @@ func (s *DocsImportService) publicIntercomClient() *intercom.PublicClient {
 // message that says what to do next. Anything unexpected is returned as is
 // for the caller to log and report generically.
 func publicImportError(err error) error {
+	var known *publichelp.PlatformError
 	switch {
 	case err == nil:
 		return nil
 	case errors.Is(err, ErrPublicImportInvalid):
 		return err
-	case errors.Is(err, intercom.ErrInvalidPublicURL):
+	case errors.As(err, &known) && known.Platform == zendesk.Key &&
+		(errors.Is(err, publichelp.ErrRestricted) || errors.Is(err, publichelp.ErrChallenged)):
+		return ErrPublicImportNeedsToken
+	case errors.Is(err, intercom.ErrInvalidPublicURL), errors.Is(err, publichelp.ErrInvalidURL):
 		return fmt.Errorf("%w: enter the address of a help center, such as https://help.example.com", ErrPublicImportInvalid)
-	case errors.Is(err, intercom.ErrNotPublicHelpCenter):
-		return fmt.Errorf("%w: this address is not an Intercom help center. Only public Intercom help centers can be imported by address", ErrPublicImportInvalid)
-	case errors.Is(err, intercom.ErrPublicHelpCenterRestricted):
-		return fmt.Errorf("%w: this help center asks visitors to sign in, so it cannot be read by address. Use an Intercom access token instead", ErrPublicImportInvalid)
-	case errors.Is(err, intercom.ErrNotFound):
+	case errors.Is(err, intercom.ErrNotPublicHelpCenter), errors.Is(err, publichelp.ErrNotHelpCenter):
+		return fmt.Errorf("%w: no help center that can be imported was found at this address. "+
+			"Help centers on Intercom, Zendesk, Crisp, Freshdesk, Help Scout and HubSpot, and docs sites built with tools such as Mintlify, GitBook, Ferndesk and ReadMe, can be imported by address", ErrPublicImportInvalid)
+	case errors.Is(err, publichelp.ErrChallenged):
+		return fmt.Errorf("%w: this help center blocks automated reading, so it cannot be imported by address. "+
+			"If it runs on Zendesk, enter its Zendesk address instead, such as example.zendesk.com", ErrPublicImportInvalid)
+	case errors.Is(err, intercom.ErrPublicHelpCenterRestricted), errors.Is(err, publichelp.ErrRestricted):
+		return fmt.Errorf("%w: this help center asks visitors to sign in, so it cannot be read by address", ErrPublicImportInvalid)
+	case errors.Is(err, intercom.ErrNotFound), errors.Is(err, publichelp.ErrNotFound):
 		return fmt.Errorf("%w: nothing was found at this address. Check it and try again", ErrPublicImportInvalid)
-	case errors.Is(err, intercom.ErrPublicHelpCenterUnreachable):
+	case errors.Is(err, intercom.ErrPublicHelpCenterUnreachable), errors.Is(err, publichelp.ErrUnreachable):
 		return fmt.Errorf("%w: the help center did not respond. Check the address and try again in a moment", ErrPublicImportInvalid)
 	}
 	return err
 }
 
+// requestCredentials are the Zendesk credentials of an import request.
+func requestCredentials(req model.PublicHelpCenterImportRequest) publicCredentials {
+	return publicCredentials{email: strings.TrimSpace(req.Email), token: strings.TrimSpace(req.APIToken)}
+}
+
 // CheckPublicHelpCenter confirms that an address is a public help center this
-// service can import, with a single request, and returns its home address
-// and name. Callers use it to refuse a bad address before starting work.
-func (s *DocsImportService) CheckPublicHelpCenter(ctx context.Context, rawURL string) (homeURL, name string, err error) {
-	site, err := s.publicIntercomClient().LoadTheme(ctx, rawURL)
+// service can import, with a request or two, and returns its home address,
+// name and platform. Callers use it to refuse a bad address before starting
+// work.
+func (s *DocsImportService) CheckPublicHelpCenter(ctx context.Context, rawURL string) (*model.PublicHelpCenterSite, error) {
+	_, site, err := s.detectPublicHelpCenter(ctx, rawURL, publicCredentials{})
 	if err != nil {
-		return "", "", publicImportError(err)
+		return nil, publicImportError(err)
 	}
-	return site.BaseURL, site.Name, nil
+	return &model.PublicHelpCenterSite{URL: site.BaseURL, Name: site.Name, Platform: site.Platform}, nil
+}
+
+// loadPublicHelpCenter detects the help center at rawURL and reads its
+// collections and article lists.
+func (s *DocsImportService) loadPublicHelpCenter(ctx context.Context, rawURL string, credentials publicCredentials) (publicSource, *publichelp.Site, error) {
+	source, found, err := s.detectPublicHelpCenter(ctx, rawURL, credentials)
+	if err != nil {
+		return nil, nil, err
+	}
+	site, err := source.load(ctx, found.BaseURL, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The home page names the help center; a listing read through an API may not.
+	site.Name = cmp.Or(site.Name, found.Name)
+	return source, site, nil
 }
 
 // PreviewPublicHelpCenter reads a public help center and counts what an
 // import would bring in. Nothing is written.
 func (s *DocsImportService) PreviewPublicHelpCenter(ctx context.Context, req model.PublicHelpCenterImportRequest) (*model.PublicHelpCenterImportPreview, error) {
-	site, err := s.publicIntercomClient().LoadHelpCenter(ctx, req.URL, nil)
+	source, site, err := s.loadPublicHelpCenter(ctx, req.URL, requestCredentials(req))
 	if err != nil {
 		return nil, publicImportError(err)
 	}
-	return publicHelpCenterPreview(site)
+	return publicHelpCenterPreview(source, site)
 }
 
 // PublicHelpCenterArticles reads a public help center once and returns its
@@ -85,11 +123,11 @@ func (s *DocsImportService) PreviewPublicHelpCenter(ctx context.Context, req mod
 // top-level collection, in the order the help center shows them. Nothing is
 // written.
 func (s *DocsImportService) PublicHelpCenterArticles(ctx context.Context, rawURL string) (*model.PublicHelpCenterImportPreview, []model.PublicHelpCenterArticleRef, error) {
-	site, err := s.publicIntercomClient().LoadHelpCenter(ctx, rawURL, nil)
+	source, site, err := s.loadPublicHelpCenter(ctx, rawURL, publicCredentials{})
 	if err != nil {
 		return nil, nil, publicImportError(err)
 	}
-	preview, err := publicHelpCenterPreview(site)
+	preview, err := publicHelpCenterPreview(source, site)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -100,10 +138,11 @@ func (s *DocsImportService) PublicHelpCenterArticles(ctx context.Context, rawURL
 	return preview, refs, nil
 }
 
-func publicHelpCenterPreview(site *intercom.PublicHelpCenter) (*model.PublicHelpCenterImportPreview, error) {
+func publicHelpCenterPreview(source publicSource, site *publichelp.Site) (*model.PublicHelpCenterImportPreview, error) {
 	flat := flattenPublicCollections(site.Collections)
 	preview := &model.PublicHelpCenterImportPreview{
-		Platform:       model.PublicHelpCenterPlatformIntercom,
+		Platform:       site.Platform,
+		Source:         source.source(),
 		URL:            site.BaseURL,
 		Name:           site.Name,
 		Locale:         site.Locale,
@@ -129,19 +168,22 @@ func publicHelpCenterPreview(site *intercom.PublicHelpCenter) (*model.PublicHelp
 }
 
 // ReadPublicArticle returns one public help-center article as plain text.
-func (s *DocsImportService) ReadPublicArticle(ctx context.Context, articleURL string) (title, text string, err error) {
-	article, err := s.publicIntercomClient().Article(ctx, articleURL)
+// source is the one its listing named.
+func (s *DocsImportService) ReadPublicArticle(ctx context.Context, source, articleURL string) (title, text string, err error) {
+	from := s.publicSourceFor(source, publicCredentials{})
+	if from == nil {
+		return "", "", fmt.Errorf("%w: unknown help center platform", ErrPublicImportInvalid)
+	}
+	article, err := from.read(ctx, articleURL)
 	if err != nil {
 		return "", "", publicImportError(err)
 	}
-	var b strings.Builder
-	writePublicBlocksText(&b, article.Blocks)
-	return article.Title, strings.TrimSpace(b.String()), nil
+	return article.Title, article.text(), nil
 }
 
 // appendPublicArticleRefs adds a collection's articles, then its nested
 // collections' articles, all named under the top-level collection.
-func appendPublicArticleRefs(refs []model.PublicHelpCenterArticleRef, collection intercom.PublicCollection, top string) []model.PublicHelpCenterArticleRef {
+func appendPublicArticleRefs(refs []model.PublicHelpCenterArticleRef, collection publichelp.Collection, top string) []model.PublicHelpCenterArticleRef {
 	for _, article := range collection.Articles {
 		refs = append(refs, model.PublicHelpCenterArticleRef{Title: article.Title, URL: article.URL, Summary: article.Summary, Collection: top})
 	}
@@ -171,7 +213,7 @@ func writePublicBlocksText(b *strings.Builder, blocks []intercom.Block) {
 	}
 }
 
-func countPublicArticles(collection intercom.PublicCollection) int {
+func countPublicArticles(collection publichelp.Collection) int {
 	total := len(collection.Articles)
 	for _, child := range collection.Children {
 		total += countPublicArticles(child)
@@ -187,11 +229,13 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 	if newSpaceName == "" && targetSpaceID == "" {
 		return "", fmt.Errorf("%w: choose a space or name a new one", ErrPublicImportInvalid)
 	}
-	// One request confirms the address before anything is created.
-	homeURL, _, err := s.CheckPublicHelpCenter(ctx, req.URL)
+	// A request or two confirm the address before anything is created.
+	credentials := requestCredentials(req)
+	source, site, err := s.detectPublicHelpCenter(ctx, req.URL, credentials)
 	if err != nil {
-		return "", err
+		return "", publicImportError(err)
 	}
+	homeURL := site.BaseURL
 	if newSpaceName == "" {
 		if err := s.checkIntercomTargetSpace(ctx, workspaceID, targetSpaceID); err != nil {
 			if errors.Is(err, ErrIntercomImportInvalid) {
@@ -216,7 +260,9 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 		}
 		spaceID = space.ID
 	}
-	stored := model.DocsImportStartRequest{SourceURL: homeURL, TargetSpaceID: &spaceID, ImportStatus: req.ImportStatus}
+	stored := model.DocsImportStartRequest{
+		SourceURL: homeURL, TargetSpaceID: &spaceID, ImportStatus: req.ImportStatus, Email: credentials.email, APIKey: credentials.token,
+	}
 	payload, err := json.Marshal(stored)
 	if err != nil {
 		return "", fmt.Errorf("marshal import payload: %w", err)
@@ -231,7 +277,7 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 	}
 	now := time.Now()
 	job := &model.DocsImportJob{
-		ID: uuid.NewString(), WorkspaceID: workspaceID, SpaceID: &spaceID, Source: docsImportSourceIntercomPublic,
+		ID: uuid.NewString(), WorkspaceID: workspaceID, SpaceID: &spaceID, Source: source.source(),
 		Status: model.DocsImportStatusPending, Failures: json.RawMessage("[]"), Config: config,
 		StartedBy: userID, StartedAt: &now, PayloadEncrypted: &encrypted,
 	}
@@ -249,13 +295,13 @@ func (s *DocsImportService) StartPublicHelpCenter(ctx context.Context, req model
 		}
 	}
 	s.logger.InfoContext(ctx, "public help center import started",
-		"job_id", job.ID, "workspace_id", workspaceID, "space_id", spaceID, "source_host", hostOfURL(homeURL))
+		"job_id", job.ID, "workspace_id", workspaceID, "space_id", spaceID, "platform", site.Platform, "source_host", hostOfURL(homeURL))
 	return job.ID, nil
 }
 
 // publicImportCollection is one source collection in import order.
 type publicImportCollection struct {
-	source intercom.PublicCollection
+	source publichelp.Collection
 	// parentID is the source ID of the collection above, or "" at the top.
 	parentID string
 	depth    int
@@ -271,10 +317,10 @@ func (c publicImportCollection) merged() bool { return c.targetID != c.source.ID
 // flattenPublicCollections lists a collection tree parents-first in source
 // order and folds collections below Helpin's depth limit into the nearest
 // collection that fits.
-func flattenPublicCollections(tree []intercom.PublicCollection) []publicImportCollection {
+func flattenPublicCollections(tree []publichelp.Collection) []publicImportCollection {
 	var out []publicImportCollection
-	var walk func(nodes []intercom.PublicCollection, parentID, parentTarget string, depth int)
-	walk = func(nodes []intercom.PublicCollection, parentID, parentTarget string, depth int) {
+	var walk func(nodes []publichelp.Collection, parentID, parentTarget string, depth int)
+	walk = func(nodes []publichelp.Collection, parentID, parentTarget string, depth int) {
 		for _, node := range nodes {
 			target := node.ID
 			if depth > maxCollectionDepth {

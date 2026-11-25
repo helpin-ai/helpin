@@ -10,8 +10,11 @@ export type SupportQuickstartDetection = {
   logo_url?: string;
   favicon_url?: string;
   brand_color?: string;
-  /** `intercom` help centers are copied; any other is read by the AI like the website. */
-  help_center?: { url: string; name?: string; platform: 'intercom' | 'website' };
+  /**
+   * `platform` names what runs the help center, such as `intercom` or `zendesk`; its articles are copied.
+   * A `website` help center can't be copied and is read by the AI like the website.
+   */
+  help_center?: { url: string; name?: string; platform: string };
 };
 
 export type SupportQuickstartStatus = {
@@ -31,6 +34,8 @@ export type PublicArticleRef = { title: string; url: string };
 
 /** What a public help center holds, when its articles could be listed. */
 export type HelpCenterCounts = {
+  /** What runs the help center, such as `intercom` or `zendesk`. */
+  platform?: string;
   articles: number;
   collections: number;
   top_collections: { name: string; articles: number }[];

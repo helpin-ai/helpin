@@ -1,12 +1,10 @@
 package model
 
-// Help center platforms the support quickstart tells apart. Only Intercom
-// help centers are copied article by article; any other help center is
-// crawled for the AI like the website.
-const (
-	QuickstartHelpCenterIntercom = "intercom"
-	QuickstartHelpCenterWebsite  = "website"
-)
+// QuickstartHelpCenterWebsite is the platform of a help center whose
+// articles cannot be copied one by one; it is crawled for the AI like the
+// website. Every other platform, such as "intercom" or "zendesk", names a
+// help center that is copied article by article.
+const QuickstartHelpCenterWebsite = "website"
 
 // Answer modes a support quickstart can turn on for the AI agent.
 const (

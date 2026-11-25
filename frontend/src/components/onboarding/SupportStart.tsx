@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTitle } from '@/hooks/useTitle';
 import { buildLoginPathForRedirect } from '@/lib/authRedirect';
+import { helpCenterPlatformName } from '@/lib/helpCenterPlatforms';
 import { Alert01Icon, ArrowDown01Icon, Loading01Icon, Tick01Icon } from '@/lib/icons';
 import { savePendingSupportSetup } from '@/lib/pendingSupportSetup';
 import { selfSignupAllowed } from '@/lib/services/authService';
@@ -119,7 +120,7 @@ function SupportPreview({ website }: { website: string }) {
   const helpUrl = helpCenter?.url ?? '';
   const putLive = () => {
     if (!site) return;
-    const foundHelpCenter = helpUrl ? { url: helpUrl, platform: helpCenter?.counts ? 'intercom' as const : 'website' as const } : undefined;
+    const foundHelpCenter = helpUrl ? { url: helpUrl, platform: helpCenter?.counts?.platform ?? 'website' } : undefined;
     savePendingSupportSetup({
       detection: { ...site, company_name: companyName, help_center: foundHelpCenter },
       companyName,
@@ -282,9 +283,15 @@ function previewSteps(run: SupportPreviewRun, host: string): StepView[] {
 function stepSummary(step: StepView, companyName: string, helpCenter: SupportPreviewRun['helpCenter']) {
   if (step.id === 'site') return companyName;
   if (step.id === 'help_center' && helpCenter?.url) {
-    return helpCenter.counts ? `${siteLabel(helpCenter.url)} · ${count(helpCenter.counts.collections, 'collection')}` : siteLabel(helpCenter.url);
+    return helpCenter.counts ? `${helpCenterLabel(helpCenter.url, helpCenter.counts.platform)} · ${count(helpCenter.counts.collections, 'collection')}` : siteLabel(helpCenter.url);
   }
   return undefined;
+}
+
+/** A help center's address with the platform that runs it, when it has a name: "help.acme.com · Zendesk". */
+function helpCenterLabel(url: string, platform?: string) {
+  const name = helpCenterPlatformName(platform);
+  return name ? `${siteLabel(url)} · ${name}` : siteLabel(url);
 }
 
 function count(n: number, noun: string) {
@@ -332,7 +339,7 @@ function Step({ ref, step, last, log, open, onOpenChange, summary, children }: {
             {/* One ring that spreads from the tick the moment the step finishes. */}
             <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/40 [animation-iteration-count:1] [animation-fill-mode:forwards] motion-reduce:hidden" />
             <span className="relative flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white duration-500 ease-out animate-in zoom-in-50 spin-in-[-30deg] motion-reduce:animate-none">
-              <Tick01Icon className="h-4 w-4" strokeWidth={2.5} />
+              <Tick01Icon className="h-4 w-4" />
             </span>
           </>
         )}
@@ -502,10 +509,10 @@ function HelpCenterFound({ host, found, onAdd }: {
       </>
     );
   }
-  const label = siteLabel(found.url);
   if (!found.counts) {
-    return <p className="text-[12.5px] leading-5 text-muted-foreground">{label} · your agent will learn from it</p>;
+    return <p className="text-[12.5px] leading-5 text-muted-foreground">{siteLabel(found.url)} · your agent will learn from it</p>;
   }
+  const label = helpCenterLabel(found.url, found.counts.platform);
   const collections = found.counts.top_collections.slice(0, 6);
   return (
     <div className="space-y-1 text-[12.5px] leading-5 text-muted-foreground">

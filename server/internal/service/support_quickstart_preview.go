@@ -67,8 +67,9 @@ func (s *SupportQuickstartService) Preview(ctx context.Context, req model.Suppor
 	var listing *quickstartListing
 	if helpCenter != nil {
 		helpURL = helpCenter.URL
-		// An address the person typed is tried too: it may be an Intercom help center.
-		if helpOverride != "" || helpCenter.Platform == model.QuickstartHelpCenterIntercom {
+		// An address the person typed is tried too: it may be a help center
+		// whose articles can be listed.
+		if helpOverride != "" || helpCenter.Platform != model.QuickstartHelpCenterWebsite {
 			note(model.QuickstartStepHelpCenter)("Counting the articles on " + pageTitle(helpURL))
 			listing = s.helpCenterListing(ctx, helpURL)
 		}
@@ -97,7 +98,7 @@ func (s *SupportQuickstartService) Preview(ctx context.Context, req model.Suppor
 	// What every article is called and about, to tell which questions none covers.
 	var titles, subjects []string
 	if listing != nil {
-		sources = s.readArticles(ctx, pickPreviewArticles(listing.Refs, ""), read)
+		sources = s.readArticles(ctx, listing.Preview.Source, pickPreviewArticles(listing.Refs, ""), read)
 		for _, ref := range listing.Refs {
 			titles = append(titles, ref.Title)
 			subjects = append(subjects, ref.Title+" "+ref.Summary)

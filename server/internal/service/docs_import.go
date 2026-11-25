@@ -22,6 +22,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/intercom"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/publichelp"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
@@ -34,8 +35,10 @@ type DocsImportService struct {
 	// intercomBaseURLOverride replaces the Intercom API host for every
 	// region (INTERCOM_API_BASE_URL).
 	intercomBaseURLOverride string
-	// publicIntercom reads help centers by their public address.
+	// publicIntercom reads Intercom help centers by their public address.
 	publicIntercom *intercom.PublicClient
+	// publicFetch fetches the pages of every other help center platform.
+	publicFetch *publichelp.Fetcher
 	// imageUploader, when set, stores imported images instead of the S3
 	// client. Tests use it to run an import without object storage.
 	imageUploader  helpscout.ImageUploader
@@ -915,7 +918,7 @@ func (s *DocsImportService) Retry(ctx context.Context, jobID, workspaceID, apiKe
 	// A public import keeps everything it needs and resumes from its
 	// checkpoints, so it can also continue after it was stopped or failed
 	// before reaching any article.
-	resumable := job.Source == docsImportSourceIntercomPublic
+	resumable := isPublicImportSource(job.Source)
 	if job.Status != model.DocsImportStatusDone && job.Status != model.DocsImportStatusFailed &&
 		(!resumable || job.Status != model.DocsImportStatusInterrupted) {
 		return fmt.Errorf("can only retry completed or failed jobs")

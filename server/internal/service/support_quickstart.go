@@ -39,12 +39,12 @@ type quickstartBrand interface {
 }
 
 type quickstartImports interface {
-	CheckPublicHelpCenter(ctx context.Context, rawURL string) (homeURL, name string, err error)
+	CheckPublicHelpCenter(ctx context.Context, rawURL string) (*model.PublicHelpCenterSite, error)
 	StartPublicHelpCenter(ctx context.Context, req model.PublicHelpCenterImportRequest, workspaceID, userID string) (string, error)
 	GetStatus(ctx context.Context, jobID, workspaceID string) (*model.DocsImportJob, error)
 	ListJobs(ctx context.Context, workspaceID string) ([]model.DocsImportJob, error)
 	PublicHelpCenterArticles(ctx context.Context, rawURL string) (*model.PublicHelpCenterImportPreview, []model.PublicHelpCenterArticleRef, error)
-	ReadPublicArticle(ctx context.Context, articleURL string) (title, text string, err error)
+	ReadPublicArticle(ctx context.Context, source, articleURL string) (title, text string, err error)
 }
 
 type quickstartWorkspaces interface {
@@ -124,19 +124,20 @@ func (s *SupportQuickstartService) readSite(ctx context.Context, website string)
 	site.CompanyName = cmp.Or(strings.TrimSpace(proposal.BrandName), site.CompanyName)
 	site.LogoURL, site.FaviconURL, site.BrandColor = cmp.Or(proposal.LogoURL, proposal.LogoDarkURL), proposal.FaviconURL, proposal.BrandColor
 	if proposal.Platform == model.HelpcenterBrandPlatformIntercom {
-		site.HelpCenter = &model.SupportQuickstartHelpCenter{URL: proposal.SourceURL, Name: proposal.HelpCenterName, Platform: model.QuickstartHelpCenterIntercom}
+		site.HelpCenter = &model.SupportQuickstartHelpCenter{URL: proposal.SourceURL, Name: proposal.HelpCenterName, Platform: model.PublicHelpCenterPlatformIntercom}
 		site.WebsiteURL = cmp.Or(proposal.WebsiteURL, website)
 	}
 	return site, proposal.HelpCenterURL, nil
 }
 
-// findHelpCenter looks for the company's help center: a public Intercom one
-// at the linked address or the usual places, otherwise the linked address.
+// findHelpCenter looks for the company's help center: one whose articles can
+// be copied, at the linked address or the usual places, otherwise the linked
+// address, which is then read like a website.
 func (s *SupportQuickstartService) findHelpCenter(ctx context.Context, website, linked string) *model.SupportQuickstartHelpCenter {
 	ctx, cancel := context.WithTimeout(ctx, quickstartDetectTimeout)
 	defer cancel()
-	if home, name := s.findIntercomHelpCenter(ctx, helpCenterCandidates(website, linked)); home != "" {
-		return &model.SupportQuickstartHelpCenter{URL: home, Name: name, Platform: model.QuickstartHelpCenterIntercom}
+	if found := s.findImportableHelpCenter(ctx, helpCenterCandidates(website, linked)); found != nil {
+		return &model.SupportQuickstartHelpCenter{URL: found.URL, Name: found.Name, Platform: found.Platform}
 	}
 	if linked != "" {
 		return &model.SupportQuickstartHelpCenter{URL: linked, Platform: model.QuickstartHelpCenterWebsite}
@@ -144,11 +145,11 @@ func (s *SupportQuickstartService) findHelpCenter(ctx context.Context, website, 
 	return nil
 }
 
-// findIntercomHelpCenter checks the candidates side by side and returns the
-// first one, in candidate order, that is a public Intercom help center.
-func (s *SupportQuickstartService) findIntercomHelpCenter(ctx context.Context, candidates []string) (home, name string) {
-	type found struct{ home, name string }
-	results := make([]found, len(candidates))
+// findImportableHelpCenter checks the candidates side by side and returns the
+// first one, in candidate order, that is a help center on a platform whose
+// articles can be copied.
+func (s *SupportQuickstartService) findImportableHelpCenter(ctx context.Context, candidates []string) *model.PublicHelpCenterSite {
+	results := make([]*model.PublicHelpCenterSite, len(candidates))
 	var wg sync.WaitGroup
 	for i, candidate := range candidates {
 		wg.Add(1)
@@ -156,18 +157,18 @@ func (s *SupportQuickstartService) findIntercomHelpCenter(ctx context.Context, c
 			defer wg.Done()
 			checkCtx, cancel := context.WithTimeout(ctx, quickstartCheckTimeout)
 			defer cancel()
-			if home, name, err := s.deps.Imports.CheckPublicHelpCenter(checkCtx, candidate); err == nil {
-				results[i] = found{home: home, name: name}
+			if found, err := s.deps.Imports.CheckPublicHelpCenter(checkCtx, candidate); err == nil {
+				results[i] = found
 			}
 		}()
 	}
 	wg.Wait()
 	for _, result := range results {
-		if result.home != "" {
-			return result.home, result.name
+		if result != nil {
+			return result
 		}
 	}
-	return "", ""
+	return nil
 }
 
 // Start sets up support for a workspace. Running it again is safe: an import
@@ -206,10 +207,11 @@ func (s *SupportQuickstartService) Start(ctx context.Context, workspaceID, userI
 		return nil, fmt.Errorf("allow the website for the chat widget: %w", err)
 	}
 
-	spaceID, imported, err := s.importHelpCenter(ctx, workspaceID, userID, name, helpURL)
+	spaceID, importSource, err := s.importHelpCenter(ctx, workspaceID, userID, name, helpURL)
 	if err != nil {
 		return nil, err
 	}
+	imported := importSource != ""
 	sourceIDs := make([]string, 0, 2)
 	crawl := []struct{ label, address string }{{label: name + " website", address: website}}
 	if helpURL != "" && !imported {
@@ -225,8 +227,10 @@ func (s *SupportQuickstartService) Start(ctx context.Context, workspaceID, userI
 		sourceIDs = append(sourceIDs, source.ID)
 	}
 
+	// An Intercom help center publishes its branding; any other platform's
+	// pages say less about the brand than the website does.
 	brandSource := website
-	if imported {
+	if importSource == docsImportSourceIntercomPublic {
 		brandSource = helpURL
 	}
 	cfg := s.applyBrand(ctx, workspaceID, name, brandSource)
@@ -238,17 +242,18 @@ func (s *SupportQuickstartService) Start(ctx context.Context, workspaceID, userI
 	return s.Status(ctx, workspaceID)
 }
 
-// importHelpCenter starts copying an Intercom help center unless one was
-// already started. It reports the space the articles go to and whether the
-// help center is being copied; any other help center is crawled instead.
-func (s *SupportQuickstartService) importHelpCenter(ctx context.Context, workspaceID, userID, name, helpURL string) (string, bool, error) {
+// importHelpCenter starts copying a help center on a platform that can be
+// read by address, unless a copy was already started. It reports the space
+// the articles go to and the import's job source, which is "" when the help
+// center is not being copied; it is then crawled instead.
+func (s *SupportQuickstartService) importHelpCenter(ctx context.Context, workspaceID, userID, name, helpURL string) (spaceID, source string, err error) {
 	if job, err := s.quickstartImport(ctx, workspaceID); err != nil {
-		return "", false, err
+		return "", "", err
 	} else if job != nil {
-		return derefString(job.SpaceID), true, nil
+		return derefString(job.SpaceID), job.Source, nil
 	}
 	if helpURL == "" {
-		return "", false, nil
+		return "", "", nil
 	}
 	spaceName := name + " Help Center"
 	jobID, err := s.deps.Imports.StartPublicHelpCenter(ctx, model.PublicHelpCenterImportRequest{
@@ -256,22 +261,22 @@ func (s *SupportQuickstartService) importHelpCenter(ctx context.Context, workspa
 	}, workspaceID, userID)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", false, ctx.Err()
+			return "", "", ctx.Err()
 		}
-		// Not an Intercom help center, or imports are unavailable here.
+		// Not a help center that can be copied, or imports are unavailable here.
 		if !errors.Is(err, ErrPublicImportInvalid) {
 			s.logger.WarnContext(ctx, "quickstart help center import not started", "workspace_id", workspaceID, "error", err)
 		}
-		return "", false, nil
+		return "", "", nil
 	}
 	job, err := s.deps.Imports.GetStatus(ctx, jobID, workspaceID)
 	if err != nil {
-		return "", false, fmt.Errorf("read help center import: %w", err)
+		return "", "", fmt.Errorf("read help center import: %w", err)
 	}
 	if job == nil {
-		return "", true, nil
+		return "", "", fmt.Errorf("read help center import: job %s not found", jobID)
 	}
-	return derefString(job.SpaceID), true, nil
+	return derefString(job.SpaceID), job.Source, nil
 }
 
 // quickstartImport returns the workspace's latest public help center import.
@@ -281,7 +286,7 @@ func (s *SupportQuickstartService) quickstartImport(ctx context.Context, workspa
 		return nil, fmt.Errorf("list help center imports: %w", err)
 	}
 	for i := range jobs {
-		if jobs[i].Source == docsImportSourceIntercomPublic {
+		if isPublicImportSource(jobs[i].Source) {
 			return &jobs[i], nil
 		}
 	}
@@ -476,20 +481,35 @@ func normalizeQuickstartURL(raw, label string) (string, error) {
 	return parsed.String(), nil
 }
 
-// helpCenterCandidates lists the addresses worth checking for an Intercom
-// help center: the website's own help link, then help. and support. on the
-// company domain.
+// helpCenterCandidates lists the addresses worth checking for a help center
+// that can be copied: the address itself when it reads like a help center,
+// the website's own help link, then help., support., knowledge. and docs. on
+// the company domain.
 func helpCenterCandidates(website, linked string) []string {
 	var out []string
-	if linked != "" {
-		out = append(out, linked)
+	add := func(candidate string) {
+		if candidate != "" && !slices.ContainsFunc(out, func(existing string) bool { return sameQuickstartPage(existing, candidate) }) {
+			out = append(out, candidate)
+		}
 	}
 	parsed, err := url.Parse(website)
 	if err != nil {
+		add(linked)
 		return out
 	}
-	if site, err := publicsuffix.EffectiveTLDPlusOne(parsed.Hostname()); err == nil {
-		for _, label := range []string{"help", "support"} {
+	host := strings.ToLower(parsed.Hostname())
+	onPlatform := hasAnySuffix(host, _helpCenterPlatformSuffixes)
+	if onPlatform || _helpCenterHostLabels[strings.SplitN(host, ".", 2)[0]] || _helpCenterPath.MatchString(parsed.Path) {
+		add(website)
+	}
+	add(linked)
+	// On a platform's own domain, such as acme.zendesk.com, "help." and
+	// "support." would be the platform's help center, not the company's.
+	if onPlatform {
+		return out
+	}
+	if site, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		for _, label := range []string{"help", "support", "knowledge", "docs"} {
 			if candidate := "https://" + label + "." + site; !slices.ContainsFunc(out, func(existing string) bool { return sameQuickstartSite(existing, candidate) }) {
 				out = append(out, candidate)
 			}

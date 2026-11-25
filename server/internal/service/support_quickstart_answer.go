@@ -28,6 +28,9 @@ var ErrSupportQuickstartBusy = errors.New("support preview answers are busy")
 
 const (
 	quickstartAnswerTimeout = 45 * time.Second
+	// quickstartListingTimeout bounds listing a help center's articles for a
+	// preview; a very large help center is read like a website instead.
+	quickstartListingTimeout = 30 * time.Second
 	// quickstartAnswerSources is how many articles are read for a visitor's
 	// question; quickstartPreviewArticles for the agent's own questions.
 	quickstartAnswerSources     = 3
@@ -111,7 +114,7 @@ func (s *SupportQuickstartService) PreviewAnswer(ctx context.Context, req model.
 	out.Available = true
 	var sources []quickstartSource
 	if listing := s.helpCenterListing(ctx, helpURL); listing != nil {
-		sources = s.readArticles(ctx, pickPreviewArticles(listing.Refs, question), nil)
+		sources = s.readArticles(ctx, listing.Preview.Source, pickPreviewArticles(listing.Refs, question), nil)
 	} else {
 		sources = s.readPages(ctx, previewPages(website, helpURL), nil)
 	}
@@ -165,18 +168,22 @@ func previewPages(website, helpURL string) []string {
 	return pages
 }
 
-// helpCenterListing lists a public Intercom help center, kept for an hour so
-// a visitor's follow-up questions don't read the whole help center again. It
-// is nil when there is no help center or its articles can't be listed.
+// helpCenterListing lists a help center on a platform that can be read by
+// address, kept for an hour so a visitor's follow-up questions don't read the
+// whole help center again. It is nil when there is no help center, its
+// articles can't be listed, or listing them takes too long; the pages are
+// then read like a website's.
 func (s *SupportQuickstartService) helpCenterListing(ctx context.Context, helpURL string) *quickstartListing {
 	if helpURL == "" {
 		return nil
 	}
-	key := "onb:listing:" + aiUsageStableHash(strings.TrimRight(helpURL, "/"))
+	key := "onb:listing:2:" + aiUsageStableHash(strings.TrimRight(helpURL, "/"))
 	var listing quickstartListing
-	if s.cacheGet(ctx, key, &listing) && len(listing.Refs) > 0 {
+	if s.cacheGet(ctx, key, &listing) && len(listing.Refs) > 0 && listing.Preview != nil {
 		return &listing
 	}
+	ctx, cancel := context.WithTimeout(ctx, quickstartListingTimeout)
+	defer cancel()
 	preview, refs, err := s.deps.Imports.PublicHelpCenterArticles(ctx, helpURL)
 	if err != nil || len(refs) == 0 {
 		s.logger.DebugContext(ctx, "preview: help center articles unavailable", "url", helpURL, "error", err)
@@ -189,14 +196,14 @@ func (s *SupportQuickstartService) helpCenterListing(ctx context.Context, helpUR
 
 // readArticles reads the articles side by side. read, when set, is told the
 // title of each article as it arrives.
-func (s *SupportQuickstartService) readArticles(ctx context.Context, refs []model.PublicHelpCenterArticleRef, read func(title string)) []quickstartSource {
+func (s *SupportQuickstartService) readArticles(ctx context.Context, source string, refs []model.PublicHelpCenterArticleRef, read func(title string)) []quickstartSource {
 	sources := make([]quickstartSource, len(refs))
 	var wg sync.WaitGroup
 	for i, ref := range refs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			title, text, err := s.deps.Imports.ReadPublicArticle(ctx, ref.URL)
+			title, text, err := s.deps.Imports.ReadPublicArticle(ctx, source, ref.URL)
 			if err != nil {
 				s.logger.DebugContext(ctx, "preview: article unavailable", "url", ref.URL, "error", err)
 				return

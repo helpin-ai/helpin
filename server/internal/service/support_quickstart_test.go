@@ -1,10 +1,12 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +19,7 @@ import (
 type fakeQuickstart struct {
 	proposals    map[string]*model.HelpcenterBrandProposal
 	intercom     map[string]string // checked address → home address
+	platform     string            // platform of those help centers; Intercom when empty
 	jobs         []model.DocsImportJob
 	sources      []model.SupportContentSource
 	settings     model.SupportInboxSettings
@@ -25,6 +28,7 @@ type fakeQuickstart struct {
 	imports      int
 	website      string
 	brandApplied string
+	brandSources []string // every address branding was read from
 	chunks       int64
 	latestTitle  string
 	articles     []model.PublicHelpCenterArticleRef
@@ -35,6 +39,9 @@ type fakeQuickstart struct {
 }
 
 func (f *fakeQuickstart) ProposeBrand(_ context.Context, source string) (*model.HelpcenterBrandProposal, error) {
+	f.mu.Lock()
+	f.brandSources = append(f.brandSources, source)
+	f.mu.Unlock()
 	if p, ok := f.proposals[source]; ok {
 		copied := *p
 		return &copied, nil
@@ -48,20 +55,21 @@ func (f *fakeQuickstart) ApplyBrandProposal(_ context.Context, _ string, p *mode
 	return &HelpcenterBrandApplyResult{Config: &model.DocsHelpcenterConfig{BrandColor: p.BrandColor, FaviconURL: &favicon}}, nil
 }
 
-func (f *fakeQuickstart) CheckPublicHelpCenter(_ context.Context, raw string) (string, string, error) {
+func (f *fakeQuickstart) CheckPublicHelpCenter(_ context.Context, raw string) (*model.PublicHelpCenterSite, error) {
 	if home, ok := f.intercom[raw]; ok {
-		return home, "Acme Help Center", nil
+		return &model.PublicHelpCenterSite{URL: home, Name: "Acme Help Center", Platform: cmp.Or(f.platform, model.PublicHelpCenterPlatformIntercom)}, nil
 	}
-	return "", "", fmt.Errorf("%w: not Intercom", ErrPublicImportInvalid)
+	return nil, fmt.Errorf("%w: not a help center", ErrPublicImportInvalid)
 }
 
 func (f *fakeQuickstart) StartPublicHelpCenter(ctx context.Context, req model.PublicHelpCenterImportRequest, workspaceID, _ string) (string, error) {
-	if _, _, err := f.CheckPublicHelpCenter(ctx, req.URL); err != nil {
+	found, err := f.CheckPublicHelpCenter(ctx, req.URL)
+	if err != nil {
 		return "", err
 	}
 	f.imports++
 	space := "space-1"
-	f.jobs = append([]model.DocsImportJob{{ID: "job-1", WorkspaceID: workspaceID, SpaceID: &space, Source: docsImportSourceIntercomPublic, Status: model.DocsImportStatusRunning, Total: 40, Completed: 3}}, f.jobs...)
+	f.jobs = append([]model.DocsImportJob{{ID: "job-1", WorkspaceID: workspaceID, SpaceID: &space, Source: found.Platform + publicImportSourceSuffix, Status: model.DocsImportStatusRunning, Total: 40, Completed: 3}}, f.jobs...)
 	return "job-1", nil
 }
 
@@ -85,10 +93,13 @@ func (f *fakeQuickstart) PublicHelpCenterArticles(_ context.Context, rawURL stri
 	f.mu.Lock()
 	f.listings++
 	f.mu.Unlock()
-	return &model.PublicHelpCenterImportPreview{URL: rawURL, Articles: len(f.articles), Collections: 2}, f.articles, nil
+	return &model.PublicHelpCenterImportPreview{URL: rawURL, Source: docsImportSourceIntercomPublic, Articles: len(f.articles), Collections: 2}, f.articles, nil
 }
 
-func (f *fakeQuickstart) ReadPublicArticle(_ context.Context, articleURL string) (string, string, error) {
+func (f *fakeQuickstart) ReadPublicArticle(_ context.Context, source, articleURL string) (string, string, error) {
+	if source != docsImportSourceIntercomPublic {
+		return "", "", fmt.Errorf("%w: unknown source %q", ErrPublicImportInvalid, source)
+	}
 	f.mu.Lock()
 	f.articleReads = append(f.articleReads, articleURL)
 	f.mu.Unlock()
@@ -175,6 +186,74 @@ func TestSupportQuickstartStartImportsIntercomOnce(t *testing.T) {
 	}
 	if *last.AIResponseMode != "ai_first" || len(f.linked) != 1 || f.website != "https://acme.com" {
 		t.Errorf("AI mode %q, linked %v, website %q", *last.AIResponseMode, f.linked, f.website)
+	}
+}
+
+func TestSupportQuickstartStartCopiesAnyPlatformThatCanBeRead(t *testing.T) {
+	tests := []struct {
+		platform  string
+		wantBrand string
+	}{
+		// An Intercom help center publishes its branding; for the others the
+		// website says more.
+		{platform: model.PublicHelpCenterPlatformIntercom, wantBrand: "https://help.acme.com"},
+		{platform: "zendesk", wantBrand: "https://acme.com"},
+		{platform: "mintlify", wantBrand: "https://acme.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			f := &fakeQuickstart{platform: tt.platform, intercom: map[string]string{"https://help.acme.com": "https://help.acme.com/home"}}
+			status, err := newQuickstartForTest(f).Start(context.Background(), "ws-1", "user-1",
+				model.SupportQuickstartStartRequest{WebsiteURL: "acme.com", CompanyName: "Acme", HelpCenterURL: "help.acme.com"})
+			if err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+			if f.imports != 1 || len(f.sources) != 1 || f.sources[0].StartURL != "https://acme.com" {
+				t.Errorf("imports %d, crawls %+v; want the help center copied and only the website crawled", f.imports, f.sources)
+			}
+			if status.Articles == nil || status.Articles.Total != 40 {
+				t.Errorf("status = %+v, want the copy's progress", status)
+			}
+			if got := f.brandSources[len(f.brandSources)-1]; got != tt.wantBrand {
+				t.Errorf("branding read from %q, want %q", got, tt.wantBrand)
+			}
+		})
+	}
+}
+
+func TestHelpCenterCandidates(t *testing.T) {
+	tests := []struct {
+		name, website, linked string
+		want                  []string
+	}{
+		{
+			name: "a company website and its help link", website: "https://www.acme.com", linked: "https://support.acme.com/hc",
+			want: []string{"https://support.acme.com/hc", "https://help.acme.com", "https://knowledge.acme.com", "https://docs.acme.com"},
+		},
+		{
+			name: "an address that is itself the help center", website: "https://kb.acme.com",
+			want: []string{
+				"https://kb.acme.com", "https://help.acme.com", "https://support.acme.com", "https://knowledge.acme.com", "https://docs.acme.com",
+			},
+		},
+		{
+			name: "a help center under a path", website: "https://acme.com/docs", linked: "https://acme.com/docs/",
+			want: []string{
+				"https://acme.com/docs", "https://help.acme.com", "https://support.acme.com", "https://knowledge.acme.com", "https://docs.acme.com",
+			},
+		},
+		{
+			// help.zendesk.com and support.zendesk.com are Zendesk's own.
+			name: "an address on a help center platform's domain", website: "https://acme.zendesk.com",
+			want: []string{"https://acme.zendesk.com"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := helpCenterCandidates(tt.website, tt.linked); !slices.Equal(got, tt.want) {
+				t.Errorf("helpCenterCandidates = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

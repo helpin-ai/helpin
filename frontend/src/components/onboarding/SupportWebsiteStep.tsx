@@ -112,6 +112,8 @@ export function SetupReview({ detection, initial, autoStart = false, onBack, onS
   const websiteHost = websiteDisplayName(detection.website_url);
   const helpCenter = detection.help_center;
   const helpCenterHost = helpCenter ? siteLabel(helpCenter.url) : '';
+  // Only a help center on a platform we can read article by article is copied.
+  const copiesHelpCenter = Boolean(helpCenter) && helpCenter?.platform !== 'website';
 
   const run = async () => {
     const companyName = name.trim();
@@ -224,8 +226,8 @@ export function SetupReview({ detection, initial, autoStart = false, onBack, onS
           </p>
         )}
         <ul className="divide-y rounded-xl border">
-          <PlanItem icon={BookOpen01Icon} title={helpCenter?.platform === 'intercom' ? `Copy your help center from ${helpCenterHost}` : helpCenter ? `Learn from your help center at ${helpCenterHost}` : 'Help articles'}>
-            {helpCenter?.platform === 'intercom'
+          <PlanItem icon={BookOpen01Icon} title={copiesHelpCenter ? `Copy your help center from ${helpCenterHost}` : helpCenter ? `Learn from your help center at ${helpCenterHost}` : 'Help articles'}>
+            {copiesHelpCenter
               ? 'Every article, collection and image, published in Helpin.'
               : helpCenter
                 ? 'Your AI agent reads your articles to answer questions.'

@@ -56,7 +56,7 @@ const events = {
   helpCenter: {
     type: 'help_center',
     help_center_url: 'https://help.acme.com/en',
-    help_center: { articles: 402, collections: 12, top_collections: [{ name: 'Billing', articles: 30 }] },
+    help_center: { platform: 'intercom', articles: 402, collections: 12, top_collections: [{ name: 'Billing', articles: 30 }] },
   },
   articles: { type: 'articles', articles: [{ title: 'Refunds', url: 'https://help.acme.com/en/articles/4-refunds' }] },
   preview: { type: 'preview', preview: { available: true, answers: [refunds, billing], gaps: ['Do you have a mobile app?'] } },
@@ -166,6 +166,8 @@ describe('SupportStart', () => {
 
     send(events.helpCenter, { type: 'log', step: 'articles', text: 'Read “Refunds”' });
     expect(container?.textContent).toContain('Found 402 help articles');
+    // The platform found at the address is named next to it.
+    expect(container?.textContent).toContain('help.acme.com · Intercom · 12 collections');
     expect(container?.textContent).toContain('Reading your articles');
     expect(container?.textContent).toContain('Read “Refunds”');
     // Going live is offered once the help center is known, before the answers arrive.

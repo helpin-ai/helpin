@@ -414,11 +414,11 @@ func (f *demoFakes) GetConfigBySubdomain(_ context.Context, subdomain string) (*
 	return nil, nil
 }
 
-func (f *demoFakes) CheckPublicHelpCenter(_ context.Context, rawURL string) (string, string, error) {
+func (f *demoFakes) CheckPublicHelpCenter(_ context.Context, rawURL string) (*model.PublicHelpCenterSite, error) {
 	if f.checkErr != nil {
-		return "", "", f.checkErr
+		return nil, f.checkErr
 	}
-	return strings.TrimRight(rawURL, "/") + "/", "Acme Help Center", nil
+	return &model.PublicHelpCenterSite{URL: strings.TrimRight(rawURL, "/") + "/", Name: "Acme Help Center", Platform: model.PublicHelpCenterPlatformIntercom}, nil
 }
 
 func (f *demoFakes) StartPublicHelpCenter(_ context.Context, req model.PublicHelpCenterImportRequest, workspaceID, userID string) (string, error) {

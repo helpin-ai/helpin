@@ -120,6 +120,20 @@ func TestPreviewTreatsAnIntercomAddressAsTheHelpCenter(t *testing.T) {
 	}
 }
 
+func TestPreviewFindsAHelpCenterOnAnyPlatformThatCanBeRead(t *testing.T) {
+	f := helpCenterWithArticles()
+	f.platform = "zendesk"
+	// The website links nowhere; the help center is found at the usual place.
+	f.proposals = map[string]*model.HelpcenterBrandProposal{"https://acme.com": {Platform: model.HelpcenterBrandPlatformWebsite, BrandName: "Acme"}}
+	f.intercom = map[string]string{"https://support.acme.com": "https://support.acme.com/hc/en-us/"}
+	events := runPreview(t, newPreviewServiceForTest(f, nil, nil, nil), model.SupportQuickstartPreviewRequest{WebsiteURL: "acme.com"})
+
+	found := eventOf(t, events, model.QuickstartEventHelpCenter)
+	if found.HelpCenterURL != "https://support.acme.com/hc/en-us/" || found.HelpCenter == nil || found.HelpCenter.Articles != len(f.articles) {
+		t.Errorf("help center = %+v, want the Zendesk help center with its articles counted", found)
+	}
+}
+
 func TestPreviewReadsAcrossCollectionsAndKeepsOnlyGroundedWork(t *testing.T) {
 	f := acmeWithHelpCenter()
 	ai := &fakeQuickstartAI{content: acmePreviewReply}
