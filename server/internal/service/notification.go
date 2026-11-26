@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -370,6 +371,10 @@ func (s *NotificationService) emit(ctx context.Context, event model.Notification
 			}
 		}
 		event := taskRecipientEvent(event, taskContext, recipientID, follows)
+		// Followers can see ownership changes in Helpin. Assignment email addresses the assignee.
+		if model.EventTypeToCategory[event.EventType] == model.NotifCategoryAssignments && !slices.Contains(event.ExplicitRecipients, recipientID) {
+			event.SkipEmailDelivery = true
+		}
 		log := s.logger.With("recipient_id", recipientID, "entity_id", event.EntityID)
 
 		allowed, err := s.canReceive(ctx, recipientID, event)

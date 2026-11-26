@@ -44,6 +44,10 @@ Saved on and off choices apply per switch. Untouched switches inherit these defa
 
 A customer message can trigger this alert even when it opens a conversation or Helpin AI is handling it. Helpin selects at most one eligible teammate per message. It tries the assignee, then the last teammate who replied if the conversation has stayed in that inbox, then an eligible inbox responder.
 
+Personal Slack alerts can create up to five DMs per linked member per workspace in a rolling hour. Repeats of the same alert on the same item share a 15-minute cooldown. Further distinct alerts add direct links to an existing DM. If all five messages are full, the queue holds the remaining items until a slot opens and checks eligibility again.
+
+Individual notification emails have a five-per-person hourly limit across workspaces and a 15-minute cooldown per item. Eligible excess email goes into a digest. Project assignment emails go only to the assignees. Followers can see the ownership change in Helpin.
+
 Desktop alerts require local opt-in, browser permission and an enabled in-app category. Email respects account delivery settings. Mentions and input requests can be emailed promptly. Customer reply email waits at least three minutes and checks whether the conversation still needs attention. Mobile push for customer replies and support mentions follows their in-app setting. Projects and Docs share their mention setting for in-app, desktop and email. Each has its own Slack mention switch. The support customer reply switch also covers a linked task completing when the conversation owner needs to update the customer.
 
 ## Original proposal

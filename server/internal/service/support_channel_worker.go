@@ -82,6 +82,10 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 	if ctx.Err() != nil {
 		return true, ctx.Err()
 	}
+	var deferred *personalDMDeferred
+	if errors.As(workErr, &deferred) {
+		return true, s.jobs.WaitForResult(ctx, job, deferred.until)
+	}
 	var slackError *slack.APIError
 	if (kind == SlackNotificationJob || kind == SlackFeedActionJob || kind == SlackInboxFeedJob || kind == SlackEventJob || kind == "slack_shortcut" || kind == SlackPMDeliveryJob) && errors.As(workErr, &slackError) && slackError.Code == "ratelimited" {
 		return true, s.jobs.WaitForResult(ctx, job, s.now().Add(max(time.Second, slackError.RetryAfter)))
