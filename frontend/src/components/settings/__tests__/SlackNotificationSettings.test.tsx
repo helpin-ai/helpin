@@ -11,7 +11,14 @@ import { slackService, type SlackNotificationPreferences } from '@/lib/services/
 
 const { saveChannels } = vi.hoisted(() => ({ saveChannels: vi.fn() }))
 vi.mock('@/hooks/queries', () => ({
-  useNotificationPreferences: () => ({ data: { channel_preferences: {} } }),
+  useNotificationPreferences: () => ({ data: {
+    channel_preferences: {},
+    channel_defaults: {
+      'support.assignments': { in_app: true, desktop: true, email: false },
+      'automation.failures': { in_app: true, desktop: true, email: true },
+      'automation.activity': { in_app: false, desktop: false, email: false },
+    },
+  } }),
   useUpdateNotificationPreferences: () => ({ isPending: false, mutate: saveChannels }),
 }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => 'member' }))
@@ -73,7 +80,7 @@ it('opens the linked module and changes one Slack row independently', async () =
 
 it('offers independent in-app, desktop and email choices before Slack is linked', () => {
   render({ linked: false, mentions: false, assignments: false })
-  for (const [channel, enabled] of [['in-app', true], ['desktop', false], ['email', false]] as const) {
+  for (const [channel, enabled] of [['in-app', true], ['desktop', true], ['email', false]] as const) {
     const control = container.querySelector<HTMLButtonElement>(`[aria-label="Assignments: ${channel}"]`)
     expect(control?.disabled).toBe(false)
     expect(control?.getAttribute('aria-checked')).toBe(String(enabled))
@@ -82,13 +89,13 @@ it('offers independent in-app, desktop and email choices before Slack is linked'
   expect(saveChannels).toHaveBeenCalledWith({ channel_changes: { 'support.assignments': { email: true } } }, expect.anything())
 })
 
-it('defaults flow failures to in-app while routine flow activity stays quiet', () => {
-  render({ linked: true, assignments: true, mentions: true }, 'automation')
+it('shows flow failures on all four channels and keeps routine flow activity quiet', () => {
+  render({ linked: true, assignments: true, mentions: true, categories: { 'automation.failures': true } }, 'automation')
   for (const [label, checked] of [
     ['Flow failures: in-app', true],
-    ['Flow failures: desktop', false],
-    ['Flow failures: email', false],
-    ['Automation, Flow failures: Slack', false],
+    ['Flow failures: desktop', true],
+    ['Flow failures: email', true],
+    ['Automation, Flow failures: Slack', true],
     ['Flow activity: in-app', false],
   ] as const) {
     expect(container.querySelector(`[aria-label="${label}"]`)?.getAttribute('aria-checked')).toBe(String(checked))

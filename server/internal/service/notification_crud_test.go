@@ -449,6 +449,9 @@ func TestNotificationService_GetPreferences_DefaultsWhenNoPrefs(t *testing.T) {
 	if !prefs.EmailEnabled {
 		t.Fatal("expected default email_enabled=true")
 	}
+	if !prefs.ChannelDefaults[model.WorkflowFailureCategory].Desktop || len(prefs.ChannelPreferences) != 0 {
+		t.Fatalf("expected inherited desktop alert without saved switches, got %+v", prefs)
+	}
 }
 
 func TestNotificationService_UpdatePreferences_WorkspaceFields(t *testing.T) {
@@ -472,6 +475,31 @@ func TestNotificationService_UpdatePreferences_WorkspaceFields(t *testing.T) {
 	}
 	if !prefs.MuteWorkspace {
 		t.Fatal("expected mute_workspace=true after update")
+	}
+}
+
+func TestNotificationPreferences_OnlyUnsetChannelsInheritCurrentDefaults(t *testing.T) {
+	db := newNotificationCRUDTestDB(t)
+	ctx := context.Background()
+	repo := repository.NewNotificationPreferenceRepository(db)
+	mustExecNotificationService(t, db, `INSERT INTO notification_preferences (user_id, workspace_id, channel_preferences) VALUES
+		('member', 'existing', '{"automation.failures":{"desktop":false},"status_changes":{"email":true}}')`)
+	for _, tc := range []struct {
+		user, workspace, event, channel string
+		want                            bool
+	}{
+		{"member", "existing", model.WorkflowFailureEvent, "desktop", false},
+		{"member", "existing", model.WorkflowFailureEvent, "email", true},
+		{"member", "existing", "task.status_changed", "email", true},
+		{"teammate", "existing", model.WorkflowFailureEvent, "desktop", true},
+		{"teammate", "existing", "task.status_changed", "email", false},
+		{"member", "new", model.WorkflowFailureEvent, "desktop", true},
+		{"member", "new", "task.status_changed", "email", false},
+	} {
+		got, err := repo.ShouldNotify(ctx, tc.user, tc.workspace, tc.event, tc.channel, "")
+		if err != nil || got != tc.want {
+			t.Errorf("%+v: delivered=%v, err=%v", tc, got, err)
+		}
 	}
 }
 

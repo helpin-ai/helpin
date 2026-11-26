@@ -2041,6 +2041,7 @@ func (s *NotificationService) GetPreferences(ctx context.Context, userID, worksp
 		return nil, err
 	}
 
+	wsPref.ChannelDefaults = model.WorkspaceNotificationDefaults
 	// Overlay account-level fields so old frontends still see them
 	userSettings, err := s.userSettingsRepo.Get(ctx, userID)
 	if err == nil && userSettings != nil {

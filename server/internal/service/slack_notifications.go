@@ -107,7 +107,7 @@ func (s *NotificationService) slackDestination(ctx context.Context, recipient st
 	if err != nil || !pref.CategoryEnabled(slackPreferenceKey(event)) {
 		return nil, err
 	}
-	enabled, err := s.prefRepo.ShouldNotify(ctx, recipient, event.WorkspaceID, event.EventType, "slack", event.TeamID)
+	enabled, err := s.prefRepo.ShouldNotifyWithMetadata(ctx, recipient, event.WorkspaceID, event.EventType, "slack", event.TeamID, event.Metadata)
 	if err != nil || !enabled {
 		return nil, err
 	}

@@ -12,6 +12,38 @@ This March 2026 requirements record explains the original notification inbox, fo
 - Current state transitions retain archived items unless an urgent event arrives, but both **high and urgent** events break snooze. The original urgent-only snooze rule is obsolete. Email-only rows preserve delivery history without appearing in the inbox. The [notification page](../../frontend/src/pages/notifications/NotificationsPage.tsx) supplies a full inbox in addition to the header center.
 - The phase schedule, scale target, provider extensions and test checklist below are requirements/history, not verified delivery results. No email, queue worker, application migration or live notification was triggered by this review.
 
+## Personal notification defaults
+
+Each cell is the default for one member in one workspace. Slack means a personal DM in a linked account. Shared inbox channels have their own routing rules.
+
+| Notification | In-app | Desktop | Email | Slack DM |
+|---|---|---|---|---|
+| Projects · Assignments | On · track work you own | On · notice a handoff | On · catch assignments while away | On · reach the new owner |
+| Projects · Status changes | On · keep state and blockers visible | Off · routine transitions are frequent | Off · most changes need no response | Off · avoid a DM for every transition |
+| Projects · Comments and replies | On · follow the discussion | Off · most comments can wait | On · catch up on a followed discussion | Off · a direct mention has its own alert |
+| Projects · Mentions | On · keep the request | On · someone asked for you | On · reach you while away | On · reach the person named |
+| Projects · Following | On · collect updates you chose to follow | Off · low urgency | Off · broad activity can fill a digest | Off · following an item can generate many DMs |
+| Projects · Sprints | On · see planning and schedule changes | Off · planning rarely needs an instant response | Off · avoid routine schedule mail | Off · avoid team-wide planning noise |
+| Docs · Mentions | On · return to the exact discussion | On · an author needs your attention | On · follow up asynchronously | On · reach the named reviewer |
+| Docs · Document updates | On · catch up on followed documents | Off · edits can arrive in bursts | Off · successive drafts add little email value | Off · avoid a DM per edit |
+| Support · Assignments | On · keep a handoff in your inbox | On · pick up new work promptly | Off · frequent handoffs create mail volume | On · reach the assigned responder |
+| Support · Customer replies | On · keep the conversation visible | On · a customer is waiting | On · follow up if the reply stays unread and unanswered | On · reach the selected responder |
+| Support · Teammate mentions | On · return to the internal note | On · a teammate needs help | On · catch the request while away | On · prompt the teammate named |
+| CRM · Record assignments | On · track the new owner’s work | Off · most ownership changes can wait | On · review new responsibilities | On · alert the individual taking ownership |
+| CRM · Note mentions | On · find the note again | On · a colleague requested attention | On · keep the follow-up available while away | On · reach the person named |
+| CRM · Signals ready for review | On · keep the review queue visible | Off · signals can be reviewed together | On · include signals in a sales review digest | Off · a batch of signals could generate many DMs |
+| CRM · Deal stage changes | On · keep pipeline context | Off · most stage moves are informational | Off · avoid repeated pipeline mail | Off · a stage change rarely calls for a reply |
+| Agents · Input or approval | On · keep the pending request | On · the run is waiting | On · unblock work while away | On · reach the decision-maker |
+| Agents · Run activity | Off · progress is in run history | Off · routine progress can interrupt often | Off · avoid routine run reports | Off · keep progress out of DMs |
+| Automation · Flow requests | On · keep pending decisions visible | On · the flow is waiting | On · the approver can follow up while away | On · reach the person who can unblock it |
+| Automation · Flow failures | On · keep a record of what stopped | On · the owner may need to intervene | On · retain a follow-up for the owner | On · alert the owner to a terminal failure |
+| Automation · Flow activity | Off · starts and progress are in run history | Off · frequent runs can interrupt repeatedly | Off · routine executions can swamp a digest | Off · reserve DMs for requests and failures |
+| Integrations · Connection issues | On · keep the reconnection task | Off · a browser interruption adds little | On · the account owner can return to reconnect | On · reach the person who can restore access |
+
+Saved on and off choices apply per switch. Untouched switches inherit these defaults in existing and new workspaces. Older Slack assignment and mention switches stored an automatic off and a manually chosen off identically. Those stored values take precedence to protect opt-outs.
+
+Desktop alerts require local opt-in, browser permission and an enabled in-app category. Email respects account delivery settings. Mentions and input requests can be emailed promptly. Customer reply email waits at least three minutes and checks whether the conversation still needs attention. Mobile push for customer replies and support mentions follows their in-app setting. Projects and Docs share their mention setting for in-app, desktop and email. Each has its own Slack mention switch. The support customer reply switch also covers a linked task completing when the conversation owner needs to update the customer.
+
 ## Original proposal
 
 **Date:** 2026-03-08

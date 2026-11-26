@@ -64,10 +64,10 @@ var SlackCategoryDefaults = map[string]string{
 	"projects.assignments": "assignments", "projects.mentions": "mentions",
 	"projects.status_changes": "off", "projects.comments": "off", "projects.subscriptions": "off", "projects.sprints": "off",
 	"docs.mentions": "mentions", "docs.updates": "off",
-	"support.assignments": "assignments", "support.mentions": "mentions", "support.replies": "off",
+	"support.assignments": "assignments", "support.mentions": "mentions", "support.replies": "direct",
 	"crm.assignments": "assignments", "crm.mentions": "mentions", "crm.signals": "off", "crm.updates": "off",
 	"agents.attention": "direct", "agents.activity": "off",
-	"automation.attention": "direct", WorkflowFailureCategory: "off", "automation.activity": "off",
+	"automation.attention": "direct", WorkflowFailureCategory: "direct", "automation.activity": "off",
 	"integrations.connection": "direct",
 }
 

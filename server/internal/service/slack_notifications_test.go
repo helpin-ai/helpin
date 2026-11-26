@@ -104,6 +104,10 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Assignments: &off, Mentions: &on}); err != nil {
 		t.Fatal(err)
 	}
+	stored, err := repo.NotificationPreferences(ctx, "ws", "member")
+	if err != nil || stored.Overrides["support.assignments"] != false || stored.Overrides["docs.mentions"] != true {
+		t.Fatalf("expected explicit family switches to survive future default changes: %+v, %v", stored.Overrides, err)
+	}
 	if err := s.deliverNotification(ctx, job); err != nil {
 		t.Fatal(err)
 	}
@@ -232,14 +236,24 @@ func TestSlackModuleRouting(t *testing.T) {
 		direct            bool
 	}{
 		{"task.assigned", "task", "projects.assignments", true},
+		{"task.status_changed", "task", "projects.status_changes", false},
+		{"task.comment", "task", "projects.comments", false},
+		{"task.mention", "task", "projects.mentions", true},
+		{"task.created", "task", "projects.subscriptions", false},
+		{"sprint.updated", "sprint", "projects.sprints", false},
 		{"comment.mention", "document", "docs.mentions", true},
 		{"doc.updated", "document", "docs.updates", false},
-		{"automation_rule.failed", "automation_rule", "automation.failures", false},
+		{"automation_rule.failed", "automation_rule", "automation.failures", true},
 		{"crm.assigned", "crm_company", "crm.assignments", true},
 		{"crm.mention", "crm_contact", "crm.mentions", true},
 		{"crm.signal_ready", "crm_signal", "crm.signals", false},
-		{"support_conversation.customer_reply", "support_conversation", "support.replies", false},
+		{"crm.deal_updated", "crm_deal", "crm.updates", false},
+		{"support_conversation.assigned", "support_conversation", "support.assignments", true},
+		{"support_conversation.mentioned", "support_conversation", "support.mentions", true},
+		{"support_conversation.customer_reply", "support_conversation", "support.replies", true},
 		{"task.agent_attention_required", "agent_run", "agents.attention", true},
+		{"agent_run.started", "agent_run", "agents.activity", false},
+		{"automation_rule.activity", "automation_rule", "automation.activity", false},
 		{"external_mcp.reauthorization_required", "external_mcp_server", "integrations.connection", true},
 		{"new.event", "task", "", false},
 	} {

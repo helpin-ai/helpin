@@ -480,9 +480,10 @@ func (r *SlackRepository) UpdateNotificationPreferences(ctx context.Context, wor
 				continue
 			}
 			updates["notify_"+family] = *value
-			for key := range row.Overrides {
-				if model.SlackCategoryDefaults[key] == family {
-					delete(row.Overrides, key)
+			// A choice made through the older family switch is explicit for each of its rows.
+			for key, group := range model.SlackCategoryDefaults {
+				if group == family {
+					row.Overrides[key] = *value
 				}
 			}
 		}

@@ -160,6 +160,8 @@ type NotificationPreference struct {
 	BadgeMode            string     `json:"badge_mode" gorm:"type:varchar(20);default:'all'"`
 	CreatedAt            time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt            time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	ChannelDefaults map[string]NotificationChannels `json:"channel_defaults,omitempty" gorm:"-"`
 }
 
 func (NotificationPreference) TableName() string { return "notification_preferences" }
@@ -263,22 +265,52 @@ func NotificationPreferenceCategory(eventType string, meta JSONB) string {
 	return EventTypeToCategory[eventType]
 }
 
-// NotificationChannelDefault defines delivery before a member customizes a row.
+type NotificationChannels struct {
+	InApp   bool `json:"in_app"`
+	Desktop bool `json:"desktop"`
+	Email   bool `json:"email"`
+}
+
+// WorkspaceNotificationDefaults are inherited per switch and returned separately from saved choices.
+var WorkspaceNotificationDefaults = map[string]NotificationChannels{
+	NotifCategoryAssignments:     {InApp: true, Desktop: true, Email: true},
+	NotifCategoryStatusChanges:   {InApp: true},
+	NotifCategoryComments:        {InApp: true, Email: true},
+	NotifCategoryMentions:        {InApp: true, Desktop: true, Email: true},
+	NotifCategorySubscriptions:   {InApp: true},
+	NotifCategorySprints:         {InApp: true},
+	"docs.updates":               {InApp: true},
+	"support.assignments":        {InApp: true, Desktop: true},
+	NotifCategorySupportReplies:  {InApp: true, Desktop: true, Email: true},
+	NotifCategorySupportMentions: {InApp: true, Desktop: true, Email: true},
+	"crm.assignments":            {InApp: true, Email: true},
+	"crm.mentions":               {InApp: true, Desktop: true, Email: true},
+	NotifCategoryCRMSignals:      {InApp: true, Email: true},
+	"crm.updates":                {InApp: true},
+	NotifCategoryAgentAttention:  {InApp: true, Desktop: true, Email: true},
+	"agents.activity":            {},
+	"automation.attention":       {InApp: true, Desktop: true, Email: true},
+	WorkflowFailureCategory:      {InApp: true, Desktop: true, Email: true},
+	"automation.activity":        {},
+	NotifCategoryIntegrations:    {InApp: true, Email: true},
+}
+
 func NotificationChannelDefault(category, channel string) bool {
-	if channel == "desktop" {
-		switch category {
-		case NotifCategoryAssignments, NotifCategoryMentions, NotifCategoryAgentAttention, NotifCategorySupportReplies, NotifCategorySupportMentions:
-			return true
-		}
-		return false
+	row, known := WorkspaceNotificationDefaults[category]
+	if !known {
+		return channel != "desktop"
 	}
-	switch category {
-	case "docs.updates", "agents.activity", "automation.activity", "crm.updates":
-		return channel != "in_app" && channel != "email"
-	case "support.assignments", "crm.assignments", "crm.mentions", "automation.attention", WorkflowFailureCategory, NotifCategoryIntegrations, NotifCategoryAgentAttention:
-		return channel != "email"
+	switch channel {
+	case "in_app":
+		return row.InApp
+	case "desktop":
+		return row.Desktop
+	case "email":
+		return row.Email
+	default:
+		// Personal Slack delivery checks its own installation and per-member preferences.
+		return true
 	}
-	return true
 }
 
 // IsDNDActive returns true when a notification pause is currently active.

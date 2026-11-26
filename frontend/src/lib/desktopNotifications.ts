@@ -35,7 +35,8 @@ export function setDesktopEnabled(userId: string, enabled: boolean) {
 
 export function desktopCategoryEnabled(preferences: NotificationPreferences, category: string): boolean {
   const choice = preferences.channel_preferences?.[category]
-  return isChannelEnabled(preferences, category, 'in_app') && (choice?.desktop ?? DESKTOP_DEFAULT_CATEGORIES.has(category))
+  return isChannelEnabled(preferences, category, 'in_app') &&
+    (choice?.desktop ?? preferences.channel_defaults?.[category]?.desktop ?? DESKTOP_DEFAULT_CATEGORIES.has(category))
 }
 
 export function desktopEventAllowed(event: WSEvent, userId: string, workspaceId: string, preferences: NotificationPreferences): boolean {
