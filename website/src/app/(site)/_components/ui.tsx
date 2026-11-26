@@ -54,10 +54,10 @@ export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on G
  * A website address box that opens the support preview in the app. A plain
  * GET form, so it works on the static site without JavaScript.
  */
-export function StartForm() {
+export function StartForm({ autoFocus = false }: { autoFocus?: boolean }) {
   return (
     <form className="start-form" action={START_URL} method="get">
-      <input aria-label="Your company website" name="website" type="text" inputMode="url" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="go" placeholder="Paste your website, like acme.com" maxLength={300} required />
+      <input autoFocus={autoFocus} aria-label="Your company website" name="website" type="text" inputMode="url" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="go" placeholder="Paste your website, like acme.com" maxLength={300} required />
       <button type="submit" className="btn btn-primary">See your agent</button>
     </form>
   );
