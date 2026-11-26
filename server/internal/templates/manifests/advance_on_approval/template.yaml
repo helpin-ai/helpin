@@ -13,9 +13,9 @@ inputs:
   - key: workflow_id
     type: workflow
     required: true
-    label: Workflow
+    label: Task workflow
     section: What should it watch?
-    help_text: Choose the workflow that contains the approval and destination states.
+    help_text: Choose the task workflow that contains the approval and destination states.
   - key: from_state_id
     type: workflow_state
     required: true

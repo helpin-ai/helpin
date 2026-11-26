@@ -51,12 +51,12 @@ describe('dock run utilities', () => {
     expect(displayAgentName('Command Agent (one-shot)')).toBe('Sub-agent');
   });
 
-  it('uses automation flow names for workspace-targeted runs', () => {
+  it.each(['flow', 'automation rule'])('uses the flow name from a %s event for workspace-targeted runs', (prefix) => {
     expect(
       runDisplayTitle(run({
         input: {
           trigger: { source: 'automation_rule', trigger_type: 'cron' },
-          event: { reason: 'automation rule "Competitors Changelog Tracking Report"' },
+          event: { reason: `${prefix} "Competitors Changelog Tracking Report"` },
         },
       })),
     ).toBe('Competitors Changelog Tracking Report');

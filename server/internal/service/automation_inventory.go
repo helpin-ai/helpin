@@ -155,7 +155,7 @@ func (s *AutomationInventoryService) GetWorkspaceInventory(ctx context.Context, 
 		SemanticConditions: s.jevDecisions.SemanticConditionAvailability(workspaceID),
 		Groups: []model.AutomationInventoryGroup{
 			{ID: automationGroupBuiltIn, Title: "Built-in Automations", Description: "System intelligence and deterministic built-ins that already operate inside the product."},
-			{ID: automationGroupRules, Title: "Automation Rules", Description: "User-configured rules triggered by workflow events. Powers stage-based agent pipelines."},
+			{ID: automationGroupRules, Title: "Flows", Description: "Run actions when an event occurs or on a schedule."},
 		},
 		Items:          items,
 		TriggerCatalog: triggerCatalog,

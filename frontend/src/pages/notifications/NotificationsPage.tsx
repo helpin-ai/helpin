@@ -248,7 +248,7 @@ function NotificationDetail({ notification }: { notification: Notification }) {
     ? 'Open conversation'
     : notification.entity_type === 'agent_run'
       ? 'Open run'
-      : `Open ${notification.entity_type.replace(/^crm_/, '').replace('automation_rule', 'workflow')}`
+      : `Open ${notification.entity_type.replace(/^crm_/, '').replace('automation_rule', 'flow')}`
 
   const handleNavigateToEntity = () => {
     const type = notification.entity_type

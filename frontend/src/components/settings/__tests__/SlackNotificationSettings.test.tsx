@@ -82,14 +82,14 @@ it('offers independent in-app, desktop and email choices before Slack is linked'
   expect(saveChannels).toHaveBeenCalledWith({ channel_changes: { 'support.assignments': { email: true } } }, expect.anything())
 })
 
-it('defaults workflow failures to in-app while routine workflow activity stays quiet', () => {
+it('defaults flow failures to in-app while routine flow activity stays quiet', () => {
   render({ linked: true, assignments: true, mentions: true }, 'automation')
   for (const [label, checked] of [
-    ['Workflow failures: in-app', true],
-    ['Workflow failures: desktop', false],
-    ['Workflow failures: email', false],
-    ['Automation, Workflow failures: Slack', false],
-    ['Workflow activity: in-app', false],
+    ['Flow failures: in-app', true],
+    ['Flow failures: desktop', false],
+    ['Flow failures: email', false],
+    ['Automation, Flow failures: Slack', false],
+    ['Flow activity: in-app', false],
   ] as const) {
     expect(container.querySelector(`[aria-label="${label}"]`)?.getAttribute('aria-checked')).toBe(String(checked))
   }

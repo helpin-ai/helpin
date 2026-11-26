@@ -881,7 +881,7 @@ func TestRunActivityReplayAndDigestPreference(t *testing.T) {
 	ctx := context.Background()
 	service := newCRUDNotificationService(db)
 	rule := model.JSONB{"automation_rule_id": "rule"}
-	event := model.NotificationEventInput{WorkspaceID: "ws", EntityType: "agent_run", EntityID: "run", EventType: "agent_run.started", Title: "Your workflow run started", Metadata: rule, ExplicitRecipients: []string{"owner"}, SkipFollowers: true}
+	event := model.NotificationEventInput{WorkspaceID: "ws", EntityType: "agent_run", EntityID: "run", EventType: "agent_run.started", Title: "Your flow run started", Metadata: rule, ExplicitRecipients: []string{"owner"}, SkipFollowers: true}
 	if err := service.UpdatePreferences(ctx, "owner", "ws", model.UpdateNotificationPreferenceRequest{
 		ChannelChanges: map[string]map[string]bool{"automation.activity": {"in_app": true}, "agents.activity": {"email": true}},
 	}); err != nil {
@@ -925,7 +925,7 @@ func TestEmailOnlyWorkflowUpdatePreservesInboxAndDigest(t *testing.T) {
 	if err := svc.UpdatePreferences(ctx, "owner", "ws", model.UpdateNotificationPreferenceRequest{ChannelChanges: map[string]map[string]bool{"automation.activity": {"email": true}}}); err != nil {
 		t.Fatal(err)
 	}
-	event.EventType, event.Title, event.Category = "agent_run.finished", "Your workflow run completed", "automation.activity"
+	event.EventType, event.Title, event.Category = "agent_run.finished", "Your flow run completed", "automation.activity"
 	event.Metadata = model.JSONB{"automation_rule_id": "rule"}
 	if err := svc.Emit(ctx, event); err != nil {
 		t.Fatal(err)

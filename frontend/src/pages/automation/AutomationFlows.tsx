@@ -96,8 +96,8 @@ type FlowDraft = {
 
 const WORKFLOW_TRIGGER_TYPES = ['task.state_entered', 'agent_run.approved'] as const;
 const TRIGGER_OPTIONS = [
-  { value: 'task.state_entered', label: 'Task enters a workflow state', group: 'Workflow events' },
-  { value: 'agent_run.approved', label: 'Interactive run is approved', group: 'Workflow events' },
+  { value: 'task.state_entered', label: 'Task enters a state', group: 'Project events' },
+  { value: 'agent_run.approved', label: 'Interactive run is approved', group: 'Project events' },
   { value: 'github.push', label: 'GitHub push arrives', group: 'GitHub events' },
   { value: 'github.pull_request_opened', label: 'GitHub pull request opens', group: 'GitHub events' },
   { value: 'github.pull_request_merged', label: 'GitHub pull request merges', group: 'GitHub events' },
@@ -571,7 +571,7 @@ const TEMPLATE_CATEGORY_LABELS: Record<string, string> = {
   support: 'Support',
   marketing: 'Marketing',
   docs: 'Docs',
-  workflow: 'Workflow',
+  workflow: 'Projects',
 };
 
 const TEMPLATE_TONE_CATEGORY_BY_KEY: Record<string, string> = {
@@ -924,7 +924,7 @@ export function validateDraft(draft: FlowDraft) {
   if ([...draft.semanticCondition.trim()].length > 500) return 'Keep the semantic condition within 500 characters';
   if (draft.triggerType === 'cron' && draft.semanticCondition.trim()) return 'Remove the semantic condition before using a schedule';
   if (isWorkflowTrigger(draft.triggerType)) {
-    if (!draft.workflowId) return 'Choose a workflow';
+    if (!draft.workflowId) return 'Choose a task workflow';
     if (!draft.triggerStateId) return 'Choose the state that starts this flow';
   }
   if (isPushTrigger(draft.triggerType) && !draft.repoFullName.trim() && !draft.branch.trim()) {
@@ -1017,7 +1017,7 @@ function draftLogicRows(draft: FlowDraft, workflows: WorkflowWithStates[], state
   const conditions = compactList((() => {
     if (isWorkflowTrigger(draft.triggerType)) {
       const parts = [];
-      if (workflowName) parts.push(`workflow = ${workflowName}`);
+      if (workflowName) parts.push(`task workflow = ${workflowName}`);
       if (triggerStateName) parts.push(`state = ${triggerStateName}`);
       return parts;
     }
@@ -1425,7 +1425,7 @@ export function flowDetailsSections({
       rows: compactRows([
         { label: 'Trigger', value: triggerLabel(draft.triggerType) },
         draft.semanticCondition.trim() ? { label: 'Semantic condition', value: draft.semanticCondition.trim() } : null,
-        workflowName ? { label: 'Workflow', value: workflowName } : null,
+        workflowName ? { label: 'Task workflow', value: workflowName } : null,
         triggerStateName ? { label: 'State', value: triggerStateName } : null,
         draft.repoFullName.trim() ? { label: 'Repository', value: draft.repoFullName.trim() } : null,
         draft.branch.trim() ? { label: 'Branch', value: draft.branch.trim() } : null,
@@ -2177,7 +2177,7 @@ export function FlowComposer({
 
             {isWorkflowTrigger(draft.triggerType) && (
               <SentenceRow connector="if">
-                <PillGlue>workflow is</PillGlue>
+                <PillGlue>task workflow is</PillGlue>
                 <Select
                   value={draft.workflowId}
                   onValueChange={(value) => updateDraft((current) => ({
@@ -2188,7 +2188,7 @@ export function FlowComposer({
                   }))}
                 >
                   <SelectTrigger size="sm" className="min-w-[10rem]">
-                    <SelectValue placeholder="select workflow…" />
+                    <SelectValue placeholder="select task workflow…" />
                   </SelectTrigger>
                   <SelectContent>
                     {workflows.map((workflow) => (

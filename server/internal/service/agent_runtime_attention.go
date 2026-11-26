@@ -73,7 +73,7 @@ func (s *AgentRuntimeProjectionService) notifyRunActivity(ctx context.Context, r
 	}
 	subject := "Your agent run"
 	if ruleID != "" {
-		subject = "Your workflow run"
+		subject = "Your flow run"
 	}
 	status := run.Status
 	if kind == "agent_run.started" {

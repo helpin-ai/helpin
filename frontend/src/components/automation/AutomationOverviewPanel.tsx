@@ -85,7 +85,7 @@ const EXECUTION_STATUS_BADGE: Record<string, string> = {
 const SOURCE_OPTIONS = [
   { value: '__all__', label: 'All sources' },
   { value: 'manual', label: 'Manual' },
-  { value: 'automation_rule', label: 'Automation rule' },
+  { value: 'automation_rule', label: 'Flow' },
   { value: 'schedule', label: 'Schedule' },
   { value: 'support_widget', label: 'Support widget' },
   { value: 'task_assignment', label: 'Task assignment' },
@@ -177,10 +177,9 @@ interface TriggerGroupDef {
   filter: (item: AutomationTriggerCatalogEntry) => boolean;
 }
 
-const SUBGROUPS: SubgroupDef[] = [
+const BUILT_IN_SUBGROUPS: SubgroupDef[] = [
   { label: 'CRM system intelligence', filter: (i) => i.module === 'crm' && i.kind === 'built_in_automation' },
   { label: 'PM built-in rules', filter: (i) => i.module === 'pm' && i.kind === 'built_in_automation' },
-  { label: 'Automation rules', filter: (i) => i.kind === 'automation_rule' },
 ];
 
 const TRIGGER_GROUPS: TriggerGroupDef[] = [
@@ -661,13 +660,14 @@ export function AutomationOverviewPanel({
       }));
   }, [triggerCatalog]);
 
-  const subgroups = useMemo(() => {
-    return SUBGROUPS.map((sg) => ({
+  const builtInGroups = useMemo(() => {
+    return BUILT_IN_SUBGROUPS.map((sg) => ({
       ...sg,
       items: items.filter(sg.filter),
     })).filter((sg) => sg.items.length > 0);
   }, [items]);
 
+  const flows = items.filter((item) => item.kind === 'automation_rule');
   const executions = executionsQuery.data?.data ?? [];
   const executionTotal = executionsQuery.data?.total ?? 0;
   const executionPage = executionsQuery.data?.page ?? search.page;
@@ -741,7 +741,7 @@ export function AutomationOverviewPanel({
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            Workspace-wide trigger firing history for agents. Use filters to isolate noisy rules, GitHub webhooks, skipped launches, and failures.
+            Workspace-wide trigger firing history for agents. Use filters to isolate noisy flows, GitHub webhooks, skipped launches, and failures.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -883,7 +883,7 @@ export function AutomationOverviewPanel({
       </Card>
       )}
 
-      {showBuiltIns && subgroups.length > 0 && (
+      {showBuiltIns && builtInGroups.length > 0 && (
         <Card className={LINEAR_CARD_CLASS}>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -895,52 +895,39 @@ export function AutomationOverviewPanel({
             </div>
           </CardHeader>
           <CardContent className="space-y-4 px-0 pb-2">
-            {subgroups
-              .filter((sg) => sg.items.some((i) => i.kind === 'built_in_automation'))
-              .map((sg) => (
-                <div key={sg.label}>
-                  <div className="px-6 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {sg.label}
-                  </div>
-                  <div className="divide-y divide-border/50">
-                    {sg.items.map((item) => (
-                      <AutomationRow key={item.inventory_id} item={item} slug={slug} />
-                    ))}
-                  </div>
+            {builtInGroups.map((sg) => (
+              <div key={sg.label}>
+                <div className="px-6 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {sg.label}
                 </div>
-              ))}
+                <div className="divide-y divide-border/50">
+                  {sg.items.map((item) => (
+                    <AutomationRow key={item.inventory_id} item={item} slug={slug} />
+                  ))}
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
 
-      {showAutomationRules && subgroups.some((sg) => sg.items.some((i) => i.kind === 'automation_rule')) && (
+      {showAutomationRules && flows.length > 0 && (
         <Card className={LINEAR_CARD_CLASS}>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <BotIcon className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Automation Rules</CardTitle>
+              <CardTitle className="text-base">Flows</CardTitle>
               <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {items.filter((i) => i.kind === 'automation_rule').length}
+                {flows.length}
               </span>
             </div>
           </CardHeader>
           <CardContent className="px-0 pb-2">
-            {subgroups
-              .filter((sg) => sg.items.some((i) => i.kind === 'automation_rule'))
-              .map((sg) => (
-                <div key={sg.label}>
-                  <div className="px-6 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {sg.label}
-                  </div>
-                  <div className="divide-y divide-border/50">
-                    {sg.items
-                      .filter((i) => i.kind === 'automation_rule')
-                      .map((item) => (
-                        <AutomationRow key={item.inventory_id} item={item} slug={slug} />
-                      ))}
-                  </div>
-                </div>
+            <div className="divide-y divide-border/50">
+              {flows.map((item) => (
+                <AutomationRow key={item.inventory_id} item={item} slug={slug} />
               ))}
+            </div>
           </CardContent>
         </Card>
       )}

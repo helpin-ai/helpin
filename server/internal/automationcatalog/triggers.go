@@ -618,14 +618,14 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			bindingKind:      "automation_rule",
 			category:         "automation_rule",
 			triggerType:      model.TriggerCron,
-			title:            "Automation Rule Cron",
-			description:      "Runs a start-agent-run automation rule on a recurring schedule managed from Flows.",
-			sourceSurface:    "Rule engine backend",
+			title:            "Flow schedule",
+			description:      "Starts the agent selected in a flow on a recurring schedule.",
+			sourceSurface:    "Flow scheduler",
 			configSurface:    workflowsPath,
 			supportsAgentRun: true,
 			showRulesSearch: &model.WorkflowRuleSearchPreset{
 				ShowTrigger:      strPtr(model.TriggerCron),
-				ShowTriggerTitle: strPtr("Automation Rule Cron"),
+				ShowTriggerTitle: strPtr("Flow schedule"),
 			},
 		},
 	}

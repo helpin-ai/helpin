@@ -229,7 +229,7 @@
     },
     {
       "name": "assign_task_agent",
-      "description": "Deprecated. Task agent assignment was removed; use workflow automation rules or start a run explicitly with an agent.",
+      "description": "Deprecated. Task agent assignment was removed. Use a flow or start an agent run directly.",
       "category": "PM / Tasks",
       "input_schema": {
         "properties": {

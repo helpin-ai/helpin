@@ -2157,7 +2157,7 @@ func describeAutomationRuleTrigger(rule model.AutomationRule) string {
 		}
 		return "Runs on the automation-rule cron schedule."
 	default:
-		return "Runs from an automation rule."
+		return "Runs from a flow."
 	}
 }
 

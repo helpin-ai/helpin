@@ -460,7 +460,7 @@ function automationRunTitle(run: AgentRun): string {
   if (directTitle) return directTitle;
 
   const reason = asNonEmptyString(event?.reason);
-  const match = reason.match(/automation rule\s+"([^"]+)"/i);
+  const match = reason.match(/\b(?:flow|automation rule)\s+"([^"]+)"/i);
   if (match?.[1]?.trim()) return match[1].trim();
   return '';
 }

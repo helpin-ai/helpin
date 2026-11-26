@@ -29,9 +29,9 @@ export const MODULE_NOTIFICATION_SECTIONS: ModuleSection[] = [
     moduleRow('agents.activity', 'Run activity', 'Progress and outcomes of your agent runs'),
   ] },
   { module: 'automation', title: 'Automation', rows: [
-    moduleRow('automation.attention', 'Workflow requests', 'Workflow runs that need your input or approval. Assigned project tasks use your Projects assignment setting'),
-    moduleRow('automation.failures', 'Workflow failures', 'When a workflow you own stops and needs your attention'),
-    moduleRow('automation.activity', 'Workflow activity', 'Run starts and other progress updates for your workflows'),
+    moduleRow('automation.attention', 'Flow requests', 'Flow runs that need your input or approval. Assigned project tasks use your Projects assignment setting'),
+    moduleRow('automation.failures', 'Flow failures', 'When a flow you own stops and needs your attention'),
+    moduleRow('automation.activity', 'Flow activity', 'Run starts and other progress updates for your flows'),
   ] },
   { module: 'integrations', title: 'Integrations', rows: [
     { key: 'integrations', slackRow: 'integrations.connection', label: 'Connection issues', description: 'External tools that need you to reconnect' },
