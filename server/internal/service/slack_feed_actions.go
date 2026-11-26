@@ -80,7 +80,9 @@ func (s *SlackService) feedAction(ctx context.Context, v SlackAction, submit boo
 		p.Kind = v.Actions[0].ID
 		if p.Kind == "feed_more" {
 			p.Draft.Thread, p.Kind, _ = strings.Cut(v.Actions[0].Selected.Value, ":")
-			if !feedMenuAction(p.Kind) {
+			if p.Kind == "feed_reopen" {
+				p.Message = model.SupportConversationStatusResolved
+			} else if p.Kind != "feed_reply" && p.Kind != "feed_assign" && !feedMenuAction(p.Kind) {
 				return map[string]any{}, nil
 			}
 		} else {

@@ -858,12 +858,35 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	}
 	reactionError = "already_reacted"
 	setStatus("resolved")
+	resolvedUpdate := updates[len(updates)-1]
+	resolvedBlocks := resolvedUpdate["blocks"].([]any)
+	link := "https://helpin.example/w/ops-" + f.workspace[:8] + "/support/" + conv
+	if resolvedUpdate["ts"] != trow.RootTS || len(resolvedBlocks) != 1 || resolvedUpdate["text"] != "✅ Resolved · #88 · Checkout issue\n"+link {
+		t.Fatalf("expected compact summary on original thread: %+v", resolvedUpdate)
+	}
+	section := resolvedBlocks[0].(map[string]any)
+	if section["text"].(map[string]any)["text"] != "*✅ Resolved* · <"+link+"|#88> · Checkout issue" {
+		t.Fatalf("incorrect resolved card title: %+v", section["text"])
+	}
+	menu := section["accessory"].(map[string]any)
+	if menu["action_id"] != "feed_more" {
+		t.Fatalf("expected More menu: %+v", menu)
+	}
+	for _, action := range []string{"feed_reopen", "feed_reply", "feed_assign", "feed_move", "feed_priority", "feed_status"} {
+		if !strings.Contains(fmt.Sprint(menu["options"]), trow.ID+":"+action) {
+			t.Fatalf("compact card missing %s: %+v", action, resolvedBlocks)
+		}
+	}
 	deliver(nil)
 	if !slices.Equal(reactionCalls, []string{"/reactions.add"}) || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
 		t.Fatalf("resolve or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
 	}
 	reactionError = "no_reaction"
 	setStatus("open")
+	reopened := updates[len(updates)-1]
+	if reopened["ts"] != trow.RootTS || !strings.Contains(fmt.Sprint(reopened["blocks"]), "rich_text_quote") || !strings.Contains(fmt.Sprint(reopened["blocks"]), "feed_resolve") {
+		t.Fatalf("expected full card on the reopened thread: %+v", reopened)
+	}
 	deliver(nil)
 	if !slices.Equal(reactionCalls, []string{"/reactions.add", "/reactions.remove"}) || strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
 		t.Fatalf("reopen or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
@@ -894,7 +917,6 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	}
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", box.ID, conv)
 	deliver(nil)
-	link := "https://helpin.example/w/ops-" + f.workspace[:8] + "/support/" + conv
 	checkNotice := func(actor string) {
 		t.Helper()
 		update := updates[len(updates)-1]
@@ -1154,7 +1176,7 @@ func testSlackFeedTriage(t *testing.T, f *outboxFixture, conv, box string, threa
 	if !strings.Contains(fmt.Sprint(lastUpdate()["blocks"]), "feed_reopen") {
 		t.Fatalf("resolve failed: %+v", lastView())
 	}
-	click("feed_reopen", thread.ID+":resolved")
+	click("feed_more", "feed_reopen")
 	other := uuid.NewString()
 	mustExec(t, f.db, "INSERT INTO users(id,email,password_hash,full_name) VALUES(?,?,'x','Maya Chen')", other, other+"@example.com")
 	mustExec(t, f.db, "INSERT INTO workspace_members(id,workspace_id,user_id,role,status,email,display_name) VALUES(gen_random_uuid(),?,?,'admin','active',?,'Maya Chen')", f.workspace, other, other+"@example.com")

@@ -364,14 +364,40 @@ func feedOpenButton(threadID, link string) map[string]any {
 	return open
 }
 
-func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) error {
+var slackFeedTextEscapes = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+func (s *SlackService) renderFeedCard(ctx context.Context, f *feedContext) (string, []any, error) {
 	c, t := f.conv, f.thread
+	number := fmt.Sprintf("#%d", c.DisplayID)
+	subject := truncate(feedOneLine(c.Subject), 80)
+	if c.Status == model.SupportConversationStatusResolved {
+		summary := "✅ Resolved · " + number
+		label := "*✅ Resolved* · <" + f.conversationURL + "|" + number + ">"
+		if subject != "" {
+			summary += " · " + subject
+			label += " · " + slackFeedTextEscapes.Replace(subject)
+		}
+		options := []map[string]any{
+			feedOption("Reopen", t.ID+":feed_reopen"),
+			feedOption(f.replyLabel(), t.ID+":feed_reply"),
+			feedOption("Assign…", t.ID+":feed_assign"),
+		}
+		options = append(options, s.feedTriageOptions(f)...)
+		card := map[string]any{
+			"type":      "section",
+			"text":      map[string]any{"type": "mrkdwn", "text": label, "verbatim": true},
+			"accessory": map[string]any{"type": "static_select", "action_id": "feed_more", "placeholder": slackText("More"), "options": options},
+		}
+		return summary + "\n" + f.conversationURL, []any{card}, nil
+	}
+	title := "Conversation " + number
+	if subject != "" {
+		title = number + " · " + subject
+	}
 	status := "Open"
 	switch c.Status {
 	case model.SupportConversationStatusWaitingOnCustomer:
 		status = "Waiting on customer"
-	case model.SupportConversationStatusResolved:
-		status = "✅ Resolved"
 	case model.SupportConversationStatusSpam:
 		status = "Spam"
 	case model.SupportConversationStatusOpen:
@@ -389,15 +415,11 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	if c.AssignedUserID != nil {
 		u, err := s.channels.inbox.userRepo.GetByID(ctx, *c.AssignedUserID)
 		if err != nil {
-			return err
+			return "", nil, err
 		}
 		if u != nil {
 			owner = u.FullName
 		}
-	}
-	title := fmt.Sprintf("Conversation #%d", c.DisplayID)
-	if subject := feedOneLine(c.Subject); subject != "" {
-		title = fmt.Sprintf("#%d · %s", c.DisplayID, truncate(subject, 80))
 	}
 	customer := firstNonEmptyString(derefString(c.CustomerName), derefString(c.CustomerEmail), "Visitor")
 	mailbox := firstNonEmptyString(derefString(c.MailboxName), "Shared Inbox")
@@ -412,14 +434,14 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	metadata := []any{slackText(identity + " ·"), map[string]any{"type": "mrkdwn", "text": "*" + strings.Join(labels, "* · *") + "*", "verbatim": true}}
 	preview, attachment, err := s.repo.FeedPreview(ctx, c.WorkspaceID, c.ID)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	blocks := []any{feedRichText("rich_text_section", map[string]any{"type": "link", "url": f.conversationURL, "text": title, "style": map[string]bool{"bold": true}}), map[string]any{"type": "context", "elements": metadata}}
 	fallback := title + "\n" + identity + " · " + strings.Join(labels, " · ")
 	if preview != nil {
 		visible, rich, _, err := s.feedContent(ctx, f, preview)
 		if err != nil {
-			return err
+			return "", nil, err
 		}
 		if rich {
 			visible = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(visible))
@@ -441,9 +463,18 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	} else {
 		actions, err := s.feedCardActions(ctx, f, owner)
 		if err != nil {
-			return err
+			return "", nil, err
 		}
 		blocks = append(blocks, actions)
+	}
+	return fallback, blocks, nil
+}
+
+func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) error {
+	t := f.thread
+	fallback, blocks, err := s.renderFeedCard(ctx, f)
+	if err != nil {
+		return err
 	}
 	payload := map[string]any{"channel": f.channel, "text": fallback, "mrkdwn": false, "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
 	raw, err := json.Marshal(payload)
