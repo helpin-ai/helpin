@@ -196,7 +196,7 @@
 .hp3 .hs-canvas[data-mobile=true] .hs-messages{padding:16px 18px}
 .hp3 .hs-canvas[data-mobile=true] .hs-msg>div,.hp3 .hs-canvas[data-mobile=true] .hs-msg-in .hs-bubble{max-width:86%}
 .hp3 .hs-canvas[data-mobile=true] .hs-bubble{font-size:15px;line-height:23px}
-.hp3 .hs-canvas[data-mobile=true] .hs-toast{top:60px;right:14px;left:14px;width:auto}
+.hp3 .hs-canvas[data-mobile=true] .hs-toast{top:236px;right:14px;left:14px;width:auto}
 .hp3 .hs-canvas[data-mobile=true] .hs-ask{top:56px;left:12px;right:12px;bottom:12px;width:auto}
 .hp3 .hs-canvas[data-mobile=true] .hs-head>strong{font-size:14px}
 .hp3 .hs-canvas[data-mobile=true] .hs-tools>svg:nth-of-type(n+6),.hp3 .hs-canvas[data-mobile=true] .hs-tools>i,.hp3 .hs-canvas[data-mobile=true] .hs-tabs>span:nth-child(3),.hp3 .hs-canvas[data-mobile=true] .hs-send-wrap kbd{display:none}

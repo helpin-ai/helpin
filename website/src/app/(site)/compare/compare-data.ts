@@ -169,7 +169,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     summary: {
-      "title": "Choose the workflow you want after the first reply.",
+      "title": "Choose the workflow you want after the first reply",
       "lede": "Helpin brings the conversation, the fix and the customer follow-up together. Check any channel or mobile requirements before you move.",
       "competitor": [
         "Your support operation depends on phone, WhatsApp or social channels.",
@@ -184,7 +184,7 @@ export const COMPETITORS: Competitor[] = [
     },
     reasons: [
       {
-        "title": "No per-seat or per-resolution fees.",
+        "title": "No per-seat or per-resolution fees",
         "icon": "billing",
         "body": "Helpin charges per workspace with unlimited teammates and an included AI allowance. Invite support, engineering and sales without buying another seat. Extra AI usage is metered only if you enable it on a paid plan. There is no separate charge for each resolved conversation.",
         "helpinLane": [
@@ -194,7 +194,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the work behind the reply.",
+        "title": "Give agents the work behind the reply",
         "icon": "loop",
         "body": "A bug report can become a task with the customer’s conversation attached. Scribe plans, Forge writes and tests the code, and Lens reviews it. After the release is confirmed, configured automation can follow up with affected customers under your approval rules.",
         "helpinLane": [
@@ -205,7 +205,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep the guides current as you ship.",
+        "title": "Keep the guides current as you ship",
         "icon": "docs",
         "body": "Quill can update your help center and internal docs from released changes and unanswered questions. It can capture fresh screenshots and browser recordings too. Your team reviews and publishes the changes, so customers and agents have current instructions.",
         "helpinLane": [
@@ -215,7 +215,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Build agents around the way you work.",
+        "title": "Build agents around the way you work",
         "icon": "agents",
         "body": "Describe a job in plain language to build a custom agent or flow. Choose its tools, instructions, skills and approval rules. Agents can use connected services for account details, code and logs, so they can investigate before taking the next step.",
         "helpinLane": [
@@ -263,7 +263,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Channels",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Chat, email, phone, WhatsApp, SMS, social, Slack and more"
           },
           {
@@ -344,22 +344,22 @@ export const COMPETITORS: Competitor[] = [
     strengths: [
       {
         "icon": "channels",
-        "title": "Phone and social support.",
-        "body": "Intercom provides phone, WhatsApp and social channels. Helpin’s shared inbox supports web chat and email."
+        "title": "Phone and social support",
+        "body": "Intercom provides phone, WhatsApp and social channels. Helpin’s shared inbox supports web chat, email, Slack and Telegram."
       },
       {
         "icon": "mobile",
-        "title": "Chat inside native mobile apps.",
+        "title": "Chat inside native mobile apps",
         "body": "Intercom has iOS, Android and React Native SDKs. Helpin currently provides web SDKs."
       },
       {
         "icon": "enterprise",
-        "title": "Company sign-in and response policies.",
+        "title": "Company sign-in and response policies",
         "body": "Intercom Expert includes SSO and SLA policies. Helpin’s agent permissions and approvals serve a different purpose."
       },
       {
         "icon": "messaging",
-        "title": "In-app campaigns and tours.",
+        "title": "In-app campaigns and tours",
         "body": "Check Intercom’s add-ons if product tours, surveys and targeted outbound messages are central to your workflow."
       }
     ],
@@ -374,7 +374,7 @@ export const COMPETITORS: Competitor[] = [
       notes: ['Intercom’s channel usage (phone, SMS, WhatsApp) and add-ons such as Copilot and Proactive Support are not included.'],
     },
     switching: {
-      title: 'Moving from Intercom.',
+      title: 'Moving from Intercom',
       lede: 'Start with part of your support, then move the rest when you’re ready.',
       take: ['Past conversations, with replies, notes, and tags', 'Help Center articles and collections', 'Contacts and companies', 'Saved replies you want to keep'],
       setUp: SUPPORT_SETUP,
@@ -419,7 +419,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     closing: {
-      "title": "Solve the problem behind the conversation.",
+      "title": "Solve the problem behind the conversation",
       "description": "Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free."
     },
     video: { seconds: 39, summary: 'Intercom charges per seat plus $0.99 per AI outcome. Helpin charges one workspace price with AI usage included, and turns the answer into a task, a pull request and a follow-up.' },
@@ -498,7 +498,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     summary: {
-      "title": "Bring support and delivery into the same workflow.",
+      "title": "Bring support and delivery into the same workflow",
       "lede": "Helpin is built for work that crosses team boundaries. Review the specific phone and service policies your support operation needs.",
       "competitor": [
         "You need a native phone queue, phone menus or skills-based call routing.",
@@ -513,7 +513,7 @@ export const COMPETITORS: Competitor[] = [
     },
     reasons: [
       {
-        "title": "No per-seat or per-resolution fees.",
+        "title": "No per-seat or per-resolution fees",
         "icon": "billing",
         "body": "Helpin charges per workspace with unlimited teammates and an included AI allowance. Invite support, engineering and sales without buying another seat. Extra AI usage is metered only if you enable it on a paid plan. There is no separate charge for each resolved conversation.",
         "helpinLane": [
@@ -523,7 +523,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the work behind the reply.",
+        "title": "Give agents the work behind the reply",
         "icon": "loop",
         "body": "A bug report can become a task with the customer’s conversation attached. Scribe plans, Forge writes and tests the code, and Lens reviews it. After the release is confirmed, configured automation can follow up with affected customers under your approval rules.",
         "helpinLane": [
@@ -534,7 +534,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep the guides current as you ship.",
+        "title": "Keep the guides current as you ship",
         "icon": "docs",
         "body": "Quill can update your help center and internal docs from released changes and unanswered questions. It can capture fresh screenshots and browser recordings too. Your team reviews and publishes the changes, so customers and agents have current instructions.",
         "helpinLane": [
@@ -544,7 +544,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Build agents around the way you work.",
+        "title": "Build agents around the way you work",
         "icon": "agents",
         "body": "Describe a job in plain language to build a custom agent or flow. Choose its tools, instructions, skills and approval rules. Agents can use connected services for account details, code and logs, so they can investigate before taking the next step.",
         "helpinLane": [
@@ -592,7 +592,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Channels",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Email, messaging, chat, voice with IVR, social"
           },
           {
@@ -673,22 +673,22 @@ export const COMPETITORS: Competitor[] = [
     strengths: [
       {
         "icon": "channels",
-        "title": "Phone queues and routing.",
-        "body": "Zendesk provides a contact center with phone menus and skills-based routing. Helpin supports chat and email."
+        "title": "Phone queues and routing",
+        "body": "Zendesk provides a contact center with phone menus and skills-based routing. Helpin supports web chat, email, Slack and Telegram."
       },
       {
         "icon": "enterprise",
-        "title": "SAML and service policies.",
+        "title": "SAML and service policies",
         "body": "Check Zendesk’s company sign-in and SLA options if your organization requires them. Helpin does not currently offer those policies."
       },
       {
         "icon": "deploy",
-        "title": "A separate testing environment.",
+        "title": "A separate testing environment",
         "body": "Zendesk offers sandboxes on Enterprise. Check this requirement separately from the tool access and approval controls Helpin already provides."
       },
       {
         "icon": "mobile",
-        "title": "Native mobile support.",
+        "title": "Native mobile support",
         "body": "Zendesk offers mobile SDKs and marketplace apps. Check the specific integration or mobile SDK your product needs."
       }
     ],
@@ -705,7 +705,7 @@ export const COMPETITORS: Competitor[] = [
       ],
     },
     switching: {
-      title: 'Moving from Zendesk.',
+      title: 'Moving from Zendesk',
       lede: 'Start with part of your support, then move the rest when you’re ready.',
       take: ['Tickets and users (ask Zendesk to enable exports)', 'Organizations', 'Help center articles', 'Macros you want to keep as saved replies'],
       setUp: SUPPORT_SETUP,
@@ -754,7 +754,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     closing: {
-      "title": "Give your agents more than a ticket queue.",
+      "title": "Give your agents more than a ticket queue",
       "description": "Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free."
     },
     video: { seconds: 39, summary: 'The ticket says solved while the customer is still stuck. Helpin keeps one history from ticket to release, with CRM built in and one price for unlimited teammates.' },
@@ -825,7 +825,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     summary: {
-      "title": "Keep support simple as the work grows.",
+      "title": "Keep support simple as the work grows",
       "lede": "Helpin connects a fast inbox to agents, projects and sales. Check your messaging channels and history import needs when planning the move.",
       "competitor": [
         "You require WhatsApp, Instagram or SMS in the same inbox.",
@@ -840,7 +840,7 @@ export const COMPETITORS: Competitor[] = [
     },
     reasons: [
       {
-        "title": "No per-seat or per-resolution fees.",
+        "title": "No per-seat or per-resolution fees",
         "icon": "billing",
         "body": "Helpin charges per workspace with unlimited teammates and an included AI allowance. Invite support, engineering and sales without buying another seat. Extra AI usage is metered only if you enable it on a paid plan. There is no separate charge for each resolved conversation.",
         "helpinLane": [
@@ -850,7 +850,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the work behind the reply.",
+        "title": "Give agents the work behind the reply",
         "icon": "loop",
         "body": "A bug report can become a task with the customer’s conversation attached. Scribe plans, Forge writes and tests the code, and Lens reviews it. After the release is confirmed, configured automation can follow up with affected customers under your approval rules.",
         "helpinLane": [
@@ -861,7 +861,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep the guides current as you ship.",
+        "title": "Keep the guides current as you ship",
         "icon": "docs",
         "body": "Quill can update your help center and internal docs from released changes and unanswered questions. It can capture fresh screenshots and browser recordings too. Your team reviews and publishes the changes, so customers and agents have current instructions.",
         "helpinLane": [
@@ -871,7 +871,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Build agents around the way you work.",
+        "title": "Build agents around the way you work",
         "icon": "agents",
         "body": "Describe a job in plain language to build a custom agent or flow. Choose its tools, instructions, skills and approval rules. Agents can use connected services for account details, code and logs, so they can investigate before taking the next step.",
         "helpinLane": [
@@ -919,7 +919,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Channels",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Email, chat, WhatsApp, Instagram, Messenger, SMS"
           },
           {
@@ -994,22 +994,22 @@ export const COMPETITORS: Competitor[] = [
     strengths: [
       {
         "icon": "channels",
-        "title": "Social messaging.",
-        "body": "Help Scout supports messaging channels including WhatsApp and Instagram. Helpin supports chat and email."
+        "title": "Social messaging",
+        "body": "Help Scout supports messaging channels including WhatsApp and Instagram. Helpin supports web chat, email, Slack and Telegram."
       },
       {
         "icon": "import",
-        "title": "Historical conversations.",
+        "title": "Historical conversations",
         "body": "Help Scout provides conversation importers. Helpin can import Help Scout Docs articles, but not past conversations yet."
       },
       {
         "icon": "mobile",
-        "title": "Mobile chat SDKs.",
+        "title": "Mobile chat SDKs",
         "body": "Help Scout provides Beacon SDKs for iOS and Android. Helpin currently provides web SDKs."
       },
       {
         "icon": "billing",
-        "title": "A small free Cloud inbox.",
+        "title": "A small free Cloud inbox",
         "body": "Help Scout’s free plan covers up to five users and 100 contacts a month. Helpin offers a Cloud trial and a free self-hosted edition."
       }
     ],
@@ -1027,7 +1027,7 @@ export const COMPETITORS: Competitor[] = [
       ],
     },
     switching: {
-      title: 'Moving from Help Scout.',
+      title: 'Moving from Help Scout',
       lede: 'Bring your docs over today, and keep older conversations where they are.',
       take: ['Docs articles, imported directly into Helpin', 'Your customer list', 'Saved replies and tags you want to keep'],
       setUp: SUPPORT_SETUP,
@@ -1076,7 +1076,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     closing: {
-      "title": "Keep the inbox simple. Put agents to work.",
+      "title": "Keep the inbox simple. Put agents to work",
       "description": "Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free."
     },
     video: { seconds: 39, summary: 'Keep a calm inbox and connect what comes next: projects, CRM, meetings and AI agents on one customer history, with AI usage included in one workspace price.' },
@@ -1143,7 +1143,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     summary: {
-      "title": "Choose what you want to run, not just where it runs.",
+      "title": "Choose what you want to run, not just where it runs",
       "lede": "Helpin includes the agents and the wider workflow when you self-host. Compare the channels, license and deployment setup your team needs.",
       "competitor": [
         "You require WhatsApp, social messaging or native mobile support.",
@@ -1158,7 +1158,7 @@ export const COMPETITORS: Competitor[] = [
     },
     reasons: [
       {
-        "title": "Invite the whole team without seat fees.",
+        "title": "Invite the whole team without seat fees",
         "icon": "billing",
         "body": "Helpin charges per workspace with unlimited teammates and an included AI allowance. Invite support, engineering and sales without buying another seat. Extra AI usage is metered only if you enable it on a paid plan.",
         "helpinLane": [
@@ -1168,7 +1168,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the work behind the reply.",
+        "title": "Give agents the work behind the reply",
         "icon": "loop",
         "body": "A bug report can become a task with the customer’s conversation attached. Scribe plans, Forge writes and tests the code, and Lens reviews it. After the release is confirmed, configured automation can follow up with affected customers under your approval rules.",
         "helpinLane": [
@@ -1179,7 +1179,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep the guides current as you ship.",
+        "title": "Keep the guides current as you ship",
         "icon": "docs",
         "body": "Quill can update your help center and internal docs from released changes and unanswered questions. It can capture fresh screenshots and browser recordings too. Your team reviews and publishes the changes, so customers and agents have current instructions.",
         "helpinLane": [
@@ -1189,7 +1189,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Self-host your agents without an AI license.",
+        "title": "Self-host your agents without an AI license",
         "icon": "open",
         "body": "Helpin’s free Community edition includes agents for support, planning, coding, review, docs and sales. Build custom agents and flows with your own instructions and skills. You control the infrastructure and AI provider, and pay for their usage directly.",
         "helpinLane": [
@@ -1238,7 +1238,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Channels",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Chat, email, WhatsApp, social, Telegram, LINE, SMS, voice"
           },
           {
@@ -1315,22 +1315,22 @@ export const COMPETITORS: Competitor[] = [
     strengths: [
       {
         "icon": "channels",
-        "title": "Additional inbox channels.",
-        "body": "Chatwoot supports WhatsApp, social messaging, Telegram, LINE, SMS and voice. Helpin supports chat and email."
+        "title": "Additional inbox channels",
+        "body": "Chatwoot supports WhatsApp, social messaging, LINE, SMS and voice. Helpin supports web chat, email, Slack and Telegram."
       },
       {
         "icon": "deploy",
-        "title": "Deployment packages.",
+        "title": "Deployment packages",
         "body": "Chatwoot provides Docker, Kubernetes Helm charts and other deployment packages. Helpin documents self-hosting with Docker Compose."
       },
       {
         "icon": "mobile",
-        "title": "Native mobile clients.",
+        "title": "Native mobile clients",
         "body": "Chatwoot offers iOS and Android apps and mobile widget SDKs. Helpin currently provides web access and web SDKs."
       },
       {
         "icon": "open",
-        "title": "License requirements.",
+        "title": "License requirements",
         "body": "Chatwoot’s core uses MIT with separate paid enterprise features. Helpin uses AGPL-3.0 for its product features, including agents."
       }
     ],
@@ -1351,7 +1351,7 @@ export const COMPETITORS: Competitor[] = [
       },
     },
     switching: {
-      title: 'Moving from Chatwoot.',
+      title: 'Moving from Chatwoot',
       lede: 'Start with part of your support, then move the rest when you’re ready.',
       take: ['Contacts and conversations, through the Chatwoot API', 'Help center articles', 'Saved replies you want to keep'],
       setUp: SUPPORT_SETUP,
@@ -1376,7 +1376,7 @@ export const COMPETITORS: Competitor[] = [
       ],
       [
         "Does Helpin support WhatsApp?",
-        "Not today. Helpin supports web chat and email. If WhatsApp or social channels are essential, Chatwoot covers them."
+        "Not today. Helpin supports web chat, email, Slack and Telegram. If WhatsApp or social channels are essential, Chatwoot covers them."
       ],
       [
         "Can we run Helpin alongside Chatwoot?",
@@ -1396,7 +1396,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     closing: {
-      "title": "Self-host the agents that move work forward.",
+      "title": "Self-host the agents that move work forward",
       "description": "Self-host the Community edition for free, or start a 14-day trial of Helpin Cloud with no card."
     },
     video: { seconds: 37, summary: 'Both are open source. Chatwoot’s AI agent needs a paid plan even when self-hosted; Helpin’s free Community edition includes AI agents, projects and CRM.' },
@@ -1467,7 +1467,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     "summary": {
-      "title": "Give agents the customer request and the work behind it.",
+      "title": "Give agents the customer request and the work behind it",
       "lede": "Helpin connects the support conversation to the people and agents who can act on it. Check the channels and integrations you need before moving.",
       "helpin": [
         "You want AI agents to investigate a report, write code and prepare it for review.",
@@ -1482,7 +1482,7 @@ export const COMPETITORS: Competitor[] = [
     },
     "reasons": [
       {
-        "title": "Give agents the work after the answer.",
+        "title": "Give agents the work after the answer",
         "icon": "loop",
         "body": "A customer report can become a task with the conversation attached. Scribe plans, Forge writes and tests the code, and Lens reviews it. Your team can follow the investigation and approve the change without rebuilding the customer’s story in another tool.",
         "helpinLane": [
@@ -1493,7 +1493,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep the source of the answer current.",
+        "title": "Keep the source of the answer current",
         "icon": "docs",
         "body": "Quill can update your help center and internal docs from released changes and unanswered questions. It can capture screenshots and browser recordings of the current product too. Your team reviews and publishes the updates, so customers and agents have instructions they can use.",
         "helpinLane": [
@@ -1503,7 +1503,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Bring the whole team into the workspace.",
+        "title": "Bring the whole team into the workspace",
         "icon": "team",
         "body": "Chatbase’s published plans include a set number of members. Helpin includes unlimited teammates, so support, developers and sales can share the context and review agent work. Every Cloud plan includes an AI allowance, with extra usage metered only when you enable it.",
         "helpinLane": [
@@ -1514,7 +1514,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Build agents for more of your business.",
+        "title": "Build agents for more of your business",
         "icon": "agents",
         "body": "Describe the job to build a custom agent or flow. Choose its tools, skills and approval rules, and connect external AI tools through MCP. Helpin’s free self-hosted edition includes these agent capabilities, with your choice of infrastructure and AI provider.",
         "helpinLane": [
@@ -1562,7 +1562,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Channels",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Website, email, social channels and voice"
           },
           {
@@ -1640,27 +1640,27 @@ export const COMPETITORS: Competitor[] = [
     "strengths": [
       {
         "icon": "channels",
-        "title": "Voice and social channels.",
-        "body": "Chatbase supports voice, telephony and messaging channels. Helpin’s shared inbox currently supports web chat and email."
+        "title": "Voice and social channels",
+        "body": "Chatbase supports voice, telephony and messaging channels. Helpin’s shared inbox currently supports web chat, email, Slack and Telegram."
       },
       {
         "icon": "mobile",
-        "title": "Native mobile SDKs.",
+        "title": "Native mobile SDKs",
         "body": "Chatbase publishes Android and iOS SDKs. Helpin currently provides web SDKs; check the mobile experience your product needs."
       },
       {
         "icon": "ecosystem",
-        "title": "An existing helpdesk setup.",
+        "title": "An existing helpdesk setup",
         "body": "Chatbase connects to helpdesks such as Zendesk and Salesforce. Review any specific integration your team relies on when planning a move."
       },
       {
         "icon": "enterprise",
-        "title": "Company access requirements.",
+        "title": "Company access requirements",
         "body": "Chatbase lists SSO and audit logs on Enterprise. Check the exact identity setup you need; Helpin does not currently provide SAML sign-in."
       }
     ],
     "switching": {
-      "title": "Move one real workflow into Helpin.",
+      "title": "Move one real workflow into Helpin",
       "lede": "Start with a support address or a few product pages, then compare the whole path from question to completed work.",
       "take": [
         "Your source articles, files and customer FAQs",
@@ -1730,7 +1730,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     "closing": {
-      "title": "Turn the customer’s question into completed work.",
+      "title": "Turn the customer’s question into completed work",
       "description": "Try Helpin Cloud for 14 days with no card, or self-host the open-source edition with your own AI provider."
     },
     "video": {
@@ -1806,7 +1806,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     "summary": {
-      "title": "Keep the inbox connected to the work that follows.",
+      "title": "Keep the inbox connected to the work that follows",
       "lede": "Helpin brings product delivery, sales and current docs into the same workspace as support. Check the channels and customer-facing tools you depend on.",
       "helpin": [
         "You want agents to investigate customer reports and prepare fixes for review.",
@@ -1821,7 +1821,7 @@ export const COMPETITORS: Competitor[] = [
     },
     "reasons": [
       {
-        "title": "Carry the conversation through to the fix.",
+        "title": "Carry the conversation through to the fix",
         "icon": "loop",
         "body": "A bug report should reach the agents and people who can solve it. In Helpin, the conversation can become a task with the relevant context attached. Planning, coding and review agents can take on the work while your team follows the progress and approves the change.",
         "helpinLane": [
@@ -1832,7 +1832,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Bring everyone in without counting seats.",
+        "title": "Bring everyone in without counting seats",
         "icon": "team",
         "body": "Crisp already charges per workspace, with seats included by plan. Helpin includes unlimited teammates on every plan. Support, developers and sales can all review the same history, and AI agents can act across the connected work.",
         "helpinLane": [
@@ -1843,7 +1843,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep customers and agents on current instructions.",
+        "title": "Keep customers and agents on current instructions",
         "icon": "docs",
         "body": "Quill can prepare updates for your help center and internal docs when the product changes or support reveals a missing answer. Fresh screenshots and browser recordings show the current steps. Your team reviews and publishes the changes.",
         "helpinLane": [
@@ -1853,7 +1853,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the whole account context.",
+        "title": "Give agents the whole account context",
         "icon": "crm",
         "body": "Deals, conversations and recorded meetings sit beside the work customers are waiting for. Beacon can identify buying intent and carry out approved follow-ups. Custom agents and flows can use the same context, with the tools, skills and permissions you choose.",
         "helpinLane": [
@@ -1907,7 +1907,7 @@ export const COMPETITORS: Competitor[] = [
           },
           {
             "label": "Additional channels",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "WhatsApp, social messaging, SMS and phone connections"
           },
           {
@@ -1981,27 +1981,27 @@ export const COMPETITORS: Competitor[] = [
     "strengths": [
       {
         "icon": "channels",
-        "title": "Messaging and phone channels.",
-        "body": "Crisp connects WhatsApp, social messaging, SMS and phone tools. Helpin’s shared inbox currently supports web chat and email."
+        "title": "Messaging and phone channels",
+        "body": "Crisp connects WhatsApp, social messaging, SMS and phone tools. Helpin’s shared inbox currently supports web chat, email, Slack and Telegram."
       },
       {
         "icon": "mobile",
-        "title": "Native mobile support.",
+        "title": "Native mobile support",
         "body": "Crisp provides mobile apps for teammates and native chat SDKs. Helpin currently provides a web workspace and web SDKs."
       },
       {
         "icon": "requests",
-        "title": "A customer ticket portal.",
+        "title": "A customer ticket portal",
         "body": "Crisp Plus includes a portal where customers can open and follow tickets. Check whether this is part of the support experience you need."
       },
       {
         "icon": "ecosystem",
-        "title": "Existing integrations.",
+        "title": "Existing integrations",
         "body": "Review any Crisp connection your team depends on, such as an ecommerce platform or a phone provider, before moving that workflow."
       }
     ],
     "switching": {
-      "title": "Start with one inbox and a real customer issue.",
+      "title": "Start with one inbox and a real customer issue",
       "lede": "Move a small part of support first, then try the connected agent workflow with your team.",
       "take": [
         "Help articles, saved replies and workflow instructions",
@@ -2051,7 +2051,7 @@ export const COMPETITORS: Competitor[] = [
       ],
       [
         "Can Helpin replace every Crisp channel?",
-        "Helpin currently handles web chat and email. If you use WhatsApp, social messaging or phone integrations in Crisp, plan how those channels will be handled before moving."
+        "Helpin currently handles web chat, email, Slack and Telegram. If you use WhatsApp, social messaging or phone integrations in Crisp, plan how those channels will be handled before moving."
       ],
       [
         "Can Helpin import my Crisp conversations?",
@@ -2075,7 +2075,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     "closing": {
-      "title": "Put agents to work across the whole customer story.",
+      "title": "Put agents to work across the whole customer story",
       "description": "Try Helpin Cloud for 14 days with no card, or self-host the open-source edition with your own AI provider."
     },
     "video": {
@@ -2151,7 +2151,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     summary: {
-      "title": "Keep the speed. Bring the customer into the workflow.",
+      "title": "Keep the speed. Bring the customer into the workflow",
       "lede": "Helpin combines structured planning and agent delivery with support and sales. Check any specific Linear integration your team depends on.",
       "competitor": [
         "Your team needs Linear’s native mobile apps or a specific existing integration.",
@@ -2166,7 +2166,7 @@ export const COMPETITORS: Competitor[] = [
     },
     reasons: [
       {
-        "title": "Invite the whole team without seat fees.",
+        "title": "Invite the whole team without seat fees",
         "icon": "billing",
         "body": "Helpin charges per workspace with unlimited teammates and an included AI allowance. Invite support, engineering and sales without buying another seat. Extra AI usage is metered only if you enable it on a paid plan.",
         "helpinLane": [
@@ -2176,7 +2176,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the context to build the right thing.",
+        "title": "Give agents the context to build the right thing",
         "icon": "loop",
         "body": "A task can carry the original conversation, account history and linked docs. Planning and coding agents can use that context, plus your repository and connected tools, to investigate and prepare a fix. Your team sees the work and reviews the change.",
         "helpinLane": [
@@ -2187,7 +2187,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep the guides current as you ship.",
+        "title": "Keep the guides current as you ship",
         "icon": "docs",
         "body": "Quill can update your help center and internal docs from released changes and unanswered questions. It can capture fresh screenshots and browser recordings too. Your team reviews and publishes the changes, so customers and agents have current instructions.",
         "helpinLane": [
@@ -2197,7 +2197,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Build agents around the way you work.",
+        "title": "Build agents around the way you work",
         "icon": "agents",
         "body": "Use built-in planning, coding and review agents, or build a custom agent in plain language. Connect Claude Code, Codex, Cursor, Hermes and other compatible tools through MCP. Helpin’s agents can also use external systems with the permissions you allow.",
         "helpinLane": [
@@ -2283,7 +2283,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Support inbox and live chat",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Integrations with Intercom and Zendesk on Business",
             "helpinStatus": "yes",
             "competitorStatus": "partial"
@@ -2320,22 +2320,22 @@ export const COMPETITORS: Competitor[] = [
     strengths: [
       {
         "icon": "mobile",
-        "title": "Native mobile apps.",
+        "title": "Native mobile apps",
         "body": "Linear offers native iOS and Android apps. Helpin currently provides a web workspace."
       },
       {
         "icon": "enterprise",
-        "title": "Company single sign-on.",
+        "title": "Company single sign-on",
         "body": "Linear offers SAML on Enterprise. Helpin does not currently provide SAML sign-in."
       },
       {
         "icon": "import",
-        "title": "Historical issue imports.",
+        "title": "Historical issue imports",
         "body": "Linear provides importers for several trackers. Helpin imports Shortcut projects today; a Linear importer is not available yet."
       },
       {
         "icon": "ecosystem",
-        "title": "Existing team integrations.",
+        "title": "Existing team integrations",
         "body": "Check the exact Linear apps your team uses. Helpin connects to GitHub, GitLab and external tools through supported integrations and MCP."
       }
     ],
@@ -2352,7 +2352,7 @@ export const COMPETITORS: Competitor[] = [
       ],
     },
     switching: {
-      title: 'Moving from Linear.',
+      title: 'Moving from Linear',
       lede: 'Start with one project or support inbox, then move more work when your team is ready.',
       take: ['Issues, as CSV or through the API', 'Projects and cycles you want to plan in Helpin', 'Specs and docs'],
       setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Linear connection for agents, through MCP'],
@@ -2401,7 +2401,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     closing: {
-      "title": "Give your agents the customer context and the work.",
+      "title": "Give your agents the customer context and the work",
       "description": "Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free."
     },
     video: { seconds: 35, summary: 'Linear links customer requests from your support tool. Helpin keeps the customer attached to the task, from the support inbox to the pull request and the follow-up.' },
@@ -2449,7 +2449,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     summary: {
-      "title": "Bring planning and customer work together.",
+      "title": "Bring planning and customer work together",
       "lede": "Helpin combines project structure with agents that work across the business. Check your deployment, identity and migration requirements separately.",
       "competitor": [
         "You require a packaged Kubernetes or air-gapped Enterprise deployment.",
@@ -2464,7 +2464,7 @@ export const COMPETITORS: Competitor[] = [
     },
     reasons: [
       {
-        "title": "Invite the whole team without seat fees.",
+        "title": "Invite the whole team without seat fees",
         "icon": "billing",
         "body": "Helpin charges per workspace with unlimited teammates and an included AI allowance. Invite support, engineering and sales without buying another seat. Extra AI usage is metered only if you enable it on a paid plan.",
         "helpinLane": [
@@ -2474,7 +2474,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the context to build the right thing.",
+        "title": "Give agents the context to build the right thing",
         "icon": "loop",
         "body": "A task can carry the original conversation, account history and linked docs. Planning and coding agents can use that context, plus your repository and connected tools, to investigate and prepare a fix. Your team sees the work and reviews the change.",
         "helpinLane": [
@@ -2485,7 +2485,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep the guides current as you ship.",
+        "title": "Keep the guides current as you ship",
         "icon": "docs",
         "body": "Quill can update your help center and internal docs from released changes and unanswered questions. It can capture fresh screenshots and browser recordings too. Your team reviews and publishes the changes, so customers and agents have current instructions.",
         "helpinLane": [
@@ -2495,7 +2495,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Self-host your agents without an AI license.",
+        "title": "Self-host your agents without an AI license",
         "icon": "open",
         "body": "Helpin’s free Community edition includes agents for support, planning, coding, review, docs and sales. Build custom agents and flows with your own instructions and skills. You control the infrastructure and AI provider, and pay for their usage directly.",
         "helpinLane": [
@@ -2586,7 +2586,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Support inbox and live chat",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Help desk coming soon",
             "helpinStatus": "yes",
             "competitorStatus": "no"
@@ -2631,22 +2631,22 @@ export const COMPETITORS: Competitor[] = [
     strengths: [
       {
         "icon": "deploy",
-        "title": "Deployment requirements.",
+        "title": "Deployment requirements",
         "body": "Plane provides Kubernetes and an air-gapped Enterprise edition. Helpin’s documented setup uses Docker Compose."
       },
       {
         "icon": "enterprise",
-        "title": "Identity requirements.",
+        "title": "Identity requirements",
         "body": "Plane offers SAML and other company sign-in options on paid plans. Helpin does not currently provide SAML."
       },
       {
         "icon": "mobile",
-        "title": "Native apps.",
+        "title": "Native apps",
         "body": "Plane provides mobile and desktop apps. Helpin currently provides a web workspace."
       },
       {
         "icon": "import",
-        "title": "Historical work imports.",
+        "title": "Historical work imports",
         "body": "Plane imports from several project tools. Helpin imports Shortcut projects today, but does not have a Plane importer yet."
       }
     ],
@@ -2677,7 +2677,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     },
     switching: {
-      title: 'Moving from Plane.',
+      title: 'Moving from Plane',
       lede: 'Start with one project or support inbox, then move more work when your team is ready.',
       take: ['Work items, as CSV, Excel or JSON', 'Pages you want to keep as docs', 'Cycles and modules you want to plan in Helpin'],
       setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Plane connection for agents, through MCP'],
@@ -2726,7 +2726,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     closing: {
-      "title": "Put your agents where the customer and the work are.",
+      "title": "Put your agents where the customer and the work are",
       "description": "Self-host the Community edition for free, or start a 14-day trial of Helpin Cloud with no card."
     },
     video: { seconds: 38, summary: 'Both are open source. Customer requests fly in from email and chat and miss a tracker that starts at the work item; in Helpin every request lands in one inbox, becomes a task with the customer attached, and the reply flies back.' },
@@ -2829,7 +2829,7 @@ export const COMPETITORS: Competitor[] = [
       }
     ],
     summary: {
-      "title": "Spend more of the day moving work forward.",
+      "title": "Spend more of the day moving work forward",
       "lede": "Helpin brings structured planning and AI delivery into the same workspace as your customers. Check the exact Atlassian features your organization needs.",
       "competitor": [
         "You require Jira’s multi-site administration, capacity planning or sandboxes.",
@@ -2844,7 +2844,7 @@ export const COMPETITORS: Competitor[] = [
     },
     reasons: [
       {
-        "title": "Invite the whole team without seat fees.",
+        "title": "Invite the whole team without seat fees",
         "icon": "billing",
         "body": "Helpin charges per workspace with unlimited teammates and an included AI allowance. Invite support, engineering and sales without buying another seat. Extra AI usage is metered only if you enable it on a paid plan.",
         "helpinLane": [
@@ -2854,7 +2854,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Give agents the context to build the right thing.",
+        "title": "Give agents the context to build the right thing",
         "icon": "loop",
         "body": "A task can carry the original conversation, account history and linked docs. Planning and coding agents can use that context, plus your repository and connected tools, to investigate and prepare a fix. Your team sees the work and reviews the change.",
         "helpinLane": [
@@ -2865,7 +2865,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Keep docs and customer follow-ups moving.",
+        "title": "Keep docs and customer follow-ups moving",
         "icon": "docs",
         "body": "Quill can update internal guides and your help center after product changes, including fresh UI captures. Once a release is confirmed, configured automation can notify affected customers under your approval rules. The task, guide and conversation stay connected.",
         "helpinLane": [
@@ -2875,7 +2875,7 @@ export const COMPETITORS: Competitor[] = [
         ]
       },
       {
-        "title": "Build agents around the way you work.",
+        "title": "Build agents around the way you work",
         "icon": "agents",
         "body": "Describe a job in plain language to build a custom agent or flow. Choose its tools, instructions, skills and approval rules. Agents can use connected services for account details, code and logs, so they can investigate before taking the next step.",
         "helpinLane": [
@@ -2960,7 +2960,7 @@ export const COMPETITORS: Competitor[] = [
         "rows": [
           {
             "label": "Support inbox and live chat",
-            "helpin": "Web chat and email",
+            "helpin": "Web chat, email, Slack and Telegram",
             "competitor": "Service Collection, priced per agent",
             "helpinStatus": "yes",
             "competitorStatus": "partial"
@@ -2998,22 +2998,22 @@ export const COMPETITORS: Competitor[] = [
     strengths: [
       {
         "icon": "enterprise",
-        "title": "Large program requirements.",
+        "title": "Large program requirements",
         "body": "Jira Premium includes capacity planning and sandboxes; Enterprise supports multiple sites. Check these specific needs against your workflow."
       },
       {
         "icon": "ecosystem",
-        "title": "Atlassian-specific apps.",
+        "title": "Atlassian-specific apps",
         "body": "Review any Marketplace apps, Confluence or Bitbucket workflows your organization depends on. Helpin’s agents can use connected tools through MCP."
       },
       {
         "icon": "mobile",
-        "title": "Native mobile apps.",
+        "title": "Native mobile apps",
         "body": "Jira offers native iOS and Android apps. Helpin currently provides a web workspace."
       },
       {
         "icon": "import",
-        "title": "Historical issue migration.",
+        "title": "Historical issue migration",
         "body": "Jira provides import tools for several products. Helpin does not have a Jira importer yet; MCP lets agents use Jira while you run both."
       }
     ],
@@ -3058,7 +3058,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     },
     switching: {
-      title: 'Moving from Jira.',
+      title: 'Moving from Jira',
       lede: 'Start with one project or support inbox, then move more work when your team is ready.',
       take: ['Work items, as CSV, Excel or XML', 'Projects and sprints you want to plan in Helpin', 'Confluence pages you want to keep as docs'],
       setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Jira connection for agents, through MCP'],
@@ -3107,7 +3107,7 @@ export const COMPETITORS: Competitor[] = [
       ]
     ],
     closing: {
-      "title": "Give agents the work. Keep your team in control.",
+      "title": "Give agents the work. Keep your team in control",
       "description": "Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free."
     },
     video: { seconds: 37, summary: 'A customer’s request sinks into the backlog while support, feedback and meeting notes live in separate Atlassian products. Helpin brings it back up with the customer attached, from the task to the pull request and the reply.' },

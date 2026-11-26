@@ -9,19 +9,19 @@ import './support-inbox-features.css';
 const FEATURES = [
   {
     id: 'translate', label: 'Live Translate', icon: Languages,
-    title: 'Reply without a language barrier.',
+    title: 'Reply without a language barrier',
     copy: 'Read new messages in your language and write replies in yours. Helpin AI translates them for the customer, with the original always available.',
     description: 'A Spanish customer message is translated into English. A teammate writes in English, and Helpin sends the reply in Spanish.',
   },
   {
     id: 'routing', label: 'Routing and assignment', icon: Route,
-    title: 'Make ownership clear.',
+    title: 'Make ownership clear',
     copy: 'Route requests to team inboxes with rules or AI triage, then assign them manually or through round-robin assignment.',
     description: 'An invoice request matches a routing rule. The route leads to the Billing inbox, where round-robin assignment selects Sam Rivera.',
   },
   {
     id: 'organize', label: 'Tags and saved views', icon: ListFilter,
-    title: 'Focus on what needs attention.',
+    title: 'Focus on what needs attention',
     copy: 'Combine tags and filters into personal or shared views.',
     description: 'A CSV export request receives Bug and Exports tags. A saved view filters open export issues, keeping two matching requests and filtering out an unrelated billing question.',
   },

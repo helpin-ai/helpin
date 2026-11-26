@@ -47,6 +47,10 @@ export function WebsiteForm({ defaultWebsite, onSubmit }: {
           placeholder="acme.com"
           inputMode="url"
           autoComplete="url"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="go"
           autoFocus
           aria-invalid={Boolean(error)}
           aria-describedby={`${id}-hint ${id}-error`}

@@ -5,12 +5,12 @@ import { useBentoPlayback } from './useBentoPlayback';
 import './hero-headline.css';
 
 const phrases = [
-  'answer your customers.',
-  'keep help docs up to date.',
-  'follow up with customers.',
-  'hand over with the findings.',
-  'turn bug reports into fixes.',
-  'tell customers when it ships.',
+  'answer your customers',
+  'keep help docs up to date',
+  'follow up with customers',
+  'hand over with the findings',
+  'turn bug reports into fixes',
+  'tell customers when it ships',
 ];
 
 export function HeroHeadline() {
