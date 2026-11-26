@@ -1,3 +1,4 @@
+import { FollowButton } from '@/components/notifications/FollowButton'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -1498,6 +1499,7 @@ export function DocsDocumentDetail({
               </div>
             ) : null}
             <div className="order-first flex items-center gap-1.5 sm:order-none sm:gap-3">
+              <FollowButton entityType="doc" entityId={doc.id} presentation="detail-header" />
               {canPreviewArticle ? (
                 <QuietDetailAction
                   icon={<ViewIcon className="h-3.5 w-3.5" />}

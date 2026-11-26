@@ -16,6 +16,7 @@ import (
 
 // CRMCompanyService contains CRM company business logic.
 type CRMCompanyService struct {
+	notifications  *NotificationService
 	companyRepo    *repository.CRMCompanyRepository
 	behavior       *repository.CRMBehaviorProfileRepository
 	timelineRepo   *repository.CRMCompanyTimelineRepository
@@ -25,6 +26,11 @@ type CRMCompanyService struct {
 	}
 	productAnalyticsEmitter
 	customFields *CustomFieldService
+}
+
+func (s *CRMCompanyService) SetNotificationService(notifications *NotificationService) *CRMCompanyService {
+	s.notifications = notifications
+	return s
 }
 
 // SetCustomFieldService lets filters and edits use field definitions.
@@ -270,6 +276,13 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 	})
 	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
 	s.refreshCompanySignalMotions(ctx, company.WorkspaceID, company.ID)
+	s.notifications.notifyCRMOwners(ctx, model.NotificationEventInput{
+		WorkspaceID: company.WorkspaceID,
+		EntityType:  "crm_company",
+		EntityID:    company.ID,
+		EventType:   "crm.assigned",
+		Title:       "You were assigned company " + company.Name,
+	}, nil, []*string{company.OwnerMemberID, company.CustomerSuccessOwnerMemberID})
 	return company, nil
 }
 
@@ -317,6 +330,7 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	if req.Headquarters != nil {
 		company.Headquarters = req.Headquarters
 	}
+	previousOwners := []*string{company.OwnerMemberID, company.CustomerSuccessOwnerMemberID}
 	if req.ClearOwner {
 		company.OwnerMemberID = nil
 	} else if req.OwnerMemberID != nil {
@@ -336,6 +350,13 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	}
 	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
 	s.refreshCompanySignalMotions(ctx, company.WorkspaceID, company.ID)
+	s.notifications.notifyCRMOwners(ctx, model.NotificationEventInput{
+		WorkspaceID: company.WorkspaceID,
+		EntityType:  "crm_company",
+		EntityID:    company.ID,
+		EventType:   "crm.assigned",
+		Title:       "You were assigned company " + company.Name,
+	}, previousOwners, []*string{company.OwnerMemberID, company.CustomerSuccessOwnerMemberID})
 	return company, nil
 }
 

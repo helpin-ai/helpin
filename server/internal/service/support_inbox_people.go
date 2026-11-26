@@ -177,6 +177,7 @@ func selectSupportReplyAlertRecipient(
 	presence websocket.PresenceProvider,
 	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
 	responderDirectory *SupportResponderDirectory,
+	notifications *NotificationService,
 	conv *model.SupportConversation,
 	eventType string,
 	now time.Time,
@@ -222,6 +223,12 @@ func selectSupportReplyAlertRecipient(
 	}
 
 	input := supportRecipientSelectorInput{WorkspaceID: conv.WorkspaceID, EventType: eventType, Channel: "any", RequirePreferences: true, Now: now}
+	if notifications != nil && notifications.slackRepo != nil {
+		input.slackReplyEnabled = func(userID, teamID string) (bool, error) {
+			dest, err := notifications.slackDestination(ctx, userID, model.NotificationEventInput{WorkspaceID: conv.WorkspaceID, EventType: eventType, EntityType: "support_conversation", EntityID: conv.ID, TeamID: teamID})
+			return dest != nil, err
+		}
+	}
 	for _, owner := range owners {
 		if userID := strings.TrimSpace(owner.userIDs[0]); userID == "" || !people.allows(userID) {
 			continue

@@ -13,12 +13,18 @@ import (
 
 // CRMActivityService contains CRM activity business logic.
 type CRMActivityService struct {
+	notifications  *NotificationService
 	activityRepo   *repository.CRMActivityRepository
 	summaryRefresh CompanySummaryRefreshRequester
 	signalStarter  interface {
 		StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
 	}
 	signalRepo *repository.CRMSignalRepository
+}
+
+func (s *CRMActivityService) SetNotificationService(notifications *NotificationService) *CRMActivityService {
+	s.notifications = notifications
+	return s
 }
 
 // SetCompanySummaryRefresh enables account-summary invalidation after activity changes.
@@ -94,6 +100,7 @@ func (s *CRMActivityService) Create(ctx context.Context, req model.CreateCRMActi
 	}
 	s.requestCompanySummaryRefresh(ctx, activity)
 	s.enqueueSignalDetection(ctx, activity)
+	s.notifications.notifyCRMNoteMentions(ctx, activity, "")
 	return activity, nil
 }
 
@@ -109,6 +116,7 @@ func (s *CRMActivityService) Update(ctx context.Context, id string, req model.Up
 	if activity.Metadata != nil && activity.Metadata["immutable"] == true {
 		return nil, fmt.Errorf("system activity is immutable")
 	}
+	previousBody := derefString(activity.Body)
 	previousSourceType := crmActivitySignalSourceType(activity.ActivityType)
 
 	if req.ActivityType != nil {
@@ -149,6 +157,7 @@ func (s *CRMActivityService) Update(ctx context.Context, id string, req model.Up
 	}
 	s.requestCompanySummaryRefresh(ctx, activity)
 	s.enqueueSignalDetection(ctx, activity)
+	s.notifications.notifyCRMNoteMentions(ctx, activity, previousBody)
 	return activity, nil
 }
 

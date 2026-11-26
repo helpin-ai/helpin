@@ -41,16 +41,50 @@ func SlackSource(ctx context.Context) (string, bool) {
 
 // SlackNotificationPreferences belong to the linked member of one installation.
 type SlackNotificationPreferences struct {
-	AccountID   string `json:"-"`
-	SlackUser   string `json:"-"`
-	TeamID      string `json:"team_id,omitempty"`
-	BotUserID   string `json:"bot_user_id,omitempty"`
-	Linked      bool   `json:"linked"`
-	Assignments bool   `json:"assignments"`
-	Mentions    bool   `json:"mentions"`
+	Overrides   JSONB           `json:"-" gorm:"column:notify_categories;type:jsonb"`
+	Categories  map[string]bool `json:"categories,omitempty" gorm:"-"`
+	AccountID   string          `json:"-"`
+	SlackUser   string          `json:"-"`
+	TeamID      string          `json:"team_id,omitempty"`
+	BotUserID   string          `json:"bot_user_id,omitempty"`
+	Linked      bool            `json:"linked"`
+	Assignments bool            `json:"assignments"`
+	Mentions    bool            `json:"mentions"`
 }
 
 type UpdateSlackNotificationPreferences struct {
-	Assignments *bool `json:"assignments"`
-	Mentions    *bool `json:"mentions"`
+	Categories  map[string]bool `json:"categories"`
+	Assignments *bool           `json:"assignments"`
+	Mentions    *bool           `json:"mentions"`
+}
+
+// Slack notification rows are independent within each module. Legacy switches
+// supply defaults for their original event families until a row is customized.
+var SlackCategoryDefaults = map[string]string{
+	"projects.assignments": "assignments", "projects.mentions": "mentions",
+	"projects.status_changes": "off", "projects.comments": "off", "projects.subscriptions": "off", "projects.sprints": "off",
+	"docs.mentions": "mentions", "docs.updates": "off",
+	"support.assignments": "assignments", "support.mentions": "mentions", "support.replies": "off",
+	"crm.assignments": "assignments", "crm.mentions": "mentions", "crm.signals": "off", "crm.updates": "off",
+	"agents.attention": "direct", "agents.activity": "off",
+	"automation.attention": "direct", "automation.activity": "off",
+	"integrations.connection": "direct",
+}
+
+func (p SlackNotificationPreferences) CategoryEnabled(key string) bool {
+	family, known := SlackCategoryDefaults[key]
+	if !p.Linked || !known {
+		return false
+	}
+	if value, ok := p.Overrides[key].(bool); ok {
+		return value
+	}
+	switch family {
+	case "assignments":
+		return p.Assignments
+	case "mentions":
+		return p.Mentions
+	default:
+		return family == "direct"
+	}
 }

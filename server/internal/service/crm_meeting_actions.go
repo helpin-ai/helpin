@@ -40,7 +40,7 @@ func (s *CRMMeetingService) AcceptActionItem(
 	} else if item.AssigneeMemberID != nil && strings.TrimSpace(*item.AssigneeMemberID) != "" {
 		ownerIDs = append(ownerIDs, strings.TrimSpace(*item.AssigneeMemberID))
 	}
-	detail, err := s.taskService.Create(ctx, model.CreateTaskRequest{
+	detail, err := s.taskService.Create(ctx, model.CreateTaskRequest{CRMFollowUp: true,
 		WorkspaceID:     workspaceID,
 		Name:            strings.TrimSpace(item.Title),
 		Description:     item.Details,

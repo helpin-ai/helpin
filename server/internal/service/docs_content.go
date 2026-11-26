@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -119,7 +120,16 @@ func (s *DocsContentService) afterContentSave(ctx context.Context, documentID, a
 	if s.docRepo != nil {
 		if doc, err := s.docRepo.GetByID(ctx, documentID); err == nil && doc != nil {
 			publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, actorID)
-			s.emitNewMentionNotifications(ctx, doc, previousText, saved.ContentText, actorID)
+			mentioned := s.emitNewMentionNotifications(ctx, doc, previousText, saved.ContentText, actorID)
+			if n := s.notificationService; n != nil && n.slackRepo != nil && n.followerRepo != nil && previousText != saved.ContentText {
+				users, err := n.followerRepo.GetFollowers(ctx, "doc", doc.ID)
+				if err != nil {
+					slog.ErrorContext(ctx, "load document followers", "error", err, "document_id", doc.ID)
+				} else {
+					users = slices.DeleteFunc(users, func(user string) bool { return slices.Contains(mentioned, user) })
+					n.notifySlackRecipients(ctx, model.NotificationEventInput{WorkspaceID: doc.WorkspaceID, ActorID: actorID, EventType: "doc.updated", EntityType: "doc", EntityID: doc.ID, Title: "Document updated: " + doc.Title}, users...)
+				}
+			}
 			s.startNewAgentMentionRuns(ctx, doc, previousText, saved.ContentText, actorID)
 		}
 	}
@@ -134,18 +144,18 @@ func isMarkdownSourceEnvelope(content json.RawMessage) bool {
 	return ok
 }
 
-func (s *DocsContentService) emitNewMentionNotifications(ctx context.Context, doc *model.DocsDocument, previousText, currentText, actorID string) {
+func (s *DocsContentService) emitNewMentionNotifications(ctx context.Context, doc *model.DocsDocument, previousText, currentText, actorID string) []string {
 	if s.notificationService == nil || s.workspaceRepo == nil || doc == nil || actorID == "" {
-		return
+		return nil
 	}
 
 	addedMentions := diffMentionHandles(extractMentions(previousText), extractMentions(currentText))
 	if len(addedMentions) == 0 {
-		return
+		return nil
 	}
 	readableTeamIDs := s.readableTeamIDsForDoc(ctx, doc)
 
-	if _, err := emitMentionNotificationForHandles(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+	users, err := emitMentionNotificationForHandles(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
 		WorkspaceID:      doc.WorkspaceID,
 		ActorID:          actorID,
 		Body:             currentText,
@@ -157,9 +167,11 @@ func (s *DocsContentService) emitNewMentionNotifications(ctx context.Context, do
 		ReadableTeamIDs:  readableTeamIDs,
 		EntitySnapshot:   model.JSONB{"title": doc.Title},
 		NotificationBody: truncate(currentText, 200),
-	}, addedMentions); err != nil {
+	}, addedMentions)
+	if err != nil {
 		slog.ErrorContext(ctx, "failed to emit docs mention notification", "error", err, "document_id", doc.ID)
 	}
+	return users
 }
 
 func (s *DocsContentService) readableTeamIDsForDoc(ctx context.Context, doc *model.DocsDocument) []string {

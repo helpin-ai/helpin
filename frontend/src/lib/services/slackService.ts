@@ -17,6 +17,7 @@ export interface SlackNotificationPreferences {
   team_id?: string
   bot_user_id?: string
   linked: boolean
+  categories?: Record<string, boolean>
   assignments: boolean
   mentions: boolean
 }
@@ -41,7 +42,7 @@ const path = (ws: string, suffix = '') =>
 export const slackService = {
   notificationPreferences: (ws: string) =>
     api.get<SlackNotificationPreferences>(path(ws, 'notifications')).then(unwrap),
-  updateNotificationPreferences: (ws: string, patch: Partial<Pick<SlackNotificationPreferences, 'assignments' | 'mentions'>>) =>
+  updateNotificationPreferences: (ws: string, patch: Partial<Pick<SlackNotificationPreferences, 'categories' | 'assignments' | 'mentions'>>) =>
     api.patch(path(ws, 'notifications'), patch).then(unwrap),
   thread: (ws: string, id: string) => api.get<{permalink: string}>(`/support/inbox/conversations/${encodeURIComponent(id)}/slack-thread?workspace_id=${encodeURIComponent(ws)}`).then(unwrap),
   settings: (ws: string) => api.get<SlackSettings>(path(ws)).then(unwrap),

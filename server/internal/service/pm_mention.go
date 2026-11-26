@@ -187,13 +187,22 @@ func resolveMentionRecipients(ctx context.Context, workspaceRepo *repository.Wor
 }
 
 func resolveMentionRecipientsForHandles(ctx context.Context, workspaceRepo *repository.WorkspaceRepository, workspaceID string, mentions []string, authorID string, readableTeamIDs []string) ([]string, error) {
+	result, err := resolveMentionAudience(ctx, workspaceRepo, workspaceID, mentions, authorID, readableTeamIDs)
+	return result.all, err
+}
+
+// Team handles expand for Helpin notifications. Personal Slack DMs use only
+// explicitly named people, including people who also belong to a named team.
+type mentionAudience struct{ all, personal []string }
+
+func resolveMentionAudience(ctx context.Context, workspaceRepo *repository.WorkspaceRepository, workspaceID string, mentions []string, authorID string, readableTeamIDs []string) (mentionAudience, error) {
 	if len(mentions) == 0 {
-		return nil, nil
+		return mentionAudience{}, nil
 	}
 
 	members, err := workspaceRepo.ListMembers(ctx, workspaceID)
 	if err != nil {
-		return nil, err
+		return mentionAudience{}, err
 	}
 
 	// Build a lookup of normalized display-name, email-prefix, and user-id handles to user IDs.
@@ -211,6 +220,8 @@ func resolveMentionRecipientsForHandles(ctx context.Context, workspaceRepo *repo
 
 	seen := make(map[string]bool)
 	var userIDs []string
+	personal := []string{}
+	personallyNamed := map[string]bool{}
 	teamScope := make(map[string]struct{}, len(readableTeamIDs))
 	for _, teamID := range readableTeamIDs {
 		if trimmed := strings.TrimSpace(teamID); trimmed != "" {
@@ -220,7 +231,7 @@ func resolveMentionRecipientsForHandles(ctx context.Context, workspaceRepo *repo
 	for _, mention := range mentions {
 		lower := strings.ToLower(mention)
 		if team, err := workspaceRepo.GetTeamByHandle(ctx, workspaceID, lower); err != nil {
-			return nil, fmt.Errorf("resolve mention recipients: %w", err)
+			return mentionAudience{}, fmt.Errorf("resolve mention recipients: %w", err)
 		} else if team != nil {
 			if _, allowed := teamScope[team.ID]; !allowed {
 				// Team handles should not fall through to similarly named user handles.
@@ -228,7 +239,7 @@ func resolveMentionRecipientsForHandles(ctx context.Context, workspaceRepo *repo
 			}
 			teamUserIDs, err := workspaceRepo.ListActiveTeamUserIDs(ctx, workspaceID, team.ID)
 			if err != nil {
-				return nil, fmt.Errorf("resolve mention recipients: %w", err)
+				return mentionAudience{}, fmt.Errorf("resolve mention recipients: %w", err)
 			}
 			for _, uid := range teamUserIDs {
 				if uid == "" || uid == authorID || seen[uid] {
@@ -240,6 +251,10 @@ func resolveMentionRecipientsForHandles(ctx context.Context, workspaceRepo *repo
 			continue
 		}
 		for _, uid := range nameToUserIDs[lower] {
+			if uid != "" && uid != authorID && !personallyNamed[uid] {
+				personallyNamed[uid] = true
+				personal = append(personal, uid)
+			}
 			if uid == "" || uid == authorID || seen[uid] {
 				continue
 			}
@@ -247,7 +262,7 @@ func resolveMentionRecipientsForHandles(ctx context.Context, workspaceRepo *repo
 			userIDs = append(userIDs, uid)
 		}
 	}
-	return userIDs, nil
+	return mentionAudience{all: userIDs, personal: personal}, nil
 }
 
 // emitMentionNotification resolves mentions and emits a notification for them.
@@ -262,7 +277,8 @@ func emitMentionNotificationForHandles(ctx context.Context, notifService *Notifi
 		return nil, nil
 	}
 
-	mentionedUserIDs, err := resolveMentionRecipientsForHandles(ctx, workspaceRepo, input.WorkspaceID, mentions, input.ActorID, input.ReadableTeamIDs)
+	audience, err := resolveMentionAudience(ctx, workspaceRepo, input.WorkspaceID, mentions, input.ActorID, input.ReadableTeamIDs)
+	mentionedUserIDs := audience.all
 	if err != nil {
 		return nil, err
 	}
@@ -282,19 +298,20 @@ func emitMentionNotificationForHandles(ctx context.Context, notifService *Notifi
 	}
 
 	if err := notifService.Emit(ctx, model.NotificationEventInput{
-		WorkspaceID:        input.WorkspaceID,
-		ActorID:            input.ActorID,
-		EventType:          input.EventType,
-		EntityType:         input.EntityType,
-		EntityID:           input.EntityID,
-		Title:              input.Title,
-		Body:               body,
-		Category:           "mention",
-		Priority:           "high",
-		TeamID:             input.TeamID,
-		EntitySnapshot:     input.EntitySnapshot,
-		ExplicitRecipients: mentionedUserIDs,
-		SkipFollowers:      true,
+		WorkspaceID:            input.WorkspaceID,
+		ActorID:                input.ActorID,
+		EventType:              input.EventType,
+		EntityType:             input.EntityType,
+		EntityID:               input.EntityID,
+		Title:                  input.Title,
+		Body:                   body,
+		Category:               "mention",
+		Priority:               "high",
+		TeamID:                 input.TeamID,
+		EntitySnapshot:         input.EntitySnapshot,
+		ExplicitRecipients:     mentionedUserIDs,
+		SlackMentionRecipients: audience.personal,
+		SkipFollowers:          true,
 	}); err != nil {
 		return mentionedUserIDs, err
 	}

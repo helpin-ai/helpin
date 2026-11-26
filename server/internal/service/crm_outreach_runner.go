@@ -207,7 +207,7 @@ func (s *CRMOutreachService) processTask(ctx context.Context, row *model.CRMSequ
 			return fmt.Errorf("task creation is unavailable")
 		}
 		description := "Follow up with " + row.ContactName + " (" + row.Email + ") as part of " + row.SequenceName
-		task, err := s.tasks.Create(ctx, model.CreateTaskRequest{WorkspaceID: row.WorkspaceID, Name: step.TaskName, Description: &description, TeamID: &step.TeamID, OwnerMemberIDs: []string{actor.WorkspaceMemberID}, ExternalID: &externalID}, row.OwnerID)
+		task, err := s.tasks.Create(ctx, model.CreateTaskRequest{CRMFollowUp: true, WorkspaceID: row.WorkspaceID, Name: step.TaskName, Description: &description, TeamID: &step.TeamID, OwnerMemberIDs: []string{actor.WorkspaceMemberID}, ExternalID: &externalID}, row.OwnerID)
 		if err != nil {
 			return err
 		}

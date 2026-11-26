@@ -251,7 +251,7 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+		s.notificationService.notifySlackRecipients(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID, ActorID: actorID, EventType: "objective.assigned",
 			EntityType: "objective", EntityID: obj.ID, Title: "You were assigned to objective " + obj.Name,
 		}, newOwnerUserIDs...)
@@ -411,7 +411,7 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+		s.notificationService.notifySlackRecipients(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID, ActorID: actorID, EventType: "objective.assigned",
 			EntityType: "objective", EntityID: obj.ID, Title: "You were assigned to objective " + obj.Name,
 		}, newOwnerUserIDs...)

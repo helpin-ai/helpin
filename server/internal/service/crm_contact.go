@@ -18,6 +18,7 @@ import (
 
 // CRMContactService contains CRM contact business logic.
 type CRMContactService struct {
+	notifications *NotificationService
 	productAnalyticsEmitter
 	contactRepo    *repository.CRMContactRepository
 	behavior       *repository.CRMBehaviorProfileRepository
@@ -31,6 +32,11 @@ type CRMContactService struct {
 		RefreshContactCompanyMotionSignals(ctx context.Context, workspaceID, contactID string) error
 	}
 	customFields *CustomFieldService
+}
+
+func (s *CRMContactService) SetNotificationService(notifications *NotificationService) *CRMContactService {
+	s.notifications = notifications
+	return s
 }
 
 // SetMotionSignalRefresher keeps lifecycle-derived applicability current.
@@ -259,6 +265,13 @@ func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMConta
 	})
 	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	s.refreshContactSignalMotions(ctx, contact.WorkspaceID, contact.ID)
+	s.notifications.notifyCRMOwners(ctx, model.NotificationEventInput{
+		WorkspaceID: contact.WorkspaceID,
+		EntityType:  "crm_contact",
+		EntityID:    contact.ID,
+		EventType:   "crm.assigned",
+		Title:       "You were assigned contact " + strings.TrimSpace(contact.FirstName+" "+derefString(contact.LastName)),
+	}, nil, []*string{contact.OwnerMemberID})
 	return contact, nil
 }
 
@@ -401,6 +414,7 @@ func (s *CRMContactService) UpdateWithActor(
 	if req.LeadStatus != nil {
 		contact.LeadStatus = *req.LeadStatus
 	}
+	previousOwners := []*string{contact.OwnerMemberID}
 	if req.ClearOwner {
 		contact.OwnerMemberID = nil
 	} else if req.OwnerMemberID != nil {
@@ -459,6 +473,14 @@ func (s *CRMContactService) UpdateWithActor(
 	}
 	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	s.refreshContactSignalMotions(ctx, contact.WorkspaceID, contact.ID)
+	s.notifications.notifyCRMOwners(ctx, model.NotificationEventInput{
+		WorkspaceID: contact.WorkspaceID,
+		ActorID:     actorUserID,
+		EntityType:  "crm_contact",
+		EntityID:    contact.ID,
+		EventType:   "crm.assigned",
+		Title:       "You were assigned contact " + strings.TrimSpace(contact.FirstName+" "+derefString(contact.LastName)),
+	}, previousOwners, []*string{contact.OwnerMemberID})
 	return contact, nil
 }
 

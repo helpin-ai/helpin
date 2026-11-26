@@ -241,7 +241,8 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 			}
 		}
 
-		mentionedUserIDs, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, comment.Body, authorID, readableTeamIDs)
+		audience, err := resolveMentionAudience(ctx, s.workspaceRepo, workspaceID, mentions, authorID, readableTeamIDs)
+		mentionedUserIDs := audience.all
 		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to resolve comment mention recipients", "error", err, "comment_id", comment.ID, "workspace_id", workspaceID)
 			mentionedUserIDs = nil
@@ -335,19 +336,20 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 			}
 
 			if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-				WorkspaceID:        workspaceID,
-				ActorID:            authorID,
-				EventType:          "comment.mention",
-				EntityType:         req.EntityType,
-				EntityID:           req.EntityID,
-				Title:              "mentioned you in a comment on " + entityTitle,
-				Body:               commentBody,
-				Category:           "mention",
-				Priority:           "high",
-				TeamID:             entityTeamID,
-				ExplicitRecipients: mentionedUserIDs,
-				SkipFollowers:      true,
-				EntitySnapshot:     entitySnapshot,
+				WorkspaceID:            workspaceID,
+				ActorID:                authorID,
+				EventType:              "comment.mention",
+				EntityType:             req.EntityType,
+				EntityID:               req.EntityID,
+				Title:                  "mentioned you in a comment on " + entityTitle,
+				Body:                   commentBody,
+				Category:               "mention",
+				Priority:               "high",
+				TeamID:                 entityTeamID,
+				ExplicitRecipients:     mentionedUserIDs,
+				SlackMentionRecipients: audience.personal,
+				SkipFollowers:          true,
+				EntitySnapshot:         entitySnapshot,
 			}); err != nil {
 				slog.ErrorContext(ctx, "failed to emit comment mention notification",
 					"error", err,

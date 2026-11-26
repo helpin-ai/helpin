@@ -40,6 +40,7 @@ type channelAttachmentPayload struct {
 
 // channelReceipt is what processing an event produced.
 type channelReceipt struct {
+	createdTicket       *model.SupportConversation
 	message             *model.SupportMessage
 	reopened            *model.SupportMessage
 	conversationCreated bool
@@ -147,6 +148,7 @@ func (s *SupportInboxService) receiveChannelMessage(ctx context.Context, account
 			if err := s.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {
 				return err
 			}
+			receipt.createdTicket = conv
 			receipt.conversationCreated = true
 		} else {
 			msg.ConversationID = conv.ID
@@ -255,6 +257,9 @@ func (s *SupportInboxService) publishChannelMessage(ctx context.Context, account
 	msg := receipt.message
 	origin := account.Provider + ":" + account.ID
 	if receipt.conversationCreated {
+		if conv := receipt.createdTicket; conv != nil {
+			s.notificationService.notifySupportAssignment(ctx, conv, derefString(conv.AssignedUserID), derefString(msg.SenderUserID))
+		}
 		s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "support_conversation", EntityID: msg.ConversationID, WorkspaceID: msg.WorkspaceID})
 	}
 	if receipt.conversationChanged {

@@ -47,7 +47,7 @@ func (p *NotificationAccessPolicy) CanReceive(ctx context.Context, userID string
 	switch event.EntityType {
 	case "support_conversation":
 		module = model.ModuleSupport
-	case "crm_signal":
+	case "crm_signal", "crm_contact", "crm_deal", "crm_company", "crm_follow_up":
 		module = model.ModuleCRM
 	case "doc", "document":
 		module = model.ModuleDocs
@@ -62,6 +62,9 @@ func (p *NotificationAccessPolicy) CanReceive(ctx context.Context, userID string
 		if !p.authz.Can(actor, authorization.PermSettingsRead) {
 			return false, nil
 		}
+		return p.resources.CanReadNotificationResource(ctx, actor, event)
+	case "automation_rule":
+		module = model.ModuleAutomation
 	case "agent_run":
 		standalone, canRead, err := p.resources.AgentRunNotificationAccess(ctx, actor, event.EntityID)
 		if err != nil || !standalone {

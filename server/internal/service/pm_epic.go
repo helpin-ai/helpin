@@ -248,7 +248,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 
 	if s.notificationService != nil {
 		if epic.OwnerID != nil {
-			s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+			s.notificationService.notifySlackRecipients(ctx, model.NotificationEventInput{
 				WorkspaceID: epic.WorkspaceID, ActorID: actorID, TeamID: derefString(epic.TeamID),
 				EventType: "epic.assigned", EntityType: "epic", EntityID: epic.ID, Title: "You were assigned to epic " + epic.Name,
 			}, *epic.OwnerID)
@@ -443,7 +443,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 
 	if s.notificationService != nil {
 		if epic.OwnerID != nil && *epic.OwnerID != derefString(current.Epic.OwnerID) {
-			s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+			s.notificationService.notifySlackRecipients(ctx, model.NotificationEventInput{
 				WorkspaceID: epic.WorkspaceID, ActorID: actorID, TeamID: derefString(epic.TeamID),
 				EventType: "epic.assigned", EntityType: "epic", EntityID: epic.ID, Title: "You were assigned to epic " + epic.Name,
 			}, *epic.OwnerID)

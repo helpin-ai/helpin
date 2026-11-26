@@ -1703,6 +1703,8 @@ func (s *SupportInboxService) createConversation(ctx context.Context, req model.
 		return nil, err
 	}
 
+	s.notificationService.notifySupportAssignment(ctx, ticket, derefString(ticket.AssignedUserID), actorID)
+
 	// Auto-match or create CRM contact by email.
 	if contactID := s.matchOrCreateCRMContact(ctx, ticket.WorkspaceID, ticket.CustomerEmail, ticket.CustomerName); contactID != nil {
 		ticket.CRMContactID = contactID
@@ -4580,10 +4582,7 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	if newUserID != previousAssignedUserID {
 		switch {
 		case newUserID != "":
-			s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
-				WorkspaceID: workspaceID, ActorID: derefString(actorID), EventType: "support_conversation.assigned",
-				EntityType: "support_conversation", EntityID: conversationID, Title: "You were assigned to " + supportNotificationConversationLabel(ticket),
-			}, newUserID)
+			s.notificationService.notifySupportAssignment(ctx, ticket, newUserID, derefString(actorID))
 			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUser, "", newUserID)
 		default:
 			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUnassign, "", previousAssignedUserID)

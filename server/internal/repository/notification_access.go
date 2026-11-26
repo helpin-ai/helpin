@@ -35,12 +35,15 @@ func (r *NotificationRepository) AgentRunNotificationAccess(ctx context.Context,
 func (r *NotificationRepository) CanReadNotificationResource(ctx context.Context, actor *authorization.Actor, event model.NotificationEventInput) (bool, error) {
 	privileged := actor.Role == model.RoleOwner || actor.Role == model.RoleAdmin
 	entityType, entityID := event.EntityType, event.EntityID
+	if entityType == "crm_follow_up" {
+		entityType = "task"
+	}
 	if entityType == "agent_run" {
 		if taskID, ok := event.Metadata["task_id"].(string); ok && taskID != "" {
 			entityType, entityID = "task", taskID
 		}
 	}
-	table := map[string]string{"task": "pm_tasks", "epic": "pm_epics", "sprint": "pm_sprints", "objective": "pm_objectives", "doc": "docs_documents", "document": "docs_documents", "support_conversation": "support_conversations", "crm_signal": "crm_signals", "external_mcp_server": "external_mcp_servers", "agent_run": "agent_runs", "helpcenter_config": "docs_helpcenter_configs"}[entityType]
+	table := map[string]string{"task": "pm_tasks", "epic": "pm_epics", "sprint": "pm_sprints", "objective": "pm_objectives", "doc": "docs_documents", "document": "docs_documents", "support_conversation": "support_conversations", "automation_rule": "automation_rules", "crm_signal": "crm_signals", "crm_deal": "crm_deals", "crm_contact": "crm_contacts", "crm_company": "crm_companies", "external_mcp_server": "external_mcp_servers", "agent_run": "agent_runs", "helpcenter_config": "docs_helpcenter_configs"}[entityType]
 	if table == "" {
 		return false, nil
 	}
@@ -49,6 +52,10 @@ func (r *NotificationRepository) CanReadNotificationResource(ctx context.Context
 	case "task", "epic", "sprint":
 		if !privileged {
 			q = q.Where("team_id IN ?", actor.TeamIDs())
+		}
+	case "automation_rule":
+		if !privileged {
+			q = q.Where("team_id IS NULL OR team_id IN ?", actor.TeamIDs())
 		}
 	case "objective":
 		if !privileged {

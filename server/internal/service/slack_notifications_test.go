@@ -20,7 +20,7 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	now := time.Now()
 	db := newNotificationServiceTestDB(t)
 	mustExecNotificationService(t, db, "CREATE TABLE support_channel_accounts (id TEXT PRIMARY KEY, workspace_id TEXT, provider TEXT, disabled_at DATETIME, handle TEXT, external_account_id TEXT, token_encrypted TEXT)")
-	mustExecNotificationService(t, db, "CREATE TABLE slack_members (account_id TEXT, user_id TEXT, slack_user TEXT, notify_assignments BOOLEAN DEFAULT false, notify_mentions BOOLEAN DEFAULT false, PRIMARY KEY(account_id,user_id))")
+	mustExecNotificationService(t, db, "CREATE TABLE slack_members (account_id TEXT, user_id TEXT, slack_user TEXT, notify_assignments BOOLEAN DEFAULT false, notify_mentions BOOLEAN DEFAULT false, notify_categories TEXT DEFAULT '{}', PRIMARY KEY(account_id,user_id))")
 	if err := db.AutoMigrate(&model.SupportInboundJob{}); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestPersonalSlackNotifications(t *testing.T) {
 		t.Fatalf("unexpected DM: %#v", sent)
 	}
 	text, _ := sent[0]["text"].(string)
-	if sent[0]["mrkdwn"] != false || !strings.Contains(text, "Alex updated <@U2>") || !strings.Contains(text, "https://helpin.example/w/my-workspace/pm/objectives/item") {
+	if sent[0]["mrkdwn"] != false || !strings.Contains(text, "Alex updated <@U2>") || !strings.Contains(text, "https://helpin.example/w/my-workspace/pm/objectives/item") || !strings.Contains(text, "/settings/notifications?slack=projects.assignments") {
 		t.Fatalf("unexpected DM content: %q", text)
 	}
 	mustExecNotificationService(t, db, "UPDATE notification_preferences SET mute_workspace=true WHERE user_id='member'")
@@ -137,10 +137,122 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	if len(sent) != 2 || sent[1]["client_msg_id"] != mention.ID {
 		t.Fatalf("missing mention: %#v", sent)
 	}
+	// A row override is independent of other modules and takes effect for
+	// pending jobs. A later edit to another row preserves this one.
+	for _, patch := range []map[string]bool{{"docs.mentions": false}, {"crm.signals": true}} {
+		if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Categories: patch}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pref, err := s.NotificationPreferences(ctx, "ws", "member")
+	if err != nil || pref.Categories["docs.mentions"] || !pref.Categories["projects.mentions"] || !pref.Categories["crm.signals"] || pref.Categories["projects.assignments"] {
+		t.Fatalf("wrong effective settings: %+v, err %v", pref, err)
+	}
+	if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Categories: map[string]bool{"unknown": true}}); err == nil {
+		t.Fatal("accepted an unknown row")
+	}
+
+	allModules := []model.NotificationEventInput{
+		{EntityType: "agent_run", EventType: "task.agent_attention_required", Metadata: model.JSONB{"automation_rule_id": "a", "interaction_id": "i"}},
+		{EntityType: "agent_run", EventType: "task.agent_attention_required", Metadata: model.JSONB{"interaction_id": "q"}},
+		{EntityType: "crm_signal", EventType: "crm.signal_ready"},
+		{EntityType: "external_mcp_server", EventType: "external_mcp.reauthorization_required"},
+		{EntityType: "support_conversation", EventType: "support_conversation.mentioned"},
+	}
+	for i, event := range allModules {
+		event.WorkspaceID, event.EntityID, event.Title = "ws", "item", "Personal alert"
+		if err := n.queueSlackNotification(ctx, "member", event); err != nil {
+			t.Fatal(err)
+		}
+		countJobs(int64(3 + i))
+	}
+	automation := allModules[0]
+	automation.WorkspaceID, automation.EntityID = "ws", "item"
+	if err := n.queueSlackNotification(ctx, "member", automation); err != nil {
+		t.Fatal(err)
+	}
+	countJobs(7)
+	mustExecNotificationService(t, db, "CREATE TABLE agent_runs(id TEXT, workspace_id TEXT, status TEXT)")
+	mustExecNotificationService(t, db, "CREATE TABLE agent_run_interactions(id TEXT,workspace_id TEXT,run_id TEXT,status TEXT,request_id TEXT)")
+	mustExecNotificationService(t, db, "INSERT INTO agent_runs VALUES ('item','ws','paused')")
+	mustExecNotificationService(t, db, "INSERT INTO agent_run_interactions VALUES ('row','ws','item','pending','i')")
+	checkAction := func(want bool) {
+		t.Helper()
+		actual, err := repo.NotificationActionPending(ctx, "member", automation)
+		if err != nil || actual != want {
+			t.Fatalf("action pending = %v (want %v): %v", actual, want, err)
+		}
+	}
+	checkAction(true)
+	mustExecNotificationService(t, db, "UPDATE agent_run_interactions SET status='resolved'")
+	checkAction(false)
+	pending, err := jobs.Claim(ctx, SlackNotificationJob, time.Now())
+	if err != nil || pending == nil {
+		t.Fatalf("claim automation: %v", err)
+	}
+	if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Categories: map[string]bool{"automation.attention": false}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.deliverNotification(ctx, pending); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 2 {
+		t.Fatal("delivered a queued alert after its row was disabled")
+	}
+	// A CRM-linked project task uses exactly one row, on initial assignment
+	// and on later reassignment from the task screen.
+	mustExecNotificationService(t, db, "CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)")
+	mustExecNotificationService(t, db, "INSERT INTO crm_associations VALUES ('ws','company','account','task','linked')")
+	if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Categories: map[string]bool{"crm.assignments": true}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id       string
+		metadata model.JSONB
+		jobs     int64
+	}{
+		{"ordinary", nil, 7}, {"new", model.JSONB{"crm_follow_up": true}, 8}, {"linked", nil, 9},
+	} {
+		if err := n.queueSlackNotification(ctx, "member", model.NotificationEventInput{WorkspaceID: "ws", EntityType: "task", EntityID: tc.id, EventType: "task.assigned", Metadata: tc.metadata}); err != nil {
+			t.Fatal(err)
+		}
+		countJobs(tc.jobs)
+	}
 	mustExecNotificationService(t, db, "UPDATE support_channel_accounts SET disabled_at=? WHERE id='install'", now)
 	emit("objective.mention")
-	countJobs(2)
+	countJobs(9)
 	if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Mentions: &off}); err == nil {
 		t.Fatal("updated disconnected installation")
+	}
+}
+
+func TestSlackModuleRouting(t *testing.T) {
+	for _, tc := range []struct {
+		kind, entity, row string
+		direct            bool
+	}{
+		{"task.assigned", "task", "projects.assignments", true},
+		{"comment.mention", "document", "docs.mentions", true},
+		{"doc.updated", "document", "docs.updates", false},
+		{"crm.assigned", "crm_company", "crm.assignments", true},
+		{"crm.mention", "crm_contact", "crm.mentions", true},
+		{"crm.signal_ready", "crm_signal", "crm.signals", false},
+		{"support_conversation.customer_reply", "support_conversation", "support.replies", false},
+		{"task.agent_attention_required", "agent_run", "agents.attention", true},
+		{"external_mcp.reauthorization_required", "external_mcp_server", "integrations.connection", true},
+		{"new.event", "task", "", false},
+	} {
+		event := model.NotificationEventInput{EventType: tc.kind, EntityType: tc.entity}
+		pref := model.SlackNotificationPreferences{Linked: true, Assignments: true, Mentions: true}
+		if key := slackPreferenceKey(event); key != tc.row || pref.CategoryEnabled(key) != tc.direct {
+			t.Errorf("%s: row %q, enabled %t", tc.kind, key, pref.CategoryEnabled(key))
+		}
+	}
+}
+
+func TestSlackTeamMentionAudience(t *testing.T) {
+	event := model.NotificationEventInput{EventType: "comment.mention", EntityType: "task", ExplicitRecipients: []string{"person", "teammate"}, SlackMentionRecipients: []string{"person"}}
+	if !slackAudienceIncludes(event, "person") || slackAudienceIncludes(event, "teammate") {
+		t.Fatal("team expansion changed the personal DM audience")
 	}
 }

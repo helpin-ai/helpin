@@ -7,6 +7,7 @@ import { OrgGitConnectionsSettingsPage } from '@/pages/settings/OrgGitConnection
 import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport'
 
 type SettingsSearch = {
+  slack?: string
   workflow?: string
   team?: string
 }
@@ -14,6 +15,7 @@ type SettingsSearch = {
 export const Route = createFileRoute('/_authenticated/w/$slug/settings/$section')({
   component: SettingsSectionRoute,
   validateSearch: (search: Record<string, unknown>): SettingsSearch => ({
+    slack: typeof search.slack === 'string' ? search.slack : undefined,
     workflow: typeof search.workflow === 'string' ? search.workflow : undefined,
     team: typeof search.team === 'string' ? search.team : undefined,
   }),
@@ -21,6 +23,8 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/$section'
 
 function SettingsSectionRoute() {
   const { slug, section } = Route.useParams()
+
+  const { slack } = Route.useSearch()
 
   if (section === 'profile') {
     return (
@@ -57,7 +61,7 @@ function SettingsSectionRoute() {
   if (section === 'notifications') {
     return (
       <SettingsRouteViewport>
-        <NotificationSettings />
+        <NotificationSettings slackRow={slack} />
       </SettingsRouteViewport>
     )
   }

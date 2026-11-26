@@ -196,7 +196,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
 
   async function handleCreateAndLinkTask(payload: CreateTaskRequest) {
     try {
-      const created = await createTask.mutateAsync(payload);
+      const created = await createTask.mutateAsync({ ...payload, crm_follow_up: true });
       if (!created?.task?.id) {
         throw new Error('task create returned no data');
       }

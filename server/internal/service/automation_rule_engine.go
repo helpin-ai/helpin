@@ -216,9 +216,9 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 				"action_type", rule.ActionType,
 				"task_id", event.TaskID,
 			)
-			e.observeFailure(ctx, event.WorkspaceID, rule.ID, err)
+			e.observeFailure(ctx, &rule, err)
 		} else {
-			e.observeSuccess(ctx, event.WorkspaceID, rule.ID)
+			e.observeSuccess(ctx, &rule)
 		}
 
 		if rule.StopOnMatch {
@@ -872,9 +872,9 @@ func (e *AutomationRuleEngine) EvaluateCronRules(ctx context.Context, category s
 				"rule_name", rule.Name,
 				"action_type", rule.ActionType,
 			)
-			e.observeFailure(ctx, event.WorkspaceID, rule.ID, err)
+			e.observeFailure(ctx, &rule, err)
 		} else {
-			e.observeSuccess(ctx, event.WorkspaceID, rule.ID)
+			e.observeSuccess(ctx, &rule)
 		}
 	}
 }
@@ -937,7 +937,7 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 		if errors.Is(err, errFlowConditionSkipped) {
 			return nil
 		}
-		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		e.observeFailure(ctx, rule, err)
 		if errors.Is(err, ErrAssignedAgentNotFound) {
 			rule.Enabled = false
 			if updateErr := e.ruleRepo.Update(ctx, rule); updateErr != nil {
@@ -964,7 +964,7 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 		}
 		return err
 	}
-	e.observeSuccess(ctx, workspaceID, rule.ID)
+	e.observeSuccess(ctx, rule)
 	return nil
 }
 
@@ -1061,10 +1061,10 @@ func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceI
 		Output:            outputContext,
 	}, nilIfEmpty(actor), trigger, eventContext, nil)
 	if err != nil {
-		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		e.observeFailure(ctx, rule, err)
 		return nil, fmt.Errorf("start agent run: %w", err)
 	}
-	e.observeSuccess(ctx, workspaceID, rule.ID)
+	e.observeSuccess(ctx, rule)
 
 	if e.activitySvc != nil {
 		_ = e.activitySvc.Log(ctx, workspaceID, targetType, targetID, nilIfEmpty(actor),
@@ -1729,22 +1729,33 @@ func matchGitHubCheckSuiteConfig(cfg model.TriggerConfigGitHubCheckSuiteComplete
 
 // --- Health observation ---
 
-func (e *AutomationRuleEngine) observeSuccess(ctx context.Context, workspaceID, ruleID string) {
+func (e *AutomationRuleEngine) observeSuccess(ctx context.Context, rule *model.AutomationRule) {
+	// Agent-backed flows emit their own lifecycle updates once the run starts.
+	if rule.ActionType != model.ActionStartAgentRun {
+		e.notifyRuleActivity(ctx, rule, "completed")
+	}
 	if e.healthObserver == nil {
 		return
 	}
-	_ = e.healthObserver.ObserveSuccess(ctx, workspaceID, "automation_rule", model.AutomationScopeWorkspace, workspaceID, model.JSONB{
-		"rule_id": ruleID,
+	_ = e.healthObserver.ObserveSuccess(ctx, rule.WorkspaceID, "automation_rule", model.AutomationScopeWorkspace, rule.WorkspaceID, model.JSONB{
+		"rule_id": rule.ID,
 	})
 }
 
-func (e *AutomationRuleEngine) observeFailure(ctx context.Context, workspaceID, ruleID string, cause error) {
+func (e *AutomationRuleEngine) observeFailure(ctx context.Context, rule *model.AutomationRule, cause error) {
+	if cause != nil {
+		e.notifyRuleActivity(ctx, rule, "failed")
+	}
 	if e.healthObserver == nil || cause == nil {
 		return
 	}
-	_ = e.healthObserver.ObserveFailure(ctx, workspaceID, "automation_rule", model.AutomationScopeWorkspace, workspaceID, cause.Error(), model.JSONB{
-		"rule_id": ruleID,
+	_ = e.healthObserver.ObserveFailure(ctx, rule.WorkspaceID, "automation_rule", model.AutomationScopeWorkspace, rule.WorkspaceID, cause.Error(), model.JSONB{
+		"rule_id": rule.ID,
 	})
 }
 
 // containsString is defined in pm_import.go — reused here.
+
+func (e *AutomationRuleEngine) notifyRuleActivity(ctx context.Context, rule *model.AutomationRule, status string) {
+	e.notificationSvc.notifySlackRecipients(ctx, model.NotificationEventInput{WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID), EntityType: "automation_rule", EntityID: rule.ID, EventType: "automation_rule.activity", Title: "Workflow " + status + ": " + rule.Name}, derefString(rule.CreatedBy))
+}

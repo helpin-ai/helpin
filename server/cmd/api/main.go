@@ -1273,10 +1273,10 @@ func main() {
 		cfg.OpenAIEmbeddingModel,
 	)
 
-	crmContactService := service.NewCRMContactService(crmContactRepo).
+	crmContactService := service.NewCRMContactService(crmContactRepo).SetNotificationService(notificationService).
 		SetIdentitySync(crmActivityRepo, wsPublisher).
 		SetTimelineRepository(crmCompanyTimelineRepo)
-	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).SetNotificationService(notificationService).
 		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
@@ -1289,7 +1289,7 @@ func main() {
 	crmCompanyService.SetCustomFieldService(customFieldService)
 	crmFieldCatalogService := service.NewCRMFieldCatalogService(crmCompanyRepo, crmContactService, crmBehaviorProfileRepo)
 	crmFieldCatalogService.SetCustomFieldService(customFieldService)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).SetNotificationService(notificationService).
 		SetActivityService(pmActivityService).
 		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmDealService.SetProductAnalyticsService(productAnalytics)
@@ -1297,7 +1297,7 @@ func main() {
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	pmTriageHandler := handler.NewPMTriageHandler(pmTriageService)
 	pmTriageHandler.SetReviewer(service.NewPMTriageReviewService(pmTriageService, pmTaskService, associationsService))
-	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmActivityService := service.NewCRMActivityService(crmActivityRepo).SetNotificationService(notificationService)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
 	// Gmail OAuth + encryption setup.
@@ -1499,6 +1499,7 @@ func main() {
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
 			SetAttentionNotifier(notificationService).
+			SetSlackRunNotifications(notificationService, automationRuleRepo).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
 			SetWebSocketPublisher(agentRuntimeProjectionPublisher).
 			SetRunFinalizers(runFinalizers)

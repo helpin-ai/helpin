@@ -247,24 +247,25 @@ func (EntityFollower) TableName() string { return "entity_followers" }
 
 // NotificationEventInput is the input to NotificationService.Emit().
 type NotificationEventInput struct {
-	WorkspaceID          string
-	ActorID              string
-	EventType            string // e.g. "task.assigned"
-	EntityType           string // e.g. "task"
-	EntityID             string
-	Title                string
-	Body                 string
-	Category             string // e.g. "assignment", "comment", "status_change"
-	Priority             string // "urgent", "high", "normal", "low"
-	TeamID               string // optional, set when entity belongs to a team
-	Metadata             JSONB
-	ActorSnapshot        JSONB
-	EntitySnapshot       JSONB
-	ParentEntitySnapshot JSONB
-	ExplicitRecipients   []string // Additional recipients beyond followers
-	SkipFollowers        bool     // When true, only ExplicitRecipients are considered
-	SkipEmailDelivery    bool     // When true, only in-app notification delivery is planned
-	DelayedEmailChannel  string   // When set, schedule delayed email delivery on this channel instead of immediate/digest email
+	WorkspaceID            string
+	ActorID                string
+	EventType              string // e.g. "task.assigned"
+	EntityType             string // e.g. "task"
+	EntityID               string
+	Title                  string
+	Body                   string
+	Category               string // e.g. "assignment", "comment", "status_change"
+	Priority               string // "urgent", "high", "normal", "low"
+	TeamID                 string // optional, set when entity belongs to a team
+	Metadata               JSONB
+	ActorSnapshot          JSONB
+	EntitySnapshot         JSONB
+	ParentEntitySnapshot   JSONB
+	ExplicitRecipients     []string // Additional recipients beyond followers
+	SlackMentionRecipients []string // When set, excludes recipients reached only through a team handle.
+	SkipFollowers          bool     // When true, only ExplicitRecipients are considered
+	SkipEmailDelivery      bool     // When true, only in-app notification delivery is planned
+	DelayedEmailChannel    string   // When set, schedule delayed email delivery on this channel instead of immediate/digest email
 }
 
 // UpdateNotificationRequest is the payload for updating a notification.

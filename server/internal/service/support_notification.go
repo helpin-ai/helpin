@@ -83,6 +83,16 @@ func buildSupportPushData(ctx context.Context, workspaceRepo *repository.Workspa
 	return data
 }
 
+func (n *NotificationService) notifySupportAssignment(ctx context.Context, conv *model.SupportConversation, recipient, actor string) {
+	if conv == nil || recipient == "" {
+		return
+	}
+	n.notifySlackRecipients(ctx, model.NotificationEventInput{
+		WorkspaceID: conv.WorkspaceID, ActorID: actor, EventType: "support_conversation.assigned",
+		EntityType: "support_conversation", EntityID: conv.ID, Title: "You were assigned to " + supportNotificationConversationLabel(conv),
+	}, recipient)
+}
+
 func ProcessSupportMentions(
 	ctx context.Context,
 	notifService *NotificationService,
@@ -147,6 +157,7 @@ func ProcessSupportCustomerReplyNotification(
 		notifService.presence,
 		notifService.statusOverrideRepo,
 		notifService.supportResponders,
+		notifService,
 		conv,
 		"support_conversation.customer_reply",
 		time.Now(),

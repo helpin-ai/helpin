@@ -159,6 +159,7 @@ type PMPagination struct {
 
 // CreateTaskRequest is the payload for creating a task.
 type CreateTaskRequest struct {
+	CRMFollowUp       bool                         `json:"crm_follow_up,omitempty"` // The CRM composer links the new task after creation.
 	SlackThread       *SlackThread                 `json:"-"`
 	WorkspaceID       string                       `json:"workspace_id"`
 	Name              string                       `json:"name"`

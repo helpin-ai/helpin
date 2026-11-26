@@ -4116,6 +4116,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	if !isNotice {
+		s.notificationService.notifySupportAssignment(ctx, conversation, derefString(conversation.AssignedUserID), "")
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, supportEmailNotificationPreview(payload, projection), customerName, message.ID)
 	}
 	if !isNotice && s.supportInboxService != nil {

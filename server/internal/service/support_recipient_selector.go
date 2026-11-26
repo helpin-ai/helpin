@@ -23,6 +23,7 @@ type supportRecipientSelection struct {
 type supportRecipientAvailability func(teammate supportTeammatePresence) bool
 
 type supportRecipientSelectorInput struct {
+	slackReplyEnabled      func(userID, teamID string) (bool, error)
 	WorkspaceID            string
 	MailboxID              *string
 	OwnerUserID            *string
@@ -217,6 +218,9 @@ func buildSupportRecipientSelection(
 			shouldNotify, err := prefRepo.ShouldNotify(ctx, userID, input.WorkspaceID, input.EventType, channel, teamID)
 			if err == nil && !shouldNotify && input.Channel == "any" {
 				shouldNotify, err = prefRepo.ShouldNotify(ctx, userID, input.WorkspaceID, input.EventType, "email", teamID)
+			}
+			if err == nil && !shouldNotify && input.slackReplyEnabled != nil {
+				shouldNotify, err = input.slackReplyEnabled(userID, teamID)
 			}
 			if err != nil {
 				return nil, err
