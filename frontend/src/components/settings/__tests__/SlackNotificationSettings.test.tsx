@@ -9,9 +9,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SlackConnectionNotice, useSlackNotificationSettings } from '../SlackNotificationSettings'
 import { slackService, type SlackNotificationPreferences } from '@/lib/services/slackService'
 
+const { saveChannels } = vi.hoisted(() => ({ saveChannels: vi.fn() }))
 vi.mock('@/hooks/queries', () => ({
   useNotificationPreferences: () => ({ data: { channel_preferences: {} } }),
-  useUpdateNotificationPreferences: () => ({ isPending: false }),
+  useUpdateNotificationPreferences: () => ({ isPending: false, mutate: saveChannels }),
 }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => 'member' }))
 vi.mock('@/lib/services/slackService', () => ({
@@ -68,4 +69,15 @@ it('opens the linked module and changes one Slack row independently', async () =
   await act(async () => assignment.click())
   expect(slackService.updateNotificationPreferences).toHaveBeenCalledWith('ws', { categories: { 'support.assignments': false } })
   expect(client.getQueryData(key)).toMatchObject({ categories: { 'support.assignments': false, 'support.mentions': true } })
+})
+
+it('offers independent in-app, desktop and email choices before Slack is linked', () => {
+  render({ linked: false, mentions: false, assignments: false })
+  for (const [channel, enabled] of [['in-app', true], ['desktop', false], ['email', false]] as const) {
+    const control = container.querySelector<HTMLButtonElement>(`[aria-label="Assignments: ${channel}"]`)
+    expect(control?.disabled).toBe(false)
+    expect(control?.getAttribute('aria-checked')).toBe(String(enabled))
+  }
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Assignments: email"]')!.click())
+  expect(saveChannels).toHaveBeenCalledWith({ channel_changes: { 'support.assignments': { email: true } } }, expect.anything())
 })

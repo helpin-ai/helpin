@@ -495,15 +495,6 @@ func (r *SlackRepository) UpdateNotificationPreferences(ctx context.Context, wor
 	return found, err
 }
 
-// A task can be linked from either side of a CRM association.
-func (r *SlackRepository) IsCRMFollowUp(ctx context.Context, workspaceID, taskID string) (bool, error) {
-	var linked bool
-	err := r.db.WithContext(ctx).Raw(`SELECT EXISTS (SELECT 1 FROM crm_associations WHERE workspace_id=? AND
-        ((from_object_type='task' AND from_object_id=? AND to_object_type IN ('deal','contact','company'))
-         OR (to_object_type='task' AND to_object_id=? AND from_object_type IN ('deal','contact','company'))))`, workspaceID, taskID, taskID).Scan(&linked).Error
-	return linked, err
-}
-
 // Actionable DMs may wait in the retry queue while the user resolves the request.
 func (r *SlackRepository) NotificationActionPending(ctx context.Context, recipient string, event model.NotificationEventInput) (bool, error) {
 	var count int64

@@ -186,6 +186,8 @@ var EventTypeToCategory = map[string]string{
 	"task.created":                          NotifCategorySubscriptions,
 	"task.assigned":                         NotifCategoryAssignments,
 	"task.agent_attention_required":         NotifCategoryAgentAttention,
+	"epic.assigned":                         NotifCategoryAssignments,
+	"checklist.assigned":                    NotifCategoryAssignments,
 	"objective.assigned":                    NotifCategoryAssignments,
 
 	"task.status_changed": NotifCategoryStatusChanges,
@@ -206,6 +208,7 @@ var EventTypeToCategory = map[string]string{
 	"epic.mention":      NotifCategoryMentions,
 	"sprint.mention":    NotifCategoryMentions,
 	"doc.mention":       NotifCategoryMentions,
+	"crm.mention":       NotifCategoryMentions,
 
 	"support_conversation.customer_reply":        NotifCategorySupportReplies,
 	"support_conversation.linked_task_completed": NotifCategorySupportReplies,
@@ -220,6 +223,57 @@ var EventTypeToCategory = map[string]string{
 
 	"sprint.created": NotifCategorySprints,
 	"sprint.updated": NotifCategorySprints,
+}
+
+// NotificationPreferenceCategory identifies the settings row, including events shared by modules.
+func NotificationPreferenceCategory(eventType string, meta JSONB) string {
+	rule, _ := meta["automation_rule_id"].(string)
+	switch eventType {
+	case "task.assigned":
+		if meta["crm_follow_up"] == true {
+			return "crm.assignments"
+		}
+	case "task.agent_attention_required":
+		if rule != "" {
+			return "automation.attention"
+		}
+	case "agent_run.started", "agent_run.finished":
+		if rule != "" {
+			return "automation.activity"
+		}
+		return "agents.activity"
+	case "automation_rule.activity":
+		return "automation.activity"
+	case "doc.updated":
+		return "docs.updates"
+	case "support_conversation.assigned":
+		return "support.assignments"
+	case "crm.assigned":
+		return "crm.assignments"
+	case "crm.mention":
+		return "crm.mentions"
+	case "crm.deal_updated":
+		return "crm.updates"
+	}
+	return EventTypeToCategory[eventType]
+}
+
+// NotificationChannelDefault defines delivery before a member customizes a row.
+func NotificationChannelDefault(category, channel string) bool {
+	if channel == "desktop" {
+		switch category {
+		case NotifCategoryAssignments, NotifCategoryMentions, NotifCategoryAgentAttention, NotifCategorySupportReplies, NotifCategorySupportMentions:
+			return true
+		}
+		return false
+	}
+	switch category {
+	case "docs.updates", "agents.activity", "automation.activity", "crm.updates":
+		return channel != "in_app" && channel != "email"
+	case "support.assignments", "crm.assignments", "crm.mentions", "automation.attention", NotifCategoryIntegrations, NotifCategoryAgentAttention:
+		return channel != "email"
+	}
+	return true
 }
 
 // IsDNDActive returns true when a notification pause is currently active.
@@ -261,7 +315,9 @@ type NotificationEventInput struct {
 	ActorSnapshot          JSONB
 	EntitySnapshot         JSONB
 	ParentEntitySnapshot   JSONB
+	ExcludeFollowers       []string // Already received a direct alert for this change.
 	ExplicitRecipients     []string // Additional recipients beyond followers
+	CompleteTitle          bool     // Title is already a complete user-facing message.
 	SlackMentionRecipients []string // When set, excludes recipients reached only through a team handle.
 	SkipFollowers          bool     // When true, only ExplicitRecipients are considered
 	SkipEmailDelivery      bool     // When true, only in-app notification delivery is planned
@@ -276,9 +332,10 @@ type UpdateNotificationRequest struct {
 
 // UpdateNotificationPreferenceRequest is the payload for updating workspace-level preferences.
 type UpdateNotificationPreferenceRequest struct {
-	TeamID             *string                `json:"team_id"`
-	MuteWorkspace      *bool                  `json:"mute_workspace"`
-	ChannelPreferences map[string]interface{} `json:"channel_preferences"`
+	TeamID             *string                    `json:"team_id"`
+	MuteWorkspace      *bool                      `json:"mute_workspace"`
+	ChannelPreferences map[string]interface{}     `json:"channel_preferences"`
+	ChannelChanges     map[string]map[string]bool `json:"channel_changes"`
 	// Backward compatibility: account-level fields forwarded to user_notification_settings
 	DoNotDisturb         *bool      `json:"do_not_disturb"`
 	DNDUntil             *time.Time `json:"dnd_until"`

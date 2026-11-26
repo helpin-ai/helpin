@@ -75,7 +75,7 @@ func TestBuildEntityURLForNotificationEmails(t *testing.T) {
 		{"unknown", "item-1", base + "/w/acme/notifications"},
 	} {
 		t.Run(tc.entityType, func(t *testing.T) {
-			if got := buildEntityURL(base, "acme", tc.entityType, tc.entityID); got != tc.want {
+			if got := buildEntityURL(base, "acme", tc.entityType, tc.entityID, nil); got != tc.want {
 				t.Fatalf("buildEntityURL() = %q, want %q", got, tc.want)
 			}
 		})

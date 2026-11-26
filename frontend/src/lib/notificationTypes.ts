@@ -102,8 +102,21 @@ export interface NotificationPreferences {
 }
 
 export interface UpdateNotificationPreferencesRequest {
+  channel_changes?: NotificationPreferences['channel_preferences']
   mute_workspace?: boolean
   channel_preferences?: Record<string, { in_app?: boolean; email?: boolean; desktop?: boolean }>
+}
+
+const optionalActivity = new Set(['docs.updates', 'crm.updates', 'agents.activity', 'automation.activity'])
+const optionalEmail = new Set(['support.assignments', 'crm.assignments', 'crm.mentions', 'automation.attention', 'integrations', 'agent_attention'])
+
+export function isChannelEnabled(prefs: NotificationPreferences | undefined, category: string, channel: 'in_app' | 'email'): boolean {
+  const choices = prefs?.channel_preferences
+  const override = choices?.[category]?.[channel]
+  if (override !== undefined) return override
+  if (channel === 'in_app' && category === 'crm.assignments') return choices?.assignments?.in_app ?? true
+  if (channel === 'in_app' && category === 'automation.attention') return choices?.agent_attention?.in_app ?? true
+  return !optionalActivity.has(category) && (channel !== 'email' || !optionalEmail.has(category))
 }
 
 export interface EntityFollower {
@@ -122,7 +135,6 @@ export interface NotificationCategory {
   key: string
   label: string
   description: string
-  supportsEmail?: boolean
 }
 
 export const WORKSPACE_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
@@ -140,12 +152,10 @@ export const SUPPORT_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     key: 'support_replies',
     label: 'Customer replies',
     description: 'Unread replies on conversations assigned to you',
-    supportsEmail: true,
   },
   {
     key: 'support_mentions',
     label: 'Teammate mentions',
     description: 'Mentions in internal notes and support collaboration',
-    supportsEmail: true,
   },
 ]

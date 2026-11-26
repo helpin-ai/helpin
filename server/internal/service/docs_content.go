@@ -121,13 +121,13 @@ func (s *DocsContentService) afterContentSave(ctx context.Context, documentID, a
 		if doc, err := s.docRepo.GetByID(ctx, documentID); err == nil && doc != nil {
 			publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, actorID)
 			mentioned := s.emitNewMentionNotifications(ctx, doc, previousText, saved.ContentText, actorID)
-			if n := s.notificationService; n != nil && n.slackRepo != nil && n.followerRepo != nil && previousText != saved.ContentText {
+			if n := s.notificationService; n != nil && n.followerRepo != nil && previousText != saved.ContentText {
 				users, err := n.followerRepo.GetFollowers(ctx, "doc", doc.ID)
 				if err != nil {
 					slog.ErrorContext(ctx, "load document followers", "error", err, "document_id", doc.ID)
 				} else {
 					users = slices.DeleteFunc(users, func(user string) bool { return slices.Contains(mentioned, user) })
-					n.notifySlackRecipients(ctx, model.NotificationEventInput{WorkspaceID: doc.WorkspaceID, ActorID: actorID, EventType: "doc.updated", EntityType: "doc", EntityID: doc.ID, Title: "Document updated: " + doc.Title}, users...)
+					n.notifyRecipients(ctx, model.NotificationEventInput{WorkspaceID: doc.WorkspaceID, ActorID: actorID, EventType: "doc.updated", EntityType: "doc", EntityID: doc.ID, Title: "Document updated: " + doc.Title}, users...)
 				}
 			}
 			s.startNewAgentMentionRuns(ctx, doc, previousText, saved.ContentText, actorID)

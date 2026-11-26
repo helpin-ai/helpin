@@ -87,7 +87,7 @@ func (n *NotificationService) notifySupportAssignment(ctx context.Context, conv 
 	if conv == nil || recipient == "" {
 		return
 	}
-	n.notifySlackRecipients(ctx, model.NotificationEventInput{
+	n.notifyRecipients(ctx, model.NotificationEventInput{
 		WorkspaceID: conv.WorkspaceID, ActorID: actor, EventType: "support_conversation.assigned",
 		EntityType: "support_conversation", EntityID: conv.ID, Title: "You were assigned to " + supportNotificationConversationLabel(conv),
 	}, recipient)

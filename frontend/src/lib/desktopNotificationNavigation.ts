@@ -1,7 +1,9 @@
 import type { WSEvent } from '@/hooks/useWebSocket'
 import { buildSettingsRoutePath } from './settingsSections'
 
-type DesktopTarget = { path: string; search?: { run: string } | { tab: 'mcp' } } | { dock: { chatId: string } | { runId: string } }
+import { moduleNotificationTarget } from './notificationNavigation'
+
+type DesktopTarget = { path: string; search?: { run: string } | { tab: 'mcp' } | { show_rule: string } | { signal: string } } | { dock: { chatId: string } | { runId: string } }
 
 export function desktopNotificationTarget(event: WSEvent, slug: string): DesktopTarget {
   const data = event.data ?? {}
@@ -15,13 +17,14 @@ export function desktopNotificationTarget(event: WSEvent, slug: string): Desktop
     if (id) return { dock: { runId: typeof data.run_id === 'string' && data.run_id ? data.run_id : String(data.entity_id) } }
   }
   if (id) {
+    const target = moduleNotificationTarget(data.entity_type, String(data.entity_id), slug)
+    if (target) return target
     switch (data.entity_type) {
       case 'task': return { path: `${base}/pm/tasks/${id}`, ...(typeof data.run_id === 'string' && data.run_id ? { search: { run: data.run_id } } : {}) }
       case 'epic': return { path: `${base}/pm/epics/${id}` }
       case 'objective': return { path: `${base}/pm/objectives/${id}` }
       case 'sprint': return { path: `${base}/pm/sprints` }
       case 'support_conversation': return { path: `${base}/support/${id}` }
-      case 'doc': case 'document': return { path: `${base}/docs/documents/${id}` }
       case 'external_mcp_server': return { path: buildSettingsRoutePath(slug, 'external-tools'), search: { tab: 'mcp' } }
     }
   }

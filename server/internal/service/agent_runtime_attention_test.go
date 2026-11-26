@@ -72,7 +72,7 @@ func TestRuntimeAttentionNotificationLifecycle(t *testing.T) {
 	project() // Terminal runs clear even if runtime still reports a pending item.
 	check("read", 3)
 	for _, delivery := range loadNotificationServiceDeliveries(t, db) {
-		if delivery.Channel != "in_app" {
+		if delivery.Channel != "in_app" && delivery.Status != "skipped" {
 			t.Fatalf("unexpected email delivery: %+v", delivery)
 		}
 	}
@@ -125,7 +125,7 @@ func TestRuntimeAttentionKindsAndRouting(t *testing.T) {
 				t.Fatalf("events = %d", len(n.events))
 			}
 			e := n.events[0]
-			if len(e.ExplicitRecipients) != 1 || e.ExplicitRecipients[0] != "owner" || !e.SkipFollowers || !e.SkipEmailDelivery || e.Metadata["task_id"] != "task" {
+			if len(e.ExplicitRecipients) != 1 || e.ExplicitRecipients[0] != "owner" || !e.SkipFollowers || e.SkipEmailDelivery || e.Metadata["task_id"] != "task" {
 				t.Fatalf("unexpected routing: %+v", e)
 			}
 			var payload notificationWSData

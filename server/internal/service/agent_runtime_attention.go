@@ -20,8 +20,8 @@ func (s *AgentRuntimeProjectionService) SetAttentionNotifier(notifier agentAtten
 	return s
 }
 
-func (s *AgentRuntimeProjectionService) SetSlackRunNotifications(n *NotificationService, rules *repository.AutomationRuleRepository) *AgentRuntimeProjectionService {
-	s.slackNotifications, s.notificationRules = n, rules
+func (s *AgentRuntimeProjectionService) SetNotificationRules(rules *repository.AutomationRuleRepository) *AgentRuntimeProjectionService {
+	s.notificationRules = rules
 	return s
 }
 
@@ -53,7 +53,7 @@ func runNotificationMetadata(run *model.AgentRun) model.JSONB {
 }
 
 func (s *AgentRuntimeProjectionService) notifyRunActivity(ctx context.Context, run *model.AgentRun, kind string) error {
-	if s.slackNotifications == nil || run.TargetType == supportPreviewTarget || run.TargetType == model.HelpAssistantTurnTarget {
+	if s.attentionNotifier == nil || run.TargetType == supportPreviewTarget || run.TargetType == model.HelpAssistantTurnTarget {
 		return nil
 	}
 	owner, err := s.runNotificationRecipient(ctx, run, runInputRuleID(run.Input))
@@ -68,9 +68,12 @@ func (s *AgentRuntimeProjectionService) notifyRunActivity(ctx context.Context, r
 	if kind == "agent_run.started" {
 		status = "started"
 	}
-	return s.slackNotifications.queueSlackNotification(ctx, owner, model.NotificationEventInput{
+	metadata := runNotificationMetadata(run)
+	return s.attentionNotifier.Emit(ctx, model.NotificationEventInput{
 		WorkspaceID: run.WorkspaceID, EntityType: "agent_run", EntityID: run.ID,
-		EventType: kind, Metadata: runNotificationMetadata(run), Title: subject + " " + status,
+		EventType: kind, Category: model.NotificationPreferenceCategory(kind, metadata),
+		Metadata: metadata, Title: subject + " " + status,
+		ExplicitRecipients: []string{owner}, SkipFollowers: true,
 	})
 }
 
@@ -139,11 +142,7 @@ func (s *AgentRuntimeProjectionService) syncInteractionAttention(ctx context.Con
 		EventType: taskAgentAttentionRequiredEventType, Category: model.NotifCategoryAgentAttention,
 		Title: fmt.Sprintf("%s needs your %s", name, need), Body: derefString(interaction.Title),
 		Priority: "high", Metadata: metadata,
-		ExplicitRecipients: []string{ownerID}, SkipFollowers: true, SkipEmailDelivery: true,
-	}
-	if derefString(run.TriggeredByUserID) == "" {
-		// Scheduled flows have no manual requester. Only the Slack workflow preference applies to their creator.
-		return s.slackNotifications.queueSlackNotification(ctx, ownerID, event)
+		ExplicitRecipients: []string{ownerID}, SkipFollowers: true,
 	}
 	return s.attentionNotifier.Emit(ctx, event)
 }

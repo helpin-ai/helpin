@@ -1499,7 +1499,7 @@ func main() {
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
 			SetAttentionNotifier(notificationService).
-			SetSlackRunNotifications(notificationService, automationRuleRepo).
+			SetNotificationRules(automationRuleRepo).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
 			SetWebSocketPublisher(agentRuntimeProjectionPublisher).
 			SetRunFinalizers(runFinalizers)

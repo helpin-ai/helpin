@@ -256,6 +256,13 @@ func (r *NotificationRepository) MarkAsRead(ctx context.Context, id, recipientID
 		}).Error
 }
 
+func (r *NotificationRepository) HasEventType(ctx context.Context, notificationID, eventType string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.NotificationEvent{}).
+		Where("notification_id = ? AND event_type = ?", notificationID, eventType).Count(&count).Error
+	return count > 0, err
+}
+
 // HasAttentionInteraction also covers older pending interactions when a run has
 // multiple simultaneous questions and snapshots replay them in sequence.
 func (r *NotificationRepository) HasAttentionInteraction(ctx context.Context, notificationID, interactionID string) (bool, error) {

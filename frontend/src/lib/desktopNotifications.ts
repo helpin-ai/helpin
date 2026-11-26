@@ -1,5 +1,5 @@
 import type { WSEvent } from '@/hooks/useWebSocket'
-import type { NotificationPreferences } from './notificationTypes'
+import { isChannelEnabled, type NotificationPreferences } from './notificationTypes'
 
 export const DESKTOP_DEFAULT_CATEGORIES = new Set(['assignments', 'mentions', 'agent_attention', 'support_replies', 'support_mentions'])
 export type DesktopPermission = NotificationPermission | 'unsupported'
@@ -35,7 +35,7 @@ export function setDesktopEnabled(userId: string, enabled: boolean) {
 
 export function desktopCategoryEnabled(preferences: NotificationPreferences, category: string): boolean {
   const choice = preferences.channel_preferences?.[category]
-  return choice?.in_app !== false && (choice?.desktop ?? DESKTOP_DEFAULT_CATEGORIES.has(category))
+  return isChannelEnabled(preferences, category, 'in_app') && (choice?.desktop ?? DESKTOP_DEFAULT_CATEGORIES.has(category))
 }
 
 export function desktopEventAllowed(event: WSEvent, userId: string, workspaceId: string, preferences: NotificationPreferences): boolean {

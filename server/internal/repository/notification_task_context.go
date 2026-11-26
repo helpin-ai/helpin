@@ -43,3 +43,12 @@ func (r *NotificationRepository) TaskNotificationContext(ctx context.Context, wo
 	}
 	return &result, nil
 }
+
+// A task can be linked from either side of a CRM association.
+func (r *NotificationRepository) IsCRMFollowUp(ctx context.Context, workspaceID, taskID string) (bool, error) {
+	var linked bool
+	err := r.db.WithContext(ctx).Raw(`SELECT EXISTS (SELECT 1 FROM crm_associations WHERE workspace_id=? AND
+        ((from_object_type='task' AND from_object_id=? AND to_object_type IN ('deal','contact','company'))
+         OR (to_object_type='task' AND to_object_id=? AND from_object_type IN ('deal','contact','company'))))`, workspaceID, taskID, taskID).Scan(&linked).Error
+	return linked, err
+}

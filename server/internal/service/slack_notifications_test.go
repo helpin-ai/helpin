@@ -201,7 +201,7 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	}
 	// A CRM-linked project task uses exactly one row, on initial assignment
 	// and on later reassignment from the task screen.
-	mustExecNotificationService(t, db, "CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)")
+
 	mustExecNotificationService(t, db, "INSERT INTO crm_associations VALUES ('ws','company','account','task','linked')")
 	if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Categories: map[string]bool{"crm.assignments": true}}); err != nil {
 		t.Fatal(err)
@@ -213,7 +213,7 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	}{
 		{"ordinary", nil, 7}, {"new", model.JSONB{"crm_follow_up": true}, 8}, {"linked", nil, 9},
 	} {
-		if err := n.queueSlackNotification(ctx, "member", model.NotificationEventInput{WorkspaceID: "ws", EntityType: "task", EntityID: tc.id, EventType: "task.assigned", Metadata: tc.metadata}); err != nil {
+		if err := n.Emit(ctx, model.NotificationEventInput{ExplicitRecipients: []string{"member"}, SkipFollowers: true, WorkspaceID: "ws", EntityType: "task", EntityID: tc.id, EventType: "task.assigned", Metadata: tc.metadata}); err != nil {
 			t.Fatal(err)
 		}
 		countJobs(tc.jobs)

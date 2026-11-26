@@ -1757,5 +1757,5 @@ func (e *AutomationRuleEngine) observeFailure(ctx context.Context, rule *model.A
 // containsString is defined in pm_import.go — reused here.
 
 func (e *AutomationRuleEngine) notifyRuleActivity(ctx context.Context, rule *model.AutomationRule, status string) {
-	e.notificationSvc.notifySlackRecipients(ctx, model.NotificationEventInput{WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID), EntityType: "automation_rule", EntityID: rule.ID, EventType: "automation_rule.activity", Title: "Workflow " + status + ": " + rule.Name}, derefString(rule.CreatedBy))
+	e.notificationSvc.notifyRecipients(ctx, model.NotificationEventInput{WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID), EntityType: "automation_rule", EntityID: rule.ID, EventType: "automation_rule.activity", Title: "Workflow " + status + ": " + rule.Name}, derefString(rule.CreatedBy))
 }

@@ -89,6 +89,44 @@ func (r *NotificationPreferenceRepository) Upsert(ctx context.Context, pref *mod
 	return fmt.Errorf("upsert notification preference: %w", err)
 }
 
+// UpdateWorkspace applies individual switch changes against the latest saved preferences.
+func (r *NotificationPreferenceRepository) UpdateWorkspace(ctx context.Context, userID, workspaceID string, req model.UpdateNotificationPreferenceRequest) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A row lock cannot protect two simultaneous first edits before a row exists.
+		if tx.Dialector.Name() == "postgres" {
+			key := "notification-preferences:" + workspaceID + ":" + userID
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+				return err
+			}
+		}
+		repo := NewNotificationPreferenceRepository(tx)
+		pref, err := repo.Get(ctx, userID, workspaceID)
+		if err != nil {
+			return err
+		}
+		if req.MuteWorkspace != nil {
+			pref.MuteWorkspace = *req.MuteWorkspace
+		}
+		if req.ChannelPreferences != nil {
+			pref.ChannelPreferences = model.JSONB(req.ChannelPreferences)
+		}
+		if pref.ChannelPreferences == nil {
+			pref.ChannelPreferences = model.JSONB{}
+		}
+		for category, changes := range req.ChannelChanges {
+			row, _ := pref.ChannelPreferences[category].(map[string]any)
+			if row == nil {
+				row = map[string]any{}
+			}
+			for channel, value := range changes {
+				row[channel] = value
+			}
+			pref.ChannelPreferences[category] = row
+		}
+		return repo.Upsert(ctx, pref)
+	})
+}
+
 // DeleteForTeam removes a team-level notification preference (reset to workspace defaults).
 func (r *NotificationPreferenceRepository) DeleteForTeam(ctx context.Context, userID, workspaceID, teamID string) error {
 	return r.db.WithContext(ctx).
@@ -121,6 +159,23 @@ func resolveChannelPref(pref *model.NotificationPreference, category, channel st
 	return b, true
 }
 
+// Preserve saved in-app choices from the previously shared assignment and attention rows
+// until a user chooses a preference for the new row.
+func resolveModuleChannelPref(pref *model.NotificationPreference, category, channel string) (bool, bool) {
+	if value, ok := resolveChannelPref(pref, category, channel); ok {
+		return value, true
+	}
+	if channel == "in_app" {
+		switch category {
+		case "crm.assignments":
+			return resolveChannelPref(pref, model.NotifCategoryAssignments, channel)
+		case "automation.attention":
+			return resolveChannelPref(pref, model.NotifCategoryAgentAttention, channel)
+		}
+	}
+	return false, false
+}
+
 // GetUserSettings fetches account-level notification settings for a user.
 // Returns defaults if no row exists.
 func (r *NotificationPreferenceRepository) GetUserSettings(ctx context.Context, userID string) (*model.UserNotificationSettings, error) {
@@ -146,6 +201,10 @@ func (r *NotificationPreferenceRepository) GetUserSettings(ctx context.Context, 
 // ShouldNotify checks if a user should receive a notification for a given event type and channel.
 // Checks account-level DND first, then workspace mute, then team/workspace category preferences.
 func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, userID, workspaceID, eventType, channel, teamID string) (bool, error) {
+	return r.ShouldNotifyWithMetadata(ctx, userID, workspaceID, eventType, channel, teamID, nil)
+}
+
+func (r *NotificationPreferenceRepository) ShouldNotifyWithMetadata(ctx context.Context, userID, workspaceID, eventType, channel, teamID string, meta model.JSONB) (bool, error) {
 	// 1. Check account-level settings (DND, email enabled)
 	userSettings, err := r.GetUserSettings(ctx, userID)
 	if err != nil {
@@ -172,7 +231,7 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 	}
 
 	// Resolve category from event type
-	category := model.EventTypeToCategory[eventType]
+	category := model.NotificationPreferenceCategory(eventType, meta)
 
 	// 4. Check team-level preference first
 	if teamID != "" && category != "" {
@@ -181,7 +240,7 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 			return false, err
 		}
 		if teamPref != nil {
-			if val, found := resolveChannelPref(teamPref, category, channel); found {
+			if val, found := resolveModuleChannelPref(teamPref, category, channel); found {
 				return val, nil
 			}
 		}
@@ -189,7 +248,7 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 
 	// 5. Check workspace-level category preference
 	if category != "" {
-		if val, found := resolveChannelPref(wsPref, category, channel); found {
+		if val, found := resolveModuleChannelPref(wsPref, category, channel); found {
 			return val, nil
 		}
 	}
@@ -199,13 +258,5 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 		return val, nil
 	}
 
-	// 6. Default: in_app always on, email follows account-level EmailEnabled
-	if channel == "in_app" {
-		return true, nil
-	}
-	if channel == "email" {
-		return userSettings.EmailEnabled, nil
-	}
-
-	return true, nil
+	return model.NotificationChannelDefault(category, channel), nil
 }

@@ -573,7 +573,7 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 	if s.notificationService != nil {
-		s.notificationService.notifySlackRecipients(ctx, model.NotificationEventInput{
+		s.notificationService.notifyRecipients(ctx, model.NotificationEventInput{
 			WorkspaceID: newTask.WorkspaceID, ActorID: actorID, TeamID: derefString(newTask.TeamID),
 			EventType: "task.assigned", EntityType: "task", EntityID: newTask.ID, Metadata: model.JSONB{"crm_follow_up": req.CRMFollowUp}, Title: "You were assigned to " + newTask.Name,
 		}, ownerIDs...)
@@ -617,6 +617,7 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 			Category:               category,
 			Priority:               priority,
 			TeamID:                 derefString(newTask.TeamID),
+			ExcludeFollowers:       ownerIDs,
 			ExplicitRecipients:     mentionedUserIDs,
 			SlackMentionRecipients: mentionTargets.personal,
 			SkipFollowers:          len(mentionedUserIDs) > 0,

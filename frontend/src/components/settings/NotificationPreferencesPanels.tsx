@@ -15,7 +15,7 @@ import {
   useUpdateUserNotificationSettings,
 } from '@/hooks/queries';
 import {
-  type NotificationPreferences,
+  isChannelEnabled,
   type UpdateUserNotificationSettingsRequest,
 } from '@/lib/notificationTypes';
 import { cn } from '@/lib/utils';
@@ -221,12 +221,6 @@ export function WorkspaceMuteNotificationsCard({
   );
 }
 
-const isChannelEnabled = (
-  prefs: NotificationPreferences | undefined,
-  categoryKey: string,
-  channel: 'in_app' | 'email',
-) => prefs?.channel_preferences?.[categoryKey]?.[channel] ?? true;
-
 const channelGrid = 'grid grid-cols-[minmax(0,1fr)_repeat(4,2.5rem)] items-center gap-1 sm:grid-cols-[minmax(0,1fr)_repeat(4,4rem)] sm:gap-2';
 
 export function NotificationCategoriesCard({
@@ -255,13 +249,7 @@ export function NotificationCategoriesCard({
   }, [target, isLoading]);
 
   const handleToggle = (categoryKey: string, channel: 'in_app' | 'email' | 'desktop', value: boolean) => {
-    const nextPreferences = { ...(prefs?.channel_preferences ?? {}) };
-    nextPreferences[categoryKey] = {
-      ...(nextPreferences[categoryKey] ?? {}),
-      [channel]: value,
-    };
-
-    updatePrefs.mutate({ channel_preferences: nextPreferences }, {
+    updatePrefs.mutate({ channel_changes: { [categoryKey]: { [channel]: value } } }, {
       onError: () => toast.error('Failed to update notification preference'),
     });
   };
@@ -290,23 +278,15 @@ export function NotificationCategoriesCard({
                   {category.description + (category.key === 'support_replies' ? '. Email alerts arrive after 3 minutes if the conversation is still unread and unanswered.' : '.')}
                 </PreferenceHelp>
               </div>
-              {category.slackOnly ? (
-                <div aria-label="Available in Slack only" className="col-span-3 grid grid-cols-3 text-center text-xs text-quiet-text-tertiary">
-                  <span>—</span><span>—</span><span>—</span>
-                </div>
-              ) : <>
-                <div className="flex justify-center">
-                  <Switch aria-label={`${category.label}: in-app`} checked={isChannelEnabled(prefs, category.key, 'in_app')} disabled={updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)} />
-                </div>
-                <div className="flex justify-center">
-                  <Switch aria-label={`${category.label}: desktop`} checked={prefs ? desktopCategoryEnabled(prefs, category.key) : false} disabled={!prefs || updatePrefs.isPending || !isChannelEnabled(prefs, category.key, 'in_app')} onCheckedChange={(value) => handleToggle(category.key, 'desktop', value)} />
-                </div>
-                <div className="flex justify-center">
-                  {category.supportsEmail === false ? <span aria-label="Email not available" className="text-xs text-quiet-text-tertiary">—</span> : (
-                    <Switch aria-label={`${category.label}: email`} checked={isChannelEnabled(prefs, category.key, 'email')} disabled={updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'email', value)} />
-                  )}
-                </div>
-              </>}
+              <div className="flex justify-center">
+                <Switch aria-label={`${category.label}: in-app`} checked={isChannelEnabled(prefs, category.key, 'in_app')} disabled={!prefs || updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)} />
+              </div>
+              <div className="flex justify-center">
+                <Switch aria-label={`${category.label}: desktop`} checked={prefs ? desktopCategoryEnabled(prefs, category.key) : false} disabled={!prefs || updatePrefs.isPending || !isChannelEnabled(prefs, category.key, 'in_app')} onCheckedChange={(value) => handleToggle(category.key, 'desktop', value)} />
+              </div>
+              <div className="flex justify-center">
+                <Switch aria-label={`${category.label}: email`} checked={isChannelEnabled(prefs, category.key, 'email')} disabled={!prefs || updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'email', value)} />
+              </div>
               <div className="flex justify-center">
                 <Switch aria-label={`${title}, ${category.label}: Slack`} checked={controls.settings.data?.categories?.[category.slackRow] ?? false}
                   disabled={!controls.settings.data?.linked || controls.save.isPending || controls.settings.isError}

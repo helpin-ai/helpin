@@ -21,7 +21,7 @@ func crmNotificationActor(ctx context.Context, actorID string) string {
 // CRM ownership uses workspace-member IDs. Resolve each new owner inside the
 // record's workspace before dispatching a user-addressed notification.
 func (n *NotificationService) notifyCRMOwners(ctx context.Context, event model.NotificationEventInput, oldOwners, newOwners []*string) {
-	if n == nil || n.slackRepo == nil {
+	if n == nil {
 		return
 	}
 	seen := map[string]bool{"": true}
@@ -41,13 +41,13 @@ func (n *NotificationService) notifyCRMOwners(ctx context.Context, event model.N
 			continue
 		}
 		if member != nil {
-			n.notifySlackRecipients(ctx, event, derefString(member.UserID))
+			n.notifyRecipients(ctx, event, derefString(member.UserID))
 		}
 	}
 }
 
 func (n *NotificationService) notifyCRMNoteMentions(ctx context.Context, activity *model.CRMActivity, previous string) {
-	if n == nil || n.slackRepo == nil || activity.ActivityType != model.CRMActivityNote {
+	if n == nil || activity.ActivityType != model.CRMActivityNote {
 		return
 	}
 	added := diffMentionHandles(extractMentions(previous), extractMentions(derefString(activity.Body)))
@@ -70,5 +70,5 @@ func (n *NotificationService) notifyCRMNoteMentions(ctx context.Context, activit
 		slog.ErrorContext(ctx, "resolve CRM note mentions", "error", err, "activity_id", activity.ID)
 		return
 	}
-	n.notifySlackRecipients(ctx, event, users...)
+	n.notifyRecipients(ctx, event, users...)
 }

@@ -101,7 +101,6 @@ type AgentRuntimeProjectionService struct {
 	artifactRepo        agentRuntimeProjectionArtifactRepository
 	interactionRepo     agentRuntimeProjectionInteractionRepository
 	attentionNotifier   agentAttentionNotifier
-	slackNotifications  *NotificationService
 	notificationRules   *repository.AutomationRuleRepository
 	sessionSnapshotRepo agentRuntimeProjectionSessionSnapshotRepository
 	usageMeter          *AIUsageMeter
@@ -1010,7 +1009,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		runtimeSummaryAvailable := s.mergeRuntimeOutputSummaryForFinalizers(ctx, run)
 		s.runFinalizers.FinalizeTerminalRun(ctx, run, runtimeSummaryAvailable)
 	}
-	// The queue deduplicates by run + transition, including runtime event replays.
+	// Notification history and queued Slack jobs deduplicate replayed transitions.
 	if event.Type == agentruntime.EventRunStarted && run.Status == model.AgentRunStatusRunning {
 		settlementErr = errors.Join(settlementErr, s.notifyRunActivity(ctx, run, "agent_run.started"))
 	} else if isTerminalRuntimeEvent(event.Type) && isTerminalAgentRunStatus(run.Status) {

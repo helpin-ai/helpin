@@ -289,3 +289,13 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		"mentioned_user_ids", mentionedUserIDs,
 	)
 }
+
+func (s *NotificationService) notifyChecklistAssignee(ctx context.Context, task *model.PMTask, item model.PMChecklistItem, actor string) {
+	if item.AssigneeID == nil {
+		return
+	}
+	s.notifyRecipients(ctx, model.NotificationEventInput{
+		WorkspaceID: task.WorkspaceID, ActorID: actor, TeamID: derefString(task.TeamID),
+		EventType: "checklist.assigned", EntityType: "task", EntityID: task.ID, Title: "You were assigned a checklist item on " + task.Name,
+	}, *item.AssigneeID)
+}

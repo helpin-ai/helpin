@@ -251,19 +251,20 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		s.notificationService.notifySlackRecipients(ctx, model.NotificationEventInput{
+		s.notificationService.notifyRecipients(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID, ActorID: actorID, EventType: "objective.assigned",
 			EntityType: "objective", EntityID: obj.ID, Title: "You were assigned to objective " + obj.Name,
 		}, newOwnerUserIDs...)
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-			WorkspaceID: obj.WorkspaceID,
-			ActorID:     actorID,
-			EventType:   "objective.created",
-			EntityType:  "objective",
-			EntityID:    obj.ID,
-			Title:       "created objective " + obj.Name,
-			Category:    "activity",
-			Priority:    "normal",
+			WorkspaceID:      obj.WorkspaceID,
+			ActorID:          actorID,
+			EventType:        "objective.created",
+			ExcludeFollowers: newOwnerUserIDs,
+			EntityType:       "objective",
+			EntityID:         obj.ID,
+			Title:            "created objective " + obj.Name,
+			Category:         "activity",
+			Priority:         "normal",
 			EntitySnapshot: model.JSONB{
 				"title": obj.Name,
 				"type":  obj.ObjectiveType,
@@ -411,19 +412,20 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		s.notificationService.notifySlackRecipients(ctx, model.NotificationEventInput{
+		s.notificationService.notifyRecipients(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID, ActorID: actorID, EventType: "objective.assigned",
 			EntityType: "objective", EntityID: obj.ID, Title: "You were assigned to objective " + obj.Name,
 		}, newOwnerUserIDs...)
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-			WorkspaceID: obj.WorkspaceID,
-			ActorID:     actorID,
-			EventType:   "objective.updated",
-			EntityType:  "objective",
-			EntityID:    obj.ID,
-			Title:       "updated objective " + obj.Name,
-			Category:    "activity",
-			Priority:    "normal",
+			WorkspaceID:      obj.WorkspaceID,
+			ActorID:          actorID,
+			EventType:        "objective.updated",
+			ExcludeFollowers: newOwnerUserIDs,
+			EntityType:       "objective",
+			EntityID:         obj.ID,
+			Title:            "updated objective " + obj.Name,
+			Category:         "activity",
+			Priority:         "normal",
 			EntitySnapshot: model.JSONB{
 				"title": obj.Name,
 				"type":  obj.ObjectiveType,

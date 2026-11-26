@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -616,6 +617,7 @@ func newNotificationServiceTestDB(t *testing.T) *gorm.DB {
 	}
 
 	statements := []string{
+		`CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			email TEXT NOT NULL,
@@ -804,5 +806,138 @@ func mustExecNotificationService(t *testing.T, db *gorm.DB, query string, args .
 	t.Helper()
 	if err := db.Exec(query, args...).Error; err != nil {
 		t.Fatalf("exec %q: %v", query, err)
+	}
+}
+
+func TestSupportAssignmentChannelsWithoutSlack(t *testing.T) {
+	ctx := context.Background()
+	db := newNotificationServiceTestDB(t)
+	now := time.Now()
+	seedNotificationServiceWorkspace(t, db, "ws", "Workspace", now)
+	seedNotificationServiceUser(t, db, "owner", "member@example.org", "Owner", now)
+	seedNotificationServiceUserSettings(t, db, "owner", true, "immediate", nil, now)
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(repository.NewNotificationRepository(db), repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db), nil, repository.NewUserRepository(db), repository.NewWorkspaceRepository(db), nil, emailer, "https://helpin.example")
+	send := func(id string) {
+		service.notifySupportAssignment(ctx, &model.SupportConversation{ID: id, WorkspaceID: "ws"}, "owner", "")
+	}
+	send("first")
+	assertNotificationServiceCount(t, db, "notifications", 1)
+	if len(emailer.sent) != 0 {
+		t.Fatal("unexpected default assignment email")
+	}
+	for channel, value := range map[string]bool{"in_app": false, "email": true} {
+		if err := service.UpdatePreferences(ctx, "owner", "ws", model.UpdateNotificationPreferenceRequest{
+			ChannelChanges: map[string]map[string]bool{"support.assignments": {channel: value}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send("second")
+	if len(emailer.sent) != 1 {
+		t.Fatalf("sent %d emails after opt-in", len(emailer.sent))
+	}
+	var notification model.Notification
+	if err := db.Where("entity_id = ?", "second").First(&notification).Error; err != nil || notification.Status != notificationEmailOnly {
+		t.Fatalf("email-only assignment: %s, %v", notification.Status, err)
+	}
+}
+
+func TestModuleNotificationRoutingAndDefaults(t *testing.T) {
+	rule := model.JSONB{"automation_rule_id": "rule"}
+	for _, tc := range []struct {
+		event, category string
+		meta            model.JSONB
+		inApp           bool
+	}{
+		{"support_conversation.assigned", "support.assignments", nil, true},
+		{"crm.assigned", "crm.assignments", nil, true},
+		{"task.assigned", "crm.assignments", model.JSONB{"crm_follow_up": true}, true},
+		{"crm.mention", "crm.mentions", nil, true},
+		{"task.agent_attention_required", "automation.attention", rule, true},
+		{"task.agent_attention_required", "agent_attention", nil, true},
+		{"external_mcp.reauthorization_required", "integrations", nil, true},
+		{"doc.updated", "docs.updates", nil, false},
+		{"crm.deal_updated", "crm.updates", nil, false},
+		{"agent_run.started", "agents.activity", nil, false},
+		{"agent_run.finished", "automation.activity", rule, false},
+		{"automation_rule.activity", "automation.activity", nil, false},
+	} {
+		event := model.NotificationEventInput{EventType: tc.event, Metadata: tc.meta}
+		var payload notificationWSData
+		if err := json.Unmarshal(buildNotificationWSData("owner", event, "normal", "unread"), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Category != tc.category || model.NotificationChannelDefault(payload.Category, "in_app") != tc.inApp || model.NotificationChannelDefault(payload.Category, "email") || model.NotificationChannelDefault(payload.Category, "desktop") != (tc.category == model.NotifCategoryAgentAttention) {
+			t.Errorf("%s routed to %q with unexpected defaults (want %q, in-app %t, email off)", tc.event, payload.Category, tc.category, tc.inApp)
+		}
+	}
+}
+
+func TestRunActivityReplayAndDigestPreference(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	ctx := context.Background()
+	service := newCRUDNotificationService(db)
+	rule := model.JSONB{"automation_rule_id": "rule"}
+	event := model.NotificationEventInput{WorkspaceID: "ws", EntityType: "agent_run", EntityID: "run", EventType: "agent_run.started", Title: "Your workflow run started", Metadata: rule, ExplicitRecipients: []string{"owner"}, SkipFollowers: true}
+	if err := service.UpdatePreferences(ctx, "owner", "ws", model.UpdateNotificationPreferenceRequest{
+		ChannelChanges: map[string]map[string]bool{"automation.activity": {"in_app": true}, "agents.activity": {"email": true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"agent_run.started", "agent_run.finished", "agent_run.started", "agent_run.finished"} {
+		event.EventType = kind
+		if err := service.Emit(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertNotificationServiceCount(t, db, "notification_events", 2)
+	allowed, skipped, err := service.filterDigestDeliveriesByCurrentPreferences(ctx, "owner", []repository.PendingDigestDelivery{
+		{DeliveryID: "manual", WorkspaceID: "ws", EventType: "agent_run.finished"},
+		{DeliveryID: "workflow", WorkspaceID: "ws", EventType: "agent_run.finished", EventMetadata: rule},
+	})
+	if err != nil || len(allowed) != 1 || allowed[0].DeliveryID != "manual" || len(skipped) != 1 || skipped[0] != "workflow" {
+		t.Fatalf("digest recheck: allowed %v, skipped %v, err %v", allowed, skipped, err)
+	}
+}
+
+func TestEmailOnlyWorkflowUpdatePreservesInboxAndDigest(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	seedNotificationServiceUser(t, db, "owner", "owner@example.org", "Owner", now)
+	seedNotificationServiceUserSettings(t, db, "owner", true, "daily", nil, now)
+	svc := newCRUDNotificationService(db)
+	svc.emailClient = &stubEmailSender{}
+	event := model.NotificationEventInput{WorkspaceID: "ws", EntityType: "agent_run", EntityID: "run", EventType: taskAgentAttentionRequiredEventType, Category: model.NotifCategoryAgentAttention, Title: "Approval needed", Metadata: model.JSONB{"automation_rule_id": "rule", "interaction_id": "question"}, ExplicitRecipients: []string{"owner"}, SkipFollowers: true}
+	if err := svc.Emit(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	var item model.Notification
+	if err := db.First(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.notifRepo.MarkAsRead(ctx, item.ID, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdatePreferences(ctx, "owner", "ws", model.UpdateNotificationPreferenceRequest{ChannelChanges: map[string]map[string]bool{"automation.activity": {"email": true}}}); err != nil {
+		t.Fatal(err)
+	}
+	event.EventType, event.Title, event.Category = "agent_run.finished", "Your workflow run completed", "automation.activity"
+	event.Metadata = model.JSONB{"automation_rule_id": "rule"}
+	if err := svc.Emit(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&item).Error; err != nil || item.Title != "Approval needed" || item.Status != "read" {
+		t.Fatalf("previous inbox item changed: %+v %v", item, err)
+	}
+	pending, err := svc.notifRepo.ListPendingDigestDeliveries(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _, _ := buildDigestItems(pending, now)
+	if len(items) != 1 || items[0].Title != event.Title {
+		t.Fatalf("email-only digest: %+v", items)
 	}
 }
