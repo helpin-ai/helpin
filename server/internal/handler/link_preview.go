@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
@@ -160,6 +161,24 @@ func (h *LinkPreviewHandler) shell(ctx context.Context) (string, error) {
 	h.indexHTML = string(data)
 	h.indexExpires = time.Now().Add(5 * time.Second)
 	return h.indexHTML, nil
+}
+
+// InitialsAvatar serves a generic, cacheable badge with no workspace lookup.
+func (h *LinkPreviewHandler) InitialsAvatar(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	img := h.renderer.InitialsAvatar(q.Get("i"), q.Get("c"))
+	if img == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.Method != http.MethodHead {
+		if err := png.Encode(w, img); err != nil {
+			slog.DebugContext(r.Context(), "write initials avatar", "error", err)
+		}
+	}
 }
 
 func previewHeaders(w http.ResponseWriter) {
