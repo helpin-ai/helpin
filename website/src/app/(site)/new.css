@@ -463,7 +463,8 @@
 .hp3 .homepage-hero h1 { font-size: clamp(2.5rem, 4.4vw, 3.5rem); }
 .hp3 .homepage-hero .lede { font-size: clamp(18px, 1.45vw, 21px); line-height: 1.5; max-width: 44ch; color: var(--soft); }
 .hp3 .start-form { display: flex; gap: 6px; width: min(100%, 540px); margin: 10px auto 0; padding: 6px; border: 1px solid var(--border-2); border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgba(19, 21, 20, .06); }
-.hp3 .start-form:focus-within { border-color: var(--em); box-shadow: 0 0 0 3px var(--em-t); }
+/* The second ring thickens the green edge to 3px without moving the layout. */
+.hp3 .start-form:focus-within { border-color: var(--em); box-shadow: 0 0 0 2px var(--em); }
 .hp3 .start-form input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 16px; }
 .hp3 .start-form input::placeholder { color: var(--t3); }
 .hp3 .start-form .btn { height: 44px; padding-inline: 20px; justify-content: center; }
@@ -483,7 +484,7 @@
   .hp3 .start-form { flex-direction: column; gap: 10px; padding: 0; border: 0; background: transparent; box-shadow: none; }
   .hp3 .start-form:focus-within { box-shadow: none; }
   .hp3 .start-form input { flex: none; height: 52px; padding: 0 16px; border: 1px solid var(--border-2); border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgba(19, 21, 20, .06); }
-  .hp3 .start-form input:focus { border-color: var(--em); box-shadow: 0 0 0 3px var(--em-t); }
+  .hp3 .start-form input:focus { border-color: var(--em); box-shadow: 0 0 0 2px var(--em); }
   .hp3 .start-form .btn { height: 52px; border-radius: 12px; font-size: 16px; }
 }
 @media (max-width: 340px) {
