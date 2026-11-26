@@ -1649,6 +1649,10 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 
 // CreateConversation creates a new support conversation.
 func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.CreateConversationRequest, actorID string) (*model.SupportConversation, error) {
+	return s.createConversation(ctx, req, actorID, "", nil)
+}
+
+func (s *SupportInboxService) createConversation(ctx context.Context, req model.CreateConversationRequest, actorID, id string, note *model.SupportMessage) (*model.SupportConversation, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Subject) == "" {
 		return nil, fmt.Errorf("workspace_id and subject are required")
 	}
@@ -1694,7 +1698,8 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		ticket.FlowState = strPtr(flowState)
 	}
 
-	if err := s.conversationRepo.Create(ctx, ticket); err != nil {
+	ticket.ID = id
+	if err := s.conversationRepo.CreateWithOpeningNote(ctx, ticket, note); err != nil {
 		return nil, err
 	}
 

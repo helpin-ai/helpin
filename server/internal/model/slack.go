@@ -20,10 +20,11 @@ func (SlackRoute) TableName() string { return "slack_channel_routes" }
 
 // SlackThread identifies the intended original thread for an explicitly linked task.
 type SlackThread struct {
-	AccountID string `json:"account"`
-	Channel   string `json:"channel"`
-	Root      string `json:"root"`
-	Permalink string `json:"permalink,omitempty"`
+	InboxConversationID string `json:"-"`
+	AccountID           string `json:"account"`
+	Channel             string `json:"channel"`
+	Root                string `json:"root"`
+	Permalink           string `json:"permalink,omitempty"`
 }
 
 type slackSourceKey struct{}

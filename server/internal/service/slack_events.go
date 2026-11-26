@@ -16,6 +16,13 @@ import (
 // SlackEventJob is a durably queued, authenticated Slack callback.
 const SlackEventJob = "slack_event"
 
+// Keep staff-channel events on their original side of the support intake boundary
+// if an administrator changes the route while the event is queued.
+type queuedSlackEvent struct {
+	slack.Message
+	Inbox bool `json:"helpin_inbox,omitempty"`
+}
+
 // AcceptEvent verifies and stores an event before acknowledging to Slack.
 func (s *SlackService) AcceptEvent(ctx context.Context, stamp, signature string, body []byte) (string, error) {
 	if !slack.Verify(s.cfg.SigningSecret, stamp, signature, body, s.channels.now()) {
@@ -48,6 +55,7 @@ func (s *SlackService) AcceptEvent(ctx context.Context, stamp, signature string,
 	if !welcome && !env.Event.HumanMessage() {
 		return "", nil
 	}
+	inbox := false
 	if !welcome && !slackDirect(env.Event) {
 		route, err := s.repo.EffectiveRoute(ctx, a.ID, env.Event.Channel)
 		if err != nil || route == nil {
@@ -62,6 +70,7 @@ func (s *SlackService) AcceptEvent(ctx context.Context, stamp, signature string,
 				return "", err
 			}
 		}
+		inbox = route.Purpose == "inbox"
 		env.Event.Channel = route.ChannelID
 	}
 	eventKey := env.Event.TS
@@ -69,7 +78,7 @@ func (s *SlackService) AcceptEvent(ctx context.Context, stamp, signature string,
 		eventKey = "welcome:" + env.Event.User
 	}
 	subject := model.SupportChannelSubjectKey(a.ID, env.Event.User)
-	data, err := json.Marshal(env.Event)
+	data, err := json.Marshal(queuedSlackEvent{Message: env.Event, Inbox: inbox})
 	if err != nil {
 		return "", err
 	}
@@ -84,10 +93,11 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 	if a == nil || err != nil {
 		return err
 	}
-	var m slack.Message
-	if err = json.Unmarshal([]byte(job.Payload), &m); err != nil {
+	var queued queuedSlackEvent
+	if err = json.Unmarshal([]byte(job.Payload), &queued); err != nil {
 		return err
 	}
+	m := queued.Message
 	if slackDirect(m) || m.Type == "app_home_opened" {
 		token, err := s.channels.decryptToken(a)
 		if err != nil {
@@ -99,7 +109,7 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 		return s.directAgent(ctx, a, token, m)
 	}
 	route, err := s.repo.EffectiveRoute(ctx, a.ID, m.Channel)
-	if route == nil || err != nil {
+	if route == nil || err != nil || (queued.Inbox && route.Purpose != "inbox") {
 		return err
 	}
 	token, err := s.channels.decryptToken(a)
@@ -108,6 +118,9 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 	}
 	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
 	if route.Purpose == "inbox" {
+		if kind, details := inboxCreateCommand(m.Text, a.Handle); kind != "" {
+			return s.beginInboxCreate(ctx, a, token, route, m, kind, details, "")
+		}
 		return s.receiveFeedNote(ctx, a, token, route, m)
 	}
 	if m.ThreadTS != "" {
