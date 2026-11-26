@@ -381,6 +381,9 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return map[string]any{}, nil
 		}
 		action := v.Actions[0]
+		if action.ID == "inbox_ticket_review" || action.ID == "inbox_linked_task" {
+			return s.inboxTicketAction(ctx, v, action.ID, action.Value)
+		}
 		if strings.HasPrefix(action.ID, "feed_") {
 			return s.feedAction(ctx, v, false)
 		}
@@ -392,6 +395,9 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 			return map[string]any{}, nil
 		}
 	case "view_submission":
+		if v.View.Callback == "inbox_ticket_save" {
+			return s.inboxTicketAction(ctx, v, v.View.Callback, v.View.Metadata)
+		}
 		if feedFormAction(v.View.Callback) {
 			return s.feedAction(ctx, v, true)
 		}
@@ -434,7 +440,7 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 		return nil, err
 	}
 	var draft slackDraft
-	if len(rawDraft) == 0 || json.Unmarshal(rawDraft, &draft) != nil {
+	if len(rawDraft) == 0 || json.Unmarshal(rawDraft, &draft) != nil || draft.Thread.AccountID != a.ID {
 		return nil, ErrChannelInvalid
 	}
 	thread := draft.Thread
@@ -447,6 +453,22 @@ func (s *SlackService) Action(ctx context.Context, stamp, sig string, raw []byte
 		return nil, ErrChannelInvalid
 	}
 	ctx = authorization.WithActor(ctx, actor)
+	if draft.Inbox || route.Purpose == "inbox" {
+		if !draft.Inbox || route.Purpose != "inbox" {
+			return nil, ErrChannelInvalid
+		}
+		t, err := s.repo.FeedByRoot(ctx, a.ID, route.ChannelID, thread.Root)
+		if err != nil {
+			return nil, err
+		}
+		if t == nil || t.ConversationID != draft.ConversationID {
+			return nil, ErrChannelInvalid
+		}
+		thread.InboxConversationID = draft.ConversationID
+		if _, _, err := s.editableFeed(ctx, a, t, v.User.ID); err != nil {
+			return nil, err
+		}
+	}
 	if draft.ConversationID != "" {
 		ok, err := s.authz.CanAccessModule(ctx, actor, model.ModuleSupport)
 		if err != nil {
@@ -572,7 +594,7 @@ func (s *SlackService) openTask(ctx context.Context, token string, v SlackAction
 	if err != nil {
 		return err
 	}
-	if v.View.ID != "" {
+	if v.View.ID != "" && len(v.Actions) > 0 {
 		selected := v.View.State.Values["team"]["value"].Selected.Value
 		if v.Actions[0].BlockID == "team" {
 			selected = v.Actions[0].Selected.Value
@@ -641,7 +663,7 @@ func (s *SlackService) openTask(ctx context.Context, token string, v SlackAction
 		blocks = append(blocks, selectBlock("epic_"+derefString(draft.TeamID), "Epic", epicOpts, derefString(draft.EpicID), true))
 	}
 	blocks = append(blocks, selectBlock("type", "Type", enumOptions("feature", "bug", "chore"), draft.TaskType, false), selectBlock("priority", "Priority", enumOptions("none", "low", "medium", "high", "urgent"), draft.Priority, false))
-	expanded := v.Actions[0].ID == "draft_more"
+	expanded := len(v.Actions) > 0 && v.Actions[0].ID == "draft_more"
 	for _, block := range v.View.Blocks {
 		if block.ID == "task_options_header" {
 			expanded = true

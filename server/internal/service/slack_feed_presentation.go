@@ -7,6 +7,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
+
+	"github.com/helpin-ai/helpin/server/internal/linkpreview"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -32,7 +36,7 @@ func feedExcerpt(subject, text string) string {
 	return strings.TrimSpace(string(runes[:cut])) + "…"
 }
 
-type feedSpeaker struct{ name, role, avatar, icon string }
+type feedSpeaker struct{ name, role, avatar, icon, colorSeed string }
 
 func (a feedSpeaker) label() string {
 	if a.name == "" || strings.EqualFold(a.name, a.role) {
@@ -41,23 +45,37 @@ func (a feedSpeaker) label() string {
 	return a.name + " · " + a.role
 }
 
-func (a feedSpeaker) header() map[string]any {
-	var elements []any
-	if a.avatar != "" {
-		elements = append(elements, map[string]any{"type": "image", "image_url": a.avatar, "alt_text": firstNonEmptyString(a.name, a.role)})
-	} else if a.icon != "" {
-		elements = append(elements, slackText(a.icon))
-	} else if a.name != "" {
-		elements = append(elements, slackText(supportTranscriptAvatarText(a.name, false)))
-	}
-	if a.name != "" && !strings.EqualFold(a.name, a.role) {
-		if strings.ContainsAny(a.name, "*_~`<>&@:\\") {
-			elements = append(elements, slackText(a.name))
-		} else {
-			elements = append(elements, map[string]any{"type": "mrkdwn", "text": "*" + a.name + "*", "verbatim": true})
+func (a feedSpeaker) header(apiBase string) map[string]any {
+	initials := supportTranscriptAvatarText(a.name, false)
+	avatar, prefix := a.avatar, ""
+	if avatar == "" {
+		switch {
+		case a.icon != "":
+			prefix = a.icon + " "
+		case a.name != "":
+			seed := firstNonEmptyString(a.colorSeed, strings.ToLower(a.name))
+			avatar = linkpreview.InitialsAvatarURL(apiBase, initials, seed)
+			if avatar == "" {
+				prefix = initials + " "
+			}
 		}
 	}
-	elements = append(elements, map[string]any{"type": "mrkdwn", "text": "*" + a.role + "*", "verbatim": true})
+
+	var elements []any
+	if avatar != "" {
+		elements = append(elements, map[string]any{"type": "image", "image_url": avatar, "alt_text": initials})
+	}
+	// Slack spaces context items independently. Keep the icon fallback, name,
+	// separator and role together, including names that need literal text.
+	if strings.ContainsAny(a.name, "*_~`<>&@:\\") {
+		elements = append(elements, slackText(prefix+a.label()))
+	} else {
+		label := "*" + a.role + "*"
+		if a.name != "" && !strings.EqualFold(a.name, a.role) {
+			label = "*" + a.name + "* · " + label
+		}
+		elements = append(elements, map[string]any{"type": "mrkdwn", "text": prefix + label, "verbatim": true})
+	}
 	return map[string]any{"type": "context", "elements": elements}
 }
 
@@ -77,6 +95,10 @@ func (f *feedContext) feedAuthor(m *model.SupportMessage) feedSpeaker {
 			}
 		}
 		primary := from == "" && f.conv.MergeRevision == 0 || from != "" && strings.EqualFold(from, derefString(f.conv.CustomerEmail))
+		a.colorSeed = strings.ToLower(from)
+		if primary && (from != "" || a.name == "" || strings.EqualFold(a.name, derefString(f.conv.CustomerName))) {
+			a.colorSeed = firstNonEmptyString(derefString(f.conv.CRMContactID), strings.ToLower(derefString(f.conv.CustomerEmail)), derefString(f.conv.AnonymousID), derefString(f.conv.ChannelIdentityID), a.colorSeed)
+		}
 		if a.name == "" {
 			a.name = from
 		}
@@ -111,6 +133,7 @@ func (f *feedContext) feedAuthor(m *model.SupportMessage) feedSpeaker {
 			a.name = firstNonEmptyString(a.name, "Helpin AI")
 			a.icon = "🤖"
 		} else {
+			a.colorSeed = derefString(m.SenderUserID)
 			a.role = "Team reply"
 			if a.name == "" {
 				a.icon = "🎧"
@@ -126,11 +149,39 @@ func (f *feedContext) feedAuthor(m *model.SupportMessage) feedSpeaker {
 	return a
 }
 
+// Use two-space Markdown hard breaks for Slack. Only rewrite breaks parsed as prose,
+// so code samples and escaped literal backslashes survive intact.
+func feedMarkdownLineBreaks(body string) string {
+	if !strings.Contains(body, "\\\n") && !strings.Contains(body, "\\\r\n") {
+		return body
+	}
+	doc := supportTranscriptMarkdownRenderer.Parser().Parse(text.NewReader([]byte(body)))
+	var out strings.Builder
+	start := 0
+	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if t, ok := n.(*ast.Text); entering && ok && t.HardLineBreak() {
+			end := t.Segment.Stop
+			if end < len(body) && body[end] == '\\' {
+				out.WriteString(body[start:end])
+				out.WriteString("  ")
+				start = end + 1
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if start == 0 {
+		return body
+	}
+	out.WriteString(body[start:])
+	return out.String()
+}
+
 func feedReplyBody(body string, formatted bool) ([]any, bool) {
 	if strings.TrimSpace(body) == "" {
 		return nil, false
 	}
 	if formatted {
+		body = feedMarkdownLineBreaks(body)
 		return []any{slackMarkdown(body)}, utf8.RuneCountInString(body) > 12000
 	}
 	runes := []rune(body)

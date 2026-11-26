@@ -36,6 +36,14 @@ func (r *SlackRepository) FeedByRoot(ctx context.Context, account, channel, root
 	}
 	return &row, err
 }
+func (r *SlackRepository) FeedByConversation(ctx context.Context, account, channel, conversation string) (*FeedThread, error) {
+	var row FeedThread
+	err := r.feedThreads(ctx).Where("t.account_id=? AND t.channel_id=? AND t.conversation_id=?", account, channel, conversation).Limit(1).Scan(&row).Error
+	if row.ID == "" || err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
 func (r *SlackRepository) FeedPermalink(ctx context.Context, workspace, conv string) (string, error) {
 	var link string
 	err := r.db.WithContext(ctx).Raw(`SELECT t.permalink FROM slack_feed_threads t JOIN support_channel_accounts a ON a.id=t.account_id JOIN support_conversations c ON c.id=t.conversation_id JOIN slack_feed_inboxes f ON f.account_id=t.account_id AND f.channel_id=t.channel_id AND f.inbox_key=coalesce(c.mailbox_id::text,'shared') WHERE a.workspace_id=? AND t.conversation_id=? AND a.disabled_at IS NULL AND t.active AND c.anonymized_at IS NULL AND c.merged_into_id IS NULL AND t.permalink IS NOT NULL LIMIT 1`, workspace, conv).Scan(&link).Error
@@ -104,6 +112,20 @@ func latestPublicReply(db *gorm.DB, conv string) (string, error) {
 	var id string
 	err := db.Raw("SELECT id FROM support_messages WHERE conversation_id=? AND NOT is_internal AND message_type='reply' AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1", conv).Scan(&id).Error
 	return id, err
+}
+
+// FeedReplyOrigin identifies the clicked customer reply, or the latest public customer
+// message when a teammate opens the form from the parent, an outbound reply or an internal note.
+func (r *SlackRepository) FeedReplyOrigin(ctx context.Context, workspace, conversation, clicked string) (string, string, error) {
+	var origin struct{ Channel, ID string }
+	err := r.db.WithContext(ctx).Raw(`SELECT COALESCE(NULLIF(m.via_channel, ''), o.channel) AS channel, o.id
+		FROM support_messages m JOIN support_conversations o
+		  ON o.id=COALESCE(m.origin_conversation_id,m.conversation_id) AND o.workspace_id=m.workspace_id
+		WHERE m.workspace_id=? AND m.conversation_id=? AND m.sender_type='customer'
+		  AND m.message_type='reply' AND NOT m.is_internal AND m.deleted_at IS NULL AND o.anonymized_at IS NULL
+		ORDER BY CASE WHEN m.id=NULLIF(?, '')::uuid THEN 0 ELSE 1 END, m.created_at DESC, m.id DESC LIMIT 1`,
+		workspace, conversation, clicked).Scan(&origin).Error
+	return origin.Channel, origin.ID, err
 }
 
 func (r *SlackRepository) FeedPreview(ctx context.Context, workspace, conv string) (*model.SupportMessage, string, error) {

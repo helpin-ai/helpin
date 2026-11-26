@@ -143,6 +143,11 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 			if err != nil && !(errors.As(err, &apiErr) && slices.Contains([]string{"channel_not_found", "message_not_found", "not_in_channel", "is_archived"}, apiErr.Code)) {
 				return nil, err
 			}
+			if err == nil {
+				if err := s.syncFeedResolvedReaction(ctx, a, t, token, route.CurrentChannelID, false); err != nil {
+					return nil, err
+				}
+			}
 		}
 		return nil, s.repo.DeactivateFeed(ctx, t.ID)
 	}
@@ -263,21 +268,85 @@ func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInb
 		if err = s.refreshFeedCard(ctx, f); err != nil {
 			return err
 		}
-		if j.MessageID == nil || f.conv.Status == "spam" {
-			return nil
+		if j.MessageID != nil && f.conv.Status != model.SupportConversationStatusSpam {
+			if err := s.deliverFeedMessage(ctx, f, *j.MessageID); err != nil {
+				return err
+			}
 		}
-		m, err := s.channels.inbox.messageRepo.GetByID(ctx, *j.MessageID)
-		if err != nil || m == nil || m.ConversationID != f.conv.ID || !slackFeedThreadUpdate(m) {
-			return err
-		}
-		if m.MessageType == "note" && m.SenderType != "user" {
-			return s.mirrorFeedAINote(ctx, f, m)
-		}
-		return s.mirrorFeedMessage(ctx, f, m)
+		return s.syncFeedResolvedReaction(ctx, a, t, f.token, f.channel, f.conv.Status == model.SupportConversationStatusResolved)
 	})
 }
+
+func (s *SlackService) deliverFeedMessage(ctx context.Context, f *feedContext, id string) error {
+	m, err := s.channels.inbox.messageRepo.GetByID(ctx, id)
+	if err != nil || m == nil || m.ConversationID != f.conv.ID || !slackFeedThreadUpdate(m) {
+		return err
+	}
+	if m.MessageType == "note" && m.SenderType != "user" {
+		return s.mirrorFeedAINote(ctx, f, m)
+	}
+	return s.mirrorFeedMessage(ctx, f, m)
+}
+
+// The feed lock serializes status changes. Record an add before calling Slack so
+// a reopen can remove it even if the original acknowledgement was lost.
+func (s *SlackService) syncFeedResolvedReaction(ctx context.Context, a *model.SupportChannelAccount, t *repository.FeedThread, token, channel string, resolved bool) error {
+	const key = "resolved_reaction"
+	previous, err := s.repo.FeedReceipt(ctx, t.ID, key)
+	if err != nil {
+		return err
+	}
+	desired := ""
+	method := "reactions.remove"
+	if resolved {
+		desired, method = t.RootTS, "reactions.add"
+	}
+	// Reauthorization updates the installation. Older grants can still deliver
+	// the status label and replies without repeatedly requesting a denied reaction.
+	missingScope := "missing_scope:" + a.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	if previous == desired || previous == missingScope {
+		return nil
+	}
+	if resolved && previous != "adding" {
+		if err := s.repo.SaveFeedReceipt(ctx, t.ID, key, "adding"); err != nil {
+			return err
+		}
+	}
+	err = s.api.Call(ctx, token, method, map[string]string{"channel": channel, "timestamp": t.RootTS, "name": "white_check_mark"}, nil)
+	var apiErr *slack.APIError
+	if errors.As(err, &apiErr) {
+		switch {
+		case apiErr.Code == "missing_scope":
+			return s.repo.SaveFeedReceipt(ctx, t.ID, key, missingScope)
+		case resolved && apiErr.Code == "already_reacted", !resolved && apiErr.Code == "no_reaction":
+			err = nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return s.repo.SaveFeedReceipt(ctx, t.ID, key, desired)
+}
+
 func feedButton(id, label, value string) map[string]any {
 	return map[string]any{"type": "button", "action_id": id, "text": slackText(label), "value": value}
+}
+
+func (f *feedContext) threadReplyButtons(messageID string) []any {
+	c := f.conv
+	if c.Status == "spam" || (len(feedOptions(c)) == 0 && c.ChannelIdentityID == nil && c.MergeRevision == 0) {
+		return nil
+	}
+	label := "Reply to conversation"
+	if c.MergeRevision == 0 && c.ChannelIdentityID == nil {
+		recipient := firstNonEmptyString(feedOneLine(derefString(c.CustomerName)), feedOneLine(derefString(c.CustomerEmail)))
+		if recipient != "" {
+			label = truncate("Reply to "+recipient, 75)
+		} else {
+			label = f.replyLabel()
+		}
+	}
+	return []any{feedButton("feed_reply", label, f.thread.ID+":"+messageID)}
 }
 
 func feedOpenButton(threadID, link string) map[string]any {
@@ -293,7 +362,7 @@ func (s *SlackService) refreshFeedCard(ctx context.Context, f *feedContext) erro
 	case model.SupportConversationStatusWaitingOnCustomer:
 		status = "Waiting on customer"
 	case model.SupportConversationStatusResolved:
-		status = "Resolved"
+		status = "✅ Resolved"
 	case model.SupportConversationStatusSpam:
 		status = "Spam"
 	case model.SupportConversationStatusOpen:
@@ -453,6 +522,7 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 			}
 		}
 	}
+	var statuses []string
 	var delivery *model.SupportChannelDelivery
 	if m.SenderType != "customer" && !m.IsInternal {
 		rows, err := s.channels.outbox.ListByMessageIDs(ctx, f.account.WorkspaceID, []string{m.ID})
@@ -461,30 +531,41 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 		}
 		if len(rows) > 0 {
 			delivery = channelDeliveryView(rows[0])
-			body += "\n" + delivery.Provider + " · " + delivery.Status
+			status := delivery.Provider + " · " + delivery.Status
 			if delivery.Status == "unconfirmed" {
-				body += " · Check the original destination before resending."
+				status += " · Check the original destination before resending."
 			}
+			statuses = append(statuses, status)
 		}
 	}
 	if meta.EmailStatus != "" {
-		body += "\nEmail · " + meta.EmailStatus
+		statuses = append(statuses, "Email · "+meta.EmailStatus)
 	}
-	blocks := []any{author.header()}
+	blocks := []any{author.header(s.channels.cfg.PublicAPIBaseURL)}
 	formatted := rich || !m.IsInternal && author.role == "AI reply"
 	display, clipped := feedReplyBody(body, formatted)
 	blocks = append(blocks, display...)
 	if formatted {
 		body = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(body))
 	}
+	if len(statuses) > 0 {
+		status := strings.Join(statuses, "\n")
+		blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText(status)}})
+		body += "\n" + status
+	}
 	var buttons []any
+	if m.MessageType != "system" {
+		buttons = f.threadReplyButtons(m.ID)
+	}
 	if delivery != nil && delivery.Status == "failed" {
 		buttons = append(buttons, feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID))
 	}
-	if clipped || email {
+	if clipped || m.MessageType != "system" {
 		link := f.conversationURL + "#message-" + m.ID
 		buttons = append(buttons, feedOpenButton(f.thread.ID, link))
-		body = truncate(body, 3500) + "\n" + link
+		if clipped || email {
+			body = truncate(body, 3500) + "\n" + link
+		}
 	}
 	if len(buttons) > 0 {
 		blocks = append(blocks, slackButtons(buttons...))

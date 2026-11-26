@@ -14,7 +14,7 @@ import (
 )
 
 type slackDraft struct {
-	Direct                                    bool
+	Direct, Inbox                             bool
 	Matches                                   []model.PMTriageCandidateView
 	Thread                                    model.SlackThread
 	ConversationID, SourceHash, HistoryNotice string
@@ -23,12 +23,16 @@ type slackDraft struct {
 }
 
 func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message, actor *authorization.Actor, conv *model.SupportConversation) error {
+	return s.prepareTaskDraft(ctx, a, token, route, m, actor, conv, "")
+}
+
+func (s *SlackService) prepareTaskDraft(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message, actor *authorization.Actor, conv *model.SupportConversation, view string) error {
 	allowed, err := s.authz.CanAccessModule(ctx, actor, model.ModulePM)
 	if err != nil {
 		return err
 	}
 	if !allowed || !s.authz.Can(actor, authorization.PermPMEdit) {
-		return s.private(ctx, token, m, "You need permission to create tasks in Helpin.")
+		return s.inboxCreateNotice(ctx, token, m, view, "You need permission to create tasks in Helpin.")
 	}
 	ctx, progress := s.startProgress(ctx, token, m, "Preparing your task draft…")
 	defer s.finishProgress(ctx, token, m, progress)
@@ -62,8 +66,22 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 				}
 			}
 		}
+		if route.Purpose == "inbox" {
+			if _, requested := inboxCreateCommand(m.Text, a.Handle); requested != "" {
+				teams, err := s.tasks.workspaceRepo.ListTeams(ctx, a.WorkspaceID)
+				if err != nil {
+					return err
+				}
+				for _, team := range teams {
+					if strings.EqualFold(team.Name, requested) && canAccessTeam(ctx, &team.ID) {
+						d.TeamID = &team.ID
+						break
+					}
+				}
+			}
+		}
 		if d.TeamID != nil && !canAccessTeam(ctx, d.TeamID) {
-			return s.private(ctx, token, m, "The inbox team is unavailable to you.")
+			return s.inboxCreateNotice(ctx, token, m, view, "The inbox team is unavailable to you.")
 		}
 
 		d.ConversationID = conv.ID
@@ -121,6 +139,15 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 			}
 		}
 	}
+	if route.Purpose == "inbox" {
+		d.Inbox = true
+		if kind, _ := inboxCreateCommand(m.Text, a.Handle); kind == "bug" {
+			d.TaskType = "bug"
+		}
+		if d.Description == "" && conv != nil {
+			d.Description = conv.Subject
+		}
+	}
 	raw, err := json.Marshal(d)
 	if err != nil {
 		return err
@@ -128,6 +155,11 @@ func (s *SlackService) offerDraft(ctx context.Context, a *model.SupportChannelAc
 	id := uuid.NewString()
 	if err = s.repo.SaveDraft(ctx, id, a.ID, actor.UserID, source, raw); err != nil {
 		return err
+	}
+	if view != "" {
+		var v SlackAction
+		v.View.ID = view
+		return s.openTask(ctx, token, v, d, actor, id)
 	}
 	return s.private(ctx, token, m, "Review a task for this thread.", slackButtons(map[string]any{"type": "button", "text": slackText("Review task"), "action_id": "draft_task", "value": id}))
 }

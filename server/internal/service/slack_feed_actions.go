@@ -101,7 +101,7 @@ func (s *SlackService) feedAction(ctx context.Context, v SlackAction, submit boo
 			return nil, err
 		}
 		expectedTS := t.RootTS
-		if p.Kind == "feed_retry" {
+		if p.Kind == "feed_retry" || (p.Kind == "feed_reply" && p.Message != "") {
 			if !isUUIDString(p.Message) {
 				return nil, ErrChannelInvalid
 			}

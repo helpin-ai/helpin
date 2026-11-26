@@ -33,9 +33,14 @@ func feedHTMLReply(raw string) string {
 
 func (s *SlackService) feedContent(ctx context.Context, f *feedContext, m *model.SupportMessage) (body string, rich, email bool, err error) {
 	body = tiptap.RichTextToMarkdown(m.Content)
+	rich = body != strings.TrimSpace(m.Content)
+	// The Helpin reply composer stores Markdown directly. Slack's reply modal takes plain text.
+	if m.SenderType == "user" && m.ExternalMessageKey == nil && (m.MessageType == "reply" || m.MessageType == "note") {
+		rich = rich || metadataStringFromJSON(json.RawMessage(m.Metadata), "via") != "slack"
+	}
 	email = m.MessageType == "reply" && !m.IsInternal && firstNonEmptyString(derefString(m.ViaChannel), f.conv.Channel) == "email"
 	if !email {
-		return body, body != strings.TrimSpace(m.Content), false, nil
+		return body, rich, false, nil
 	}
 	var log *model.SupportEmailLog
 	if s.channels.inbox.emailLogRepo != nil {
@@ -72,5 +77,5 @@ func (s *SlackService) feedContent(ctx context.Context, f *feedContext, m *model
 	if raw := strings.TrimSpace(m.Content); strings.HasPrefix(raw, "<") && strings.Contains(raw, ">") && body != raw {
 		return feedHTMLReply(raw), true, true, nil
 	}
-	return body, body != strings.TrimSpace(m.Content), true, nil
+	return body, rich, true, nil
 }

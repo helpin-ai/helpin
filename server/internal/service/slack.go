@@ -78,7 +78,7 @@ func (s *SlackService) StartInstall(ctx context.Context, workspace, user string)
 	if err = s.repo.SaveState(ctx, hash, workspace, user); err != nil {
 		return "", err
 	}
-	params := url.Values{"client_id": {s.cfg.ClientID}, "redirect_uri": {s.cfg.RedirectURL}, "state": {raw}, "scope": {"assistant:write,im:history,app_mentions:read,channels:read,channels:join,groups:read,channels:history,groups:history,chat:write,files:read,files:write,users:read,users:read.email,commands"}}
+	params := url.Values{"client_id": {s.cfg.ClientID}, "redirect_uri": {s.cfg.RedirectURL}, "state": {raw}, "scope": {"assistant:write,im:history,app_mentions:read,channels:read,channels:join,groups:read,channels:history,groups:history,chat:write,reactions:write,files:read,files:write,users:read,users:read.email,commands"}}
 	return "https://slack.com/oauth/v2/authorize?" + params.Encode(), nil
 }
 

@@ -14,6 +14,7 @@ import (
 type slackShortcutJob struct {
 	Command, Requester string
 	Message            slack.Message
+	Inbox              *inboxCreateInteraction `json:",omitempty"`
 }
 
 func (s *SlackService) acceptShortcut(ctx context.Context, v SlackAction) (any, error) {
@@ -29,14 +30,18 @@ func (s *SlackService) acceptShortcut(ctx context.Context, v SlackAction) (any, 
 	m := v.Message
 	m.Type = "message"
 	m.Channel = v.Channel.ID
-	if !m.HumanMessage() {
-		return map[string]any{}, nil
-	}
 	route, err := s.repo.EffectiveRoute(ctx, a.ID, m.Channel)
 	if err != nil || route == nil {
 		return map[string]any{}, err
 	}
 	if route.Purpose == "inbox" {
+		if v.Callback != "create_support" || (!m.HumanMessage() && (m.User != a.Handle || m.ThreadTS != "" || m.TS == "")) {
+			return map[string]any{}, nil
+		}
+		m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
+		return s.queueInboxInteraction(ctx, a, v, m, inboxCreateInteraction{Action: "shortcut"})
+	}
+	if !m.HumanMessage() {
 		return map[string]any{}, nil
 	}
 	thread, err := s.repo.FeedByRoot(ctx, a.ID, route.ChannelID, firstNonEmptyString(m.ThreadTS, m.TS))
@@ -65,6 +70,9 @@ func (s *SlackService) shortcutJob(ctx context.Context, job *model.SupportInboun
 	if a == nil || err != nil {
 		return err
 	}
+	if payload.Inbox != nil {
+		return s.processInboxInteraction(ctx, a, payload)
+	}
 	m := payload.Message
 	route, err := s.repo.EffectiveRoute(ctx, a.ID, m.Channel)
 	if err != nil || route == nil {
@@ -77,6 +85,9 @@ func (s *SlackService) shortcutJob(ctx context.Context, job *model.SupportInboun
 	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
 	request := m
 	request.User = payload.Requester
+	if route.Purpose == "inbox" {
+		return s.private(ctx, token, request, "The channel settings changed. Choose the shortcut again.")
+	}
 	if payload.Command == "create_support" {
 		if route.Purpose == "pm" {
 			return s.private(ctx, token, request, "Choose a channel configured for Support.")
