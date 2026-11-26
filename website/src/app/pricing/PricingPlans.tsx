@@ -14,7 +14,7 @@ const SELF_HOSTED_FEATURES = [
 ];
 
 export function PricingPlans() {
-  const [annual, setAnnual] = useState(false);
+  const [annual, setAnnual] = useState(true);
   return <section id="cloud-plans" className="pricing-plans"><div className="wrap">
     <div className="pricing-plan-heading">
       <h2>Same product. You choose who runs it</h2>
