@@ -30,10 +30,15 @@ export function SlackMessageSource({ workspaceId, messageId }: { workspaceId: st
   );
 }
 
+export function slackMessageOrigin(href: unknown): string | undefined {
+  const match = typeof href === 'string' && /^(https:\/\/(?:[a-z0-9-]+\.)*slack(?:-gov)?\.com)\/archives\//i.exec(href);
+  return match ? match[1] : undefined;
+}
+
 export function SlackSourceLabel({ href, label = 'via Slack' }: { href?: unknown; label?: string }) {
   const content = <><SlackIcon className="size-3 shrink-0" />{label}</>
   const style = 'inline-flex items-center gap-1 text-[11px] text-muted-foreground'
-  return typeof href === 'string' && /^https:\/\/([a-z0-9-]+\.)*slack(?:-gov)?\.com\/archives\//i.test(href)
+  return typeof href === 'string' && slackMessageOrigin(href)
     ? <a className={style + ' hover:text-foreground hover:underline'} href={href} target="_blank" rel="noopener noreferrer" title="Open in Slack">{content}<ArrowUpRight01Icon className="size-3" /></a>
     : <span className={style}>{content}</span>
 }

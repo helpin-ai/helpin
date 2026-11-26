@@ -203,13 +203,29 @@ func (r *SlackRepository) MatchMember(ctx context.Context, a *model.SupportChann
 }
 
 // GrantLink records an expiring link supplied privately to the Slack user.
-func (r *SlackRepository) GrantLink(ctx context.Context, account, user, hash string) error {
+func (r *SlackRepository) GrantLink(ctx context.Context, account, user, hash string, note *model.SupportInboundJob) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		expires := time.Now().Add(10 * time.Minute)
+		if note != nil {
+			note.AvailableAt = expires
+			if err := NewSupportInboundJobRepository(tx).Create(ctx, note); err != nil {
+				return err
+			}
+		}
 		if err := tx.Exec("DELETE FROM slack_link_grants WHERE expires_at<=?", time.Now()).Error; err != nil {
 			return err
 		}
-		return tx.Exec("INSERT INTO slack_link_grants(token_hash,account_id,slack_user,expires_at) VALUES (?,?,?,?)", hash, account, user, time.Now().Add(10*time.Minute)).Error
+		return tx.Exec("INSERT INTO slack_link_grants(token_hash,account_id,slack_user,expires_at) VALUES (?,?,?,?)", hash, account, user, expires).Error
 	})
+}
+
+// ResumeFeedNotes releases only notes from this linked sender and installation.
+func (r *SlackRepository) ResumeFeedNotes(ctx context.Context, account, slackUser string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).
+		Where("channel_account_id = ? AND subject_key = ? AND status = ? AND available_at > ?",
+			account, model.SupportChannelSubjectKey(account, slackUser), model.InboundAwaitingSlackLink, now).
+		Updates(map[string]any{"status": "pending", "available_at": now}).Error
 }
 
 // Link consumes the grant and binds the two verified identities.
@@ -229,7 +245,7 @@ func (r *SlackRepository) Link(ctx context.Context, account, user, hash string) 
 		if result.RowsAffected != 1 {
 			return gorm.ErrDuplicatedKey
 		}
-		return nil
+		return NewSlackRepository(tx).ResumeFeedNotes(ctx, account, slackUser)
 	})
 }
 

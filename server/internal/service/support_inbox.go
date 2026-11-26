@@ -2329,7 +2329,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// Pre-resolve teammate @mentions for support messages.
 	var mentionedUserIDs []string
 	if senderType == "user" && s.notificationService != nil && s.workspaceRepo != nil {
-		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
+		mentionSource := req.Content
+		if req.SlackMentionSource != nil {
+			mentionSource = *req.SlackMentionSource
+		}
+		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(mentionSource), derefString(senderUserID), nil)
 		if err != nil {
 			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
 		}

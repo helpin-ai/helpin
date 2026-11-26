@@ -1062,6 +1062,7 @@ type SupportProviderDestination struct {
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
 	SourceSlackThreadID       string   `json:"-"`
+	SlackMentionSource        *string  `json:"-"` // Preserve native mention notification behavior when displaying Slack names.
 	ExpectedLatestPublicReply *string  `json:"-"`
 	ExpectedMergeRevision     *int64   `json:"expected_merge_revision,omitempty"`
 	SendOriginal              bool     `json:"send_original,omitempty"`

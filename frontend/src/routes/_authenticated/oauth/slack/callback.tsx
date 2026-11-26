@@ -57,7 +57,9 @@ function SlackCallback() {
               )
               setPairing(false)
               setMessage(
-                'Account linked. Return to Slack and repeat your request.',
+                params.get('note') === '1'
+                  ? 'Account linked. Helpin will save your original note. You can return to Slack.'
+                  : 'Account linked. Return to Slack and repeat your request.',
               )
             } catch {
               setMessage(

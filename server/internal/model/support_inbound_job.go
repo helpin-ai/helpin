@@ -2,6 +2,9 @@ package model
 
 import "time"
 
+// Slack inbox notes wait for an account link until AvailableAt, then expire.
+const InboundAwaitingSlackLink = "awaiting_slack_link"
+
 // SupportInboundJob retains accepted mail until its processing stage completes.
 // IDs are stable across deliveries and attachment retries.
 type SupportInboundJob struct {

@@ -590,11 +590,34 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	owner := authorization.WithActor(ctx, &authorization.Actor{WorkspaceID: f.workspace, Role: "owner", UserID: f.userID})
 	member, external := false, false
 	var reactionCalls []string
-	var reactionError string
+	var reactionError, noteLinkCode string
+	mentionLookups := 0
 	var posts, updates, views []map[string]any
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/users.info":
+			if r.URL.Query().Get("user") == "U037VNC7QTH" {
+				mentionLookups++
+				io.WriteString(w, `{"ok":true,"user":{"id":"U037VNC7QTH","profile":{"display_name":"Maya Patel"}}}`)
+			} else {
+				io.WriteString(w, `{"ok":true,"user":{}}`)
+			}
+		case "/chat.postEphemeral":
+			var prompt struct {
+				Blocks []struct{ Text struct{ Text string } }
+			}
+			if err := json.NewDecoder(r.Body).Decode(&prompt); err != nil {
+				t.Error(err)
+				return
+			}
+			if len(prompt.Blocks) > 0 {
+				words := strings.Fields(prompt.Blocks[0].Text.Text)
+				if len(words) > 0 {
+					noteLinkCode = words[len(words)-1]
+				}
+			}
+			io.WriteString(w, `{"ok":true}`)
 		case "/conversations.info":
 			fmt.Fprintf(w, `{"ok":true,"channel":{"id":"Cdesk","name":"support-desk","is_member":%t,"is_ext_shared":%t}}`, member, external)
 		case "/reactions.add", "/reactions.remove":
@@ -712,15 +735,49 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	if err != nil || trow == nil || trow.Permalink == "" {
 		t.Fatalf("missing binding: %+v %v", trow, err)
 	}
-	mustExec(t, f.db, "INSERT INTO slack_members(account_id,slack_user,user_id) VALUES(?,?,?)", f.account.ID, "Uagent", f.userID)
-	note := slack.Message{Channel: "Cdesk", ThreadTS: trow.RootTS, TS: "3.1", User: "Uagent", Text: "Internal investigation"}
-	for i := 0; i < 2; i++ {
-		if err := s.receiveFeedNote(ctx, f.account, "token", &routes[0], note); err != nil {
-			t.Fatal(err)
-		}
+	note := slack.Message{Type: "message", Channel: "Cdesk", ThreadTS: trow.RootTS, TS: "3.1", User: "Uagent", Text: "<@U037VNC7QTH> can you check this?"}
+	event, err := json.Marshal(queuedSlackEvent{Message: note, Inbox: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := model.SupportInboundJob{ChannelAccountID: &f.account.ID, Payload: string(event)}
+	if err := s.process(ctx, &original); err != nil {
+		t.Fatal(err)
+	}
+	if noteLinkCode == "" {
+		t.Fatal("expected private link code")
+	}
+	if err := s.LinkMember(ctx, f.workspace, f.userID, noteLinkCode); err != nil {
+		t.Fatal(err)
+	}
+	// A released note still needs access to the original inbox at delivery time.
+	var released model.SupportInboundJob
+	if err := f.db.First(&released, "kind=? AND status='pending' AND conversation_id=?", SlackEventJob, conv).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalAuth := s.authz
+	s.authz = authorization.NewAuthzService(f.db, slackFixtureMember{""}, nil)
+	err = s.process(ctx, &released)
+	s.authz = originalAuth
+	var inaccessible int64
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.SupportMessage{}).Where("conversation_id=? AND is_internal AND sender_type='user'", conv).Count(&inaccessible).Error; err != nil || inaccessible != 0 {
+		t.Fatalf("note saved after losing access: %d, %v", inaccessible, err)
+	}
+	if ok, err := f.svc.processNextJob(ctx, SlackEventJob); !ok || err != nil {
+		t.Fatalf("linking did not resume the original message: processed=%v err=%v", ok, err)
+	}
+	if mentionLookups != 1 {
+		t.Fatalf("mention lookups=%d", mentionLookups)
+	}
+	// Simulate Slack redelivering the same original timestamp after linking.
+	if err := s.process(ctx, &original); err != nil {
+		t.Fatal(err)
 	}
 	var notes []model.SupportMessage
-	if err := f.db.Where("conversation_id=? AND content=?", conv, note.Text).Find(&notes).Error; err != nil || len(notes) != 1 || !notes[0].IsInternal || !strings.Contains(notes[0].Metadata, "slack_permalink") {
+	if err := f.db.Where("conversation_id=? AND content=?", conv, "@Maya Patel can you check this?").Find(&notes).Error; err != nil || len(notes) != 1 || !notes[0].IsInternal || !strings.Contains(notes[0].Metadata, "slack_permalink") {
 		t.Fatalf("note attribution or replay: %+v %v", notes, err)
 	}
 	if f.row(t, notes[0].ID) != nil {

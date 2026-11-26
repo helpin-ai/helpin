@@ -24,11 +24,19 @@ func (r *SupportInboundJobRepository) Create(ctx context.Context, job *model.Sup
 // Claim uses a conditional update so concurrent workers cannot own the same lease.
 func (r *SupportInboundJobRepository) Claim(ctx context.Context, kind string, now time.Time) (*model.SupportInboundJob, error) {
 	var job model.SupportInboundJob
-	err := r.db.WithContext(ctx).Where("kind = ? AND status IN ? AND available_at <= ?", kind, []string{"pending", "processing"}, now).Order("available_at ASC").Limit(1).Find(&job).Error
+	err := r.db.WithContext(ctx).Where("kind = ? AND status IN ? AND available_at <= ?", kind, []string{"pending", "processing", model.InboundAwaitingSlackLink}, now).Order("available_at ASC").Limit(1).Find(&job).Error
 	if err == nil && job.ID == "" {
 		return nil, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	if job.Status == model.InboundAwaitingSlackLink {
+		// Linking releases only unexpired notes. If the deadline wins, discard
+		// their content and retain the receipts for Slack delivery retries.
+		err := r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).
+			Where("kind = ? AND status = ? AND available_at <= ?", kind, model.InboundAwaitingSlackLink, now).
+			Updates(map[string]any{"status": "completed", "payload": ""}).Error
 		return nil, err
 	}
 	token := uuid.NewString()

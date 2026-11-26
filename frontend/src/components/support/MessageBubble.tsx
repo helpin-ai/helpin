@@ -8,7 +8,7 @@ import { getSupportAIActivity, getSupportCodeCheck } from './supportAIActivityMo
 import { SupportCodeCheckCard } from './SupportCodeCheckCard';
 import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
-import { SlackMessageSource, SlackSourceLabel } from './SlackMessageSource';
+import { SlackMessageSource, SlackSourceLabel, slackMessageOrigin } from './SlackMessageSource';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
@@ -57,7 +57,7 @@ type MentionNode = {
 };
 
 /** Highlight parsed note text without changing Markdown, links, or code. */
-function rehypeNoteMentions() {
+function rehypeNoteMentions(slackOrigin?: string | null) {
   return (tree: MentionNode) => {
     function visit(node: MentionNode) {
       if (!node.children || ['a', 'code', 'pre'].includes(node.tagName ?? '')) return;
@@ -69,12 +69,15 @@ function rehypeNoteMentions() {
         const parts: MentionNode[] = [];
         let offset = 0;
         // A mention starts at a word boundary, never inside an email address.
-        for (const match of child.value.matchAll(/(?<![\w.@/+-])@[a-zA-Z0-9][a-zA-Z0-9._-]*/g)) {
+        for (const match of child.value.matchAll(/<@([UW][A-Z0-9]+)(?:\|([^<>|\r\n]+))?>|(?<![\w.@/+-])@[a-zA-Z0-9][a-zA-Z0-9._-]*/g)) {
+          const [, slackId, alias] = match;
+          if (slackId && slackOrigin === undefined) continue;
+          const href = slackId && slackOrigin ? `${slackOrigin}/team/${slackId}` : undefined;
           const index = match.index;
           if (index > offset) parts.push({ type: 'text', value: child.value.slice(offset, index) });
           parts.push({
-            type: 'element', tagName: 'span', properties: { className: ['mention-highlight'] },
-            children: [{ type: 'text', value: match[0] }],
+            type: 'element', tagName: href ? 'a' : 'span', properties: { className: ['mention-highlight'], href },
+            children: [{ type: 'text', value: slackId ? `@${alias || 'Slack member'}` : match[0] }],
           });
           offset = index + match[0].length;
         }
@@ -87,7 +90,7 @@ function rehypeNoteMentions() {
   };
 }
 
-const NOTE_REHYPE_PLUGINS = [rehypeNoteMentions];
+const NOTE_REHYPE_PLUGINS = [() => rehypeNoteMentions()];
 
 function containsMarkdownTable(content: string): boolean {
   return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
@@ -437,8 +440,13 @@ export const MessageBubble = memo(function MessageBubble({
   const isAI = effectiveSenderType === 'ai';
   const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
-  const slackAttribution = supportMetadataString(message.metadata, 'via') === 'slack'
-    ? <SlackSourceLabel href={supportMetadataString(message.metadata, 'slack_permalink')} />
+  const fromSlack = supportMetadataString(message.metadata, 'via') === 'slack';
+  const slackPermalink = fromSlack ? supportMetadataString(message.metadata, 'slack_permalink') : null;
+  const notePlugins = useMemo(() => fromSlack
+    ? [() => rehypeNoteMentions(slackMessageOrigin(slackPermalink) ?? null)]
+    : NOTE_REHYPE_PLUGINS, [fromSlack, slackPermalink]);
+  const slackAttribution = fromSlack
+    ? <SlackSourceLabel href={slackPermalink} />
     : null;
   const visitorFeedback = useMemo<boolean | undefined>(() => {
     if (!isAI || isInternal) return undefined;
@@ -921,7 +929,7 @@ export const MessageBubble = memo(function MessageBubble({
                   </div>
                   {hasDisplayContent && (
                     <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
-                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{investigationReport?.summary ?? visibleContent}</Markdown>
+                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={notePlugins} components={markdownComponents}>{investigationReport?.summary ?? visibleContent}</Markdown>
                     </div>
                   )}
                   {(suggestedReply || investigationReport?.engineering) && (

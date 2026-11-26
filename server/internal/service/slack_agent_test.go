@@ -471,7 +471,7 @@ func TestSlackLinkCodeRedemption(t *testing.T) {
 		{"existing grant", legacyHash, legacy},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := s.repo.GrantLink(ctx, account.ID, "U1", tc.hash); err != nil {
+			if err := s.repo.GrantLink(ctx, account.ID, "U1", tc.hash, nil); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.LinkMember(ctx, f.workspace, "member", tc.input); err != nil {

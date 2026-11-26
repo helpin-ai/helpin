@@ -129,19 +129,46 @@ func (s *SlackService) requestingActor(ctx context.Context, a *model.SupportChan
 	if err != nil || id == "" {
 		return nil, err
 	}
+	if err := s.repo.ResumeFeedNotes(ctx, a.ID, user); err != nil {
+		return nil, err
+	}
 	return s.authz.ResolveActor(ctx, a.WorkspaceID, id)
 }
 
 func (s *SlackService) promptLink(ctx context.Context, a *model.SupportChannelAccount, token string, m slack.Message) error {
+	return s.sendLinkPrompt(ctx, a, token, m, nil)
+}
+
+func (s *SlackService) sendLinkPrompt(ctx context.Context, a *model.SupportChannelAccount, token string, m slack.Message, note *model.SupportInboundJob) error {
 	raw, err := newSlackLinkCode()
 	if err != nil {
 		return err
 	}
-	if err = s.repo.GrantLink(ctx, a.ID, m.User, slackLinkCodeHash(raw)); err != nil {
+	hash := slackLinkCodeHash(raw)
+	if note != nil {
+		// Each issued code has its full lifetime. The Slack message timestamp
+		// deduplicates the saved note if a prompt delivery had to be retried.
+		note.ID = inboundStableID("slack-note-link:" + a.ID + ":" + hash)
+	}
+	if err = s.repo.GrantLink(ctx, a.ID, m.User, hash, note); err != nil {
 		return err
 	}
-	address := s.appURL + "/oauth/slack/callback?" + url.Values{"workspace": {a.WorkspaceID}, "pair": {"1"}}.Encode()
-	return s.private(ctx, token, m, "Link your Helpin account to continue.", map[string]any{"type": "section", "text": slackText("Paste this private code in Helpin to link your account: " + raw)}, slackButtons(map[string]any{"type": "button", "text": slackText("Link Helpin account"), "url": address, "action_id": "link_account"}))
+	params := url.Values{"workspace": {a.WorkspaceID}, "pair": {"1"}}
+	instructions := "Paste this private code in Helpin to link your account: "
+	if note != nil {
+		// A different private code may have been redeemed while this note was being parked.
+		linked, err := s.repo.Member(ctx, a.ID, m.User)
+		if err != nil {
+			return err
+		}
+		if linked != "" {
+			return s.repo.ResumeFeedNotes(ctx, a.ID, m.User)
+		}
+		params.Set("note", "1")
+		instructions = "Link within 10 minutes and Helpin will save your original message as an internal note. Enter this private code in Helpin: "
+	}
+	address := s.appURL + "/oauth/slack/callback?" + params.Encode()
+	return s.private(ctx, token, m, "Link your Helpin account to continue.", map[string]any{"type": "section", "text": slackText(instructions + raw)}, slackButtons(map[string]any{"type": "button", "text": slackText("Link Helpin account"), "url": address, "action_id": "link_account"}))
 }
 
 func slackText(text string) map[string]string {

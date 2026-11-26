@@ -20,7 +20,8 @@ const SlackEventJob = "slack_event"
 // if an administrator changes the route while the event is queued.
 type queuedSlackEvent struct {
 	slack.Message
-	Inbox bool `json:"helpin_inbox,omitempty"`
+	Inbox        bool   `json:"helpin_inbox,omitempty"`
+	NoteThreadID string `json:"helpin_note_thread,omitempty"`
 }
 
 // AcceptEvent verifies and stores an event before acknowledging to Slack.
@@ -118,10 +119,11 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 	}
 	m.Channel, m.CurrentChannelID = route.ChannelID, route.CurrentChannelID
 	if route.Purpose == "inbox" {
-		if kind, details := inboxCreateCommand(m.Text, a.Handle); kind != "" {
+		if kind, details := inboxCreateCommand(m.Text, a.Handle); kind != "" && queued.NoteThreadID == "" {
 			return s.beginInboxCreate(ctx, a, token, route, m, kind, details, "")
 		}
-		return s.receiveFeedNote(ctx, a, token, route, m)
+		queued.Message = m
+		return s.receiveFeedNote(ctx, a, token, queued, job.ConversationID)
 	}
 	if m.ThreadTS != "" {
 		thread, err := s.repo.FeedByRoot(ctx, a.ID, route.ChannelID, m.ThreadTS)
@@ -136,30 +138,12 @@ func (s *SlackService) process(ctx context.Context, job *model.SupportInboundJob
 }
 
 func (s *SlackService) receiveSupport(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message, job *model.SupportInboundJob, manual bool) error {
-	var result struct {
-		User struct {
-			TeamID  string `json:"team_id"`
-			Name    string
-			Profile struct {
-				DisplayName string `json:"display_name"`
-				RealName    string `json:"real_name"`
-			}
-		}
-	}
-	if err := s.api.Get(ctx, token, "users.info", url.Values{"user": {m.User}}, &result); err != nil {
+	person, err := s.slackPerson(ctx, token, m.User)
+	if err != nil {
 		return err
 	}
-	name := result.User.Profile.DisplayName
-	if name == "" {
-		name = result.User.Profile.RealName
-	}
-	if name == "" {
-		name = result.User.Name
-	}
-	if name == "" {
-		name = m.User
-	}
-	teammate := result.User.TeamID == a.ExternalAccountID
+	name := firstNonEmptyString(person.displayName(), m.User)
+	teammate := person.TeamID == a.ExternalAccountID
 	explicit := manual || m.Type == "app_mention" || s.mentionsBot(m.Text, a.Handle)
 	if explicit && !manual {
 		hasTaskReference := slackTaskLink.MatchString(m.Text) || slackTaskKey.MatchString(m.Text)
