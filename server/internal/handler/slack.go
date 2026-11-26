@@ -117,3 +117,17 @@ func (h *SlackHandler) SetAI(w http.ResponseWriter, r *http.Request) {
 	}
 	slackResponse(w, r, true, h.s.SetAI(r.Context(), getWorkspaceID(r), v.Enabled))
 }
+
+func (h *SlackHandler) NotificationPreferences(w http.ResponseWriter, r *http.Request) {
+	pref, err := h.s.NotificationPreferences(r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()))
+	slackResponse(w, r, pref, err)
+}
+
+func (h *SlackHandler) UpdateNotificationPreferences(w http.ResponseWriter, r *http.Request) {
+	var patch model.UpdateSlackNotificationPreferences
+	if err := decodeJSON(r, &patch); err != nil {
+		writeError(w, 400, "Invalid notification preferences")
+		return
+	}
+	slackResponse(w, r, true, h.s.SetNotificationPreferences(r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()), patch))
+}

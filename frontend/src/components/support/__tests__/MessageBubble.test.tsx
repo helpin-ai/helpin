@@ -122,6 +122,21 @@ describe('MessageBubble', () => {
     } finally { rendered.cleanup(); }
   });
 
+  it('opens the mentioned Slack profile in older internal notes and keeps code literal', () => {
+    const rendered = renderBubble({
+      id: 'slack-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      message_type: 'reply', is_internal: true, content: '<@U123> ask <@W456|Maya> about `<@U999>`',
+      metadata: JSON.stringify({ via: 'slack', slack_permalink: 'https://northstar.slack.com/archives/C123/p123' }),
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.querySelector('a[href="https://northstar.slack.com/team/U123"]')?.textContent).toBe('@Slack member');
+      expect(note?.querySelector('a[href="https://northstar.slack.com/team/W456"]')?.textContent).toBe('@Maya');
+      expect(note?.querySelector('code')?.textContent).toBe('<@U999>');
+    } finally { rendered.cleanup(); }
+  });
+
   it('highlights mentions inside formatted notes while preserving links and code', () => {
     const rendered = renderBubble({
       id: 'mention-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',

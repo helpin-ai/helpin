@@ -590,11 +590,34 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	owner := authorization.WithActor(ctx, &authorization.Actor{WorkspaceID: f.workspace, Role: "owner", UserID: f.userID})
 	member, external := false, false
 	var reactionCalls []string
-	var reactionError string
+	var reactionError, noteLinkCode string
+	mentionLookups := 0
 	var posts, updates, views []map[string]any
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/users.info":
+			if r.URL.Query().Get("user") == "U037VNC7QTH" {
+				mentionLookups++
+				io.WriteString(w, `{"ok":true,"user":{"id":"U037VNC7QTH","profile":{"display_name":"Maya Patel"}}}`)
+			} else {
+				io.WriteString(w, `{"ok":true,"user":{}}`)
+			}
+		case "/chat.postEphemeral":
+			var prompt struct {
+				Blocks []struct{ Text struct{ Text string } }
+			}
+			if err := json.NewDecoder(r.Body).Decode(&prompt); err != nil {
+				t.Error(err)
+				return
+			}
+			if len(prompt.Blocks) > 0 {
+				words := strings.Fields(prompt.Blocks[0].Text.Text)
+				if len(words) > 0 {
+					noteLinkCode = words[len(words)-1]
+				}
+			}
+			io.WriteString(w, `{"ok":true}`)
 		case "/conversations.info":
 			fmt.Fprintf(w, `{"ok":true,"channel":{"id":"Cdesk","name":"support-desk","is_member":%t,"is_ext_shared":%t}}`, member, external)
 		case "/reactions.add", "/reactions.remove":
@@ -656,8 +679,26 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	if err != nil || len(routes) != 1 || len(routes[0].MailboxIDs) != 1 || routes[0].MailboxIDs[0] != "shared" {
 		t.Fatalf("rule round trip: %+v %v", routes, err)
 	}
+	for _, name := range []string{"Billing", "Returns"} {
+		box := model.SupportMailbox{WorkspaceID: f.workspace, Name: name, Handle: strings.ToLower(name), CreatedByID: f.userID}
+		if err = f.db.Create(&box).Error; err != nil {
+			t.Fatal(err)
+		}
+		cfg.MailboxIDs = append(cfg.MailboxIDs, box.ID)
+	}
+	if err := s.Configure(owner, f.workspace, cfg); !errors.Is(err, ErrChannelInvalid) {
+		t.Fatalf("team inboxes published without a public rule: %v", err)
+	}
+	cfg.PublicTeamInboxes = true
+	if err := s.Configure(owner, f.workspace, cfg); err != nil {
+		t.Fatalf("save public team inboxes: %v", err)
+	}
+	routes, err = s.repo.Routes(ctx, f.account.ID)
+	if err != nil || len(routes) != 1 || !routes[0].PublicTeamInboxes || len(routes[0].MailboxIDs) != 3 {
+		t.Fatalf("public inbox rule round trip: %+v %v", routes, err)
+	}
 	conv := uuid.NewString()
-	mustExec(t, f.db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,status,channel,source) VALUES(?,?,88,'Checkout issue','open','widget','widget')`, conv, f.workspace)
+	mustExec(t, f.db, `INSERT INTO support_conversations(id,workspace_id,mailbox_id,display_id,subject,status,channel,source) VALUES(?,?,?,88,'Checkout issue','open','widget','widget')`, conv, f.workspace, cfg.MailboxIDs[1])
 	msg := f.reply(t, conv, "customer", "Checkout failed.")
 	deliver := func(messageID *string) {
 		t.Helper()
@@ -694,15 +735,49 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	if err != nil || trow == nil || trow.Permalink == "" {
 		t.Fatalf("missing binding: %+v %v", trow, err)
 	}
-	mustExec(t, f.db, "INSERT INTO slack_members(account_id,slack_user,user_id) VALUES(?,?,?)", f.account.ID, "Uagent", f.userID)
-	note := slack.Message{Channel: "Cdesk", ThreadTS: trow.RootTS, TS: "3.1", User: "Uagent", Text: "Internal investigation"}
-	for i := 0; i < 2; i++ {
-		if err := s.receiveFeedNote(ctx, f.account, "token", &routes[0], note); err != nil {
-			t.Fatal(err)
-		}
+	note := slack.Message{Type: "message", Channel: "Cdesk", ThreadTS: trow.RootTS, TS: "3.1", User: "Uagent", Text: "<@U037VNC7QTH> can you check this?"}
+	event, err := json.Marshal(queuedSlackEvent{Message: note, Inbox: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := model.SupportInboundJob{ChannelAccountID: &f.account.ID, Payload: string(event)}
+	if err := s.process(ctx, &original); err != nil {
+		t.Fatal(err)
+	}
+	if noteLinkCode == "" {
+		t.Fatal("expected private link code")
+	}
+	if err := s.LinkMember(ctx, f.workspace, f.userID, noteLinkCode); err != nil {
+		t.Fatal(err)
+	}
+	// A released note still needs access to the original inbox at delivery time.
+	var released model.SupportInboundJob
+	if err := f.db.First(&released, "kind=? AND status='pending' AND conversation_id=?", SlackEventJob, conv).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalAuth := s.authz
+	s.authz = authorization.NewAuthzService(f.db, slackFixtureMember{""}, nil)
+	err = s.process(ctx, &released)
+	s.authz = originalAuth
+	var inaccessible int64
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.SupportMessage{}).Where("conversation_id=? AND is_internal AND sender_type='user'", conv).Count(&inaccessible).Error; err != nil || inaccessible != 0 {
+		t.Fatalf("note saved after losing access: %d, %v", inaccessible, err)
+	}
+	if ok, err := f.svc.processNextJob(ctx, SlackEventJob); !ok || err != nil {
+		t.Fatalf("linking did not resume the original message: processed=%v err=%v", ok, err)
+	}
+	if mentionLookups != 1 {
+		t.Fatalf("mention lookups=%d", mentionLookups)
+	}
+	// Simulate Slack redelivering the same original timestamp after linking.
+	if err := s.process(ctx, &original); err != nil {
+		t.Fatal(err)
 	}
 	var notes []model.SupportMessage
-	if err := f.db.Where("conversation_id=? AND content=?", conv, note.Text).Find(&notes).Error; err != nil || len(notes) != 1 || !notes[0].IsInternal || !strings.Contains(notes[0].Metadata, "slack_permalink") {
+	if err := f.db.Where("conversation_id=? AND content=?", conv, "@Maya Patel can you check this?").Find(&notes).Error; err != nil || len(notes) != 1 || !notes[0].IsInternal || !strings.Contains(notes[0].Metadata, "slack_permalink") {
 		t.Fatalf("note attribution or replay: %+v %v", notes, err)
 	}
 	if f.row(t, notes[0].ID) != nil {
@@ -783,12 +858,35 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	}
 	reactionError = "already_reacted"
 	setStatus("resolved")
+	resolvedUpdate := updates[len(updates)-1]
+	resolvedBlocks := resolvedUpdate["blocks"].([]any)
+	link := "https://helpin.example/w/ops-" + f.workspace[:8] + "/support/" + conv
+	if resolvedUpdate["ts"] != trow.RootTS || len(resolvedBlocks) != 1 || resolvedUpdate["text"] != "✅ Resolved · #88 · Checkout issue\n"+link {
+		t.Fatalf("expected compact summary on original thread: %+v", resolvedUpdate)
+	}
+	section := resolvedBlocks[0].(map[string]any)
+	if section["text"].(map[string]any)["text"] != "*✅ Resolved* · <"+link+"|#88> · Checkout issue" {
+		t.Fatalf("incorrect resolved card title: %+v", section["text"])
+	}
+	menu := section["accessory"].(map[string]any)
+	if menu["action_id"] != "feed_more" {
+		t.Fatalf("expected More menu: %+v", menu)
+	}
+	for _, action := range []string{"feed_reopen", "feed_reply", "feed_assign", "feed_move", "feed_priority", "feed_status"} {
+		if !strings.Contains(fmt.Sprint(menu["options"]), trow.ID+":"+action) {
+			t.Fatalf("compact card missing %s: %+v", action, resolvedBlocks)
+		}
+	}
 	deliver(nil)
 	if !slices.Equal(reactionCalls, []string{"/reactions.add"}) || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
 		t.Fatalf("resolve or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
 	}
 	reactionError = "no_reaction"
 	setStatus("open")
+	reopened := updates[len(updates)-1]
+	if reopened["ts"] != trow.RootTS || !strings.Contains(fmt.Sprint(reopened["blocks"]), "rich_text_quote") || !strings.Contains(fmt.Sprint(reopened["blocks"]), "feed_resolve") {
+		t.Fatalf("expected full card on the reopened thread: %+v", reopened)
+	}
 	deliver(nil)
 	if !slices.Equal(reactionCalls, []string{"/reactions.add", "/reactions.remove"}) || strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
 		t.Fatalf("reopen or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
@@ -819,18 +917,17 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	}
 	mustExec(t, f.db, "UPDATE support_conversations SET mailbox_id=? WHERE id=?", box.ID, conv)
 	deliver(nil)
-	link := "https://helpin.example/w/ops-" + f.workspace[:8] + "/support/" + conv
 	checkNotice := func(actor string) {
 		t.Helper()
 		update := updates[len(updates)-1]
 		body := fmt.Sprint(update["blocks"])
-		prefix := "This conversation is in"
+		prefix := "#88 is in"
 		var wantBold []string
 		if actor != "" {
-			prefix = actor + " moved this conversation to"
+			prefix = actor + " moved #88 to"
 			wantBold = append(wantBold, actor)
 		}
-		wantBold = append(wantBold, "“"+box.Name+"”")
+		wantBold = append(wantBold, "#88", "“"+box.Name+"”")
 		notice := fmt.Sprintf("%s “%s”, which this channel doesn’t follow. Updates have stopped in this thread.", prefix, box.Name)
 		if update["ts"] != trow.RootTS || update["text"] != notice+"\n"+link || update["mrkdwn"] != false {
 			t.Fatalf("wrong root notice: %+v", update)
@@ -962,22 +1059,52 @@ func testSlackFeedEmailPresentation(t *testing.T, f *outboxFixture, conv, id str
 	t.Helper()
 	f.inbox.emailLogRepo = repository.NewSupportEmailLogRepository(f.db)
 	mustExec(t, f.db, "UPDATE support_messages SET via_channel='email',content='Old fallback' WHERE id=?", id)
-	log := model.SupportEmailLog{WorkspaceID: f.workspace, ConversationID: conv, Direction: "inbound", MessageIDs: model.DocsStringArray{id}, FromEmail: "maya@example.com", FromDisplayName: "Maya Chen", HTMLBody: `<div style="display:none">Hidden preheader</div><p>My <b>export</b> is stuck.</p><div class="gmail_quote">Old quote</div>`}
+	log := model.SupportEmailLog{WorkspaceID: f.workspace, ConversationID: conv, Direction: "inbound", MessageIDs: model.DocsStringArray{id}, FromEmail: "maya@example.com", FromDisplayName: "Maya Chen", HTMLBody: `<div style="display:none">Hidden preheader</div><p>My <b>export</b> is stuck.</p><div class="gmail_signature">Office address</div><div class="gmail_quote">Old quote</div>`}
 	if err := f.db.Create(&log).Error; err != nil {
 		t.Fatal(err)
 	}
 	deliver(nil)
+	checkEmail := func() {
+		t.Helper()
+		for _, field := range []string{"blocks", "text"} {
+			value := fmt.Sprint(lastUpdate()[field])
+			for _, hidden := range []string{"Office address", "Old quote", "preheader"} {
+				if strings.Contains(value, hidden) {
+					t.Fatalf("%s contains hidden email content %q", field, hidden)
+				}
+			}
+		}
+	}
+	checkEmail()
 	card := fmt.Sprint(lastUpdate()["blocks"])
-	if !strings.Contains(card, "My export is stuck.") || strings.Contains(card, "Old quote") || strings.Contains(card, "preheader") {
+	if !strings.Contains(card, "My export is stuck.") {
 		t.Fatalf("email excerpt: %s", card)
 	}
 	deliver(&id)
+	checkEmail()
 	reply := fmt.Sprint(lastUpdate()["blocks"])
-	if !strings.Contains(reply, "**export**") || !strings.Contains(reply, "Maya Chen") || !strings.Contains(reply, "#message-"+id) || strings.Contains(reply, "Old quote") {
+	if !strings.Contains(reply, "**export**") || !strings.Contains(reply, "Maya Chen") || !strings.Contains(reply, "#message-"+id) {
 		t.Fatalf("email thread: %s", reply)
 	}
+	// A teammate can reply from their mail client privately or with the customer copied.
+	for _, capture := range []struct {
+		direction, status string
+		internal          bool
+	}{
+		{"inbound", "sent", true},
+		{"outbound", "external", false},
+	} {
+		mustExec(t, f.db, "UPDATE support_messages SET sender_type='user',is_internal=? WHERE id=?", capture.internal, id)
+		mustExec(t, f.db, "UPDATE support_email_logs SET direction=?,status=?,html_body=? WHERE id=?", capture.direction, capture.status,
+			`<p>Teammate email</p><div class="gmail_signature">Office address</div><div class="gmail_quote">Old quote</div>`, log.ID)
+		deliver(&id)
+		checkEmail()
+		if text := fmt.Sprint(lastUpdate()["text"]); !strings.Contains(text, "Teammate email") {
+			t.Fatalf("%s email reply: %s", capture.status, text)
+		}
+	}
 	mustExec(t, f.db, "DELETE FROM support_email_logs WHERE id=?", log.ID)
-	mustExec(t, f.db, "UPDATE support_messages SET content='',via_channel='widget' WHERE id=?", id)
+	mustExec(t, f.db, "UPDATE support_messages SET content='',via_channel='widget',sender_type='customer' WHERE id=?", id)
 	mustExec(t, f.db, "INSERT INTO support_attachments(workspace_id,message_id,file_name,file_size,content_type,is_uploaded,uploaded_by_type) VALUES(?,?,'invoice.pdf',115,'application/pdf',true,'customer')", f.workspace, id)
 	deliver(nil)
 	if text := fmt.Sprint(lastUpdate()["blocks"]); !strings.Contains(text, "📎 Attachment: invoice.pdf") {
@@ -1049,7 +1176,7 @@ func testSlackFeedTriage(t *testing.T, f *outboxFixture, conv, box string, threa
 	if !strings.Contains(fmt.Sprint(lastUpdate()["blocks"]), "feed_reopen") {
 		t.Fatalf("resolve failed: %+v", lastView())
 	}
-	click("feed_reopen", thread.ID+":resolved")
+	click("feed_more", "feed_reopen")
 	other := uuid.NewString()
 	mustExec(t, f.db, "INSERT INTO users(id,email,password_hash,full_name) VALUES(?,?,'x','Maya Chen')", other, other+"@example.com")
 	mustExec(t, f.db, "INSERT INTO workspace_members(id,workspace_id,user_id,role,status,email,display_name) VALUES(gen_random_uuid(),?,?,'admin','active',?,'Maya Chen')", f.workspace, other, other+"@example.com")

@@ -49,6 +49,8 @@ func taskRecipientEvent(event model.NotificationEventInput, task *repository.Tas
 		if task.StateName != "" {
 			action = "moved " + subject + " to " + task.StateName
 		}
+	case "checklist.assigned":
+		action = "assigned you a checklist item on " + task.Title
 	case "task.assigned":
 		if explicit {
 			action = "assigned you to " + task.Title

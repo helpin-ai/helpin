@@ -928,6 +928,7 @@ export interface SprintPlanningFilters {
 }
 
 export interface CreateTaskRequest {
+  crm_follow_up?: boolean;
   workspace_id: string;
   name: string;
   team_id: string;

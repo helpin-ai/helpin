@@ -216,9 +216,9 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 				"action_type", rule.ActionType,
 				"task_id", event.TaskID,
 			)
-			e.observeFailure(ctx, event.WorkspaceID, rule.ID, err)
+			e.observeFailure(ctx, &rule, err)
 		} else {
-			e.observeSuccess(ctx, event.WorkspaceID, rule.ID)
+			e.observeSuccess(ctx, &rule)
 		}
 
 		if rule.StopOnMatch {
@@ -472,7 +472,7 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		StateID: nilIfEmpty(event.StateID),
 		TeamID:  nilIfEmpty(event.TeamID),
 		RunID:   nilIfEmpty(event.RunID),
-		Reason:  strPtr(fmt.Sprintf("automation rule %q", rule.Name)),
+		Reason:  strPtr(fmt.Sprintf("flow %q", rule.Name)),
 	}
 	if strings.HasPrefix(strings.TrimSpace(event.TriggerType), "github.") {
 		eventContext.GitHub = githubRunEventContext(event)
@@ -508,7 +508,7 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 
 	if e.activitySvc != nil {
 		_ = e.activitySvc.Log(ctx, event.WorkspaceID, targetType, targetID, nil,
-			fmt.Sprintf("automation rule '%s' started an agent run", rule.Name),
+			fmt.Sprintf("Flow '%s' started an agent run", rule.Name),
 			nil, nil, nil, nil)
 	}
 
@@ -685,7 +685,7 @@ func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *mod
 	}
 
 	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "task", event.TaskID, nil,
-		fmt.Sprintf("automation rule '%s' advanced task to next stage", rule.Name),
+		fmt.Sprintf("Flow '%s' advanced task to next stage", rule.Name),
 		nil, nil, nil, nil)
 
 	return nil
@@ -753,7 +753,7 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 	}
 
 	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "task", event.TaskID, nil,
-		fmt.Sprintf("automation rule '%s' merged %s into %s", rule.Name, *target.WorkingBranch, resolvedBranch),
+		fmt.Sprintf("Flow '%s' merged %s into %s", rule.Name, *target.WorkingBranch, resolvedBranch),
 		nil, nil, nil, nil)
 
 	return nil
@@ -872,9 +872,9 @@ func (e *AutomationRuleEngine) EvaluateCronRules(ctx context.Context, category s
 				"rule_name", rule.Name,
 				"action_type", rule.ActionType,
 			)
-			e.observeFailure(ctx, event.WorkspaceID, rule.ID, err)
+			e.observeFailure(ctx, &rule, err)
 		} else {
-			e.observeSuccess(ctx, event.WorkspaceID, rule.ID)
+			e.observeSuccess(ctx, &rule)
 		}
 	}
 }
@@ -937,7 +937,7 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 		if errors.Is(err, errFlowConditionSkipped) {
 			return nil
 		}
-		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		e.recordFailureHealth(ctx, rule, err)
 		if errors.Is(err, ErrAssignedAgentNotFound) {
 			rule.Enabled = false
 			if updateErr := e.ruleRepo.Update(ctx, rule); updateErr != nil {
@@ -949,6 +949,7 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 				)
 				return updateErr
 			}
+			e.notifyRuleFailure(ctx, rule, "Choose an available agent and re-enable the flow.")
 			e.logger.WarnContext(ctx, "disabled scheduled automation rule with missing agent",
 				"rule_id", rule.ID,
 				"rule_name", rule.Name,
@@ -957,14 +958,14 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 			)
 			if e.runEngine != nil {
 				if stopErr := e.runEngine.StopRuleSchedule(ctx, rule.ID); stopErr != nil {
-					return fmt.Errorf("stop disabled automation rule schedule: %w", stopErr)
+					return fmt.Errorf("stop disabled flow schedule: %w", stopErr)
 				}
 			}
 			return nil
 		}
 		return err
 	}
-	e.observeSuccess(ctx, workspaceID, rule.ID)
+	e.observeSuccess(ctx, rule)
 	return nil
 }
 
@@ -972,7 +973,7 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 // the automation-rule attribution used by the activity timeline.
 func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceID, ruleID, actorID string) (*model.AgentRun, error) {
 	if e == nil || e.ruleRepo == nil {
-		return nil, fmt.Errorf("automation rule engine is not configured")
+		return nil, fmt.Errorf("flow engine is not configured")
 	}
 	if e.agentService == nil {
 		return nil, fmt.Errorf("agent service not configured")
@@ -1041,7 +1042,7 @@ func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceI
 	}
 	eventContext := &model.AgentRunEventContext{
 		TeamID: nilIfEmpty(event.TeamID),
-		Reason: strPtr(fmt.Sprintf("manual run of automation flow %q", rule.Name)),
+		Reason: strPtr(fmt.Sprintf("manual run of flow %q", rule.Name)),
 	}
 
 	outputContext, err := deriveRunOutputContext(event, actionCfg.Output)
@@ -1061,14 +1062,14 @@ func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceI
 		Output:            outputContext,
 	}, nilIfEmpty(actor), trigger, eventContext, nil)
 	if err != nil {
-		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		e.observeFailure(ctx, rule, err)
 		return nil, fmt.Errorf("start agent run: %w", err)
 	}
-	e.observeSuccess(ctx, workspaceID, rule.ID)
+	e.observeSuccess(ctx, rule)
 
 	if e.activitySvc != nil {
 		_ = e.activitySvc.Log(ctx, workspaceID, targetType, targetID, nilIfEmpty(actor),
-			fmt.Sprintf("automation flow '%s' was run manually", rule.Name),
+			fmt.Sprintf("Flow '%s' was run manually", rule.Name),
 			nil, nil, nil, nil)
 	}
 	if e.wsPublisher != nil {
@@ -1170,7 +1171,7 @@ func (e *AutomationRuleEngine) updateRule(ctx context.Context, workspaceID, rule
 		return nil, err
 	}
 	if rule == nil {
-		return nil, fmt.Errorf("automation rule not found")
+		return nil, fmt.Errorf("flow not found")
 	}
 	if rule.TriggerType == model.CRMPlaybookWorkDue {
 		return nil, fmt.Errorf("manage this Flow from its CRM Playbook")
@@ -1253,7 +1254,7 @@ func (e *AutomationRuleEngine) DeleteRule(ctx context.Context, workspaceID, rule
 		return err
 	}
 	if rule == nil {
-		return fmt.Errorf("automation rule not found")
+		return fmt.Errorf("flow not found")
 	}
 	if rule.TriggerType == model.CRMPlaybookWorkDue {
 		return fmt.Errorf("manage this Flow from its CRM Playbook")
@@ -1557,7 +1558,7 @@ func (e *AutomationRuleEngine) stopInvalidRuleSchedule(ctx context.Context, rule
 		return cause
 	}
 	if err := e.runEngine.StopRuleSchedule(ctx, ruleID); err != nil {
-		return fmt.Errorf("stop invalid automation rule schedule: %w", err)
+		return fmt.Errorf("stop invalid flow schedule: %w", err)
 	}
 	return cause
 }
@@ -1729,22 +1730,64 @@ func matchGitHubCheckSuiteConfig(cfg model.TriggerConfigGitHubCheckSuiteComplete
 
 // --- Health observation ---
 
-func (e *AutomationRuleEngine) observeSuccess(ctx context.Context, workspaceID, ruleID string) {
+func (e *AutomationRuleEngine) observeSuccess(ctx context.Context, rule *model.AutomationRule) {
+	// Agent-backed flows emit their own lifecycle updates once the run starts.
+	if rule.ActionType != model.ActionStartAgentRun {
+		e.notificationSvc.notifyRecipients(ctx, model.NotificationEventInput{
+			WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID), EntityType: "automation_rule", EntityID: rule.ID,
+			EventType: "automation_rule.activity", Title: "Flow completed: " + rule.Name,
+		}, derefString(rule.CreatedBy))
+	}
 	if e.healthObserver == nil {
 		return
 	}
-	_ = e.healthObserver.ObserveSuccess(ctx, workspaceID, "automation_rule", model.AutomationScopeWorkspace, workspaceID, model.JSONB{
-		"rule_id": ruleID,
+	_ = e.healthObserver.ObserveSuccess(ctx, rule.WorkspaceID, "automation_rule", model.AutomationScopeWorkspace, rule.WorkspaceID, model.JSONB{
+		"rule_id": rule.ID,
 	})
 }
 
-func (e *AutomationRuleEngine) observeFailure(ctx context.Context, workspaceID, ruleID string, cause error) {
+func (e *AutomationRuleEngine) observeFailure(ctx context.Context, rule *model.AutomationRule, cause error) {
+	if cause != nil && !errors.Is(cause, context.Canceled) {
+		e.notifyRuleFailure(ctx, rule, workflowFailureReview)
+	}
+	e.recordFailureHealth(ctx, rule, cause)
+}
+
+func (e *AutomationRuleEngine) recordFailureHealth(ctx context.Context, rule *model.AutomationRule, cause error) {
 	if e.healthObserver == nil || cause == nil {
 		return
 	}
-	_ = e.healthObserver.ObserveFailure(ctx, workspaceID, "automation_rule", model.AutomationScopeWorkspace, workspaceID, cause.Error(), model.JSONB{
-		"rule_id": ruleID,
+	_ = e.healthObserver.ObserveFailure(ctx, rule.WorkspaceID, "automation_rule", model.AutomationScopeWorkspace, rule.WorkspaceID, cause.Error(), model.JSONB{
+		"rule_id": rule.ID,
 	})
 }
 
-// containsString is defined in pm_import.go — reused here.
+const workflowFailureReview = "Review the flow and its recent activity."
+
+func workflowFailureEvent(rule *model.AutomationRule, executionID, body string) model.NotificationEventInput {
+	return model.NotificationEventInput{
+		WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID),
+		EntityType: "automation_rule", EntityID: rule.ID, EventType: model.WorkflowFailureEvent, Category: model.WorkflowFailureCategory,
+		Title: "Flow failed: " + rule.Name, Body: body, CompleteTitle: true, Priority: "high",
+		Metadata:           model.JSONB{"workflow_execution_id": executionID},
+		ExplicitRecipients: []string{derefString(rule.CreatedBy)}, SkipFollowers: true,
+	}
+}
+
+func (e *AutomationRuleEngine) notifyRuleFailure(ctx context.Context, rule *model.AutomationRule, body string) {
+	if e.notificationSvc == nil || derefString(rule.CreatedBy) == "" {
+		return
+	}
+	if err := e.notificationSvc.Emit(ctx, workflowFailureEvent(rule, "", body)); err != nil {
+		e.logger.ErrorContext(ctx, "notify workflow owner of failure", "workspace_id", rule.WorkspaceID, "rule_id", rule.ID, "error", err)
+	}
+}
+
+// NotifyScheduledRuleFailure is called after the scheduler has finished retrying this tick.
+func (e *AutomationRuleEngine) NotifyScheduledRuleFailure(ctx context.Context, workspaceID, ruleID, executionID string) error {
+	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+	if err != nil || rule == nil || !rule.Enabled || rule.TriggerType != model.TriggerCron || derefString(rule.CreatedBy) == "" || e.notificationSvc == nil {
+		return err
+	}
+	return e.notificationSvc.Emit(ctx, workflowFailureEvent(rule, executionID, workflowFailureReview))
+}

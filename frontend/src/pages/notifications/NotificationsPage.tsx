@@ -17,7 +17,7 @@ import {
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
-import { getSettingsNotificationTarget, getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
+import { moduleNotificationTarget, getSettingsNotificationTarget, getNotificationDockTarget, getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -247,12 +247,22 @@ function NotificationDetail({ notification }: { notification: Notification }) {
     : notification.entity_type === 'support_conversation'
     ? 'Open conversation'
     : notification.entity_type === 'agent_run'
-      ? 'Open task run'
-      : `Open ${notification.entity_type}`
+      ? 'Open run'
+      : `Open ${notification.entity_type.replace(/^crm_/, '').replace('automation_rule', 'flow')}`
 
   const handleNavigateToEntity = () => {
     const type = notification.entity_type
     const id = notification.entity_id
+    const dock = getNotificationDockTarget(notification)
+    if (dock) {
+      window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: dock }))
+      return
+    }
+    const target = moduleNotificationTarget(notification.entity_type, notification.entity_id, wsSlug)
+    if (target) {
+      void navigate({ to: target.path, search: target.search })
+      return
+    }
     const settingsRoute = getSettingsNotificationTarget(notification, wsSlug)
     if (settingsRoute) {
       navigate({ to: settingsRoute })
@@ -268,8 +278,6 @@ function NotificationDetail({ notification }: { notification: Notification }) {
       navigate({ to: '/w/$slug/pm/objectives/$objectiveId' as string, params: { slug: wsSlug, objectiveId: id } })
     } else if (type === 'support_conversation') {
       navigate({ to: '/w/$slug/support/$conversationId' as string, params: { slug: wsSlug, conversationId: id } })
-    } else if (type === 'doc' || type === 'document') {
-      navigate({ to: '/w/$slug/docs/documents/$docId' as string, params: { slug: wsSlug, docId: id } })
     }
   }
 

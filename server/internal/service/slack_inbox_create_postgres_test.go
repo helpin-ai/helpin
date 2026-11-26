@@ -242,6 +242,19 @@ func TestSlackInboxCreatePostgres(t *testing.T) {
 	if strings.Contains(fmt.Sprint(view["blocks"]), "initial_option") || !strings.Contains(fmt.Sprint(view["blocks"]), "Billing") {
 		t.Fatalf("multiple eligible inboxes: %v", view)
 	}
+	private = false
+	shortcut("401.1", "", "Request after changing channel visibility")
+	if strings.Contains(fmt.Sprint(view["blocks"]), "Billing") {
+		t.Fatal("private rule exposed the team inbox after the channel became public")
+	}
+	route.PublicTeamInboxes = true
+	if err = s.Configure(authorization.WithActor(ctx, &authorization.Actor{WorkspaceID: f.workspace, Role: "owner", UserID: f.userID}), f.workspace, route); err != nil {
+		t.Fatal(err)
+	}
+	shortcut("402.1", "", "Request after saving the public rule")
+	if !strings.Contains(fmt.Sprint(view["blocks"]), "Billing") {
+		t.Fatal("public rule did not offer the team inbox")
+	}
 	// A queued staff request must never become customer intake if its channel is repurposed.
 	envelope, err := json.Marshal(map[string]any{"type": "event_callback", "event_id": "Echange", "team_id": a.ExternalAccountID,
 		"event": slack.Message{Type: "app_mention", Channel: "Cdesk", User: "Uagent", TS: "500.1", Text: mention + "create a ticket for later"}})

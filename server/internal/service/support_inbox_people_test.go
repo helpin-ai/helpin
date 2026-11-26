@@ -154,6 +154,7 @@ func (f *inboxAlertFixture) alertRecipient(t *testing.T, conv *model.SupportConv
 		f.presence,
 		repository.NewSupportTeammateStatusOverrideRepository(f.db),
 		f.directory,
+		nil,
 		conv,
 		"support_conversation.customer_reply",
 		time.Now(),

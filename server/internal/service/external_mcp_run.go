@@ -304,10 +304,10 @@ func (s *ExternalMCPService) markReauthorizationRequired(ctx context.Context, se
 		_ = s.notifications.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: server.WorkspaceID, EventType: "external_mcp.reauthorization_required",
 			EntityType: "external_mcp_server", EntityID: server.ID,
-			Title: "Reconnect " + server.Name, Body: "Authorization expired or was revoked. Reconnect the server before agents can use its tools.",
+			Title: "Reconnect " + server.Name, CompleteTitle: true, Body: "Authorization expired or was revoked. Reconnect the server before agents can use its tools.",
 			Category: model.NotifCategoryStatusChanges, Priority: "high",
 			Metadata:           model.JSONB{"server_id": server.ID, "navigation_target": "settings_external_mcp"},
-			ExplicitRecipients: []string{recipient}, SkipFollowers: true, SkipEmailDelivery: true,
+			ExplicitRecipients: []string{recipient}, SkipFollowers: true,
 		})
 	}
 }

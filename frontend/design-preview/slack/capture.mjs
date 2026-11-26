@@ -84,7 +84,7 @@ try {
       await page.keyboard.press('Escape')
       await dialog.getByRole('button', {name:/^Slack channel:/}).click()
       await page.getByText('#customer-support', {exact:true}).click()
-      await dialog.getByText(/Everyone with access/).waitFor()
+      await dialog.getByRole('status').filter({ hasText: '#customer-support is public.' }).waitFor()
       await shot('public-channel')
       await go('settings/inboxes-routing?tab=inboxes')
       await page.getByRole('button', {name:'Actions for Shared inbox'}).click()

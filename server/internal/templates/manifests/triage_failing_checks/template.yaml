@@ -73,7 +73,7 @@ inputs:
     default: failure
     label: Check result
     section: What should it watch?
-    help_text: Only workflow runs with this result will start the flow.
+    help_text: Only GitHub check suites with this result will start the flow.
   - key: create_follow_up_tasks
     type: bool
     required: false

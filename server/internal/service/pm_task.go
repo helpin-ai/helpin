@@ -573,6 +573,14 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 	if s.notificationService != nil {
+		s.notificationService.notifyRecipients(ctx, model.NotificationEventInput{
+			WorkspaceID: newTask.WorkspaceID, ActorID: actorID, TeamID: derefString(newTask.TeamID),
+			EventType: "task.assigned", EntityType: "task", EntityID: newTask.ID, Metadata: model.JSONB{"crm_follow_up": req.CRMFollowUp}, Title: "You were assigned to " + newTask.Name,
+		}, ownerIDs...)
+		for _, item := range checklistItems {
+			s.notificationService.notifyChecklistAssignee(ctx, newTask, item, actorID)
+		}
+		var mentionTargets mentionAudience
 		var mentionedUserIDs []string
 		if newTask.Description != nil {
 			mentions := extractMentions(*newTask.Description)
@@ -582,7 +590,8 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 				"mentions", mentions,
 			)
 			var err error
-			mentionedUserIDs, err = resolveMentionRecipients(ctx, s.workspaceRepo, newTask.WorkspaceID, *newTask.Description, actorID, mentionScopeForTeamID(newTask.TeamID))
+			mentionTargets, err = resolveMentionAudience(ctx, s.workspaceRepo, newTask.WorkspaceID, mentions, actorID, mentionScopeForTeamID(newTask.TeamID))
+			mentionedUserIDs = mentionTargets.all
 			if err != nil {
 				s.logger.ErrorContext(ctx, "failed to resolve task mention recipients", "error", err, "task_id", newTask.ID)
 				mentionedUserIDs = nil
@@ -599,17 +608,19 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 		}
 
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-			WorkspaceID:        newTask.WorkspaceID,
-			ActorID:            actorID,
-			EventType:          eventType,
-			EntityType:         "task",
-			EntityID:           newTask.ID,
-			Title:              "created " + newTask.Name,
-			Category:           category,
-			Priority:           priority,
-			TeamID:             derefString(newTask.TeamID),
-			ExplicitRecipients: mentionedUserIDs,
-			SkipFollowers:      len(mentionedUserIDs) > 0,
+			WorkspaceID:            newTask.WorkspaceID,
+			ActorID:                actorID,
+			EventType:              eventType,
+			EntityType:             "task",
+			EntityID:               newTask.ID,
+			Title:                  "created " + newTask.Name,
+			Category:               category,
+			Priority:               priority,
+			TeamID:                 derefString(newTask.TeamID),
+			ExcludeFollowers:       ownerIDs,
+			ExplicitRecipients:     mentionedUserIDs,
+			SlackMentionRecipients: mentionTargets.personal,
+			SkipFollowers:          len(mentionedUserIDs) > 0,
 			EntitySnapshot: model.JSONB{
 				"title":      newTask.Name,
 				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, newTask.WorkspaceID), newTask.DisplayID),
@@ -1347,7 +1358,7 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 		if ownerMember == nil || ownerMember.UserID == nil || *ownerMember.UserID == "" {
 			continue
 		}
-		if err := s.taskRepo.AddOwner(ctx, tasks[i].ID, *ownerMember.UserID); err != nil {
+		if _, err := s.taskRepo.AddOwner(ctx, tasks[i].ID, *ownerMember.UserID); err != nil {
 			return nil, err
 		}
 	}
@@ -2067,7 +2078,8 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 	if userID == "" {
 		return errCommandInput("user_id is required")
 	}
-	if err := s.taskRepo.AddOwner(ctx, taskID, userID); err != nil {
+	added, err := s.taskRepo.AddOwner(ctx, taskID, userID)
+	if err != nil {
 		return err
 	}
 	if err := s.taskRepo.AddFollower(ctx, taskID, userID); err != nil {
@@ -2084,7 +2096,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 			s.logger.ErrorContext(ctx, "failed to auto-follow task for assigned owner", "error", err, "task_id", taskID, "user_id", userID)
 		}
 	}
-	if s.notificationService != nil {
+	if added && s.notificationService != nil {
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID:        current.WorkspaceID,
 			ActorID:            actorID,

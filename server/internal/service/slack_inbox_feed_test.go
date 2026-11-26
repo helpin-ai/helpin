@@ -123,28 +123,60 @@ func TestSlackInboxFeedSpeakerHeader(t *testing.T) {
 }
 
 func TestSlackInboxFeedHTMLReply(t *testing.T) {
-	raw := `<div style="display: none">Tracking preheader</div><p>Please <strong>reset</strong> my account.</p><div class="gmail_quote">Old conversation</div>`
+	raw := `<div style="display: none">Tracking preheader</div><p>Please <strong>reset</strong> my account.</p><span class="gmail_signature_prefix">-- </span><div class="gmail_signature">Office address</div><div class="gmail_quote">Old conversation</div>`
 	md := feedHTMLReply(raw)
-	if strings.Contains(md, "preheader") || strings.Contains(md, "Old conversation") || !strings.Contains(md, "**reset**") {
+	if md != "Please **reset** my account." {
 		t.Fatalf("visible email = %q", md)
+	}
+}
+
+func TestSlackInboxFeedEmailBody(t *testing.T) {
+	s := &SlackService{channels: &SupportChannelService{inbox: &SupportInboxService{}}}
+	f := &feedContext{conv: &model.SupportConversation{Channel: "email"}}
+	const forwarded = `{"original_sender_email":"customer@example.com","forwarded_by_email":"agent@example.com"}`
+	for _, tc := range []struct {
+		name, content, html, visible, metadata, want string
+		hasQuote                                     bool
+	}{
+		{name: "legacy Outlook header", html: `<p>New reply</p><div id="divRplyFwdMsg" data-helpin-quote="true">From: Pat</div><p>Previous reply</p>`, want: "New reply"},
+		{name: "plain signature", content: "Answer\r\n\r\n-- \r\nPat\r\nOffice", want: "Answer"},
+		{name: "quoted reply", content: "Answer\n\nOn Friday, Pat wrote:\n> Earlier question", want: "Answer"},
+		{name: "authored inline reply", content: "On Friday, Pat wrote:\n> Question\nMy answer", want: "On Friday, Pat wrote:\n> Question\nMy answer"},
+		{name: "ordinary sign-off", content: "Answer\n\nThanks,\nPat", want: "Answer\n\nThanks,\nPat"},
+		{name: "literal code sample", content: "My input\n```text\n--\nvalue\n```", want: "My input\n```text\n--\nvalue\n```"},
+		{name: "flattened reply delimiter", html: `<div>My reply</div><div>-- Please type your reply above this line --</div><div>Old reply</div>`, want: "My reply"},
+		{name: "provider text split", html: `<p>Answer</p><div class="gmail_signature">Office address</div><p>Previous reply</p>`, visible: "Answer\nOffice address", hasQuote: true, want: "Answer"},
+		{name: "forward", metadata: forwarded, html: `<div class="gmail_quote"><p>My invoice?</p><div class="gmail_signature">My office</div></div>`, content: "Please help\n-- \nAgent\n---------- Forwarded message ---------\nFrom: Customer <customer@example.com>\n\nMy invoice?\nMy office", want: "Please help\n\nMy invoice?"},
+		{name: "signature only", html: `<div class="gmail_signature">Office address</div><div class="gmail_quote">Previous reply</div>`, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &model.SupportMessage{MessageType: "reply", SenderType: "customer", Content: tc.content, HTMLBody: tc.html, EmailVisibleText: tc.visible, EmailHasQuotedContent: &tc.hasQuote, Metadata: tc.metadata}
+			got, _, email, err := s.feedContent(context.Background(), f, m)
+			if err != nil || !email || got != tc.want {
+				t.Fatalf("feedContent = %q, email %v, error %v; want %q", got, email, err, tc.want)
+			}
+		})
 	}
 }
 
 func TestSlackInboxFeedVisibility(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		ch         SlackChannel
-		visibility string
-		want       bool
+		name              string
+		ch                SlackChannel
+		inbox             string
+		publicTeamInboxes bool
+		want              bool
 	}{
-		{"public workspace inbox", SlackChannel{}, "workspace", true},
-		{"private restricted inbox", SlackChannel{IsPrivate: true}, "members_only", true},
-		{"public restricted inbox", SlackChannel{}, "members_only", false},
-		{"externally shared", SlackChannel{IsShared: true, IsPrivate: true}, "workspace", false},
-		{"pending external share", SlackChannel{PendingShared: true}, "workspace", false},
+		{"public main inbox", SlackChannel{}, "shared", false, true},
+		{"private team inbox", SlackChannel{IsPrivate: true}, "billing", false, true},
+		{"public team inbox", SlackChannel{}, "billing", true, true},
+		{"private rule became public", SlackChannel{}, "billing", false, false},
+		{"externally shared", SlackChannel{IsShared: true}, "billing", true, false},
+		{"pending external share", SlackChannel{PendingShared: true}, "billing", true, false},
+		{"archived", SlackChannel{IsArchived: true}, "billing", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := slackFeedAllowsChannel(tc.ch, tc.visibility); got != tc.want {
+			if got := slackFeedAllowsChannel(tc.ch, tc.inbox, tc.publicTeamInboxes); got != tc.want {
 				t.Fatalf("eligible = %v", got)
 			}
 		})
@@ -159,9 +191,9 @@ func TestSlackInboxFeedArchivedReason(t *testing.T) {
 		conv model.SupportConversation
 		want string
 	}{
-		{"merged", model.SupportConversation{MergedIntoID: &other}, "This conversation was merged into another conversation in Helpin."},
-		{"anonymized", model.SupportConversation{AnonymizedAt: &now}, "Personal details were removed from this conversation in Helpin."},
-		{"anonymized merge", model.SupportConversation{MergedIntoID: &other, AnonymizedAt: &now}, "Personal details were removed from this conversation in Helpin."},
+		{"merged", model.SupportConversation{DisplayID: 88, MergedIntoID: &other}, "#88 was merged into another conversation in Helpin."},
+		{"anonymized", model.SupportConversation{DisplayID: 88, AnonymizedAt: &now}, "Personal details were removed from #88 in Helpin."},
+		{"anonymized merge", model.SupportConversation{ID: other, MergedIntoID: &other, AnonymizedAt: &now}, "Personal details were removed from merged-conversation in Helpin."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			want := tc.want + " Updates have stopped in this thread."

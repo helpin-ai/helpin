@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -245,15 +246,14 @@ func (r *PMObjectiveRepository) ReplaceTeams(ctx context.Context, objectiveID st
 
 // ── Owners ─────────────────────────────────────────────────────────
 
-func (r *PMObjectiveRepository) AddOwner(ctx context.Context, objectiveID, workspaceMemberID string) error {
+// AddOwner reports whether this request added the member.
+func (r *PMObjectiveRepository) AddOwner(ctx context.Context, objectiveID, workspaceMemberID string) (bool, error) {
 	link := model.PMObjectiveOwner{ObjectiveID: objectiveID, WorkspaceMemberID: workspaceMemberID}
-	if err := r.db.WithContext(ctx).Create(&link).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return nil
-		}
-		return fmt.Errorf("add objective owner: %w", err)
+	result := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&link)
+	if result.Error != nil {
+		return false, fmt.Errorf("add objective owner: %w", result.Error)
 	}
-	return nil
+	return result.RowsAffected == 1, nil
 }
 
 func (r *PMObjectiveRepository) RemoveOwner(ctx context.Context, objectiveID, workspaceMemberID string) error {

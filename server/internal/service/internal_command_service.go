@@ -1173,7 +1173,7 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"epic", "task"},
 		Tool:                 mustCommandToolMetadata("pm.assign_task_agent"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return nil, fmt.Errorf("task agent assignment was removed; use a workflow automation rule or start a run explicitly with an agent")
+			return nil, fmt.Errorf("task agent assignment was removed. Use a flow or start an agent run directly")
 		},
 	})
 	s.register(InternalCommandDefinition{

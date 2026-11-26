@@ -48,3 +48,18 @@ export function getSettingsNotificationTarget(notification: Notification, worksp
   if (notification.entity_type === 'helpcenter_config') return buildSettingsRoutePath(workspaceSlug, 'helpcenter')
   return null
 }
+
+export function moduleNotificationTarget(entityType: unknown, entityId: string, slug: string) {
+  if (!slug || !entityId) return null
+  const base = `/w/${encodeURIComponent(slug)}`
+  const id = encodeURIComponent(entityId)
+  switch (entityType) {
+    case 'doc': case 'document': return { path: `${base}/docs/documents/${id}` }
+    case 'crm_contact': return { path: `${base}/crm/contacts/${id}` }
+    case 'crm_company': return { path: `${base}/crm/companies/${id}` }
+    case 'crm_deal': return { path: `${base}/crm/deals/${id}` }
+    case 'crm_signal': return { path: `${base}/crm/insights`, search: { signal: entityId } }
+    case 'automation_rule': return { path: `${base}/automation/flows`, search: { show_rule: entityId } }
+    default: return null
+  }
+}

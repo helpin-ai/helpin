@@ -8,10 +8,20 @@ export interface SlackRoute {
   crm_company_id?: string | null
   purpose: SlackPurpose
   mailbox_ids?: string[]
+  public_team_inboxes?: boolean
   mailbox_id: string | null
   team_id: string | null
   epic_id: string | null
 }
+export interface SlackNotificationPreferences {
+  team_id?: string
+  bot_user_id?: string
+  linked: boolean
+  categories?: Record<string, boolean>
+  assignments: boolean
+  mentions: boolean
+}
+
 export interface SlackSettings {
   configured: boolean
   connected?: boolean
@@ -30,6 +40,10 @@ export interface SlackChannel {
 const path = (ws: string, suffix = '') =>
   `/slack/${suffix}?workspace_id=${encodeURIComponent(ws)}`
 export const slackService = {
+  notificationPreferences: (ws: string) =>
+    api.get<SlackNotificationPreferences>(path(ws, 'notifications')).then(unwrap),
+  updateNotificationPreferences: (ws: string, patch: Partial<Pick<SlackNotificationPreferences, 'categories' | 'assignments' | 'mentions'>>) =>
+    api.patch(path(ws, 'notifications'), patch).then(unwrap),
   thread: (ws: string, id: string) => api.get<{permalink: string}>(`/support/inbox/conversations/${encodeURIComponent(id)}/slack-thread?workspace_id=${encodeURIComponent(ws)}`).then(unwrap),
   settings: (ws: string) => api.get<SlackSettings>(path(ws)).then(unwrap),
   channels: (ws: string) =>

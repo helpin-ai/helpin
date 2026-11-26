@@ -683,6 +683,9 @@ func main() {
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	pmAutomationService.SetHealthObserver(automationHealthService)
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
+	slackRepo := repository.NewSlackRepository(db)
+	channelJobs := repository.NewSupportInboundJobRepository(db)
+	notificationService.SetSlackNotifications(slackRepo, channelJobs)
 	notificationService.SetAccessChecker(service.NewNotificationAccessPolicy(authzService, notificationRepo))
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	pushDeviceService := service.NewPushDeviceService(pushDeviceRepo)
@@ -1270,10 +1273,10 @@ func main() {
 		cfg.OpenAIEmbeddingModel,
 	)
 
-	crmContactService := service.NewCRMContactService(crmContactRepo).
+	crmContactService := service.NewCRMContactService(crmContactRepo).SetNotificationService(notificationService).
 		SetIdentitySync(crmActivityRepo, wsPublisher).
 		SetTimelineRepository(crmCompanyTimelineRepo)
-	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).SetNotificationService(notificationService).
 		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
@@ -1286,7 +1289,7 @@ func main() {
 	crmCompanyService.SetCustomFieldService(customFieldService)
 	crmFieldCatalogService := service.NewCRMFieldCatalogService(crmCompanyRepo, crmContactService, crmBehaviorProfileRepo)
 	crmFieldCatalogService.SetCustomFieldService(customFieldService)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).SetNotificationService(notificationService).
 		SetActivityService(pmActivityService).
 		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmDealService.SetProductAnalyticsService(productAnalytics)
@@ -1294,7 +1297,7 @@ func main() {
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	pmTriageHandler := handler.NewPMTriageHandler(pmTriageService)
 	pmTriageHandler.SetReviewer(service.NewPMTriageReviewService(pmTriageService, pmTaskService, associationsService))
-	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmActivityService := service.NewCRMActivityService(crmActivityRepo).SetNotificationService(notificationService)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
 	// Gmail OAuth + encryption setup.
@@ -1496,6 +1499,7 @@ func main() {
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
 			SetAttentionNotifier(notificationService).
+			SetNotificationRules(automationRuleRepo).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
 			SetWebSocketPublisher(agentRuntimeProjectionPublisher).
 			SetRunFinalizers(runFinalizers)
@@ -1705,14 +1709,15 @@ func main() {
 	supportSLAService.SetWebhookService(webhookService)
 	channelAdapters := channels.NewRegistry(telegram.NewAdapter(cfg.TelegramAPIBaseURL))
 	supportChannelService := service.NewSupportChannelService(
-		repository.NewSupportChannelAccountRepository(db), repository.NewSupportInboundJobRepository(db), channelAdapters,
+		repository.NewSupportChannelAccountRepository(db), channelJobs, channelAdapters,
 		service.SupportChannelConfig{
 			EncryptionKey:    resolveChannelEncryptionKey(cfg),
 			PublicAPIBaseURL: channelPublicAPIBaseURL(cfg),
 			// Telegram requires HTTPS webhooks; only a local Bot API fake runs without.
 			RequireHTTPS: cfg.TelegramAPIBaseURL == "",
 		}).SetInboxService(supportInboxService)
-	slackService := service.NewSlackService(supportChannelService, repository.NewSlackRepository(db), service.SlackConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret, SigningSecret: cfg.SlackSigningSecret, RedirectURL: strings.TrimRight(cfg.AppBaseURL, "/") + "/oauth/slack/callback"})
+	slackService := service.NewSlackService(supportChannelService, slackRepo, service.SlackConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret, SigningSecret: cfg.SlackSigningSecret, RedirectURL: strings.TrimRight(cfg.AppBaseURL, "/") + "/oauth/slack/callback"})
+	slackService.SetNotificationService(notificationService)
 	slackService.SetPM(pmTaskService, pmCommentService, authzService, pmTriageService, pmTaskInsightsService, cfg.AppBaseURL)
 	channelOutbox := repository.NewSupportChannelOutboxRepository(db)
 	supportChannelService.SetOutboxRepository(channelOutbox)
@@ -2462,6 +2467,7 @@ func main() {
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelEvent)
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
 	go supportChannelService.StartWorker(inboundCtx, "slack_shortcut")
+	go supportChannelService.StartWorker(inboundCtx, service.SlackNotificationJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackPMDeliveryJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackInboxFeedJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackFeedActionJob)

@@ -84,7 +84,7 @@ func (h *AutomationRuleHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rule == nil {
-		writeError(w, http.StatusNotFound, "automation rule not found")
+		writeError(w, http.StatusNotFound, "flow not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, rule)
@@ -126,5 +126,5 @@ func (h *AutomationRuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "automation rule deleted"})
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "flow deleted"})
 }

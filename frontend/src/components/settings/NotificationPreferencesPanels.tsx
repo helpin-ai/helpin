@@ -1,4 +1,6 @@
-import { type ReactNode } from 'react';
+import type { ModuleNotificationRow } from '@/lib/slackNotificationRows';
+import type { SlackNotificationControls } from './SlackNotificationSettings';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { DesktopNotificationControl } from './DesktopNotificationControl';
 import { desktopCategoryEnabled } from '@/lib/desktopNotifications';
 import { SettingsSection } from './SettingsSection';
@@ -13,10 +15,7 @@ import {
   useUpdateUserNotificationSettings,
 } from '@/hooks/queries';
 import {
-  SUPPORT_NOTIFICATION_CATEGORIES,
-  WORKSPACE_NOTIFICATION_CATEGORIES,
-  type NotificationCategory,
-  type NotificationPreferences,
+  isChannelEnabled,
   type UpdateUserNotificationSettingsRequest,
 } from '@/lib/notificationTypes';
 import { cn } from '@/lib/utils';
@@ -222,33 +221,35 @@ export function WorkspaceMuteNotificationsCard({
   );
 }
 
-const isChannelEnabled = (
-  prefs: NotificationPreferences | undefined,
-  categoryKey: string,
-  channel: 'in_app' | 'email',
-) => prefs?.channel_preferences?.[categoryKey]?.[channel] ?? true;
+const channelGrid = 'grid grid-cols-[minmax(0,1fr)_repeat(4,2.5rem)] items-center gap-1 sm:grid-cols-[minmax(0,1fr)_repeat(4,4rem)] sm:gap-2';
 
-function NotificationCategoriesCard({
+export function NotificationCategoriesCard({
   workspaceId,
   cardClassName,
   title,
   categories,
+  controls,
+  target,
 }: CardClassNameProps & {
   workspaceId: string;
   title: string;
-  categories: NotificationCategory[];
+  categories: ModuleNotificationRow[];
+  controls: SlackNotificationControls;
+  target?: string;
 }) {
   const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
   const updatePrefs = useUpdateNotificationPreferences(workspaceId);
 
-  const handleToggle = (categoryKey: string, channel: 'in_app' | 'email' | 'desktop', value: boolean) => {
-    const nextPreferences = { ...(prefs?.channel_preferences ?? {}) };
-    nextPreferences[categoryKey] = {
-      ...(nextPreferences[categoryKey] ?? {}),
-      [channel]: value,
-    };
+  const targetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (target && !isLoading && targetRef.current) {
+      targetRef.current.scrollIntoView?.({ block: 'center' });
+      targetRef.current.focus({ preventScroll: true });
+    }
+  }, [target, isLoading]);
 
-    updatePrefs.mutate({ channel_preferences: nextPreferences }, {
+  const handleToggle = (categoryKey: string, channel: 'in_app' | 'email' | 'desktop', value: boolean) => {
+    updatePrefs.mutate({ channel_changes: { [categoryKey]: { [channel]: value } } }, {
       onError: () => toast.error('Failed to update notification preference'),
     });
   };
@@ -258,19 +259,19 @@ function NotificationCategoriesCard({
   }
 
   if (isLoading) {
-    return <SettingsSection title={title} className={cardClassName}><Skeleton className="mt-3 h-24 w-full" /></SettingsSection>;
+    return <Skeleton aria-label={title} className="h-16 w-full" />;
   }
 
   return (
-    <SettingsSection title={title} className={cardClassName}>
+    <SettingsSection title={title} className={cardClassName} defaultOpen={categories.some(row => row.slackRow === target)}>
       <div>
-        <div className="grid grid-cols-[minmax(0,1fr)_48px_56px_48px] items-center gap-2 border-b border-quiet-divider-strong py-2 text-xs text-quiet-text-secondary sm:grid-cols-[minmax(0,1fr)_72px_72px_72px]">
+        <div className={cn(channelGrid, "border-b border-quiet-divider-strong py-2 text-xs text-quiet-text-secondary")}>
           <span><span className="sr-only">Activity type</span></span>
-          <span className="text-center">In-app</span><QuickTooltip label="Desktop alerts follow your enabled in-app categories. Enable desktop notifications for this browser in Account settings."><span tabIndex={0} className="text-center">Desktop</span></QuickTooltip><span className="text-center">Email</span>
+          <span className="text-center">In-app</span><QuickTooltip label="Desktop alerts follow your enabled in-app categories. Enable desktop notifications for this browser in Account settings."><span tabIndex={0} className="text-center">Desktop</span></QuickTooltip><span className="text-center">Email</span><span className="text-center">Slack</span>
         </div>
         <div className="divide-y divide-quiet-divider-strong">
           {categories.map((category) => (
-            <div key={category.key} className="grid grid-cols-[minmax(0,1fr)_48px_56px_48px] items-center gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px]">
+            <div key={category.key} ref={target === category.slackRow ? targetRef : undefined} tabIndex={target === category.slackRow ? -1 : undefined} className={cn(channelGrid, "rounded-sm py-3 focus-visible:outline-ring focus-visible:outline-2")}>
               <div className="flex min-w-0 items-center gap-1">
                 <span className="text-sm">{category.label}</span>
                 <PreferenceHelp title={category.label}>
@@ -278,15 +279,18 @@ function NotificationCategoriesCard({
                 </PreferenceHelp>
               </div>
               <div className="flex justify-center">
-                <Switch aria-label={`${category.label}: in-app`} checked={isChannelEnabled(prefs, category.key, 'in_app')} disabled={updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)} />
+                <Switch aria-label={`${category.label}: in-app`} checked={isChannelEnabled(prefs, category.key, 'in_app')} disabled={!prefs || updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)} />
               </div>
               <div className="flex justify-center">
                 <Switch aria-label={`${category.label}: desktop`} checked={prefs ? desktopCategoryEnabled(prefs, category.key) : false} disabled={!prefs || updatePrefs.isPending || !isChannelEnabled(prefs, category.key, 'in_app')} onCheckedChange={(value) => handleToggle(category.key, 'desktop', value)} />
               </div>
               <div className="flex justify-center">
-                {category.supportsEmail === false ? <span aria-label="Email not available" className="text-xs text-quiet-text-tertiary">—</span> : (
-                  <Switch aria-label={`${category.label}: email`} checked={isChannelEnabled(prefs, category.key, 'email')} disabled={updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'email', value)} />
-                )}
+                <Switch aria-label={`${category.label}: email`} checked={isChannelEnabled(prefs, category.key, 'email')} disabled={!prefs || updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'email', value)} />
+              </div>
+              <div className="flex justify-center">
+                <Switch aria-label={`${title}, ${category.label}: Slack`} checked={controls.settings.data?.categories?.[category.slackRow] ?? false}
+                  disabled={!controls.settings.data?.linked || controls.save.isPending || controls.settings.isError}
+                  onCheckedChange={enabled => controls.save.mutate({ row: category.slackRow, enabled })} />
               </div>
             </div>
           ))}
@@ -294,40 +298,4 @@ function NotificationCategoriesCard({
       </div>
     </SettingsSection>
   );
-}
-
-export function WorkspaceNotificationCategoriesCard({
-  workspaceId,
-  cardClassName,
-}: CardClassNameProps & { workspaceId: string }) {
-  return (
-    <NotificationCategoriesCard
-      workspaceId={workspaceId}
-      cardClassName={cardClassName}
-      title="Projects & docs"
-      categories={WORKSPACE_NOTIFICATION_CATEGORIES}
-    />
-  );
-}
-
-export function SupportNotificationCategoriesCard({
-  workspaceId,
-  cardClassName,
-}: CardClassNameProps & { workspaceId: string }) {
-  return (
-    <NotificationCategoriesCard
-      workspaceId={workspaceId}
-      cardClassName={cardClassName}
-      title="Support inbox"
-      categories={SUPPORT_NOTIFICATION_CATEGORIES}
-    />
-  );
-}
-
-export function CRMNotificationCategoriesCard({ workspaceId }: { workspaceId: string }) {
-  return <NotificationCategoriesCard workspaceId={workspaceId} title="CRM" categories={[{ key: 'crm_signals', label: 'Signals ready for review', description: 'Signals routed to you or your team' }]} />;
-}
-
-export function IntegrationNotificationCategoriesCard({ workspaceId }: { workspaceId: string }) {
-  return <NotificationCategoriesCard workspaceId={workspaceId} title="Integrations" categories={[{ key: 'integrations', label: 'Connection issues', description: 'External tools that need you to reconnect', supportsEmail: false }]} />;
 }

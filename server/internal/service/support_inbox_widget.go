@@ -654,6 +654,7 @@ func (s *SupportInboxService) createWidgetConversation(ctx context.Context, sess
 			return nil, nil, err
 		}
 	}
+	var createdTicket *model.SupportConversation
 	var message *model.SupportMessage
 	err = s.conversationRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := repository.LockContactAnonymization(tx, session.WorkspaceID); err != nil {
@@ -705,6 +706,7 @@ func (s *SupportInboxService) createWidgetConversation(ctx context.Context, sess
 		if err := s.conversationRepo.WithTx(tx).Create(ctx, ticket); err != nil {
 			return err
 		}
+		createdTicket = ticket
 		session.ConversationID = &ticket.ID
 		if err := sessionRepo.Update(ctx, session); err != nil {
 			return err
@@ -712,6 +714,9 @@ func (s *SupportInboxService) createWidgetConversation(ctx context.Context, sess
 		message = widgetCustomerMessage(session, content)
 		return s.messageRepo.WithTx(tx).Create(ctx, message)
 	})
+	if err == nil && createdTicket != nil {
+		s.notificationService.notifySupportAssignment(ctx, createdTicket, derefString(createdTicket.AssignedUserID), "")
+	}
 	return session, message, err
 }
 

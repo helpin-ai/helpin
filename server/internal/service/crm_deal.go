@@ -12,6 +12,7 @@ import (
 
 // CRMDealService contains CRM deal and pipeline business logic.
 type CRMDealService struct {
+	notifications *NotificationService
 	productAnalyticsEmitter
 	dealRepo       *repository.CRMDealRepository
 	assocRepo      *repository.CRMAssociationRepository
@@ -22,6 +23,11 @@ type CRMDealService struct {
 		ReconcileDealMotionSignals(ctx context.Context, workspaceID, dealID string) error
 		ReconcilePipelineMotionSignals(ctx context.Context, workspaceID, pipelineID string) error
 	}
+}
+
+func (s *CRMDealService) SetNotificationService(notifications *NotificationService) *CRMDealService {
+	s.notifications = notifications
+	return s
 }
 
 // SetCompanySummaryRefresh enables account-summary invalidation after deal changes.
@@ -395,6 +401,14 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		Attributes: map[string]any{"entity_id": deal.ID, "pipeline_id": deal.PipelineID, "stage_id": deal.StageID, "amount": deal.Amount, "currency": deal.Currency, "customer_type": customer.CustomerType, "customer_id": customer.CustomerID, "module": "crm"},
 	})
 	s.requestCompanySummaryRefresh(ctx, deal.WorkspaceID, deal.ID)
+	s.notifications.notifyCRMOwners(ctx, model.NotificationEventInput{
+		WorkspaceID: deal.WorkspaceID,
+		ActorID:     actorID,
+		EntityType:  "crm_deal",
+		EntityID:    deal.ID,
+		EventType:   "crm.assigned",
+		Title:       "You were assigned deal " + deal.Name,
+	}, nil, []*string{deal.OwnerMemberID})
 	return created, nil
 }
 
@@ -541,6 +555,7 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 	} else if req.CloseDate != nil {
 		deal.CloseDate = req.CloseDate
 	}
+	previousOwners := []*string{deal.OwnerMemberID}
 	if req.ClearOwner {
 		deal.OwnerMemberID = nil
 	} else if req.OwnerMemberID != nil {
@@ -593,6 +608,14 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 		return nil, err
 	}
 	s.afterDealUpdate(ctx, updated, previousStageID, previousStageName, actorID)
+	s.notifications.notifyCRMOwners(ctx, model.NotificationEventInput{
+		WorkspaceID: deal.WorkspaceID,
+		ActorID:     actorID,
+		EntityType:  "crm_deal",
+		EntityID:    deal.ID,
+		EventType:   "crm.assigned",
+		Title:       "You were assigned deal " + deal.Name,
+	}, previousOwners, []*string{deal.OwnerMemberID})
 	return updated, nil
 }
 
@@ -620,6 +643,14 @@ func (s *CRMDealService) afterDealUpdate(ctx context.Context, updated *model.CRM
 		}
 	}
 	if previousStageID != updated.StageID {
+		s.notifications.notifyCRMOwners(ctx, model.NotificationEventInput{
+			WorkspaceID: updated.WorkspaceID,
+			ActorID:     actorID,
+			EntityType:  "crm_deal",
+			EntityID:    updated.ID,
+			EventType:   "crm.deal_updated",
+			Title:       "Deal stage changed for " + updated.Name,
+		}, nil, []*string{updated.OwnerMemberID})
 		stageType := ""
 		stageName := updated.StageID
 		if updated.Stage != nil {

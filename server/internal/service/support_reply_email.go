@@ -151,7 +151,7 @@ func (s *NotificationService) renderSupportReplyEmail(_ context.Context, event m
 	if latest == "" {
 		latest = "Open the conversation to read the latest reply."
 	}
-	url := buildEntityURL(s.appBaseURL, workspaceSlug, event.EntityType, event.EntityID)
+	url := buildEntityURL(s.appBaseURL, workspaceSlug, event.EntityType, event.EntityID, event.Metadata)
 	var htmlHistory, textHistory strings.Builder
 	if len(history) > 0 {
 		htmlHistory.WriteString(`<tr><td style="padding:24px 0 10px;color:#777;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;">Recent conversation</td></tr>`)

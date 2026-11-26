@@ -1703,6 +1703,8 @@ func (s *SupportInboxService) createConversation(ctx context.Context, req model.
 		return nil, err
 	}
 
+	s.notificationService.notifySupportAssignment(ctx, ticket, derefString(ticket.AssignedUserID), actorID)
+
 	// Auto-match or create CRM contact by email.
 	if contactID := s.matchOrCreateCRMContact(ctx, ticket.WorkspaceID, ticket.CustomerEmail, ticket.CustomerName); contactID != nil {
 		ticket.CRMContactID = contactID
@@ -2077,61 +2079,65 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 			continue
 		}
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
-			projection := inboundhtml.ProcessedContent{
-				HTML:                 log.HTMLBody,
-				Markdown:             log.EmailVisibleText,
-				QuotedMarkdown:       log.EmailQuotedText,
-				HasQuotedContent:     log.EmailHasQuotedContent,
-				ProjectionConfidence: log.EmailProjectionConfidence,
-				ProjectionVersion:    log.EmailProjectionVersion,
-			}
-			if log.EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
-				// HTML quote rules may change between versions. Rebuild from the
-				// stored body, but preserve an existing plain-text-only split: its
-				// quoted history cannot be reconstructed from StrippedText alone.
-				if log.HTMLBody != "" || log.EmailProjectionVersion == 0 {
-					projection = inboundhtml.Project(inboundhtml.ProjectionInput{
-						HTML:              log.HTMLBody,
-						TextBody:          log.StrippedText,
-						StrippedTextReply: log.StrippedText,
-					})
-				}
-				projection.ProjectionVersion = inboundhtml.CurrentProjectionVersion
-				var metadata map[string]any
-				if json.Unmarshal([]byte(messages[i].Metadata), &metadata) == nil && forwardedAttributionFromMetadata(metadata) != nil {
-					projection.Markdown = messages[i].Content
-					projection.QuotedMarkdown = ""
-					projection.HasQuotedContent = false
-					projection.ProjectionConfidence = inboundhtml.ProjectionConfidenceNone
-				}
-			}
-
-			cidURLs := map[string]string{}
-			for _, attachment := range messages[i].Attachments {
-				if attachment.ContentID != "" && attachment.URL != "" {
-					cidURLs[normalizeInboundContentID(attachment.ContentID)] = attachment.URL
-				}
-			}
-			messages[i].HTMLBody = projection.HTML
-			if len(cidURLs) > 0 {
-				var original model.PostmarkInboundPayload
-				if json.Unmarshal([]byte(log.RawBody), &original) == nil && original.HtmlBody != "" {
-					messages[i].HTMLBody = inboundPayloadProjectionWithHTML(original, rewriteInboundCIDImageSources(original.HtmlBody, cidURLs)).HTMLBody
-				}
-			}
-			messages[i].StrippedText = log.StrippedText
-			messages[i].EmailVisibleText = projection.Markdown
-			messages[i].EmailQuotedText = projection.QuotedMarkdown
-			messages[i].EmailHasQuotedContent = boolPtr(projection.HasQuotedContent)
-			messages[i].EmailProjectionConfidence = projection.ProjectionConfidence
-			messages[i].EmailProjectionVersion = projection.ProjectionVersion
-			messages[i].EmailFrom = log.FromEmail
-			messages[i].EmailTo = log.ToEmail
-			messages[i].EmailReplyTo = log.ReplyTo
-			messages[i].EmailCC = log.CCEmails
-			messages[i].EmailBCC = log.BCCEmails
+			hydrateReceivedEmailBody(&messages[i], log)
 		}
 	}
+}
+
+func hydrateReceivedEmailBody(message *model.SupportMessage, log *model.SupportEmailLog) {
+	projection := inboundhtml.ProcessedContent{
+		HTML:                 log.HTMLBody,
+		Markdown:             log.EmailVisibleText,
+		QuotedMarkdown:       log.EmailQuotedText,
+		HasQuotedContent:     log.EmailHasQuotedContent,
+		ProjectionConfidence: log.EmailProjectionConfidence,
+		ProjectionVersion:    log.EmailProjectionVersion,
+	}
+	if log.EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+		// HTML quote rules may change between versions. Rebuild from the
+		// stored body, but preserve an existing plain-text-only split: its
+		// quoted history cannot be reconstructed from StrippedText alone.
+		if log.HTMLBody != "" || log.EmailProjectionVersion == 0 {
+			projection = inboundhtml.Project(inboundhtml.ProjectionInput{
+				HTML:              log.HTMLBody,
+				TextBody:          log.StrippedText,
+				StrippedTextReply: log.StrippedText,
+			})
+		}
+		projection.ProjectionVersion = inboundhtml.CurrentProjectionVersion
+		var metadata map[string]any
+		if json.Unmarshal([]byte(message.Metadata), &metadata) == nil && forwardedAttributionFromMetadata(metadata) != nil {
+			projection.Markdown = message.Content
+			projection.QuotedMarkdown = ""
+			projection.HasQuotedContent = false
+			projection.ProjectionConfidence = inboundhtml.ProjectionConfidenceNone
+		}
+	}
+
+	cidURLs := map[string]string{}
+	for _, attachment := range message.Attachments {
+		if attachment.ContentID != "" && attachment.URL != "" {
+			cidURLs[normalizeInboundContentID(attachment.ContentID)] = attachment.URL
+		}
+	}
+	message.HTMLBody = projection.HTML
+	if len(cidURLs) > 0 {
+		var original model.PostmarkInboundPayload
+		if json.Unmarshal([]byte(log.RawBody), &original) == nil && original.HtmlBody != "" {
+			message.HTMLBody = inboundPayloadProjectionWithHTML(original, rewriteInboundCIDImageSources(original.HtmlBody, cidURLs)).HTMLBody
+		}
+	}
+	message.StrippedText = log.StrippedText
+	message.EmailVisibleText = projection.Markdown
+	message.EmailQuotedText = projection.QuotedMarkdown
+	message.EmailHasQuotedContent = boolPtr(projection.HasQuotedContent)
+	message.EmailProjectionConfidence = projection.ProjectionConfidence
+	message.EmailProjectionVersion = projection.ProjectionVersion
+	message.EmailFrom = log.FromEmail
+	message.EmailTo = log.ToEmail
+	message.EmailReplyTo = log.ReplyTo
+	message.EmailCC = log.CCEmails
+	message.EmailBCC = log.BCCEmails
 }
 
 // supportEmailLogReader is the subset of SupportEmailLogRepository needed
@@ -2329,7 +2335,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// Pre-resolve teammate @mentions for support messages.
 	var mentionedUserIDs []string
 	if senderType == "user" && s.notificationService != nil && s.workspaceRepo != nil {
-		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
+		mentionSource := req.Content
+		if req.SlackMentionSource != nil {
+			mentionSource = *req.SlackMentionSource
+		}
+		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(mentionSource), derefString(senderUserID), nil)
 		if err != nil {
 			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
 		}
@@ -4576,6 +4586,7 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	if newUserID != previousAssignedUserID {
 		switch {
 		case newUserID != "":
+			s.notificationService.notifySupportAssignment(ctx, ticket, newUserID, derefString(actorID))
 			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUser, "", newUserID)
 		default:
 			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUnassign, "", previousAssignedUserID)

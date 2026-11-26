@@ -357,7 +357,7 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		CommandName: "pm.assign_task_agent",
 		Alias:       "assign_task_agent",
 		Category:    "PM / Tasks",
-		Description: "Deprecated. Task agent assignment was removed; use workflow automation rules or start a run explicitly with an agent.",
+		Description: "Deprecated. Task agent assignment was removed. Use a flow or start an agent run directly.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

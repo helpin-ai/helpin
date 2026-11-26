@@ -28,6 +28,11 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('desktop notification policy', () => {
+  it('keeps optional module activity off until in-app and desktop are both enabled', () => {
+    const category = 'automation.activity'
+    expect(desktopCategoryEnabled({ ...preferences, channel_preferences: { [category]: { desktop: true } } }, category)).toBe(false)
+    expect(desktopCategoryEnabled({ ...preferences, channel_preferences: { [category]: { in_app: true, desktop: true } } }, category)).toBe(true)
+  })
   it('defaults only direct attention categories on', () => {
     for (const category of ['assignments', 'mentions', 'agent_attention', 'support_replies', 'support_mentions']) expect(desktopCategoryEnabled(preferences, category)).toBe(true)
     for (const category of ['comments', 'status_changes', 'subscriptions', 'sprints', 'crm_signals', 'integrations', 'unknown']) expect(desktopCategoryEnabled(preferences, category)).toBe(false)

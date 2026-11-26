@@ -172,7 +172,7 @@ func (s *CRMPlaybookModuleExecutor) Execute(ctx context.Context, intent model.CR
 	case "task":
 		a := action.Task
 		externalID := "crm-action:" + intent.SuggestionID
-		task, err := s.tasks.Create(ctx, model.CreateTaskRequest{WorkspaceID: intent.WorkspaceID, Name: a.Name, Description: &a.Description, TeamID: &a.TeamID,
+		task, err := s.tasks.Create(ctx, model.CreateTaskRequest{CRMFollowUp: true, WorkspaceID: intent.WorkspaceID, Name: a.Name, Description: &a.Description, TeamID: &a.TeamID,
 			OwnerMemberIDs: []string{a.OwnerMemberID}, Deadline: a.Deadline, ExternalID: &externalID, RunOnCreate: false}, actor.UserID)
 		if err != nil || task == nil {
 			return playbookActionUnknown("Task creation needs checking. Do not create a duplicate.")

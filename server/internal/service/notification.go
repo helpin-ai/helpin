@@ -44,7 +44,7 @@ func buildNotificationWSData(recipientID string, event model.NotificationEventIn
 	dockChatID, _ := event.Metadata["dock_chat_id"].(string)
 	runID, _ := event.Metadata["run_id"].(string)
 	// Match the settings categories even for older emitters using singular names.
-	category := model.EventTypeToCategory[event.EventType]
+	category := model.NotificationPreferenceCategory(event.EventType, event.Metadata)
 	if category == "" {
 		category = event.Category
 	}
@@ -83,6 +83,8 @@ var priorityOrder = map[string]int{
 
 // NotificationService orchestrates notification creation and delivery.
 type NotificationService struct {
+	slackRepo           *repository.SlackRepository
+	slackJobs           *repository.SupportInboundJobRepository
 	notifRepo           *repository.NotificationRepository
 	prefRepo            *repository.NotificationPreferenceRepository
 	userSettingsRepo    *repository.UserNotificationSettingsRepository
@@ -174,6 +176,7 @@ type notificationDeliveryPlan struct {
 }
 
 type digestNotificationItem struct {
+	Metadata       model.JSONB
 	ActorName      string
 	EntityTitle    string
 	NotificationID string
@@ -189,8 +192,42 @@ type digestNotificationItem struct {
 const supportReplyEmailDelay = 3 * time.Minute
 const taskAgentAttentionRequiredEventType = "task.agent_attention_required"
 
+// notifyRecipients delivers a complete message only to the users addressed.
+func (s *NotificationService) notifyRecipients(ctx context.Context, event model.NotificationEventInput, recipients ...string) {
+	if s == nil || len(recipients) == 0 {
+		return
+	}
+	event.CompleteTitle = true
+	event.ExplicitRecipients = recipients
+	event.SkipFollowers = true
+	if event.Category == "" {
+		event.Category = model.NotificationPreferenceCategory(event.EventType, event.Metadata)
+	}
+	if err := s.Emit(ctx, event); err != nil {
+		s.logger.ErrorContext(ctx, "emit notification", "event_type", event.EventType, "entity_id", event.EntityID, "error", err)
+	}
+}
+
 // Emit creates notifications for all recipients of an event.
 func (s *NotificationService) Emit(ctx context.Context, event model.NotificationEventInput) error {
+	// Projection can replay or concurrently deliver a run transition. Serialize its
+	// history check and writes with the same per-recipient lock used for email.
+	if (event.EntityType == "agent_run" || event.EventType == model.WorkflowFailureEvent) && event.SkipFollowers && len(event.ExplicitRecipients) == 1 {
+		var update *ws.Event
+		err := s.notifRepo.WithRecipientEmailLock(ctx, event.ExplicitRecipients[0], func(repo *repository.NotificationRepository) error {
+			locked := *s
+			locked.notifRepo = repo
+			return locked.emit(ctx, event, func(e ws.Event) { update = &e })
+		})
+		if err == nil && update != nil {
+			s.wsPublisher.Publish(*update)
+		}
+		return err
+	}
+	return s.emit(ctx, event, s.wsPublisher.Publish)
+}
+
+func (s *NotificationService) emit(ctx context.Context, event model.NotificationEventInput, publish func(ws.Event)) error {
 	s.logger.InfoContext(ctx, "emitting notification",
 		"event_type", event.EventType,
 		"entity_type", event.EntityType,
@@ -234,9 +271,6 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	for _, uid := range followers {
 		recipientSet[uid] = struct{}{}
 	}
-	for _, uid := range event.ExplicitRecipients {
-		recipientSet[uid] = struct{}{}
-	}
 
 	var taskContext *repository.TaskNotificationContext
 	if event.EntityType == "task" {
@@ -247,6 +281,23 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		}
 		if taskContext != nil && !event.SkipFollowers && taskContext.RequesterID != "" {
 			recipientSet[taskContext.RequesterID] = struct{}{}
+		}
+	}
+
+	for _, uid := range event.ExcludeFollowers {
+		delete(recipientSet, uid)
+	}
+	for _, uid := range event.ExplicitRecipients {
+		recipientSet[uid] = struct{}{}
+	}
+
+	if event.EventType == "task.assigned" && event.EntityType == "task" {
+		if _, known := event.Metadata["crm_follow_up"].(bool); !known && len(recipientSet) > 0 {
+			linked, err := s.notifRepo.IsCRMFollowUp(ctx, event.WorkspaceID, event.EntityID)
+			if err != nil {
+				return fmt.Errorf("resolve assignment notification category: %w", err)
+			}
+			event.Metadata["crm_follow_up"] = linked
 		}
 	}
 
@@ -266,7 +317,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	}
 
 	// Prepend actor name to title if available (e.g. "mentioned you" → "Waqar Azeem mentioned you")
-	if event.ActorID != "" && event.ActorSnapshot != nil {
+	if !event.CompleteTitle && event.ActorID != "" && event.ActorSnapshot != nil {
 		if rawName, ok := event.ActorSnapshot["name"]; ok {
 			if name, ok := rawName.(string); ok && strings.TrimSpace(name) != "" {
 				// Only prepend if title doesn't already start with the actor name
@@ -279,6 +330,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 
 	// Remove actor (don't self-notify)
 	delete(recipientSet, event.ActorID)
+	delete(recipientSet, "")
 
 	if len(recipientSet) == 0 {
 		s.logger.InfoContext(ctx, "no recipients after filtering",
@@ -329,14 +381,32 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 			continue
 		}
 
+		if event.Metadata["crm_follow_up"] == true {
+			crmEvent := event
+			crmEvent.EntityType = "crm_follow_up"
+			canReadCRM, err := s.canReceive(ctx, recipientID, crmEvent)
+			if err != nil {
+				return fmt.Errorf("resolve CRM notification access: %w", err)
+			}
+			event.Metadata = cloneNotificationMetadata(event.Metadata)
+			event.Metadata["crm_follow_up"] = canReadCRM
+		}
+
+		// Direct alerts go to the person addressed. Optional activity rows also serve followers.
+		if slackAudienceIncludes(event, recipientID) {
+			if err := s.queueSlackNotification(ctx, recipientID, event); err != nil {
+				log.ErrorContext(ctx, "queue personal Slack notification", "error", err)
+			}
+		}
+
 		// Check channels independently. email_only rows retain delivery history without appearing in the inbox.
-		shouldNotify, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app", event.TeamID)
+		shouldNotify, err := s.prefRepo.ShouldNotifyWithMetadata(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app", event.TeamID, event.Metadata)
 		if err != nil {
 			log.ErrorContext(ctx, "failed to check preferences", "error", err)
 			continue
 		}
 		if !shouldNotify {
-			shouldEmail, emailErr := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "email", event.TeamID)
+			shouldEmail, emailErr := s.prefRepo.ShouldNotifyWithMetadata(ctx, recipientID, event.WorkspaceID, event.EventType, "email", event.TeamID, event.Metadata)
 			if emailErr != nil {
 				log.ErrorContext(ctx, "check email preferences", "error", emailErr)
 				continue
@@ -351,17 +421,28 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		if err != nil {
 			log.ErrorContext(ctx, "failed to check existing notification", "error", err)
 		}
-		// Replayed runtime snapshots must not resurrect a read alert or increment
-		// its count for the same pending interaction.
-		if existing != nil && event.Category == model.NotifCategoryAgentAttention {
-			interactionID, _ := event.Metadata["interaction_id"].(string)
-			if interactionID != "" {
-				if existing.Metadata["interaction_id"] == interactionID {
+		if existing != nil && (event.EventType == "agent_run.started" || event.EventType == "agent_run.finished") {
+			seen, err := s.notifRepo.HasEventType(ctx, existing.ID, event.EventType)
+			if err != nil {
+				return fmt.Errorf("check run notification replay: %w", err)
+			}
+			if seen {
+				continue
+			}
+		}
+		// A replay must not resurrect a read alert, even after a later event on the same entity.
+		if existing != nil && (event.EventType == model.WorkflowFailureEvent || event.Category == model.NotifCategoryAgentAttention) {
+			key := "interaction_id"
+			if event.EventType == model.WorkflowFailureEvent {
+				key = "workflow_execution_id"
+			}
+			if id, _ := event.Metadata[key].(string); id != "" {
+				if existing.Metadata[key] == id {
 					continue
 				}
-				seen, err := s.notifRepo.HasAttentionInteraction(ctx, existing.ID, interactionID)
+				seen, err := s.notifRepo.HasEventSource(ctx, existing.ID, key, id)
 				if err != nil {
-					return fmt.Errorf("check attention replay: %w", err)
+					return fmt.Errorf("check notification replay: %w", err)
 				}
 				if seen {
 					continue
@@ -377,6 +458,16 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		var body *string
 		if event.Body != "" {
 			body = &event.Body
+		}
+
+		if existing != nil && !shouldNotify && event.DelayedEmailChannel == "" && existing.Status != notificationEmailOnly && existing.Status != "email_only_handled" {
+			// Preserve the visible item. This independent email event has no inbox read state.
+			event.Metadata = cloneNotificationMetadata(event.Metadata)
+			event.Metadata["email_only_update"] = true
+			if err := s.createEventAndDeliveries(ctx, log, existing.ID, recipientID, actorID, event, priority, now); err != nil {
+				return err
+			}
+			continue
 		}
 
 		if existing != nil {
@@ -424,7 +515,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 
 			// Push only notifications visible in the inbox.
 			if shouldNotify {
-				s.wsPublisher.Publish(ws.Event{
+				publish(ws.Event{
 					Action:       "updated",
 					Entity:       "notification",
 					EntityID:     existing.ID,
@@ -477,7 +568,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 
 			// Push only notifications visible in the inbox.
 			if shouldNotify {
-				s.wsPublisher.Publish(ws.Event{
+				publish(ws.Event{
 					Action:       "created",
 					Entity:       "notification",
 					EntityID:     notif.ID,
@@ -574,7 +665,7 @@ func (s *NotificationService) buildDeliveryPlans(
 	priority string,
 	now time.Time,
 ) ([]notificationDeliveryPlan, error) {
-	inApp, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app", event.TeamID)
+	inApp, err := s.prefRepo.ShouldNotifyWithMetadata(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app", event.TeamID, event.Metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -594,7 +685,7 @@ func (s *NotificationService) buildDeliveryPlans(
 		return plans, nil
 	}
 
-	shouldEmail, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "email", event.TeamID)
+	shouldEmail, err := s.prefRepo.ShouldNotifyWithMetadata(ctx, recipientID, event.WorkspaceID, event.EventType, "email", event.TeamID, event.Metadata)
 	if err != nil {
 		return plans, err
 	}
@@ -764,13 +855,13 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 		}
 	}
 
-	entityURL := buildEntityURL(s.appBaseURL, workspaceSlug, event.EntityType, event.EntityID)
+	entityURL := buildEntityURL(s.appBaseURL, workspaceSlug, event.EntityType, event.EntityID, event.Metadata)
 	if event.EventType == "support_conversation.customer_reply" && event.EntityType == "support_conversation" {
 		return s.renderSupportReplyEmail(ctx, event, workspaceName, workspaceSlug, s.loadSupportReplyEmailHistory(ctx, event))
 	}
 
 	subject := fmt.Sprintf("[%s] %s", workspaceName, event.Title)
-	if actorName != "Someone" && !strings.HasPrefix(event.Title, actorName+" ") && strings.TrimSpace(event.Title) != "" && (event.EventType == "comment.created" || event.EventType == "comment.mention" || strings.HasSuffix(event.EventType, ".comment") || strings.HasSuffix(event.EventType, ".mention")) {
+	if actorName != "Someone" && !event.CompleteTitle && !strings.HasPrefix(event.Title, actorName+" ") && strings.TrimSpace(event.Title) != "" && (event.EventType == "comment.created" || event.EventType == "comment.mention" || strings.HasSuffix(event.EventType, ".comment") || strings.HasSuffix(event.EventType, ".mention")) {
 		subject = fmt.Sprintf("%s %s [%s]", actorName, strings.TrimSpace(event.Title), workspaceName)
 	}
 	textBody := event.Title
@@ -788,7 +879,9 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 
 	// Personalized task activity already names and links the task in the action.
 	_, personalized := event.Metadata[notificationActionKey]
-	if personalized {
+	if event.CompleteTitle || event.EntityType == "agent_run" {
+		actorLine = html.EscapeString(event.Title)
+	} else if personalized {
 		actorLine = digestItemHTML(digestNotificationItem{Title: event.Title, ActorName: actorName, EntityTitle: entityTitle, EntityType: event.EntityType}, entityURL)
 	}
 
@@ -1081,7 +1174,7 @@ func (s *NotificationService) sendPendingSupportReplyEmailGroup(ctx context.Cont
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
 	}
 
-	shouldEmail, err := s.prefRepo.ShouldNotify(ctx, notification.RecipientID, notification.WorkspaceID, latest.EventType, "email", notificationTeam(latest.EventMetadata))
+	shouldEmail, err := s.prefRepo.ShouldNotifyWithMetadata(ctx, notification.RecipientID, notification.WorkspaceID, latest.EventType, "email", notificationTeam(latest.EventMetadata), latest.EventMetadata)
 	if err != nil {
 		return err
 	}
@@ -1314,7 +1407,7 @@ func (s *NotificationService) filterDigestDeliveriesByCurrentPreferences(
 			skipped = append(skipped, delivery.DeliveryID)
 			continue
 		}
-		shouldEmail, err := s.prefRepo.ShouldNotify(ctx, recipientID, delivery.WorkspaceID, delivery.EventType, "email", notificationTeam(delivery.EventMetadata))
+		shouldEmail, err := s.prefRepo.ShouldNotifyWithMetadata(ctx, recipientID, delivery.WorkspaceID, delivery.EventType, "email", notificationTeam(delivery.EventMetadata), delivery.EventMetadata)
 		if err != nil {
 			return nil, nil, fmt.Errorf("check digest preferences: %w", err)
 		}
@@ -1342,7 +1435,8 @@ func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Ti
 	skippedIDs := make([]string, 0)
 
 	for _, delivery := range deliveries {
-		if delivery.NotificationStatus != "unread" && delivery.NotificationStatus != notificationEmailOnly {
+		emailOnlyUpdate := delivery.EventMetadata["email_only_update"] == true && (delivery.NotificationStatus == "read" || delivery.NotificationStatus == "archived")
+		if !emailOnlyUpdate && delivery.NotificationStatus != "unread" && delivery.NotificationStatus != notificationEmailOnly {
 			skippedIDs = append(skippedIDs, delivery.DeliveryID)
 			continue
 		}
@@ -1370,6 +1464,7 @@ func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Ti
 
 		if group.item.EventCount == 0 || !delivery.CreatedAt.Before(group.item.LatestAt) {
 			group.item.LatestAt = delivery.CreatedAt
+			group.item.Metadata = delivery.EventMetadata
 			if title := strings.TrimSpace(delivery.EventTitle); title != "" {
 				group.item.Title = title
 			}
@@ -1698,7 +1793,7 @@ func digestItemURL(baseURL, workspaceSlug string, item digestNotificationItem) s
 	if item.EntityType == "" || item.EntityID == "" {
 		return ""
 	}
-	return buildEntityURL(baseURL, workspaceSlug, item.EntityType, item.EntityID)
+	return buildEntityURL(baseURL, workspaceSlug, item.EntityType, item.EntityID, item.Metadata)
 }
 
 func pluralSuffix(count int) string {
@@ -1709,7 +1804,7 @@ func pluralSuffix(count int) string {
 }
 
 // buildEntityURL constructs a frontend URL for the given entity.
-func buildEntityURL(baseURL, slug, entityType, entityID string) string {
+func buildEntityURL(baseURL, slug, entityType, entityID string, metadata model.JSONB) string {
 	notificationsURL := buildNotificationsURL(baseURL, slug)
 	if notificationsURL == "" {
 		return ""
@@ -1717,7 +1812,7 @@ func buildEntityURL(baseURL, slug, entityType, entityID string) string {
 	if entityID == "" {
 		return notificationsURL
 	}
-	base := baseURL + "/w/" + slug
+	base := baseURL + "/w/" + url.PathEscape(slug)
 	switch entityType {
 	case "task":
 		return base + "/pm/tasks/" + entityID
@@ -1731,6 +1826,24 @@ func buildEntityURL(baseURL, slug, entityType, entityID string) string {
 		return base + "/support/" + entityID
 	case "doc", "document":
 		return base + "/docs/documents/" + entityID
+	case "crm_contact":
+		return base + "/crm/contacts/" + url.PathEscape(entityID)
+	case "crm_company":
+		return base + "/crm/companies/" + url.PathEscape(entityID)
+	case "crm_deal":
+		return base + "/crm/deals/" + url.PathEscape(entityID)
+	case "agent_run":
+		if chatID, ok := metadata["dock_chat_id"].(string); ok && chatID != "" {
+			return base + "/notifications?ask_chat=" + url.QueryEscape(chatID)
+		}
+		if taskID, ok := metadata["task_id"].(string); ok && taskID != "" {
+			return base + "/pm/tasks/" + url.PathEscape(taskID) + "?run=" + url.QueryEscape(entityID)
+		}
+		return base + "/automation/activity?run_id=" + url.QueryEscape(entityID)
+	case "automation_rule":
+		return base + "/automation/flows?show_rule=" + url.QueryEscape(entityID)
+	case "external_mcp_server":
+		return base + "/settings/external-tools?tab=mcp"
 	case "crm_signal":
 		return base + "/crm/insights?signal=" + url.QueryEscape(entityID)
 	default:
@@ -1996,23 +2109,7 @@ func (s *NotificationService) UpdatePreferences(ctx context.Context, userID, wor
 		}
 	}
 
-	// Update workspace-level fields
-	pref, err := s.prefRepo.Get(ctx, userID, workspaceID)
-	if err != nil {
-		return err
-	}
-
-	pref.UserID = userID
-	pref.WorkspaceID = workspaceID
-
-	if req.MuteWorkspace != nil {
-		pref.MuteWorkspace = *req.MuteWorkspace
-	}
-	if req.ChannelPreferences != nil {
-		pref.ChannelPreferences = model.JSONB(req.ChannelPreferences)
-	}
-
-	return s.prefRepo.Upsert(ctx, pref)
+	return s.prefRepo.UpdateWorkspace(ctx, userID, workspaceID, req)
 }
 
 // applyStateTransition determines the new state when a new event arrives.

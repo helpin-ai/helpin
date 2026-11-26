@@ -80,7 +80,9 @@ func (s *SlackService) feedAction(ctx context.Context, v SlackAction, submit boo
 		p.Kind = v.Actions[0].ID
 		if p.Kind == "feed_more" {
 			p.Draft.Thread, p.Kind, _ = strings.Cut(v.Actions[0].Selected.Value, ":")
-			if !feedMenuAction(p.Kind) {
+			if p.Kind == "feed_reopen" {
+				p.Message = model.SupportConversationStatusResolved
+			} else if p.Kind != "feed_reply" && p.Kind != "feed_assign" && !feedMenuAction(p.Kind) {
 				return map[string]any{}, nil
 			}
 		} else {
@@ -164,28 +166,48 @@ func (s *SlackService) editableFeed(ctx context.Context, a *model.SupportChannel
 	err = s.channels.inbox.RequireWritableSupportConversation(authorization.WithActor(ctx, actor), a.WorkspaceID, t.ConversationID)
 	return f, actor, err
 }
-func (s *SlackService) receiveFeedNote(ctx context.Context, a *model.SupportChannelAccount, token string, route *model.SlackRoute, m slack.Message) error {
+func (s *SlackService) receiveFeedNote(ctx context.Context, a *model.SupportChannelAccount, token string, event queuedSlackEvent, originalConv *string) error {
+	m := event.Message
 	if m.ThreadTS == "" {
 		return nil
 	}
-	t, err := s.repo.FeedByRoot(ctx, a.ID, route.ChannelID, m.ThreadTS)
+	t, err := s.repo.FeedByRoot(ctx, a.ID, m.Channel, m.ThreadTS)
 	if err != nil || t == nil {
 		return err
 	}
+	if event.NoteThreadID != "" && (event.NoteThreadID != t.ID || derefString(originalConv) != t.ConversationID) {
+		return nil
+	}
 	f, actor, err := s.editableFeed(ctx, a, t, m.User)
 	if err != nil {
-		if actor == nil && f != nil {
-			return s.promptLink(ctx, a, token, m)
+		if actor == nil && f != nil && event.NoteThreadID == "" {
+			data, err := json.Marshal(queuedSlackEvent{Message: m, Inbox: true, NoteThreadID: t.ID})
+			if err != nil {
+				return err
+			}
+			subject := model.SupportChannelSubjectKey(a.ID, m.User)
+			note := &model.SupportInboundJob{
+				Kind: SlackEventJob, ChannelAccountID: &a.ID, WorkspaceID: &a.WorkspaceID,
+				ConversationID: &t.ConversationID, SubjectKey: &subject,
+				Payload: string(data), Status: model.InboundAwaitingSlackLink,
+			}
+			return s.sendLinkPrompt(ctx, a, token, m, note)
 		}
 		return s.private(ctx, token, m, "This message could not be added as a Helpin note. Check your inbox access.")
 	}
 	ctx = model.WithSlackSource(authorization.WithActor(ctx, actor), s.sourceURL(ctx, token, m.Destination(), m.TS))
-	key := a.ID + ":" + route.ChannelID + ":" + m.TS
+	key := a.ID + ":" + m.Channel + ":" + m.TS
 	ids, err := s.stageFeedFiles(ctx, f, actor.UserID, key, m.Files)
 	if err != nil {
 		return s.private(ctx, token, m, "The note was not saved. "+err.Error())
 	}
-	_, err = s.channels.inbox.CreateConversationMessage(ctx, a.WorkspaceID, t.ConversationID, model.CreateMessageRequest{Content: m.Text, SourceSlackThreadID: t.ID, ClientMessageID: inboundStableID(key), AttachmentIDs: ids, ExpectedMergeRevision: &f.conv.MergeRevision, IsInternal: true, MessageType: "reply"}, "user", &actor.UserID, nil, nil)
+	req := model.CreateMessageRequest{
+		Content: s.feedNoteText(ctx, token, m.Text), SlackMentionSource: &m.Text,
+		SourceSlackThreadID: t.ID, ClientMessageID: inboundStableID(key),
+		AttachmentIDs: ids, ExpectedMergeRevision: &f.conv.MergeRevision,
+		IsInternal: true, MessageType: "reply",
+	}
+	_, err = s.channels.inbox.CreateConversationMessage(ctx, a.WorkspaceID, t.ConversationID, req, "user", &actor.UserID, nil, nil)
 	return err
 }
 func (s *SlackService) stageFeedFiles(ctx context.Context, f *feedContext, user, key string, files []slack.File) ([]string, error) {

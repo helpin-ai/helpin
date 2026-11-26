@@ -23,6 +23,7 @@ func newNotificationCRUDTestDB(t *testing.T) *gorm.DB {
 	}
 
 	statements := []string{
+		`CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			email TEXT NOT NULL,

@@ -247,15 +247,24 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
+		var assigned []string
+		if epic.OwnerID != nil {
+			assigned = []string{*epic.OwnerID}
+			s.notificationService.notifyRecipients(ctx, model.NotificationEventInput{
+				WorkspaceID: epic.WorkspaceID, ActorID: actorID, TeamID: derefString(epic.TeamID),
+				EventType: "epic.assigned", EntityType: "epic", EntityID: epic.ID, Title: "You were assigned to epic " + epic.Name,
+			}, assigned...)
+		}
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-			WorkspaceID: epic.WorkspaceID,
-			ActorID:     actorID,
-			EventType:   "epic.created",
-			EntityType:  "epic",
-			EntityID:    epic.ID,
-			Title:       "created epic " + epic.Name,
-			Category:    "activity",
-			Priority:    "normal",
+			WorkspaceID:      epic.WorkspaceID,
+			ActorID:          actorID,
+			EventType:        "epic.created",
+			ExcludeFollowers: assigned,
+			EntityType:       "epic",
+			EntityID:         epic.ID,
+			Title:            "created epic " + epic.Name,
+			Category:         "activity",
+			Priority:         "normal",
 			EntitySnapshot: model.JSONB{
 				"title": epic.Name,
 			},
@@ -436,15 +445,24 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
+		var assigned []string
+		if epic.OwnerID != nil && *epic.OwnerID != derefString(current.Epic.OwnerID) {
+			assigned = []string{*epic.OwnerID}
+			s.notificationService.notifyRecipients(ctx, model.NotificationEventInput{
+				WorkspaceID: epic.WorkspaceID, ActorID: actorID, TeamID: derefString(epic.TeamID),
+				EventType: "epic.assigned", EntityType: "epic", EntityID: epic.ID, Title: "You were assigned to epic " + epic.Name,
+			}, assigned...)
+		}
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-			WorkspaceID: epic.WorkspaceID,
-			ActorID:     actorID,
-			EventType:   "epic.updated",
-			EntityType:  "epic",
-			EntityID:    epic.ID,
-			Title:       "updated epic " + epic.Name,
-			Category:    "activity",
-			Priority:    "normal",
+			WorkspaceID:      epic.WorkspaceID,
+			ActorID:          actorID,
+			EventType:        "epic.updated",
+			ExcludeFollowers: assigned,
+			EntityType:       "epic",
+			EntityID:         epic.ID,
+			Title:            "updated epic " + epic.Name,
+			Category:         "activity",
+			Priority:         "normal",
 			EntitySnapshot: model.JSONB{
 				"title": epic.Name,
 			},

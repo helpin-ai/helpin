@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useId, useState } from 'react'
 import { useQuery, useQueryClient, useMutation, type UseQueryResult } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,7 @@ import {
   QuietTextAction,
 } from '@/components/design-system/quiet'
 import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker'
-import { SlackIcon } from '@/lib/icons'
+import { Alert01Icon, SlackIcon } from '@/lib/icons'
 import { slackChannelLabel } from '@/lib/supportChannels'
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useEpics } from '@/hooks/queries/useEpics'
@@ -56,6 +56,7 @@ const errorText = (error: unknown) =>
   error instanceof Error ? error.message : 'Could not update Slack settings'
 
 const inboxList = new Intl.ListFormat('en', { type: 'disjunction' })
+const sharedInboxNames = new Intl.ListFormat('en', { type: 'conjunction' })
 const ruleNameClass = 'font-semibold text-foreground'
 const entityWords = { inbox: /\binbox(?:es)?\b/i, team: /\bteams?\b/i, epic: /\bepics?\b/i }
 
@@ -328,8 +329,13 @@ function RouteDialog({
     team_id: route.team_id ?? undefined,
     archived: false,
   })
+  const selected = channels.data?.find(c => c.id === route.channel_id)
+  const inboxIds = route.mailbox_ids ?? []
+  const publicFeed = route.purpose === 'inbox' && selected && !selected.is_private && !selected.is_ext_shared && !selected.is_pending_ext_shared
+  const publicTeamInboxes = !!publicFeed && inboxIds.some(id => id !== 'shared')
+  const warningId = useId()
   const save = useMutation({
-    mutationFn: () => slackService.save(workspaceId, route),
+    mutationFn: () => slackService.save(workspaceId, { ...route, public_team_inboxes: publicTeamInboxes }),
     onSuccess: onSaved,
   })
   const remove = useMutation({
@@ -339,12 +345,16 @@ function RouteDialog({
   const confirm = useConfirm()
   const options = (items: { id: string; name: string }[] = []) =>
     items.map((item) => ({ value: item.id, label: item.name }))
-  const selected = channels.data?.find(c => c.id === route.channel_id)
   const inboxOptions = [{ value: 'shared', label: 'Main inbox' }, ...options(scopes?.mailboxes)].map(option => {
     const other = rules.find(rule => rule.channel_id !== initial.channel_id && rule.purpose === 'inbox' && rule.mailbox_ids?.includes(option.value))
     return other ? { ...option, disabled: true, label: option.label + ' · ' + slackChannelLabel(other.channel_name) } : option
   })
-  const restrictedInPublic = route.purpose === 'inbox' && selected && !selected.is_private && route.mailbox_ids?.some(id => id !== 'shared')
+  const names = inboxIds.map(id => id === 'shared' ? 'Main inbox' : scopes?.mailboxes.find(box => box.id === id)?.name)
+  const namedInboxes = names.filter((name): name is string => !!name)
+  const showWarning = publicFeed && inboxIds.length > 0
+  const inboxSummary = namedInboxes.length === inboxIds.length && inboxIds.length <= 2
+    ? sharedInboxNames.format(namedInboxes)
+    : inboxIds.length === 1 ? 'the selected inbox' : `the ${inboxIds.length} selected inboxes`
   const readOnly = initial.purpose === 'inbox' && !!initial.channel_id && !canManageFeed
   const pending = save.isPending || remove.isPending
   return (
@@ -354,7 +364,7 @@ function RouteDialog({
         if (!open && !pending) onClose()
       }}
     >
-      <DialogContent className="grid-cols-1 sm:max-w-2xl">
+      <DialogContent aria-describedby={undefined} className="grid-cols-1 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {readOnly ? 'View channel rule' : initial.channel_id ? 'Edit channel rule' : 'Add channel rule'}
@@ -385,10 +395,15 @@ function RouteDialog({
         } />
         {channels.isError && <p role="alert" className="text-xs text-destructive">{errorText(channels.error)}</p>}
         {route.purpose === 'inbox' && <p className="text-xs text-muted-foreground">Thread replies become internal notes. Use “Reply to customer” to send a response.</p>}
-        {route.purpose === 'inbox' && selected && !selected.is_private &&
-          <p className="text-xs text-muted-foreground">{restrictedInPublic
-            ? 'Team inboxes require a private Slack channel whose members have access to those inboxes.'
-            : `Everyone with access to ${slackChannelLabel(selected.name)} can read shared conversations, files and internal notes.`}</p>}
+        {showWarning && (
+          <div id={warningId} role="status" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+            <Alert01Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0 break-words">
+              <p><strong>{slackChannelLabel(selected.name)} is public.</strong> People across your Slack workspace can read customer messages, files, and internal notes from {inboxSummary}, even without access in Helpin.</p>
+              {inboxIds.length > 2 && namedInboxes.length === inboxIds.length && <p className="mt-1">{sharedInboxNames.format(namedInboxes)}</p>}
+            </div>
+          </div>
+        )}
         {(route.purpose === 'support' || route.purpose === 'mixed') && <QuietPropertyRow label="Create a conversation" value={
           <QuietSelect label="Create a conversation" value={route.purpose}
             options={[{value:'support', label:'Every new customer thread'}, {value:'mixed', label:'Only on request'}]}
@@ -503,7 +518,8 @@ function RouteDialog({
             {readOnly ? 'Close' : 'Cancel'}
           </Button>
           {!readOnly && <Button
-            disabled={!route.channel_id || pending || !!restrictedInPublic || (route.purpose === 'inbox' && !route.mailbox_ids?.length)}
+            aria-describedby={showWarning ? warningId : undefined}
+            disabled={!route.channel_id || pending || (route.purpose === 'inbox' && (!selected || !inboxIds.length))}
             onClick={() => save.mutate()}
           >
             Save rule

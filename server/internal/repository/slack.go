@@ -146,7 +146,7 @@ func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, pr
 			return err
 		}
 		row.ChannelID = id.RoutingID
-		columns := []string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"}
+		columns := []string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id", "public_team_inboxes"}
 		if preserveCompany {
 			row.CRMCompanyID = nil
 		} else {
@@ -203,13 +203,29 @@ func (r *SlackRepository) MatchMember(ctx context.Context, a *model.SupportChann
 }
 
 // GrantLink records an expiring link supplied privately to the Slack user.
-func (r *SlackRepository) GrantLink(ctx context.Context, account, user, hash string) error {
+func (r *SlackRepository) GrantLink(ctx context.Context, account, user, hash string, note *model.SupportInboundJob) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		expires := time.Now().Add(10 * time.Minute)
+		if note != nil {
+			note.AvailableAt = expires
+			if err := NewSupportInboundJobRepository(tx).Create(ctx, note); err != nil {
+				return err
+			}
+		}
 		if err := tx.Exec("DELETE FROM slack_link_grants WHERE expires_at<=?", time.Now()).Error; err != nil {
 			return err
 		}
-		return tx.Exec("INSERT INTO slack_link_grants(token_hash,account_id,slack_user,expires_at) VALUES (?,?,?,?)", hash, account, user, time.Now().Add(10*time.Minute)).Error
+		return tx.Exec("INSERT INTO slack_link_grants(token_hash,account_id,slack_user,expires_at) VALUES (?,?,?,?)", hash, account, user, expires).Error
 	})
+}
+
+// ResumeFeedNotes releases only notes from this linked sender and installation.
+func (r *SlackRepository) ResumeFeedNotes(ctx context.Context, account, slackUser string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.SupportInboundJob{}).
+		Where("channel_account_id = ? AND subject_key = ? AND status = ? AND available_at > ?",
+			account, model.SupportChannelSubjectKey(account, slackUser), model.InboundAwaitingSlackLink, now).
+		Updates(map[string]any{"status": "pending", "available_at": now}).Error
 }
 
 // Link consumes the grant and binds the two verified identities.
@@ -229,7 +245,7 @@ func (r *SlackRepository) Link(ctx context.Context, account, user, hash string) 
 		if result.RowsAffected != 1 {
 			return gorm.ErrDuplicatedKey
 		}
-		return nil
+		return NewSlackRepository(tx).ResumeFeedNotes(ctx, account, slackUser)
 	})
 }
 
@@ -426,4 +442,76 @@ func (r *SlackRepository) AgentAnswer(ctx context.Context, workspace, chat, mess
 	err := r.db.WithContext(ctx).Raw("SELECT reply.content "+slackTurnMessages+
 		" AND reply.message_type='assistant_final' ORDER BY reply.dock_chat_sequence LIMIT 1", workspace, chat, message).Scan(&answer).Error
 	return answer, err
+}
+
+// NotificationPreferences also returns connection state for a member who has yet to link.
+func (r *SlackRepository) NotificationPreferences(ctx context.Context, workspace, user string) (model.SlackNotificationPreferences, error) {
+	var pref model.SlackNotificationPreferences
+	err := r.db.WithContext(ctx).Table("support_channel_accounts a").
+		Select(`a.id AS account_id, a.external_account_id AS team_id, a.handle AS bot_user_id,
+			coalesce(m.slack_user,'') AS slack_user, m.user_id IS NOT NULL AS linked,
+			m.notify_categories, coalesce(m.notify_assignments,false) AS assignments, coalesce(m.notify_mentions,false) AS mentions`).
+		Joins("LEFT JOIN slack_members m ON m.account_id=a.id AND m.user_id=?", user).
+		Where("a.workspace_id=? AND a.provider='slack' AND a.disabled_at IS NULL", workspace).
+		Limit(1).Scan(&pref).Error
+	return pref, err
+}
+
+func (r *SlackRepository) UpdateNotificationPreferences(ctx context.Context, workspace, user string, patch model.UpdateSlackNotificationPreferences) (bool, error) {
+	var found bool
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row struct {
+			AccountID string
+			Overrides model.JSONB `gorm:"column:notify_categories;type:jsonb"`
+		}
+		result := tx.Table("slack_members").Select("account_id, notify_categories").
+			Where("user_id=? AND account_id IN (SELECT id FROM support_channel_accounts WHERE workspace_id=? AND provider='slack' AND disabled_at IS NULL)", user, workspace).
+			Clauses(clause.Locking{Strength: "UPDATE"}).Limit(1).Find(&row)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		found = true
+		if row.Overrides == nil {
+			row.Overrides = model.JSONB{}
+		}
+		updates := map[string]any{}
+		for family, value := range map[string]*bool{"assignments": patch.Assignments, "mentions": patch.Mentions} {
+			if value == nil {
+				continue
+			}
+			updates["notify_"+family] = *value
+			for key := range row.Overrides {
+				if model.SlackCategoryDefaults[key] == family {
+					delete(row.Overrides, key)
+				}
+			}
+		}
+		for key, value := range patch.Categories {
+			row.Overrides[key] = value
+		}
+		updates["notify_categories"] = row.Overrides
+		return tx.Table("slack_members").Where("account_id=? AND user_id=?", row.AccountID, user).Updates(updates).Error
+	})
+	return found, err
+}
+
+// Actionable DMs may wait in the retry queue while the user resolves the request.
+func (r *SlackRepository) NotificationActionPending(ctx context.Context, recipient string, event model.NotificationEventInput) (bool, error) {
+	var count int64
+	db := r.db.WithContext(ctx)
+	switch event.EventType {
+	case "task.agent_attention_required":
+		interaction, _ := event.Metadata["interaction_id"].(string)
+		err := db.Table("agent_run_interactions i").
+			Joins("JOIN agent_runs r ON r.id=i.run_id AND r.workspace_id=i.workspace_id").
+			Where("i.workspace_id=? AND i.run_id=? AND i.status=? AND (i.request_id=? OR CAST(i.id AS text)=?)", event.WorkspaceID, event.EntityID, model.AgentRunInteractionStatusPending, interaction, interaction).
+			Where("r.status IN ?", []string{model.AgentRunStatusQueued, model.AgentRunStatusRunning, model.AgentRunStatusPaused}).Count(&count).Error
+		return count > 0, err
+	case "external_mcp.reauthorization_required":
+		err := db.Model(&model.ExternalMCPServer{}).
+			Where("workspace_id=? AND id=? AND status=? AND coalesce(authorized_by_user_id,created_by)=?", event.WorkspaceID, event.EntityID, model.ExternalMCPStatusReauthorizationNeeded, recipient).Count(&count).Error
+		return count > 0, err
+	default:
+		return true, nil
+	}
 }

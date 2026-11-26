@@ -13,9 +13,9 @@ inputs:
   - key: workflow_id
     type: workflow
     required: true
-    label: Workflow
+    label: Task workflow
     section: What should it watch?
-    help_text: Choose the workflow that contains the done state.
+    help_text: Choose the task workflow that contains the done state.
   - key: done_state_id
     type: workflow_state
     required: true

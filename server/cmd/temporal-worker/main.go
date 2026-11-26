@@ -256,6 +256,7 @@ func main() {
 		cfg.AppBaseURL,
 	)
 	notificationAuthz := authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), repository.NewWorkspaceModuleGrantRepository(db))
+	notificationService.SetSlackNotifications(repository.NewSlackRepository(db), repository.NewSupportInboundJobRepository(db))
 	notificationService.SetAccessChecker(service.NewNotificationAccessPolicy(notificationAuthz, notificationRepo))
 	// Email sync activities (may be nil if Gmail not configured).
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
@@ -487,6 +488,7 @@ func main() {
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
 	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
+	docsContentService.SetMentionNotificationDependencies(notificationService, workspaceRepo)
 	docsHelpcenterService := service.NewDocsHelpcenterService(
 		docsHelpcenterRepo,
 		docsHelpcenterPublicationRepo,
@@ -575,11 +577,11 @@ func main() {
 		s3Client,
 		temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace),
 	)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).SetNotificationService(notificationService).
 		SetActivityService(pmActivityService)
-	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).SetNotificationService(notificationService)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
-	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmActivityService := service.NewCRMActivityService(crmActivityRepo).SetNotificationService(notificationService)
 	crmActivityService.SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
 	crmDealService.SetCompanySummaryRefresh(crmSummaryService)
 	crmCompanyService.SetCompanySummaryRefresh(crmSummaryService)
@@ -616,7 +618,7 @@ func main() {
 	commandService.SetSupportDependencies(supportMessageRepo, conversationRepo, wsPublisher)
 	commandService.SetSupportAttachmentRepository(repository.NewSupportAttachmentRepository(db))
 	commandService.SetCRMReadServices(
-		service.NewCRMContactService(crmContactRepo),
+		service.NewCRMContactService(crmContactRepo).SetNotificationService(notificationService),
 		crmSignalService,
 	)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
@@ -925,6 +927,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if scheduledRuleActivities != nil {
 		w.RegisterActivityWithOptions(scheduledRuleActivities.ExecuteScheduledRule, activity.RegisterOptions{
 			Name: "ScheduledRuleActivities.ExecuteScheduledRule",
+		})
+		w.RegisterActivityWithOptions(scheduledRuleActivities.NotifyFailure, activity.RegisterOptions{
+			Name: "ScheduledRuleActivities.NotifyFailure",
 		})
 	}
 

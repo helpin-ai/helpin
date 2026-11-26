@@ -58,6 +58,22 @@ func (s *SlackService) feedAIAction(ctx context.Context, c *model.SupportConvers
 	return "feed_pause", nil
 }
 
+func (s *SlackService) feedTriageOptions(f *feedContext) []map[string]any {
+	c, id := f.conv, f.thread.ID
+	menu := []map[string]any{
+		feedOption("Set priority…", id+":feed_priority"),
+		feedOption("Move to inbox…", id+":feed_move"),
+	}
+	if c.Status != model.SupportConversationStatusResolved {
+		if c.SnoozedUntil != nil && c.SnoozedUntil.After(s.channels.now()) {
+			menu = append(menu, feedOption("Wake from snooze", id+":feed_wake"))
+		} else {
+			menu = append(menu, feedOption("Snooze…", id+":feed_snooze"))
+		}
+	}
+	return append(menu, feedOption("Change status…", id+":feed_status"))
+}
+
 func (s *SlackService) feedCardActions(ctx context.Context, f *feedContext, owner string) (map[string]any, error) {
 	c, id := f.conv, f.thread.ID
 	assign := "Assign…"
@@ -65,18 +81,7 @@ func (s *SlackService) feedCardActions(ctx context.Context, f *feedContext, owne
 		assign = truncate("Assigned to "+feedOneLine(owner), 70) + " ▾"
 	}
 	status := feedButton("feed_resolve", "Resolve", id+":"+c.Status)
-	if c.Status == "resolved" {
-		status = feedButton("feed_reopen", "Reopen", id+":"+c.Status)
-	}
-	menu := []map[string]any{feedOption("Set priority…", id+":feed_priority"), feedOption("Move to inbox…", id+":feed_move")}
-	if c.Status != "resolved" {
-		if c.SnoozedUntil != nil && c.SnoozedUntil.After(s.channels.now()) {
-			menu = append(menu, feedOption("Wake from snooze", id+":feed_wake"))
-		} else {
-			menu = append(menu, feedOption("Snooze…", id+":feed_snooze"))
-		}
-	}
-	menu = append(menu, feedOption("Change status…", id+":feed_status"))
+	menu := s.feedTriageOptions(f)
 	ai, err := s.feedAIAction(ctx, c)
 	if err != nil {
 		return nil, err
