@@ -573,6 +573,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/link-previews", func(r chi.Router) {
 				r.Use(h.LinkPreview.Limit)
 				r.Get("/metadata", h.LinkPreview.Metadata)
+				r.Get("/initials-v1.png", h.LinkPreview.InitialsAvatar)
+				r.Head("/initials-v1.png", h.LinkPreview.InitialsAvatar)
 				r.Get("/image", h.LinkPreview.Image)
 				r.Head("/image", h.LinkPreview.Image)
 				r.Get("/html", h.LinkPreview.HTML)

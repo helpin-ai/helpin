@@ -541,7 +541,7 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if meta.EmailStatus != "" {
 		statuses = append(statuses, "Email · "+meta.EmailStatus)
 	}
-	blocks := []any{author.header()}
+	blocks := []any{author.header(s.channels.cfg.PublicAPIBaseURL)}
 	formatted := rich || !m.IsInternal && author.role == "AI reply"
 	display, clipped := feedReplyBody(body, formatted)
 	blocks = append(blocks, display...)

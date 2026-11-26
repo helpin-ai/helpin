@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,31 @@ func TestSlackInboxFeedAuthor(t *testing.T) {
 		if got := f.feedAuthor(&m); got.role != tc.role || got.name != name {
 			t.Fatalf("%s author = %+v", tc.kind, got)
 		}
+	}
+}
+
+func TestSlackFeedInitialsBadge(t *testing.T) {
+	f := feedContext{conv: &model.SupportConversation{Channel: "widget"}}
+	name, user := "Maya Patel", "member-42"
+	msg := model.SupportMessage{SenderType: "user", SenderDisplayName: &name, SenderUserID: &user}
+	header := func() []any {
+		return f.feedAuthor(&msg).header("https://api.helpin.example/api")["elements"].([]any)
+	}
+	elements := header()
+	image := elements[0].(map[string]any)
+	source, err := url.Parse(image["image_url"].(string))
+	if err != nil || len(elements) != 2 || image["type"] != "image" || source.Host != "api.helpin.example" || source.Query().Get("i") != "MP" || source.Query().Get("c") == "" || strings.Contains(source.String(), user) {
+		t.Fatalf("initials badge: %#v, %v", elements, err)
+	}
+	msg.IsInternal = true
+	name = "Maya Reed"
+	next, err := url.Parse(header()[0].(map[string]any)["image_url"].(string))
+	if err != nil || next.Query().Get("c") != source.Query().Get("c") || next.Query().Get("i") != "MR" {
+		t.Fatalf("color changed with role or name: %v", next)
+	}
+	msg.SenderAvatarURL = strPtr("https://images.example/maya.jpg")
+	if image := header()[0].(map[string]any); image["image_url"] != *msg.SenderAvatarURL {
+		t.Fatalf("profile photo: %v", image)
 	}
 }
 
@@ -73,21 +99,25 @@ func TestSlackInboxFeedSpeakerHeader(t *testing.T) {
 	for _, tc := range []struct{ name, role, want string }{
 		{"Maya Patel", "Team reply", "*Maya Patel* · *Team reply*"},
 		{"Sam", "📝 Internal note", "*Sam* · *📝 Internal note*"},
-		{"<@U123>", "Visitor", "· *Visitor*"},
+		{"<@U123>", "Visitor", "<@U123> · Visitor"},
 		{"", "Visitor", "*Visitor*"},
 		{"Visitor", "Visitor", "*Visitor*"},
 	} {
 		speaker := feedSpeaker{name: tc.name, role: tc.role}
-		elements := speaker.header()["elements"].([]any)
+		elements := speaker.header("https://api.example")["elements"].([]any)
+		if len(elements) > 2 {
+			t.Fatalf("unexpected gap from extra header elements: %v", elements)
+		}
+		if tc.name == "<@U123>" {
+			label := elements[len(elements)-1].(map[string]string)
+			if label["type"] != "plain_text" || label["text"] != tc.want {
+				t.Fatalf("unsafe display name: %#v", label)
+			}
+			continue
+		}
 		last := elements[len(elements)-1].(map[string]any)
 		if last["text"] != tc.want {
 			t.Errorf("visible header for %q = %q, want %q", tc.name, last["text"], tc.want)
-		}
-		if tc.name == "<@U123>" {
-			name := elements[len(elements)-2].(map[string]string)
-			if name["type"] != "plain_text" || name["text"] != tc.name {
-				t.Errorf("unsafe display name rendered as %#v", name)
-			}
 		}
 	}
 }
