@@ -152,13 +152,18 @@ func (s *SlackService) writeFeedAIUpdate(ctx context.Context, f *feedContext, id
 		title = "🔎 Code check · Internal"
 	}
 	reportURL := f.conversationURL + "#message-" + target
+	buttons := append(f.threadReplyButtons(id), feedOpenButton(f.thread.ID, reportURL))
 	blocks := []any{
 		map[string]any{"type": "context", "elements": []any{slackText(title)}},
-		slackMarkdown(summary), slackButtons(feedOpenButton(f.thread.ID, reportURL)),
+		slackMarkdown(summary), slackButtons(buttons...),
 	}
 	fallback := title + " · " + f.conv.Subject + "\n" + supportTranscriptPlainText(renderSupportTranscriptMessageHTML(summary)) + "\n" + reportURL
 	receiptKey := id + ":ai_summary"
-	rendered := inboundStableID(strings.Join([]string{fallback, summary, f.conversationURL, target}, "\x00"))
+	encoded, err := json.Marshal(blocks)
+	if err != nil {
+		return err
+	}
+	rendered := inboundStableID(fallback + "\x00" + string(encoded))
 	previous, err := s.repo.FeedReceipt(ctx, f.thread.ID, receiptKey)
 	if err != nil || previous == rendered {
 		return err

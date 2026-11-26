@@ -836,6 +836,7 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	testSlackFeedAIReports(t, f, conv, trow.RootTS, deliver, func() []map[string]any { return posts })
 	testSlackFeedMoveNotices(t, f, conv, box.ID, deliver, checkNotice)
 	testSlackFeedEmailPresentation(t, f, conv, msg.ID, deliver, func() map[string]any { return updates[len(updates)-1] })
+	testSlackFeedThreadReply(t, f, conv, trow, process, deliver, func() map[string]any { return views[len(views)-1] }, func() []map[string]any { return posts })
 	testSlackFeedTriage(t, f, conv, box.ID, trow, process, func() map[string]any { return views[len(views)-1] }, deliver, func() map[string]any { return updates[len(updates)-1] })
 	beforeRemoval := len(posts)
 	if err := s.Remove(owner, f.workspace, "Cdesk"); err != nil {
@@ -848,6 +849,68 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	deliver(&next.ID)
 	if len(posts) != beforeRemoval {
 		t.Fatal("replayed after rule removal")
+	}
+}
+
+func testSlackFeedThreadReply(t *testing.T, f *outboxFixture, conv string, thread *repository.FeedThread, process func(SlackAction, bool), deliver func(*string), lastView func() map[string]any, posts func() []map[string]any) {
+	t.Helper()
+	mustExec(t, f.db, "UPDATE support_conversations SET customer_name='Maya', customer_email='maya@example.com', email_cc=ARRAY['billing@example.com'] WHERE id=?", conv)
+	msg := f.reply(t, conv, "customer", "Please follow up by email.", func(m *model.SupportMessage) { m.ViaChannel = strPtr("email") })
+	deliver(&msg.ID)
+	emailTS := fmt.Sprintf("%d.000001", len(posts()))
+	internal := f.reply(t, conv, "user", "Check with billing.", func(m *model.SupportMessage) { m.MessageType, m.IsInternal = "note", true })
+	deliver(&internal.ID)
+	post := posts()[len(posts())-1]
+	for _, expected := range []string{"Reply to Maya", "Open in Helpin", thread.ID + ":" + internal.ID} {
+		if !strings.Contains(fmt.Sprint(post["blocks"]), expected) {
+			t.Errorf("internal note missing %q: %v", expected, post["blocks"])
+		}
+	}
+	checkView := func(trigger, id, ts, want string) {
+		t.Helper()
+		raw := fmt.Sprintf(`{"team":{"id":%q},"user":{"id":"Uagent"},"channel":{"id":"Cdesk"},"trigger_id":%q,"message":{"ts":%q},"actions":[{"action_id":"feed_reply","value":%q}]}`, f.account.ExternalAccountID, trigger, ts, id)
+		var action SlackAction
+		if err := json.Unmarshal([]byte(raw), &action); err != nil {
+			t.Fatal(err)
+		}
+		process(action, false)
+		fields := map[string]map[string]any{}
+		for _, b := range lastView()["blocks"].([]any) {
+			block := b.(map[string]any)
+			if el, ok := block["element"].(map[string]any); ok {
+				fields[block["block_id"].(string)] = el
+			}
+		}
+		opt, _ := fields["destination"]["initial_option"].(map[string]any)
+		if opt["value"] != want || fields["to"]["initial_value"] != "maya@example.com" || fields["cc"]["initial_value"] != "billing@example.com" || fields["body"]["focus_on_load"] != true {
+			t.Errorf("reply form defaults: %+v", fields)
+		}
+	}
+	checkView("default-root-reply", thread.ID, thread.RootTS, "email")
+	noteTS := fmt.Sprintf("%d.000001", len(posts()))
+	checkView("default-note-reply", thread.ID+":"+internal.ID, noteTS, "email")
+	web := f.reply(t, conv, "customer", "Newer chat reply.", func(m *model.SupportMessage) { m.ViaChannel = strPtr("widget") })
+	deliver(&web.ID)
+	checkView("default-latest-chat", thread.ID, thread.RootTS, "widget")
+	checkView("default-earlier-email", thread.ID+":"+msg.ID, emailTS, "email")
+	reply := f.reply(t, conv, "user", "Your receipt is ready.", func(m *model.SupportMessage) { m.Metadata = `{"email_delivery_status":"sent"}` })
+	deliver(&reply.ID)
+	post = posts()[len(posts())-1]
+	if !strings.Contains(fmt.Sprint(post["blocks"]), "Open in Helpin") || !strings.Contains(fmt.Sprint(post["blocks"]), "Reply to Maya") {
+		t.Errorf("missing thread actions on team reply: %v", post["blocks"])
+	}
+	var contexts int
+	for _, raw := range post["blocks"].([]any) {
+		block := raw.(map[string]any)
+		if strings.Contains(fmt.Sprint(block), "Email · sent") {
+			if block["type"] != "context" || strings.Contains(fmt.Sprint(block), "Your receipt") {
+				t.Errorf("status mixed into body: %v", block)
+			}
+			contexts++
+		}
+	}
+	if contexts != 1 || !strings.Contains(fmt.Sprint(post["text"]), "Email · sent") {
+		t.Errorf("missing delivery context or fallback: %v", post)
 	}
 }
 
@@ -1079,7 +1142,7 @@ func testSlackFeedAIReports(t *testing.T, f *outboxFixture, conv, root string, d
 			if len(got) != want {
 				t.Fatalf("got %d Slack posts for this handoff, want %d", len(got), want)
 			}
-			if first := fmt.Sprint(got[0]["blocks"]); !strings.Contains(first, "AI handoff") || !strings.Contains(first, "Checked history.") || !strings.Contains(first, "Which job?") {
+			if first := fmt.Sprint(got[0]["blocks"]); !strings.Contains(first, "AI handoff") || !strings.Contains(first, "Checked history.") || !strings.Contains(first, "Which job?") || !strings.Contains(first, "feed_reply") {
 				t.Fatalf("handoff missing context: %s", first)
 			}
 			fallback := fmt.Sprint(got[want-1]["text"])
