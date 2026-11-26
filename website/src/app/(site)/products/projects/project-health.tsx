@@ -26,7 +26,7 @@ export function ProjectHealth() {
     <header className="pod-header">
       <div className="pod-breadcrumb"><ArrowLeft size={14}/><span>Objectives</span></div>
       <div className="pod-heading">
-        <h3>Increase ARR by $500k this quarter.</h3>
+        <h3>Increase ARR by $500k this quarter</h3>
         <div><span>Strategic objective</span><span className="pod-active"><i/>Active</span></div>
       </div>
       <div className="pod-actions">

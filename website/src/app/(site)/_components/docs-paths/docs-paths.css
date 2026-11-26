@@ -1,6 +1,8 @@
 /* App-styled scenes for the homepage docs section. Type and colours follow the Helpin app (Inter, neutral greys). */
 .hp3 .dp-root{position:relative;container-type:inline-size;--dp-fg:#232323;--dp-muted:#737373;--dp-border:#e5e5e5;--dp-soft:#f5f5f5;text-align:left}
 .hp3 .dp-frame{position:relative;overflow:hidden;height:480px;border:1px solid #dfe6e1;border-radius:14px;background:#fff;box-shadow:0 24px 60px -30px #1d3f2a40;font-family:'Helpin Story Inter','Inter',sans-serif;font-size:13px;font-weight:450;line-height:1.5;color:var(--dp-fg);-webkit-font-smoothing:antialiased;letter-spacing:0}
+/* The coverage list never fills the full frame, so its frame is shorter. */
+.hp3 .dp-frame-short{height:450px}
 .hp3 .dp-frame svg{flex:none}
 .hp3 .dp-bar{display:flex;align-items:center;gap:9px;height:44px;padding:0 16px;border-bottom:1px solid var(--dp-border);background:#fafafa}
 .hp3 .dp-logo{display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:#164f37;color:#fff;font-size:11px;font-weight:600}
@@ -108,6 +110,7 @@
 }
 @container (max-width: 400px){
   .hp3 .dp-frame{height:600px}
+  .hp3 .dp-frame-short{height:510px}
   .hp3 .dp-tabs span:nth-child(n+3){display:none}
   .hp3 .dp-pr-card{flex-direction:column;gap:6px}
 }

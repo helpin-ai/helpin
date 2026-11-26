@@ -46,9 +46,9 @@ export function MeetingScene({variant}:{variant:Variant}){
  return <div ref={container} className={`meeting-scene mt-${variant}`} data-playing={active} data-phase={phase}><div className="mt-toolbar"><span><b className="mt-mark">O</b>OrbitDesk<span className="mt-slash">/</span>{TITLES[variant]}</span><button type="button" aria-label={`${paused?'Play':'Pause'} ${TITLES[variant].toLowerCase()} animation`} aria-pressed={paused} onClick={()=>setPaused(!paused)}>{paused?<Play size={12}/>:<Pause size={12}/>}</button></div><div className="mt-content" role="img" aria-label={DESCRIPTIONS[variant]}><div aria-hidden="true">{variant==='task'?<Task phase={phase}/>:variant==='followup'?<Followup active={active} phase={phase}/>:<Context/>}</div></div>{variant==='followup'&&phase>=3&&<div className="mt-copy-row"><button type="button" aria-pressed={reviewing} onClick={()=>{setPaused(true);setReviewing(true);setAnnouncement("Draft open for review. Nothing has been sent.");}}>{reviewing?"Reviewing draft":"Review draft"}</button><button type="button" onClick={copyDraft}>{copied?<Check size={12}/>:<Copy size={12}/>} {copied?'Copied draft':'Copy draft'}</button><span className="mw-sr-only" role="status">{announcement}</span></div>}</div>;
 }
 const FINDINGS = [
-  { title: 'Find the agreement.', detail: 'Give the next step a clear starting point.', Icon: CircleCheck, state: 'Agreed approach' },
-  { title: 'Keep uncertainty visible.', detail: 'Do not let an unresolved question read like a settled decision.', Icon: CircleHelp, state: 'Needs an answer' },
-  { title: 'Make the commitment clear.', detail: 'Identify the next step before assigning the work.', Icon: ListChecks, state: 'Suggested next step' },
+  { title: 'Find the agreement', detail: 'Give the next step a clear starting point.', Icon: CircleCheck, state: 'Agreed approach' },
+  { title: 'Keep uncertainty visible', detail: 'Do not let an unresolved question read like a settled decision.', Icon: CircleHelp, state: 'Needs an answer' },
+  { title: 'Make the commitment clear', detail: 'Identify the next step before assigning the work.', Icon: ListChecks, state: 'Suggested next step' },
 ];
 export function MeetingEvidence() {
   const { container, active, phase, paused, setPaused } = useMeetingPlayback();

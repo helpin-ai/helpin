@@ -17,7 +17,7 @@ export function PricingPlans() {
   const [annual, setAnnual] = useState(false);
   return <section id="cloud-plans" className="pricing-plans"><div className="wrap">
     <div className="pricing-plan-heading">
-      <h2>Same product. You choose who runs it.</h2>
+      <h2>Same product. You choose who runs it</h2>
       <div className="pricing-billing" role="group" aria-label="Billing period">
         <button type="button" aria-pressed={!annual} onClick={() => setAnnual(false)}>Monthly</button>
         <button type="button" aria-pressed={annual} onClick={() => setAnnual(true)}>Annually <span>−20%</span></button>
@@ -59,7 +59,7 @@ export function PricingPlans() {
     </div>
 
     <article id="enterprise" className="pricing-enterprise-strip" aria-labelledby="enterprise-heading">
-      <div className="pricing-enterprise-copy"><span className="eyebrow"><Building2 size={17} aria-hidden="true" />Enterprise</span><h2 id="enterprise-heading">Helpin, set up for your company.</h2><p>Need a commercial license, a custom AI setup, or help with deployment? We’ll work through the requirements with your team.</p><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us about Enterprise</a></div>
+      <div className="pricing-enterprise-copy"><span className="eyebrow"><Building2 size={17} aria-hidden="true" />Enterprise</span><h2 id="enterprise-heading">Helpin, set up for your company</h2><p>Need a commercial license, a custom AI setup, or help with deployment? We’ll work through the requirements with your team.</p><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us about Enterprise</a></div>
       <ul className="pricing-enterprise-features">{['Commercial licensing', 'Custom AI setup', 'Deployment help', 'Support terms for your team'].map(feature => <li key={feature}><Check size={17} aria-hidden="true" />{feature}</li>)}</ul>
     </article>
   </div></section>;

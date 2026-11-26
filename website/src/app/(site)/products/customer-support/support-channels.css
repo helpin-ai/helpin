@@ -1,6 +1,6 @@
 /* Channels converge on the shared inbox (dark channels section). */
 .hp3 .sch { display: grid; justify-items: center; margin-bottom: 44px; }
-.hp3 .sch-channels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; width: 100%; margin: 0; padding: 0; list-style: none; }
+.hp3 .sch-channels { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 24px; width: 100%; margin: 0; padding: 0; list-style: none; }
 .hp3 .sch-channels li { display: grid; justify-items: center; align-content: start; text-align: center; }
 .hp3 .sch-icon { display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 14px; border: 1px solid rgba(143, 211, 173, .35); border-radius: 16px; background: radial-gradient(circle at 30% 20%, rgba(143, 211, 173, .18), rgba(143, 211, 173, .04)); color: #a7e3c1; }
 .hp3 .sch-channels h3 { margin-bottom: 6px; color: #f2f5f3; font-size: 17px; }
@@ -19,6 +19,7 @@
 @keyframes sch-flow { from { stroke-dashoffset: 130; } to { stroke-dashoffset: 0; } }
 @media (max-width: 860px) {
   .hp3 .sch-channels { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 32px; }
+  .hp3 .sch-channels li:last-child { grid-column: 1 / -1; }
   .hp3 .sch-lines-wide { display: none; }
   .hp3 .sch-lines-narrow { display: block; height: 90px; }
 }

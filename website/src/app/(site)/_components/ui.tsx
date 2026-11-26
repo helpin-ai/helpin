@@ -5,7 +5,7 @@ import { faqPage, JsonLd } from '@/lib/structured-data';
 export const DEMO_URL = 'https://cal.com/helpin-ai/30min';
 export const SIGNUP_URL = 'https://app.helpin.ai/register';
 // Opens the support preview in the app: Helpin reads the site, then its agent answers.
-const START_URL = 'https://app.helpin.ai/start';
+export const START_URL = 'https://app.helpin.ai/start';
 export const GITHUB_URL = 'https://github.com/helpin-ai/helpin';
 export const DISCORD_URL = 'https://discord.gg/23WcB2chf';
 

@@ -104,7 +104,7 @@ export function AskAgentWindow({ phase, streaming, playing, selected, onSelectRu
         <button className="aaw-icon-button" type="button" aria-label={`Minimize ${assistantName} preview`} onClick={onMinimize}><Minus size={17} /></button>
       </header>
       <div ref={content} className="aaw-content" id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${tab}`} tabIndex={0}>
-        {composing ? <div className="aaw-compose"><p className="aaw-label">Example request</p><h4>Start with the work you need done.</h4><p>{CHAT_RUN.request}</p><button type="button" onClick={() => selectRun('chat')}><ArrowUp size={14} />Send example request</button><small>This demo uses prepared workspace context.</small></div>
+        {composing ? <div className="aaw-compose"><p className="aaw-label">Example request</p><h4>Start with the work you need done</h4><p>{CHAT_RUN.request}</p><button type="button" onClick={() => selectRun('chat')}><ArrowUp size={14} />Send example request</button><small>This demo uses prepared workspace context.</small></div>
           : <div key={selected} className="aaw-run-conversation">
             <div className="aaw-user-message"><p className="aaw-label">Sam Rivera</p><p className="aaw-request">{run.request}</p></div>
             <div className="aaw-response-label"><img src={run.icon} width={20} height={20} alt="" />{displayName}</div>
