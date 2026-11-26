@@ -4576,6 +4576,10 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	if newUserID != previousAssignedUserID {
 		switch {
 		case newUserID != "":
+			s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+				WorkspaceID: workspaceID, ActorID: derefString(actorID), EventType: "support_conversation.assigned",
+				EntityType: "support_conversation", EntityID: conversationID, Title: "You were assigned to " + supportNotificationConversationLabel(ticket),
+			}, newUserID)
 			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUser, "", newUserID)
 		default:
 			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUnassign, "", previousAssignedUserID)

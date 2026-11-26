@@ -178,6 +178,9 @@ func (s *SlackService) directAgent(ctx context.Context, a *model.SupportChannelA
 		}
 		return s.promptLink(ctx, a, token, m)
 	}
+	if strings.EqualFold(strings.TrimSpace(m.Text), "link account") {
+		return s.private(ctx, token, m, "Your account is linked. Open Notifications → Workspace in Helpin to choose your Slack direct messages.")
+	}
 	ctx = authorization.WithActor(ctx, actor)
 	route := &model.SlackRoute{Purpose: "pm", ChannelID: m.Channel, CurrentChannelID: m.Channel}
 

@@ -130,7 +130,8 @@ func (s *PMChecklistItemService) Create(ctx context.Context, taskID string, req 
 	if strings.TrimSpace(req.Text) == "" {
 		return nil, errCommandInput("text is required")
 	}
-	if _, err := s.requireAccessibleTask(ctx, taskID, workspaceID); err != nil {
+	task, err := s.requireAccessibleTask(ctx, taskID, workspaceID)
+	if err != nil {
 		return nil, err
 	}
 	assigneeID, err := s.validateAssignee(ctx, workspaceID, req.AssigneeID, false)
@@ -153,6 +154,8 @@ func (s *PMChecklistItemService) Create(ctx context.Context, taskID string, req 
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "checklist_item", EntityID: item.ID, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: taskID})
 
+	s.notificationService.notifyChecklistAssignee(ctx, task, *item, actorID)
+
 	// Emit notifications for @mentions in checklist item text.
 	s.emitMentionNotifications(ctx, item, workspaceID, actorID)
 
@@ -168,7 +171,8 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 	if item == nil {
 		return nil, errCommandNotFound("checklist item")
 	}
-	if _, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID); err != nil {
+	task, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID)
+	if err != nil {
 		return nil, err
 	}
 	assigneeID, err := s.validateAssignee(ctx, workspaceID, req.AssigneeID, true)
@@ -176,6 +180,7 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 		return nil, err
 	}
 
+	previousAssignee := derefString(item.AssigneeID)
 	textChanged := false
 	if req.Text != nil {
 		if strings.TrimSpace(*req.Text) == "" {
@@ -203,6 +208,10 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 		return nil, err
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: item.TaskID})
+
+	if derefString(item.AssigneeID) != previousAssignee {
+		s.notificationService.notifyChecklistAssignee(ctx, task, *item, actorID)
+	}
 
 	// Emit notifications for new @mentions when text changes.
 	if textChanged {

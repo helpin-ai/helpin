@@ -22,17 +22,18 @@ type SlackConfig struct{ ClientID, ClientSecret, SigningSecret, RedirectURL stri
 
 // SlackService manages the Slack workspace installation shared by PM and Support.
 type SlackService struct {
-	dock     slackAskAgent
-	triage   *PMTriageService
-	insights *PMTaskInsightsService
-	tasks    *PMTaskService
-	comments *PMCommentService
-	authz    *authorization.AuthzService
-	appURL   string
-	channels *SupportChannelService
-	repo     *repository.SlackRepository
-	api      *slack.Client
-	cfg      SlackConfig
+	notifications *NotificationService
+	dock          slackAskAgent
+	triage        *PMTriageService
+	insights      *PMTaskInsightsService
+	tasks         *PMTaskService
+	comments      *PMCommentService
+	authz         *authorization.AuthzService
+	appURL        string
+	channels      *SupportChannelService
+	repo          *repository.SlackRepository
+	api           *slack.Client
+	cfg           SlackConfig
 }
 
 // NewSlackService builds the installation and channel routing service.

@@ -427,3 +427,30 @@ func (r *SlackRepository) AgentAnswer(ctx context.Context, workspace, chat, mess
 		" AND reply.message_type='assistant_final' ORDER BY reply.dock_chat_sequence LIMIT 1", workspace, chat, message).Scan(&answer).Error
 	return answer, err
 }
+
+// NotificationPreferences also returns connection state for a member who has yet to link.
+func (r *SlackRepository) NotificationPreferences(ctx context.Context, workspace, user string) (model.SlackNotificationPreferences, error) {
+	var pref model.SlackNotificationPreferences
+	err := r.db.WithContext(ctx).Table("support_channel_accounts a").
+		Select(`a.id AS account_id, a.external_account_id AS team_id, a.handle AS bot_user_id,
+			coalesce(m.slack_user,'') AS slack_user, m.user_id IS NOT NULL AS linked,
+			coalesce(m.notify_assignments,false) AS assignments, coalesce(m.notify_mentions,false) AS mentions`).
+		Joins("LEFT JOIN slack_members m ON m.account_id=a.id AND m.user_id=?", user).
+		Where("a.workspace_id=? AND a.provider='slack' AND a.disabled_at IS NULL", workspace).
+		Limit(1).Scan(&pref).Error
+	return pref, err
+}
+
+func (r *SlackRepository) UpdateNotificationPreferences(ctx context.Context, workspace, user string, patch model.UpdateSlackNotificationPreferences) (bool, error) {
+	updates := map[string]any{}
+	if patch.Assignments != nil {
+		updates["notify_assignments"] = *patch.Assignments
+	}
+	if patch.Mentions != nil {
+		updates["notify_mentions"] = *patch.Mentions
+	}
+	result := r.db.WithContext(ctx).Table("slack_members").
+		Where("user_id=? AND account_id IN (SELECT id FROM support_channel_accounts WHERE workspace_id=? AND provider='slack' AND disabled_at IS NULL)", user, workspace).
+		Updates(updates)
+	return result.RowsAffected == 1, result.Error
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -192,13 +193,18 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 		obj.CreatedBy = &actorID
 	}
 
-	var resolvedOwnerMemberIDs []string
+	var resolvedOwnerMemberIDs, newOwnerUserIDs []string
 	if len(req.OwnerIDs) > 0 || len(req.OwnerMemberIDs) > 0 {
 		owners, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
 		if err != nil {
 			return nil, err
 		}
 		resolvedOwnerMemberIDs = memberIDs(owners)
+		for _, owner := range owners {
+			if owner.UserID != nil {
+				newOwnerUserIDs = append(newOwnerUserIDs, *owner.UserID)
+			}
+		}
 	}
 	if len(req.LabelIDs) > 0 {
 		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, req.TeamIDs); err != nil {
@@ -245,6 +251,10 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
+		s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+			WorkspaceID: obj.WorkspaceID, ActorID: actorID, EventType: "objective.assigned",
+			EntityType: "objective", EntityID: obj.ID, Title: "You were assigned to objective " + obj.Name,
+		}, newOwnerUserIDs...)
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID,
 			ActorID:     actorID,
@@ -344,13 +354,18 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 		obj.Archived = *req.Archived
 	}
 
-	var resolvedOwnerMemberIDs []string
+	var resolvedOwnerMemberIDs, newOwnerUserIDs []string
 	if req.OwnerIDs != nil || req.OwnerMemberIDs != nil {
 		owners, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, obj.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
 		if err != nil {
 			return nil, err
 		}
 		resolvedOwnerMemberIDs = memberIDs(owners)
+		for _, owner := range owners {
+			if owner.UserID != nil && !slices.Contains(current.Owners, *owner.UserID) {
+				newOwnerUserIDs = append(newOwnerUserIDs, *owner.UserID)
+			}
+		}
 	}
 	if req.LabelIDs != nil {
 		teamIDs := current.Teams
@@ -396,6 +411,10 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
+		s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+			WorkspaceID: obj.WorkspaceID, ActorID: actorID, EventType: "objective.assigned",
+			EntityType: "objective", EntityID: obj.ID, Title: "You were assigned to objective " + obj.Name,
+		}, newOwnerUserIDs...)
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID,
 			ActorID:     actorID,
@@ -536,12 +555,13 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, ownerRef
 	if err != nil {
 		return err
 	}
-	if err := s.objectiveRepo.AddOwner(ctx, objectiveID, owner.ID); err != nil {
+	added, err := s.objectiveRepo.AddOwner(ctx, objectiveID, owner.ID)
+	if err != nil {
 		return err
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
 
-	if s.notificationService != nil && owner.UserID != nil {
+	if added && s.notificationService != nil && owner.UserID != nil {
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID:        obj.Objective.WorkspaceID,
 			ActorID:            actorID,

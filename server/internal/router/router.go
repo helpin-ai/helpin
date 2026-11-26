@@ -1086,6 +1086,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Use(middleware.RequireWorkspaceID)
 					r.Use(wsActive)
 					r.With(requirePerm(authorization.PermWorkspaceRead)).Post("/link", h.Slack.Link)
+					r.With(requirePerm(authorization.PermWorkspaceRead)).Get("/notifications", h.Slack.NotificationPreferences)
+					r.With(requirePerm(authorization.PermWorkspaceRead)).Patch("/notifications", h.Slack.UpdateNotificationPreferences)
 					r.Group(func(r chi.Router) {
 						r.Use(requirePerm(authorization.PermSettingsManage))
 						r.Get("/", h.Slack.Settings)

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -83,6 +84,8 @@ var priorityOrder = map[string]int{
 
 // NotificationService orchestrates notification creation and delivery.
 type NotificationService struct {
+	slackRepo           *repository.SlackRepository
+	slackJobs           *repository.SupportInboundJobRepository
 	notifRepo           *repository.NotificationRepository
 	prefRepo            *repository.NotificationPreferenceRepository
 	userSettingsRepo    *repository.UserNotificationSettingsRepository
@@ -327,6 +330,14 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		}
 		if !allowed {
 			continue
+		}
+
+		// Followers see assignment and mention activity in Helpin. Only the
+		// people addressed by the event should also receive a personal DM.
+		if slices.Contains(event.ExplicitRecipients, recipientID) {
+			if err := s.queueSlackNotification(ctx, recipientID, event); err != nil {
+				log.ErrorContext(ctx, "queue personal Slack notification", "error", err)
+			}
 		}
 
 		// Check channels independently. email_only rows retain delivery history without appearing in the inbox.

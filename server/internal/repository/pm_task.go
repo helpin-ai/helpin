@@ -870,14 +870,15 @@ func (r *PMTaskRepository) Reorder(ctx context.Context, taskID string, position 
 }
 
 // AddOwner links an owner to a task.
-func (r *PMTaskRepository) AddOwner(ctx context.Context, taskID, userID string) error {
+func (r *PMTaskRepository) AddOwner(ctx context.Context, taskID, userID string) (bool, error) {
 	owner := model.PMTaskOwner{TaskID: taskID, UserID: userID}
-	if err := r.db.WithContext(ctx).
+	result := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
-		Create(&owner).Error; err != nil {
-		return fmt.Errorf("add task owner: %w", err)
+		Create(&owner)
+	if result.Error != nil {
+		return false, fmt.Errorf("add task owner: %w", result.Error)
 	}
-	return nil
+	return result.RowsAffected == 1, nil
 }
 
 // RemoveOwner unlinks an owner from a task.

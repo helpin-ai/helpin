@@ -247,6 +247,12 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
+		if epic.OwnerID != nil {
+			s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+				WorkspaceID: epic.WorkspaceID, ActorID: actorID, TeamID: derefString(epic.TeamID),
+				EventType: "epic.assigned", EntityType: "epic", EntityID: epic.ID, Title: "You were assigned to epic " + epic.Name,
+			}, *epic.OwnerID)
+		}
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: epic.WorkspaceID,
 			ActorID:     actorID,
@@ -436,6 +442,12 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
+		if epic.OwnerID != nil && *epic.OwnerID != derefString(current.Epic.OwnerID) {
+			s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+				WorkspaceID: epic.WorkspaceID, ActorID: actorID, TeamID: derefString(epic.TeamID),
+				EventType: "epic.assigned", EntityType: "epic", EntityID: epic.ID, Title: "You were assigned to epic " + epic.Name,
+			}, *epic.OwnerID)
+		}
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: epic.WorkspaceID,
 			ActorID:     actorID,

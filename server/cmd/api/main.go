@@ -683,6 +683,9 @@ func main() {
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	pmAutomationService.SetHealthObserver(automationHealthService)
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
+	slackRepo := repository.NewSlackRepository(db)
+	channelJobs := repository.NewSupportInboundJobRepository(db)
+	notificationService.SetSlackNotifications(slackRepo, channelJobs)
 	notificationService.SetAccessChecker(service.NewNotificationAccessPolicy(authzService, notificationRepo))
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	pushDeviceService := service.NewPushDeviceService(pushDeviceRepo)
@@ -1705,14 +1708,15 @@ func main() {
 	supportSLAService.SetWebhookService(webhookService)
 	channelAdapters := channels.NewRegistry(telegram.NewAdapter(cfg.TelegramAPIBaseURL))
 	supportChannelService := service.NewSupportChannelService(
-		repository.NewSupportChannelAccountRepository(db), repository.NewSupportInboundJobRepository(db), channelAdapters,
+		repository.NewSupportChannelAccountRepository(db), channelJobs, channelAdapters,
 		service.SupportChannelConfig{
 			EncryptionKey:    resolveChannelEncryptionKey(cfg),
 			PublicAPIBaseURL: channelPublicAPIBaseURL(cfg),
 			// Telegram requires HTTPS webhooks; only a local Bot API fake runs without.
 			RequireHTTPS: cfg.TelegramAPIBaseURL == "",
 		}).SetInboxService(supportInboxService)
-	slackService := service.NewSlackService(supportChannelService, repository.NewSlackRepository(db), service.SlackConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret, SigningSecret: cfg.SlackSigningSecret, RedirectURL: strings.TrimRight(cfg.AppBaseURL, "/") + "/oauth/slack/callback"})
+	slackService := service.NewSlackService(supportChannelService, slackRepo, service.SlackConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret, SigningSecret: cfg.SlackSigningSecret, RedirectURL: strings.TrimRight(cfg.AppBaseURL, "/") + "/oauth/slack/callback"})
+	slackService.SetNotificationService(notificationService)
 	slackService.SetPM(pmTaskService, pmCommentService, authzService, pmTriageService, pmTaskInsightsService, cfg.AppBaseURL)
 	channelOutbox := repository.NewSupportChannelOutboxRepository(db)
 	supportChannelService.SetOutboxRepository(channelOutbox)
@@ -2462,6 +2466,7 @@ func main() {
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelEvent)
 	go supportChannelService.StartWorker(inboundCtx, service.SupportInboundKindChannelAttachment)
 	go supportChannelService.StartWorker(inboundCtx, "slack_shortcut")
+	go supportChannelService.StartWorker(inboundCtx, service.SlackNotificationJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackPMDeliveryJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackInboxFeedJob)
 	go supportChannelService.StartWorker(inboundCtx, service.SlackFeedActionJob)

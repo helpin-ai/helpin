@@ -37,3 +37,19 @@ func SlackSource(ctx context.Context) (string, bool) {
 	url, ok := ctx.Value(slackSourceKey{}).(string)
 	return url, ok
 }
+
+// SlackNotificationPreferences belong to the linked member of one installation.
+type SlackNotificationPreferences struct {
+	AccountID   string `json:"-"`
+	SlackUser   string `json:"-"`
+	TeamID      string `json:"team_id,omitempty"`
+	BotUserID   string `json:"bot_user_id,omitempty"`
+	Linked      bool   `json:"linked"`
+	Assignments bool   `json:"assignments"`
+	Mentions    bool   `json:"mentions"`
+}
+
+type UpdateSlackNotificationPreferences struct {
+	Assignments *bool `json:"assignments"`
+	Mentions    *bool `json:"mentions"`
+}

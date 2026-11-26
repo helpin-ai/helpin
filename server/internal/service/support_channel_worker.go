@@ -62,6 +62,8 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 		workErr = s.slack.processFeedAction(workCtx, job)
 	case SlackInboxFeedJob:
 		workErr = s.slack.deliverInboxFeed(workCtx, job)
+	case SlackNotificationJob:
+		workErr = s.slack.deliverNotification(workCtx, job)
 	case SlackPMDeliveryJob:
 		workErr = s.slack.deliverDiscussion(workCtx, job)
 	case SlackAgentReplyJob:
@@ -81,7 +83,7 @@ func (s *SupportChannelService) processNextJob(ctx context.Context, kind string)
 		return true, ctx.Err()
 	}
 	var slackError *slack.APIError
-	if (kind == SlackFeedActionJob || kind == SlackInboxFeedJob || kind == SlackEventJob || kind == "slack_shortcut" || kind == SlackPMDeliveryJob) && errors.As(workErr, &slackError) && slackError.Code == "ratelimited" {
+	if (kind == SlackNotificationJob || kind == SlackFeedActionJob || kind == SlackInboxFeedJob || kind == SlackEventJob || kind == "slack_shortcut" || kind == SlackPMDeliveryJob) && errors.As(workErr, &slackError) && slackError.Code == "ratelimited" {
 		return true, s.jobs.WaitForResult(ctx, job, s.now().Add(max(time.Second, slackError.RetryAfter)))
 	}
 	if errors.Is(workErr, errSlackAgentPending) {

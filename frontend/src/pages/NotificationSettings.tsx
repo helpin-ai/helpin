@@ -1,5 +1,6 @@
 import { useNotificationPreferences } from '@/hooks/queries/useNotifications';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
+import { SlackNotificationSettings } from '@/components/settings/SlackNotificationSettings';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,6 +46,7 @@ export default function NotificationSettings() {
               {access.isLoading ? <Skeleton className="h-40" /> : access.isError ? (
                 <div role="alert" className="text-sm text-quiet-text-secondary">Couldn’t load your module access. <Button variant="ghost" onClick={() => access.refetch()}>Try again</Button></div>
               ) : <>
+                <SlackNotificationSettings workspaceId={workspace.id} slug={workspace.slug} canManage={permissions.has('settings.manage')} />
                 {permissions.canAccessModule('support') && <SupportNotificationCategoriesCard workspaceId={workspace.id} />}
                 {permissions.canAccessModule('pm') && <WorkspaceNotificationCategoriesCard workspaceId={workspace.id} />}
                 {permissions.canAccessModule('crm') && <CRMNotificationCategoriesCard workspaceId={workspace.id} />}

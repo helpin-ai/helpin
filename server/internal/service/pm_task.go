@@ -573,6 +573,13 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 	if s.notificationService != nil {
+		s.notificationService.notifySlackAssignees(ctx, model.NotificationEventInput{
+			WorkspaceID: newTask.WorkspaceID, ActorID: actorID, TeamID: derefString(newTask.TeamID),
+			EventType: "task.assigned", EntityType: "task", EntityID: newTask.ID, Title: "You were assigned to " + newTask.Name,
+		}, ownerIDs...)
+		for _, item := range checklistItems {
+			s.notificationService.notifyChecklistAssignee(ctx, newTask, item, actorID)
+		}
 		var mentionedUserIDs []string
 		if newTask.Description != nil {
 			mentions := extractMentions(*newTask.Description)
@@ -1347,7 +1354,7 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 		if ownerMember == nil || ownerMember.UserID == nil || *ownerMember.UserID == "" {
 			continue
 		}
-		if err := s.taskRepo.AddOwner(ctx, tasks[i].ID, *ownerMember.UserID); err != nil {
+		if _, err := s.taskRepo.AddOwner(ctx, tasks[i].ID, *ownerMember.UserID); err != nil {
 			return nil, err
 		}
 	}
@@ -2067,7 +2074,8 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 	if userID == "" {
 		return errCommandInput("user_id is required")
 	}
-	if err := s.taskRepo.AddOwner(ctx, taskID, userID); err != nil {
+	added, err := s.taskRepo.AddOwner(ctx, taskID, userID)
+	if err != nil {
 		return err
 	}
 	if err := s.taskRepo.AddFollower(ctx, taskID, userID); err != nil {
@@ -2084,7 +2092,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 			s.logger.ErrorContext(ctx, "failed to auto-follow task for assigned owner", "error", err, "task_id", taskID, "user_id", userID)
 		}
 	}
-	if s.notificationService != nil {
+	if added && s.notificationService != nil {
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID:        current.WorkspaceID,
 			ActorID:            actorID,
