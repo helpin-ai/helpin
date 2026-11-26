@@ -567,7 +567,7 @@ function AddHelpCenter({ onAdd }: { onAdd: (url: string) => void }) {
   };
   return (
     <form onSubmit={submit} className="mt-2 flex gap-2">
-      <Input value={value} onChange={(event) => setValue(event.target.value)} placeholder="help.acme.com" aria-label="Help center address" inputMode="url" className="h-9" autoFocus />
+      <Input value={value} onChange={(event) => setValue(event.target.value)} placeholder="help.acme.com" aria-label="Help center address" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="h-9" autoFocus />
       <Button type="submit" variant="outline" className="h-9">Use it</Button>
     </form>
   );

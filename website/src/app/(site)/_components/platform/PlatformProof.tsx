@@ -7,12 +7,12 @@ import './platform-product-previews.css';
 import { ArrowRight, BookOpen, Bot, Building2, FolderKanban, MessagesSquare, Video } from 'lucide-react';
 
 const PRODUCTS = [
-  { name: 'Support', preview: 'inbox', Icon: MessagesSquare, title: 'Answer with the earlier conversation in view.', body: 'Handle chat and email together. Give teammates and agents the history to investigate the question and hand it over without starting again.', href: '/products/customer-support' },
-  { name: 'Meetings', preview: 'meetings', Icon: Video, title: 'Keep the commitments after the call.', body: 'Capture the discussion, review decisions, and turn agreed next steps into linked work.', href: '/products/meetings' },
-  { name: 'Projects', preview: 'projects', Icon: FolderKanban, title: 'Manage the plan and the everyday work.', body: 'Organize roadmaps, sprints, dependencies, and objectives. Keep relevant customer needs attached while your team manages product development, maintenance, and internal work.', href: '/products/projects' },
-  { name: 'CRM', preview: 'crm', Icon: Building2, title: 'See the relationship behind the deal.', body: 'Manage contacts, companies, and pipelines alongside the conversations and work that explain the next move.', href: '/products/crm' },
-  { name: 'Knowledge', preview: 'knowledge', Icon: BookOpen, title: 'Give people and agents a useful place to look.', body: 'Publish customer guides, maintain internal docs, and select the knowledge your agents can use.', href: '/products/knowledge' },
-  { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Put the history to work.', body: 'Use specialists to answer questions, plan tasks, and follow up after the release. Choose their tools and the actions that need review.', href: '/products/ai-agents' },
+  { name: 'Support', preview: 'inbox', Icon: MessagesSquare, title: 'Answer with the earlier conversation in view', body: 'Handle chat, email, Slack, and Telegram together. Give teammates and agents the history to investigate the question and hand it over without starting again.', href: '/products/customer-support' },
+  { name: 'Meetings', preview: 'meetings', Icon: Video, title: 'Keep the commitments after the call', body: 'Capture the discussion, review decisions, and turn agreed next steps into linked work.', href: '/products/meetings' },
+  { name: 'Projects', preview: 'projects', Icon: FolderKanban, title: 'Manage the plan and the everyday work', body: 'Organize roadmaps, sprints, dependencies, and objectives. Keep relevant customer needs attached while your team manages product development, maintenance, and internal work.', href: '/products/projects' },
+  { name: 'CRM', preview: 'crm', Icon: Building2, title: 'See the relationship behind the deal', body: 'Manage contacts, companies, and pipelines alongside the conversations and work that explain the next move.', href: '/products/crm' },
+  { name: 'Knowledge', preview: 'knowledge', Icon: BookOpen, title: 'Give people and agents a useful place to look', body: 'Publish customer guides, maintain internal docs, and select the knowledge your agents can use.', href: '/products/knowledge' },
+  { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Put the history to work', body: 'Use specialists to answer questions, plan tasks, and follow up after the release. Choose their tools and the actions that need review.', href: '/products/ai-agents' },
 ] as const;
 
 export function CommunityShowcase({ initial = 'Support' }: { initial?: (typeof PRODUCTS)[number]['name'] } = {}) {

@@ -29,32 +29,32 @@ export const metadata = createPageMetadata(PAGE_SEO.crm);
 const ESSENTIALS = [
   {
     Icon: Building2,
-    title: "Organize your relationships.",
+    title: "Organize your relationships",
     body: "Contacts with owners, lifecycle stages, and labels, linked to their companies.",
   },
   {
     Icon: Mail,
-    title: "Keep email and meetings close.",
+    title: "Keep email and meetings close",
     body: "Sync Gmail and Google Calendar, and send email from the record.",
   },
   {
     Icon: SlidersHorizontal,
-    title: "Make it fit your process.",
+    title: "Make it fit your process",
     body: "Configure pipelines, stages, and win probability.",
   },
   {
     Icon: ListFilter,
-    title: "Find the right accounts.",
+    title: "Find the right accounts",
     body: "Search contacts, companies, and deals. Filter contacts and deals by stage, owner, and more.",
   },
   {
     Icon: FileInput,
-    title: "Bring your existing data.",
+    title: "Bring your existing data",
     body: "Import CSV files and map columns before processing.",
   },
   {
     Icon: Sparkles,
-    title: "Fill in missing details.",
+    title: "Fill in missing details",
     body: "Ask Agent to research a contact or company. Every enriched field keeps its source link.",
   },
 ];
@@ -98,7 +98,7 @@ export default function CRMPage() {
               <span className="eyebrow">CRM for SaaS teams</span>
               <h1 id="crm-title">
                 Know who needs a follow-up.{" "}
-                <span>Your agent prepares it.</span>
+                <span>Your agent prepares it</span>
               </h1>
               <p className="lede">
                 The Beacon agent helps your team spot buying interest, understand a stalled deal, and prepare the next message. Keep contacts, deals, email, and customer conversations together.
@@ -129,26 +129,26 @@ export default function CRMPage() {
             <div className="crm-centered">
               <SectionHead
                 eyebrow="One account. A shared history."
-                title="Get the account update before the call."
+                title="Get the account update before the call"
                 lede="Ask Agent what changed since your last conversation. See the open issue, latest email, and meeting decision before choosing what to say."
               />
             </div>
             <CRMWorkspace mode="account" /><p className="crm-demo-caption">Email, meeting notes, and the linked task, summarized on one record.</p>
             <div className="crm-record-benefits">
               <article>
-                <h3>Ask for a quick briefing.</h3>
+                <h3>Ask for a quick briefing</h3>
                 <p>
                   An AI summary on every record, regenerated on demand.
                 </p>
               </article>
               <article>
-                <h3>Make the handoff easier.</h3>
+                <h3>Make the handoff easier</h3>
                 <p>
                   Tasks, emails, meetings, calls, deals, support, and notes in one timeline.
                 </p>
               </article>
               <article>
-                <h3>See the work the customer is waiting for.</h3>
+                <h3>See the work the customer is waiting for</h3>
                 <p>
                   Linked project tasks show what engineering owes the customer.
                 </p>
@@ -162,7 +162,7 @@ export default function CRMPage() {
             <div className="crm-centered">
               <SectionHead
                 eyebrow="Pipelines"
-                title="Keep the pipeline useful, not just up to date."
+                title="Keep the pipeline useful, not just up to date"
                 lede="See the conversation behind a deal stage. Use agent assistance and configured deal rules to keep the record moving with the relationship."
               />
             </div>
@@ -180,7 +180,7 @@ export default function CRMPage() {
             <div>
               <SectionHead
                 eyebrow="Signals"
-                title="Spot buying interest while the conversation is fresh."
+                title="Spot buying interest while the conversation is fresh"
                 lede="A prospect asks about plans in chat. A customer mentions adding a team. Helpin finds these signals in conversations and meetings, with a source you can check before the Beacon agent helps you follow up."
               />
             </div>
@@ -194,7 +194,7 @@ export default function CRMPage() {
             <div className="crm-centered cp-intro">
               <SectionHead
                 eyebrow="Playbooks"
-                title="Know who to follow up with, and what to say."
+                title="Know who to follow up with, and what to say"
                 lede="Set a follow-up plan and owner. With automation enabled, an agent checks progress on a schedule and prepares the next action. Your approval rules decide what it can send or change."
               />
               <Link prefetch={false} className="crm-text-link" href="/products/ai-agents">
@@ -209,7 +209,7 @@ export default function CRMPage() {
           <div className="wrap">
             <SectionHead
               eyebrow="The essentials, connected"
-              title="Your everyday CRM. With agents to help."
+              title="Your everyday CRM. With agents to help"
             />
             <div className="crm-feature-grid">
               {ESSENTIALS.map(({ Icon, title, body }) => (
@@ -242,7 +242,7 @@ export default function CRMPage() {
             <ConnectedWorkspace />
             <div className="final">
               <span className="eyebrow">Start with the history.</span>
-              <h2 id="crm-final-title">Give your sales team<br />a useful next step.</h2>
+              <h2 id="crm-final-title">Give your sales team<br />a useful next step</h2>
               <p className="lede">
                 Bring your contacts and connect Gmail and Google Calendar. The Beacon agent helps your team catch up, prioritize, and follow through.
               </p>

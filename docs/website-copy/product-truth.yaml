@@ -74,18 +74,22 @@ claims:
     statement: >-
       Settings → Import: Intercom with an access token (Help Center, and past conversations with
       their replies, notes, and tags; data region; created-on-or-after date; inbox; article
-      status as drafts or matching Intercom); a public Intercom help center by address with no
-      token; HelpScout Docs (articles, categories, images, redirect map); Nextra repo zip (MDX,
+      status as drafts or matching Intercom); a public help center by its address with no token,
+      from Intercom, Zendesk, Crisp, Freshdesk, Help Scout, HubSpot, or a docs site such as
+      Mintlify or GitBook (a Zendesk help center that requires sign-in takes an admin email and
+      API token); HelpScout Docs (articles, categories, images, redirect map); Nextra repo zip (MDX,
       navigation, images, redirects); CRM contacts from HubSpot or CSV; Shortcut tasks, epics,
       workflows, and members.
     status: verified
     sources:
       - frontend/src/components/settings/ImportTab.tsx, IntercomImportWizard.tsx, PublicHelpCenterImportWizard.tsx, HelpCenterImportSection.tsx
       - server/internal/model/support_import.go, docs_import.go, crm_import.go, pm_import.go (origin/main dbc3be369)
-    checked_at: 2026-11-20
+      - Public help centers: server/internal/publichelp (crisp, freshdesk, helpscoutdocs, hubspot, llmstxt, zendesk readers); PublicHelpCenterImportWizard.tsx (origin/main 3643c20c7)
+    checked_at: 2026-11-26
     qualifier: >-
-      Linear and Jira importers show "Coming soon" in the app; don't claim them. No Zendesk
-      importer. Don't claim that Intercom contacts become CRM records.
+      Linear and Jira importers show "Coming soon" in the app; don't claim them. Past
+      conversations import from Intercom only; other tools bring the help center, not tickets.
+      Don't claim that Intercom contacts become CRM records.
     conflict: null
 
   - id: support-sla-policies
@@ -150,15 +154,24 @@ claims:
   - id: support-channels-telegram
     question: Which channels arrive in the inbox?
     statement: >-
-      Widget chat, email, portal, and Telegram conversations share the inbox. Telegram connects
-      a bot by its @BotFather token; new conversations go to a chosen inbox, routing rules can
-      still move them, and each bot has its own AI replies switch. Telegram is the only messaging
-      provider.
+      Widget chat, email, portal, Slack, and Telegram conversations share the inbox. Telegram
+      connects a bot by its @BotFather token; new conversations go to a chosen inbox, routing
+      rules can still move them, and each bot has its own AI replies switch. Slack connects one
+      workspace; a channel rule set to "Receive customer requests from Slack" opens a conversation
+      in a chosen inbox for every new customer thread, or only on request (@Helpin or "Create
+      support request"). Replies sent from Helpin go back to the Slack thread. A Slack Connect
+      channel can set a default CRM company. Slack and Telegram are the only messaging providers.
+      Separately, a private team channel can follow chosen inboxes ("Handle Helpin inboxes in
+      Slack"). A self-hosted instance needs its own Slack app credentials.
     status: verified
     sources:
       - docs/support-channels.md; frontend/src/components/settings/channels/SupportChannels.tsx (origin/main dbc3be369)
-    checked_at: 2026-11-20
-    qualifier: Don't imply WhatsApp, Slack, or other messaging apps.
+      - Slack: frontend/src/components/settings/channels/SlackChannels.tsx; server/internal/model/support_channels.go; server/internal/service/slack.go; docs/prds/slack-pm-and-support.md (origin/main 3643c20c7). Read from code, not tested in a live Slack workspace.
+      - Slack on the homepage and support page: owner decision 2026-11-26
+    checked_at: 2026-11-26
+    qualifier: >-
+      Don't imply WhatsApp or other messaging apps. Slack has no automatic AI replies setting,
+      so don't say the AI agent answers customers in Slack.
     conflict: null
 
   - id: support-reports-csat

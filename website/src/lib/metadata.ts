@@ -27,7 +27,7 @@ export const PAGE_SEO = {
   },
   customerSupport: {
     title: "AI customer support and shared inbox | Helpin",
-    description: "The Echo agent answers, follows up, and hands over with its findings. Chat, email, Telegram, and portal requests in one inbox, with SLAs and reports.",
+    description: "The Echo agent answers, follows up, and hands over with its findings. Chat, email, Slack, Telegram, and portal requests in one inbox, with SLAs and reports.",
     canonicalPath: '/products/customer-support',
     imagePath: '/og/helpin-customer-support-green-v6.png',
     imageAlt: 'Helpin customer support',

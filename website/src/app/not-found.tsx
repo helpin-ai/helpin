@@ -16,7 +16,7 @@ export default function NotFound() {
       <section className="not-found">
         <div className="wrap">
           <span className="eyebrow">404</span>
-          <h1>We couldn’t find that page.</h1>
+          <h1>We couldn’t find that page</h1>
           <p className="lede">The link may be old, or the page may have moved.</p>
           <div className="cta-row">
             <Link prefetch={false} className="btn btn-primary" href="/">Go to the homepage</Link>

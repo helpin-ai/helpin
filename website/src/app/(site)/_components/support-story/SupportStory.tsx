@@ -15,12 +15,13 @@ import './support-story.css';
 //  4 research result and answer · 5 bug report, auto classification · 6 AI handoff and assignment
 //  7 teammate works another conversation · 8 SLA reminder · 9 back on the conversation
 // 10 Ask Agent explains the cause · 11 teammate's reply drafted · 12 reply sent, SLA met
-const BEATS = [0, 1400, 4600, 6200, 9200, 13400, 16200, 21000, 23000, 25400, 27400, 32600, 35400];
-const DURATION = 43000;
+// The first answer arrives quickly: a visitor's first look should not be an empty thread.
+const BEATS = [0, 700, 3000, 4600, 7600, 11800, 14600, 19400, 21400, 23800, 25800, 31000, 33800];
+const DURATION = 41400;
 const W = 1600;
 const H = 1000;
 const MOBILE_W = 420;
-const MOBILE_H = 820;
+const MOBILE_H = 700;
 
 const MAYA = '/new/avatars/maya.webp';
 const SAM = '/new/home/teammate-sam.svg';

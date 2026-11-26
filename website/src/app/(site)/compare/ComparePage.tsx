@@ -194,7 +194,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
             <div className="platform-hero-grid">
               <div className="platform-hero-copy">
                 <span className="eyebrow">Helpin vs {name} · Open-source alternative</span>
-                <h1>All your customer context in one place.<br /><span>{support ? 'No per-seat or per-resolution fees.' : 'No per-seat fees.'}</span></h1>
+                <h1>All your customer context in one place<br /><span>{support ? 'No per-seat or per-resolution fees' : 'No per-seat fees'}</span></h1>
                 <p className="lede">{competitor.hero.lede}</p>
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Talk to us about switching" />
                 <CtaNote trial support />
@@ -318,7 +318,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               </section>
 
               <section id="strengths" className="cmp-block">
-                <h2>Check the features your team depends on.</h2>
+                <h2>Check the features your team depends on</h2>
                 <p>These specific requirements are worth checking as you plan your move from {name}.</p>
                 <div className="cmp-strength-list">
                   {competitor.strengths.map(strength => {
@@ -357,7 +357,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         <section id="more-comparisons" className="platform-soft">
           <div className="wrap">
             <div className="platform-section-intro">
-              <div className="sec-head"><span className="eyebrow">More comparisons</span><h2>See how Helpin compares with other tools.</h2></div>
+              <div className="sec-head"><span className="eyebrow">More comparisons</span><h2>See how Helpin compares with other tools</h2></div>
               <Link prefetch={false} className="platform-text-link" href="/compare">All comparisons<ArrowRight size={15} aria-hidden="true" /></Link>
             </div>
             <div className="cmp-card-grid">{others.map(item => <CompareCard key={item.slug} competitor={item} />)}</div>

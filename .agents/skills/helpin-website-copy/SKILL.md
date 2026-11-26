@@ -67,7 +67,7 @@ Customer history is a mechanism to prove, not an exclusive moat to assert. Never
 
 ## 4. Write clear, calm, specific copy
 
-Follow [the style sheet](references/style-sheet.md) for voice, mechanics, naming, vocabulary, and CTA labels: US English, the Oxford comma, curly quotes, sentence-case headings that end with a period, and no exclamation marks. Use plain English, concrete verbs, short paragraphs, and natural sentences. Prefer answer, investigate, assign, plan, review, send, publish, and release over abstract transformation language.
+Follow [the style sheet](references/style-sheet.md) for voice, mechanics, naming, vocabulary, and CTA labels: US English, the Oxford comma, curly quotes, sentence-case headings with no full stop at the end (a two-line heading drops it on both lines; body text keeps normal punctuation), and no exclamation marks. Use plain English, concrete verbs, short paragraphs, and natural sentences. Prefer answer, investigate, assign, plan, review, send, publish, and release over abstract transformation language.
 
 Headlines should make sense on first reading. Give each one a clear job and one main idea. Read the headline and description together: the description must add information, not restate the headline.
 

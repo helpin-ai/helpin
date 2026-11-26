@@ -31,7 +31,7 @@ const epics = [
 export function RoadmapPlanning({ phase }: { phase: number }) {
   const focus = epics[Math.min(phase, 2)];
   return <div className="pp-roadmap">
-    <div className="pp-objective"><span><Target size={19} /></span><div><small>OBJECTIVE</small><strong>Increase ARR by $500k this quarter.</strong></div><span className="pp-epic-count">3 epics</span></div>
+    <div className="pp-objective"><span><Target size={19} /></span><div><small>OBJECTIVE</small><strong>Increase ARR by $500k this quarter</strong></div><span className="pp-epic-count">3 epics</span></div>
     <div className="pp-months"><span>SEP</span><span>OCT</span><span>NOV</span></div>
     <div className="pp-roadmap-rows">{epics.map((epic, index) => <div className="pp-epic" data-focused={phase === index} data-drawn={phase >= index} key={epic.name} style={{ '--pp-start': `${epic.start}%`, '--pp-width': `${epic.width}%` } as CSSProperties}>
       <div className="pp-epic-heading"><strong>{epic.name}</strong><span className="pp-status" data-tone={epic.tone}><i />{epic.health}</span></div>

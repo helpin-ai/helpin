@@ -1,21 +1,24 @@
-import { ArrowRight, AtSign, DoorOpen, Inbox, MessageCircle, Send, type LucideIcon } from 'lucide-react';
+import { ArrowRight, AtSign, DoorOpen, Hash, Inbox, MessageCircle, Send, type LucideIcon } from 'lucide-react';
 import './support-channels.css';
 
 const CHANNELS: { icon: LucideIcon; title: string; copy: string; href?: string }[] = [
   { icon: MessageCircle, title: 'Chat widget', copy: 'Add chat to your site or app. Signed-in customers are identified, so nobody has to explain who they are.' },
   { icon: AtSign, title: 'Email', copy: 'Keep your support address. Forward it to Helpin and reply from your verified address.' },
+  { icon: Hash, title: 'Slack', copy: 'Connect the channels customers write in, including Slack Connect. Each new thread becomes a conversation, and replies go back to it.' },
   { icon: Send, title: 'Telegram', copy: 'Connect a Telegram bot. New conversations go to the team inbox you choose, and you decide whether AI replies there.' },
   { icon: DoorOpen, title: 'Customer portal', copy: 'Customers sign in to open requests, follow every reply, and search their history.', href: '#support-portal' },
 ];
 
-// Four channels converge on the shared inbox. Paths are drawn in a 1000×140 box that stretches with
+// Five channels converge on the shared inbox. Paths are drawn in a 1000×140 box that stretches with
 // the row; non-scaling strokes keep the dots even at every width.
-const MOBILE_PATHS = ['M250 0 C250 70, 480 60, 494 140', 'M750 0 C750 70, 520 60, 506 140'];
+// On narrow screens the fifth channel sits alone in the middle of the last row.
+const MOBILE_PATHS = ['M500 0 L500 140'];
 const PATHS = [
-  'M125 0 C125 70, 470 60, 490 140',
-  'M375 0 C375 70, 492 70, 496 140',
-  'M625 0 C625 70, 508 70, 504 140',
-  'M875 0 C875 70, 530 60, 510 140',
+  'M100 0 C100 70, 468 60, 488 140',
+  'M300 0 C300 70, 488 70, 494 140',
+  'M500 0 L500 140',
+  'M700 0 C700 70, 512 70, 506 140',
+  'M900 0 C900 70, 532 60, 512 140',
 ];
 
 function Lines({ paths, className }: { paths: string[]; className: string }) {

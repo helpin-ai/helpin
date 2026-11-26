@@ -1,0 +1,69 @@
+/* Support desk: six cards that stack as the page scrolls. */
+.hp3 #support-desk { background: var(--bg2); }
+.hp3 .dstack { display: grid; gap: 28px; margin: 0; padding: 0; list-style: none; }
+.hp3 .dstack-card { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); height: 360px; overflow: hidden; border: 1px solid var(--border); border-radius: 20px; background: #fff; box-shadow: 0 -6px 18px -14px rgba(19, 21, 20, .16), 0 1px 2px rgba(19, 21, 20, .04); }
+/* Every card has the same height, so each one fully covers the card it lands on.
+   Short windows keep a plain list: a stuck card must fit on screen with its offset. */
+@media (min-height: 640px) {
+  .hp3 .dstack-card { position: sticky; top: calc(84px + var(--i) * 14px); }
+}
+.hp3 .dstack-copy { align-self: center; max-width: 520px; padding: 40px; }
+.hp3 .dstack-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.hp3 .dstack-copy .developer-feature-icon { margin-bottom: 0; }
+.hp3 .dstack-count { color: var(--t3); font-family: var(--mono); font-size: 12px; letter-spacing: .04em; }
+.hp3 .dstack-copy h3 { margin-bottom: 12px; font-size: clamp(1.5rem, 2.5vw, 2rem); line-height: 1.15; letter-spacing: -.02em; text-wrap: balance; }
+.hp3 .dstack-copy p { color: var(--t2); font-size: 15.5px; line-height: 1.65; }
+.hp3 .dstack-copy .inline-link { display: inline-flex; margin-top: 14px; font-size: 14px; }
+
+/* The scene bleeds off the bottom of the card and fades out. */
+.hp3 .dstack-art { display: grid; align-content: center; min-width: 0; padding: 0 36px 0 12px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 calc(100% - 56px), transparent); mask-image: linear-gradient(#000 calc(100% - 56px), transparent); }
+.hp3 .dstack-art > div { display: grid; gap: 12px; align-content: start; font-size: 13px; line-height: 1.4; }
+
+.hp3 .ds-panel { border: 1px solid var(--border); border-radius: 14px; background: #fff; box-shadow: 0 1px 2px rgba(19, 21, 20, .05), 0 12px 28px -20px rgba(19, 21, 20, .25); }
+.hp3 .ds-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--ink); font-size: 13px; font-weight: 600; }
+.hp3 .ds-head > span:last-child { margin-left: auto; color: var(--t3); font-size: 12px; font-weight: 400; }
+.hp3 .ds-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.hp3 .ds-row + .ds-row { border-top: 1px solid var(--border); }
+.hp3 .ds-avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.hp3 .ds-initials { display: grid; place-items: center; background: #e8eeea; color: var(--t2); font-size: 10.5px; font-weight: 600; }
+.hp3 .ds-tool { display: grid; place-items: center; border-radius: 8px; background: #f1f4f2; color: var(--t2); }
+.hp3 .ds-row-main { display: grid; min-width: 0; margin-right: auto; }
+.hp3 .ds-row-main b { overflow: hidden; color: var(--ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.hp3 .ds-row-main small i { color: var(--em); font-style: normal; font-weight: 500; }
+.hp3 .ds-row-main small { overflow: hidden; color: var(--t3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.hp3 .ds-chip { display: inline-flex; flex: none; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg2); color: var(--t2); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.hp3 .ds-chip[data-tone="soon"] { border-color: var(--amber-b); background: var(--amber-bg); color: var(--amber); }
+.hp3 .ds-chip[data-tone="on"] { border-color: #cce3d5; background: var(--em-t); color: var(--em); }
+.hp3 .ds-tick { display: grid; flex: none; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--em-t); color: var(--em); }
+
+
+
+.hp3 .ds-chat { display: grid; gap: 10px; }
+.hp3 .ds-bubble { display: grid; gap: 4px; justify-items: start; max-width: 88%; padding: 10px 13px; border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; background: #fff; color: var(--ink); }
+.hp3 .ds-bubble b { color: var(--em); font-size: 12px; font-weight: 600; }
+.hp3 .ds-bubble b small { margin-left: 4px; color: var(--t3); font-weight: 400; }
+.hp3 .ds-bubble-customer { justify-self: end; border-color: transparent; border-radius: 14px 14px 4px 14px; background: #164f37; color: #fff; }
+
+@media (max-width: 1000px) {
+  .hp3 .dstack-card { height: 380px; }
+  .hp3 .dstack-copy { padding: 28px; }
+  .hp3 .dstack-art { padding: 0 28px 0 4px; }
+}
+@media (max-width: 720px) {
+  .hp3 .dstack { gap: 20px; }
+  .hp3 .dstack-card { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: 550px; }
+  .hp3 .dstack-copy { padding: 24px 22px 0; }
+  .hp3 .dstack-top { margin-bottom: 14px; }
+  .hp3 .dstack-copy h3 { font-size: 1.375rem; }
+  .hp3 .dstack-copy p { font-size: 14.5px; }
+  .hp3 .dstack-art { align-content: start; padding: 20px 22px 0; }
+}
+/* Phones stack only when a 550px card fits under its offset; shorter screens get a plain list
+   of cards at their natural height, with the whole scene visible. */
+@media (max-width: 720px) and (min-height: 660px) {
+  .hp3 .dstack-card { top: calc(72px + var(--i) * 10px); }
+}
+@media (max-width: 720px) and (max-height: 659px) {
+  .hp3 .dstack-card { position: static; height: auto; }
+  .hp3 .dstack-art { padding-bottom: 22px; -webkit-mask-image: none; mask-image: none; }
+}

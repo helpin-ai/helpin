@@ -5,7 +5,7 @@ import { faqPage, JsonLd } from '@/lib/structured-data';
 export const DEMO_URL = 'https://cal.com/helpin-ai/30min';
 export const SIGNUP_URL = 'https://app.helpin.ai/register';
 // Opens the support preview in the app: Helpin reads the site, then its agent answers.
-const START_URL = 'https://app.helpin.ai/start';
+export const START_URL = 'https://app.helpin.ai/start';
 export const GITHUB_URL = 'https://github.com/helpin-ai/helpin';
 export const DISCORD_URL = 'https://discord.gg/23WcB2chf';
 
@@ -54,10 +54,10 @@ export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on G
  * A website address box that opens the support preview in the app. A plain
  * GET form, so it works on the static site without JavaScript.
  */
-export function StartForm() {
+export function StartForm({ autoFocus = false }: { autoFocus?: boolean }) {
   return (
     <form className="start-form" action={START_URL} method="get">
-      <input aria-label="Your company website" name="website" type="text" inputMode="url" autoComplete="url" placeholder="Paste your website, like acme.com" maxLength={300} required />
+      <input autoFocus={autoFocus} aria-label="Your company website" name="website" type="text" inputMode="url" autoComplete="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="go" placeholder="Paste your website, like acme.com" maxLength={300} required />
       <button type="submit" className="btn btn-primary">See your agent</button>
     </form>
   );

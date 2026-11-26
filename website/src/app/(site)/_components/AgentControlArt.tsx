@@ -65,12 +65,13 @@ function Approvals({ id }: { id: string }) {
 }
 function Triggers({ phase }: { phase: number }) {
   return <>
-    <path d="M210 86 V234" className="ca-wire" /><path d="M210 86 V234" className="ca-route" pathLength={1} />
     {[
       { y: 30, icon: Clock3, title: 'Every Monday', detail: '09:00 · Scheduled trigger' },
       { y: 130, title: 'Public help freshness sweep', detail: 'Reading guides and support gaps' },
       { y: 230, icon: ListChecks, title: '3 guides need an update', detail: 'Freshness report saved for review' },
     ].map(({y,icon,title,detail},i) => phase >= i * 2 && <g key={title} className="ca-step-node">
+      {/* Each step brings the line that leads to it, so the line never runs ahead of the steps. */}
+      {i > 0 && <><path d={`M210 ${y-44} V${y}`} className="ca-wire" /><path d={`M210 ${y-44} V${y}`} className="ca-route" pathLength={1} /></>}
       <rect x={58} y={y} width={304} height={60} rx={12} className="ca-panel" />
       <rect x={58} y={y} width={304} height={60} rx={12} className="ca-node-active" style={delay(i*1.05)} />
       {icon ? <><rect x={72} y={y+15} width={30} height={30} rx={8} fill="#f0f5f2" /><g className="ca-green"><Icon icon={icon} x={78} y={y+21} /></g></> : <HelpinIcon x={72} y={y+15} />}
