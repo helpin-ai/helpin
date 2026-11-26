@@ -37,19 +37,19 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-function Settings() {
+function Settings({ module }: { module: string }) {
   const controls = useSlackNotificationSettings('ws')
-  const support = MODULE_NOTIFICATION_SECTIONS.find(section => section.module === 'support')!
+  const section = MODULE_NOTIFICATION_SECTIONS.find(section => section.module === module)!
   return <TooltipProvider>
     <SlackConnectionNotice controls={controls} slug="test" canManage={false} />
-    <NotificationCategoriesCard workspaceId="ws" title={support.title} categories={support.rows} controls={controls} target="support.assignments" />
+    <NotificationCategoriesCard workspaceId="ws" title={section.title} categories={section.rows} controls={controls} target={section.rows[0].slackRow} />
   </TooltipProvider>
 }
 
-function render(pref: SlackNotificationPreferences) {
+function render(pref: SlackNotificationPreferences, module = 'support') {
   client.setQueryData(key, pref)
   act(() => root.render(<QueryClientProvider client={client}>
-    <Settings />
+    <Settings module={module} />
   </QueryClientProvider>))
 }
 
@@ -80,4 +80,17 @@ it('offers independent in-app, desktop and email choices before Slack is linked'
   }
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Assignments: email"]')!.click())
   expect(saveChannels).toHaveBeenCalledWith({ channel_changes: { 'support.assignments': { email: true } } }, expect.anything())
+})
+
+it('defaults workflow failures to in-app while routine workflow activity stays quiet', () => {
+  render({ linked: true, assignments: true, mentions: true }, 'automation')
+  for (const [label, checked] of [
+    ['Workflow failures: in-app', true],
+    ['Workflow failures: desktop', false],
+    ['Workflow failures: email', false],
+    ['Automation, Workflow failures: Slack', false],
+    ['Workflow activity: in-app', false],
+  ] as const) {
+    expect(container.querySelector(`[aria-label="${label}"]`)?.getAttribute('aria-checked')).toBe(String(checked))
+  }
 })

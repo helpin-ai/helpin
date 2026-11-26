@@ -234,6 +234,7 @@ func TestSlackModuleRouting(t *testing.T) {
 		{"task.assigned", "task", "projects.assignments", true},
 		{"comment.mention", "document", "docs.mentions", true},
 		{"doc.updated", "document", "docs.updates", false},
+		{"automation_rule.failed", "automation_rule", "automation.failures", false},
 		{"crm.assigned", "crm_company", "crm.assignments", true},
 		{"crm.mention", "crm_contact", "crm.mentions", true},
 		{"crm.signal_ready", "crm_signal", "crm.signals", false},

@@ -108,7 +108,7 @@ export interface UpdateNotificationPreferencesRequest {
 }
 
 const optionalActivity = new Set(['docs.updates', 'crm.updates', 'agents.activity', 'automation.activity'])
-const optionalEmail = new Set(['support.assignments', 'crm.assignments', 'crm.mentions', 'automation.attention', 'integrations', 'agent_attention'])
+const optionalEmail = new Set(['support.assignments', 'crm.assignments', 'crm.mentions', 'automation.attention', 'automation.failures', 'integrations', 'agent_attention'])
 
 export function isChannelEnabled(prefs: NotificationPreferences | undefined, category: string, channel: 'in_app' | 'email'): boolean {
   const choices = prefs?.channel_preferences

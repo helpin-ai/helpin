@@ -937,7 +937,7 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 		if errors.Is(err, errFlowConditionSkipped) {
 			return nil
 		}
-		e.observeFailure(ctx, rule, err)
+		e.recordFailureHealth(ctx, rule, err)
 		if errors.Is(err, ErrAssignedAgentNotFound) {
 			rule.Enabled = false
 			if updateErr := e.ruleRepo.Update(ctx, rule); updateErr != nil {
@@ -949,6 +949,7 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 				)
 				return updateErr
 			}
+			e.notifyRuleFailure(ctx, rule, "Choose an available agent and re-enable the workflow.")
 			e.logger.WarnContext(ctx, "disabled scheduled automation rule with missing agent",
 				"rule_id", rule.ID,
 				"rule_name", rule.Name,
@@ -1732,7 +1733,10 @@ func matchGitHubCheckSuiteConfig(cfg model.TriggerConfigGitHubCheckSuiteComplete
 func (e *AutomationRuleEngine) observeSuccess(ctx context.Context, rule *model.AutomationRule) {
 	// Agent-backed flows emit their own lifecycle updates once the run starts.
 	if rule.ActionType != model.ActionStartAgentRun {
-		e.notifyRuleActivity(ctx, rule, "completed")
+		e.notificationSvc.notifyRecipients(ctx, model.NotificationEventInput{
+			WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID), EntityType: "automation_rule", EntityID: rule.ID,
+			EventType: "automation_rule.activity", Title: "Workflow completed: " + rule.Name,
+		}, derefString(rule.CreatedBy))
 	}
 	if e.healthObserver == nil {
 		return
@@ -1743,9 +1747,13 @@ func (e *AutomationRuleEngine) observeSuccess(ctx context.Context, rule *model.A
 }
 
 func (e *AutomationRuleEngine) observeFailure(ctx context.Context, rule *model.AutomationRule, cause error) {
-	if cause != nil {
-		e.notifyRuleActivity(ctx, rule, "failed")
+	if cause != nil && !errors.Is(cause, context.Canceled) {
+		e.notifyRuleFailure(ctx, rule, workflowFailureReview)
 	}
+	e.recordFailureHealth(ctx, rule, cause)
+}
+
+func (e *AutomationRuleEngine) recordFailureHealth(ctx context.Context, rule *model.AutomationRule, cause error) {
 	if e.healthObserver == nil || cause == nil {
 		return
 	}
@@ -1754,8 +1762,32 @@ func (e *AutomationRuleEngine) observeFailure(ctx context.Context, rule *model.A
 	})
 }
 
-// containsString is defined in pm_import.go — reused here.
+const workflowFailureReview = "Review the workflow and its recent activity."
 
-func (e *AutomationRuleEngine) notifyRuleActivity(ctx context.Context, rule *model.AutomationRule, status string) {
-	e.notificationSvc.notifyRecipients(ctx, model.NotificationEventInput{WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID), EntityType: "automation_rule", EntityID: rule.ID, EventType: "automation_rule.activity", Title: "Workflow " + status + ": " + rule.Name}, derefString(rule.CreatedBy))
+func workflowFailureEvent(rule *model.AutomationRule, executionID, body string) model.NotificationEventInput {
+	return model.NotificationEventInput{
+		WorkspaceID: rule.WorkspaceID, TeamID: derefString(rule.TeamID),
+		EntityType: "automation_rule", EntityID: rule.ID, EventType: model.WorkflowFailureEvent, Category: model.WorkflowFailureCategory,
+		Title: "Workflow failed: " + rule.Name, Body: body, CompleteTitle: true, Priority: "high",
+		Metadata:           model.JSONB{"workflow_execution_id": executionID},
+		ExplicitRecipients: []string{derefString(rule.CreatedBy)}, SkipFollowers: true,
+	}
+}
+
+func (e *AutomationRuleEngine) notifyRuleFailure(ctx context.Context, rule *model.AutomationRule, body string) {
+	if e.notificationSvc == nil || derefString(rule.CreatedBy) == "" {
+		return
+	}
+	if err := e.notificationSvc.Emit(ctx, workflowFailureEvent(rule, "", body)); err != nil {
+		e.logger.ErrorContext(ctx, "notify workflow owner of failure", "workspace_id", rule.WorkspaceID, "rule_id", rule.ID, "error", err)
+	}
+}
+
+// NotifyScheduledRuleFailure is called after the scheduler has finished retrying this tick.
+func (e *AutomationRuleEngine) NotifyScheduledRuleFailure(ctx context.Context, workspaceID, ruleID, executionID string) error {
+	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+	if err != nil || rule == nil || !rule.Enabled || rule.TriggerType != model.TriggerCron || derefString(rule.CreatedBy) == "" || e.notificationSvc == nil {
+		return err
+	}
+	return e.notificationSvc.Emit(ctx, workflowFailureEvent(rule, executionID, workflowFailureReview))
 }

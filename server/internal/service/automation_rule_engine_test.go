@@ -254,13 +254,14 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 	}
 
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, nil, nil, nil)
-	engine.SetAgentService(&AgentService{agentRepo: repository.NewAgentRepository(db)})
+	notificationDB := newNotificationServiceTestDB(t)
+	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, newCRUDNotificationService(notificationDB), nil, nil)
 
 	rule := &model.AutomationRule{
 		ID:            "rule-missing-agent",
 		WorkspaceID:   "ws-1",
 		Name:          "Missing agent cron",
+		CreatedBy:     strPtr("owner"),
 		Enabled:       true,
 		TriggerType:   model.TriggerCron,
 		TriggerConfig: json.RawMessage(`{"preset":"hourly"}`),
@@ -271,6 +272,11 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 		t.Fatalf("create rule: %v", err)
 	}
 
+	if err := engine.ExecuteScheduledRule(context.Background(), "ws-1", rule.ID); err == nil {
+		t.Fatal("expected a retryable launch error while the agent service is unavailable")
+	}
+	assertNotificationServiceCount(t, notificationDB, "notifications", 0)
+	engine.SetAgentService(&AgentService{agentRepo: repository.NewAgentRepository(db)})
 	if err := engine.ExecuteScheduledRule(context.Background(), "ws-1", rule.ID); err != nil {
 		t.Fatalf("ExecuteScheduledRule returned error: %v", err)
 	}
@@ -282,6 +288,11 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 	if updated == nil || updated.Enabled {
 		t.Fatalf("expected missing-agent cron rule to be disabled, got %#v", updated)
 	}
+	var item model.Notification
+	if err := notificationDB.First(&item).Error; err != nil || item.EventType != model.WorkflowFailureEvent || item.RecipientID != "owner" || !strings.Contains(derefString(item.Body), "re-enable") {
+		t.Fatalf("missing-agent intervention: %+v, %v", item, err)
+	}
+
 }
 
 func TestExecuteScheduledRuleStopsOrphanSchedule(t *testing.T) {

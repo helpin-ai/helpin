@@ -928,6 +928,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		w.RegisterActivityWithOptions(scheduledRuleActivities.ExecuteScheduledRule, activity.RegisterOptions{
 			Name: "ScheduledRuleActivities.ExecuteScheduledRule",
 		})
+		w.RegisterActivityWithOptions(scheduledRuleActivities.NotifyFailure, activity.RegisterOptions{
+			Name: "ScheduledRuleActivities.NotifyFailure",
+		})
 	}
 
 	// Register recurring template scheduler workflow and activities.

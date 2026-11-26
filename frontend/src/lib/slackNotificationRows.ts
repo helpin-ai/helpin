@@ -30,7 +30,8 @@ export const MODULE_NOTIFICATION_SECTIONS: ModuleSection[] = [
   ] },
   { module: 'automation', title: 'Automation', rows: [
     moduleRow('automation.attention', 'Workflow requests', 'Workflow runs that need your input or approval. Assigned project tasks use your Projects assignment setting'),
-    moduleRow('automation.activity', 'Workflow activity', 'Run updates and failures for your workflows'),
+    moduleRow('automation.failures', 'Workflow failures', 'When a workflow you own stops and needs your attention'),
+    moduleRow('automation.activity', 'Workflow activity', 'Run starts and other progress updates for your workflows'),
   ] },
   { module: 'integrations', title: 'Integrations', rows: [
     { key: 'integrations', slackRow: 'integrations.connection', label: 'Connection issues', description: 'External tools that need you to reconnect' },

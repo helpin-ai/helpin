@@ -67,7 +67,7 @@ var SlackCategoryDefaults = map[string]string{
 	"support.assignments": "assignments", "support.mentions": "mentions", "support.replies": "off",
 	"crm.assignments": "assignments", "crm.mentions": "mentions", "crm.signals": "off", "crm.updates": "off",
 	"agents.attention": "direct", "agents.activity": "off",
-	"automation.attention": "direct", "automation.activity": "off",
+	"automation.attention": "direct", WorkflowFailureCategory: "off", "automation.activity": "off",
 	"integrations.connection": "direct",
 }
 

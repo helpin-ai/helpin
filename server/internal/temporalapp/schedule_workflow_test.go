@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"testing"
 
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/testsuite"
+
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -17,6 +20,10 @@ func (f scheduledRuleExecutorFunc) ExecuteScheduledRule(
 	ruleID string,
 ) error {
 	return f(ctx, workspaceID, ruleID)
+}
+
+func (f scheduledRuleExecutorFunc) NotifyScheduledRuleFailure(context.Context, string, string, string) error {
+	return nil
 }
 
 func TestScheduledRuleActivityDoesNotRetryPermanentRuleErrors(t *testing.T) {
@@ -76,5 +83,41 @@ func TestScheduledRuleActivityKeepsTransientErrorsRetryable(t *testing.T) {
 	var applicationErr *temporal.ApplicationError
 	if errors.As(err, &applicationErr) {
 		t.Fatal("transient errors must retain the workflow retry policy")
+	}
+}
+
+func TestScheduledWorkflowReportsOnlyFinalFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		lastErr error
+		alerts  int
+	}{
+		{"recovered", nil, 0},
+		{"terminal", temporal.NewNonRetryableApplicationError("action cannot continue", "action_failure", nil), 1},
+		{"disabled", temporal.NewNonRetryableApplicationError("disabled", "scheduled_rule_unavailable", nil), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var suite testsuite.WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			var attempts, reports int
+			env.RegisterActivityWithOptions(func(ctx context.Context, input ScheduledRuleInput) error {
+				attempts++
+				if attempts == 1 {
+					return errors.New("temporary failure")
+				}
+				return tc.lastErr
+			}, activity.RegisterOptions{Name: "ScheduledRuleActivities.ExecuteScheduledRule"})
+			env.RegisterActivityWithOptions(func(ctx context.Context, input ScheduledRuleInput, executionID string) error {
+				if input.RuleID != "rule" || executionID == "" {
+					t.Errorf("invalid failure routing: %+v %q", input, executionID)
+				}
+				reports++
+				return nil
+			}, activity.RegisterOptions{Name: "ScheduledRuleActivities.NotifyFailure"})
+			env.ExecuteWorkflow(ScheduledRuleWorkflow, ScheduledRuleInput{RuleID: "rule", WorkspaceID: "ws"})
+			if attempts != 2 || reports != tc.alerts || (env.GetWorkflowError() != nil) != (tc.lastErr != nil) {
+				t.Fatalf("attempts=%d reports=%d error=%v", attempts, reports, env.GetWorkflowError())
+			}
+		})
 	}
 }

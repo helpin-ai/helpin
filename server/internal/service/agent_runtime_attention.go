@@ -56,12 +56,23 @@ func (s *AgentRuntimeProjectionService) notifyRunActivity(ctx context.Context, r
 	if s.attentionNotifier == nil || run.TargetType == supportPreviewTarget || run.TargetType == model.HelpAssistantTurnTarget {
 		return nil
 	}
-	owner, err := s.runNotificationRecipient(ctx, run, runInputRuleID(run.Input))
+	ruleID := runInputRuleID(run.Input)
+	if kind == "agent_run.finished" && run.Status == model.AgentRunStatusFailed && ruleID != "" {
+		if s.notificationRules == nil {
+			return nil
+		}
+		rule, err := s.notificationRules.GetByID(ctx, run.WorkspaceID, ruleID)
+		if err != nil || rule == nil || derefString(rule.CreatedBy) == "" {
+			return err
+		}
+		return s.attentionNotifier.Emit(ctx, workflowFailureEvent(rule, run.ID, workflowFailureReview))
+	}
+	owner, err := s.runNotificationRecipient(ctx, run, ruleID)
 	if err != nil || owner == "" {
 		return err
 	}
 	subject := "Your agent run"
-	if runInputRuleID(run.Input) != "" {
+	if ruleID != "" {
 		subject = "Your workflow run"
 	}
 	status := run.Status

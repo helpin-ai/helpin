@@ -64,7 +64,7 @@ func slackPreferenceKey(event model.NotificationEventInput) string {
 	category := model.NotificationPreferenceCategory(event.EventType, event.Metadata)
 	switch category {
 	case "crm.assignments", "crm.mentions", "crm.updates", "support.assignments", "docs.updates",
-		"agents.activity", "automation.attention", "automation.activity":
+		"agents.activity", "automation.attention", "automation.activity", model.WorkflowFailureCategory:
 		return category
 	}
 	switch event.EventType {
@@ -128,7 +128,7 @@ func (s *NotificationService) queueSlackNotification(ctx context.Context, recipi
 		Metadata: model.JSONB{}, Title: truncate(strings.Join(strings.Fields(event.Title), " "), 500),
 	}
 	// Keep only routing metadata needed when a queued delivery is rechecked.
-	for _, key := range []string{"task_id", "dock_chat_id", "automation_rule_id", "interaction_id", "support_message_id"} {
+	for _, key := range []string{"task_id", "dock_chat_id", "automation_rule_id", "interaction_id", "support_message_id", "workflow_execution_id"} {
 		if value, ok := event.Metadata[key].(string); ok && value != "" {
 			p.Metadata[key] = value
 		}
@@ -146,6 +146,9 @@ func (s *NotificationService) queueSlackNotification(ctx context.Context, recipi
 	}
 	// Replayed runtime interactions and inbound replies have stable source IDs.
 	sourceID, _ := p.Metadata["interaction_id"].(string)
+	if id, ok := p.Metadata["workflow_execution_id"].(string); ok {
+		sourceID = id
+	}
 	if id, ok := p.Metadata["support_message_id"].(string); ok {
 		sourceID = id
 	}

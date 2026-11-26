@@ -863,6 +863,7 @@ func TestModuleNotificationRoutingAndDefaults(t *testing.T) {
 		{"agent_run.started", "agents.activity", nil, false},
 		{"agent_run.finished", "automation.activity", rule, false},
 		{"automation_rule.activity", "automation.activity", nil, false},
+		{"automation_rule.failed", "automation.failures", nil, true},
 	} {
 		event := model.NotificationEventInput{EventType: tc.event, Metadata: tc.meta}
 		var payload notificationWSData

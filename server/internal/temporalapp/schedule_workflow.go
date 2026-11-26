@@ -32,7 +32,25 @@ func ScheduledRuleWorkflow(ctx workflow.Context, input ScheduledRuleInput) error
 		StartToCloseTimeout: 30 * time.Second,
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	return workflow.ExecuteActivity(ctx, "ScheduledRuleActivities.ExecuteScheduledRule", input).Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, "ScheduledRuleActivities.ExecuteScheduledRule", input).Get(ctx, nil)
+	if err == nil || ctx.Err() != nil || temporal.IsCanceledError(err) {
+		return err
+	}
+	var applicationErr *temporal.ApplicationError
+	if errors.As(err, &applicationErr) && applicationErr.Type() == "scheduled_rule_unavailable" {
+		return err
+	}
+	if workflow.GetVersion(ctx, "scheduled-rule-owner-failure", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		// Activity retries finish before Get returns. The cron tick's run ID is stable on replay.
+		reportCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 30 * time.Second, RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 3},
+		})
+		runID := workflow.GetInfo(ctx).WorkflowExecution.RunID
+		if reportErr := workflow.ExecuteActivity(reportCtx, "ScheduledRuleActivities.NotifyFailure", input, runID).Get(reportCtx, nil); reportErr != nil {
+			workflow.GetLogger(ctx).Error("workflow failure notification failed", "rule_id", input.RuleID, "error", reportErr)
+		}
+	}
+	return err
 }
 
 // WorkflowIDForRuleSchedule returns the Temporal workflow ID for an automation-rule schedule.
@@ -43,6 +61,7 @@ func WorkflowIDForRuleSchedule(ruleID string) string {
 // ScheduledRuleExecutor executes one scheduled automation rule tick.
 type ScheduledRuleExecutor interface {
 	ExecuteScheduledRule(ctx context.Context, workspaceID, ruleID string) error
+	NotifyScheduledRuleFailure(ctx context.Context, workspaceID, ruleID, executionID string) error
 }
 
 // ScheduledRuleActivities executes automation-rule-backed cron schedules.
@@ -73,6 +92,10 @@ func (a *ScheduledRuleActivities) ExecuteScheduledRule(ctx context.Context, inpu
 		)
 	}
 	return err
+}
+
+func (a *ScheduledRuleActivities) NotifyFailure(ctx context.Context, input ScheduledRuleInput, executionID string) error {
+	return a.executor.NotifyScheduledRuleFailure(ctx, input.WorkspaceID, input.RuleID, executionID)
 }
 
 func isPermanentScheduledRuleError(err error) bool {

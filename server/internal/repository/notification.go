@@ -263,12 +263,11 @@ func (r *NotificationRepository) HasEventType(ctx context.Context, notificationI
 	return count > 0, err
 }
 
-// HasAttentionInteraction also covers older pending interactions when a run has
-// multiple simultaneous questions and snapshots replay them in sequence.
-func (r *NotificationRepository) HasAttentionInteraction(ctx context.Context, notificationID, interactionID string) (bool, error) {
+// HasEventSource checks all earlier events, including ones no longer shown as the latest update.
+func (r *NotificationRepository) HasEventSource(ctx context.Context, notificationID, key, sourceID string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.NotificationEvent{}).
-		Where("notification_id = ? AND metadata ->> 'interaction_id' = ?", notificationID, interactionID).
+		Where("notification_id = ? AND metadata ->> CAST(? AS TEXT) = ?", notificationID, key, sourceID).
 		Count(&count).Error
 	return count > 0, err
 }

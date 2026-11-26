@@ -145,3 +145,43 @@ func TestRuntimeAttentionKindsAndRouting(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowFailureAlertsOwnerOncePerFailedRun(t *testing.T) {
+	ctx := context.Background()
+	rules := repository.NewAutomationRuleRepository(setupRuleEngineTestDB(t))
+	rule := &model.AutomationRule{
+		ID: "rule", WorkspaceID: "ws", Name: "Daily triage", CreatedBy: strPtr("workflow-owner"),
+		TriggerType: model.TriggerCron, TriggerConfig: json.RawMessage(`{}`),
+		ActionType: model.ActionStartAgentRun, ActionConfig: json.RawMessage(`{}`),
+	}
+	if err := rules.Create(ctx, rule); err != nil {
+		t.Fatal(err)
+	}
+	db := newNotificationServiceTestDB(t)
+	projection := (&AgentRuntimeProjectionService{}).SetNotificationRules(rules).SetAttentionNotifier(newCRUDNotificationService(db))
+	run := &model.AgentRun{
+		WorkspaceID: "ws", Status: model.AgentRunStatusFailed, TriggeredByUserID: strPtr("requester"),
+		Input: json.RawMessage(`{"trigger":{"rule_id":"rule"}}`),
+	}
+	for _, id := range []string{"run", "run", "another", "run"} {
+		run.ID = id
+		if err := projection.notifyRunActivity(ctx, run, "agent_run.finished"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var items []model.Notification
+	if err := db.Find(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].RecipientID != "workflow-owner" || items[0].EventCount != 2 || items[0].EntityID != "rule" || items[0].EventType != "automation_rule.failed" {
+		t.Fatalf("workflow failures: %+v", items)
+	}
+	if err := db.Exec("INSERT INTO notification_preferences(user_id,workspace_id,mute_workspace,channel_preferences) VALUES ('workflow-owner','ws',false,?)", []byte(`{"automation.failures":{"in_app":false},"automation.activity":{"in_app":true}}`)).Error; err != nil {
+		t.Fatal(err)
+	}
+	run.ID = "silenced"
+	if err := projection.notifyRunActivity(ctx, run, "agent_run.finished"); err != nil {
+		t.Fatal(err)
+	}
+	assertNotificationServiceCount(t, db, "notification_events", 2)
+}

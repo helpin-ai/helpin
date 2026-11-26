@@ -212,7 +212,7 @@ func (s *NotificationService) notifyRecipients(ctx context.Context, event model.
 func (s *NotificationService) Emit(ctx context.Context, event model.NotificationEventInput) error {
 	// Projection can replay or concurrently deliver a run transition. Serialize its
 	// history check and writes with the same per-recipient lock used for email.
-	if event.EntityType == "agent_run" && event.SkipFollowers && len(event.ExplicitRecipients) == 1 {
+	if (event.EntityType == "agent_run" || event.EventType == model.WorkflowFailureEvent) && event.SkipFollowers && len(event.ExplicitRecipients) == 1 {
 		var update *ws.Event
 		err := s.notifRepo.WithRecipientEmailLock(ctx, event.ExplicitRecipients[0], func(repo *repository.NotificationRepository) error {
 			locked := *s
@@ -430,17 +430,19 @@ func (s *NotificationService) emit(ctx context.Context, event model.Notification
 				continue
 			}
 		}
-		// Replayed runtime snapshots must not resurrect a read alert or increment
-		// its count for the same pending interaction.
-		if existing != nil && event.Category == model.NotifCategoryAgentAttention {
-			interactionID, _ := event.Metadata["interaction_id"].(string)
-			if interactionID != "" {
-				if existing.Metadata["interaction_id"] == interactionID {
+		// A replay must not resurrect a read alert, even after a later event on the same entity.
+		if existing != nil && (event.EventType == model.WorkflowFailureEvent || event.Category == model.NotifCategoryAgentAttention) {
+			key := "interaction_id"
+			if event.EventType == model.WorkflowFailureEvent {
+				key = "workflow_execution_id"
+			}
+			if id, _ := event.Metadata[key].(string); id != "" {
+				if existing.Metadata[key] == id {
 					continue
 				}
-				seen, err := s.notifRepo.HasAttentionInteraction(ctx, existing.ID, interactionID)
+				seen, err := s.notifRepo.HasEventSource(ctx, existing.ID, key, id)
 				if err != nil {
-					return fmt.Errorf("check attention replay: %w", err)
+					return fmt.Errorf("check notification replay: %w", err)
 				}
 				if seen {
 					continue

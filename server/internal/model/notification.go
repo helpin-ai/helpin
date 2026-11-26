@@ -225,6 +225,9 @@ var EventTypeToCategory = map[string]string{
 	"sprint.updated": NotifCategorySprints,
 }
 
+const WorkflowFailureEvent = "automation_rule.failed"
+const WorkflowFailureCategory = "automation.failures"
+
 // NotificationPreferenceCategory identifies the settings row, including events shared by modules.
 func NotificationPreferenceCategory(eventType string, meta JSONB) string {
 	rule, _ := meta["automation_rule_id"].(string)
@@ -242,6 +245,8 @@ func NotificationPreferenceCategory(eventType string, meta JSONB) string {
 			return "automation.activity"
 		}
 		return "agents.activity"
+	case WorkflowFailureEvent:
+		return WorkflowFailureCategory
 	case "automation_rule.activity":
 		return "automation.activity"
 	case "doc.updated":
@@ -270,7 +275,7 @@ func NotificationChannelDefault(category, channel string) bool {
 	switch category {
 	case "docs.updates", "agents.activity", "automation.activity", "crm.updates":
 		return channel != "in_app" && channel != "email"
-	case "support.assignments", "crm.assignments", "crm.mentions", "automation.attention", NotifCategoryIntegrations, NotifCategoryAgentAttention:
+	case "support.assignments", "crm.assignments", "crm.mentions", "automation.attention", WorkflowFailureCategory, NotifCategoryIntegrations, NotifCategoryAgentAttention:
 		return channel != "email"
 	}
 	return true
