@@ -36,7 +36,7 @@ export default function HomePage() {
             <span className="eyebrow">AI-first, open-source alternative to <Link className="eyebrow-link" href="/compare/intercom">Intercom</Link></span>
             <HeroHeadline />
             <p className="lede">Answers from your docs right away. Specialist agents and your team take on the hard ones. No <span>per-seat</span> or <span>per-resolution</span> fees.</p>
-            <StartForm />
+            <StartForm autoFocus />
             <p className="start-note">Watch your AI agent answer a customer question from your own docs, before you sign up.</p>
             <p className="cta-note">Or <Link prefetch={false} href={SIGNUP_URL}>start a free trial</Link> · <span>14 days, no card</span> · <span>Open source, self-host free</span></p>
 
