@@ -17,8 +17,8 @@ function Playback({ paused, onToggle }: { paused: boolean; onToggle: () => void 
   return <button type="button" className="dp-playback" onClick={onToggle} aria-pressed={paused}>{paused ? <Play size={12} /> : <Pause size={12} />}{paused ? 'Play' : 'Pause'}</button>;
 }
 
-function Frame({ title, children }: { title: ReactNode; children: ReactNode }) {
-  return <div className="dp-frame"><div className="dp-bar"><span className="dp-logo">O</span><span className="dp-bar-title">{title}</span></div>{children}</div>;
+function Frame({ title, short, children }: { title: ReactNode; short?: boolean; children: ReactNode }) {
+  return <div className={short ? 'dp-frame dp-frame-short' : 'dp-frame'}><div className="dp-bar"><span className="dp-logo">O</span><span className="dp-bar-title">{title}</span></div>{children}</div>;
 }
 
 // Stages: 0 gaps list · 1 cursor opens a gap · 2 gap details with grouped evidence
@@ -40,7 +40,7 @@ export function CoverageGapsScene() {
   const { container, phase, cycle, playing } = useWorkflowPlayback({ beats: GAP_BEATS, duration: 16500, paused });
   const open = phase >= 2;
   return <div className="dp-root" ref={container} data-playing={playing}>
-    <Frame title="Support coverage">
+    <Frame title="Support coverage" short>
       <div className="dp-coverage" key={cycle}>
         <div className="dp-tabs" aria-hidden="true"><span data-active="true">All gaps</span><span><i data-dot="blue" />Content gaps</span><span><i data-dot="amber" />Data gaps</span><span><i data-dot="violet" />Action gaps</span></div>
         <div className="dp-table">
@@ -81,7 +81,8 @@ export function CoverageGapsScene() {
 }
 
 // Stages: 0 merged PR · 1 flow starts Quill · 2–5 run steps · 6 results · 7 waiting for review
-const PR_BEATS = [0, 1400, 2600, 3600, 4600, 5600, 7000, 9600];
+// The steps arrive quickly so the frame is full within a few seconds, then the result holds.
+const PR_BEATS = [0, 500, 1100, 1700, 2300, 2900, 3800, 5600];
 const STEPS = [
   'Read PR #482: 11 files changed, linked task EXP-142',
   'Skipped 4 files readers never see: tests and CI',

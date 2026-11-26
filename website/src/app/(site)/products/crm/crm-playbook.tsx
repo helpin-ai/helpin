@@ -236,7 +236,7 @@ export function CRMPlaybook() {
                         <>
                           <div className="cp-editor-heading">
                             <div>
-                              <h4>Define what progress looks like.</h4>
+                              <h4>Define what progress looks like</h4>
                               <p>
                                 Give each milestone a result your team can confirm.
                               </p>

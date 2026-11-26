@@ -50,7 +50,7 @@ export function CloudComparison() {
   return (
     <section id="compare-plans" className="pricing-comparison">
       <div className="wrap">
-        <SectionHead eyebrow="Compare plans" title="See what’s included in each plan." />
+        <SectionHead eyebrow="Compare plans" title="See what’s included in each plan" />
         <table className="pricing-table">
           <caption className="sr-only">
             Self-hosted, Starter, and Growth features, limits, hosting, and support.

@@ -37,7 +37,7 @@ export default function ProductPage() {
         <div className="wrap">
           <div className="hero-inner">
             <span className="eyebrow">Product</span>
-            <h1>Your teams and AI agents. Working together.</h1>
+            <h1>Your teams and AI agents. Working together</h1>
             <p className="lede">Handle the question, plan the work, update the guide, and follow up. Helpin gives people and agents the same conversations, tasks, and records to work from.</p>
 
           </div>
@@ -46,7 +46,7 @@ export default function ProductPage() {
 
       <section id="inbox">
         <div className="wrap">
-          <SectionHead eyebrow="More than a support inbox" title="The Echo agent answers and follows up." lede="Answer chat and email, check earlier conversations, and hand over with the findings attached. Configure follow-ups so a quiet conversation gets another look." />
+          <SectionHead eyebrow="More than a support inbox" title="The Echo agent answers and follows up" lede="Answer chat and email, check earlier conversations, and hand over with the findings attached. Configure follow-ups so a quiet conversation gets another look." />
           <ul className="steps big"><li>Assign conversations.</li><li>Add notes and tags.</li><li>Use saved replies.</li><li>See customer history.</li><li>Create product work.</li><li>Ask an agent for help.</li></ul>
           <p className="section-close">When the conversation becomes something bigger, the history stays attached.</p>
           <p className="section-close"><a className="btn-link" href="/products/customer-support">Explore Support<LinkArrow /></a></p>
@@ -55,7 +55,7 @@ export default function ProductPage() {
 
       <section id="meetings">
         <div className="wrap">
-          <SectionHead eyebrow="Every call adds to the history" title="Give meeting notes a useful next step." lede="Capture internal discussions and customer calls. AI prepares the notes, and Ask Agent helps your team use the decisions when planning work." />
+          <SectionHead eyebrow="Every call adds to the history" title="Give meeting notes a useful next step" lede="Capture internal discussions and customer calls. AI prepares the notes, and Ask Agent helps your team use the decisions when planning work." />
           <ul className="steps big"><li>Record the conversation.</li><li>Get a speaker-attributed transcript.</li><li>Summarize decisions, objections, and next steps.</li><li>Create tasks and product work from action items.</li><li>Keep the meeting linked to the customer, deal, and project.</li></ul>
           <p className="section-close">Google Meet · Zoom · Microsoft Teams · Webex</p>
           <p className="section-close"><a className="btn-link" href="/products/meetings">Explore Meetings<LinkArrow /></a></p>
@@ -64,7 +64,7 @@ export default function ProductPage() {
 
       <section id="projects">
         <div className="wrap">
-          <SectionHead eyebrow="From feedback to roadmap" title="AI agents build. Your team reviews."
+          <SectionHead eyebrow="From feedback to roadmap" title="AI agents build. Your team reviews"
             lede="Manage tasks, stories, epics, sprints, and objectives. Bring in Scribe to plan, Forge to code, and Lens to review." />
           <div className="pm-grid">
             <div className="pm-items">
@@ -92,7 +92,7 @@ export default function ProductPage() {
 
       <section id="crm">
         <div className="wrap">
-          <SectionHead eyebrow="CRM with the conversation attached" title="Give the Beacon agent a place on your sales team." lede="Spot buying interest, prepare for calls, and plan the next follow-up. Keep contacts, deals, and the conversations behind them in one place." />
+          <SectionHead eyebrow="CRM with the conversation attached" title="Give the Beacon agent a place on your sales team" lede="Spot buying interest, prepare for calls, and plan the next follow-up. Keep contacts, deals, and the conversations behind them in one place." />
           <ul className="steps big"><li>See the support issue holding up a deal.</li><li>See the feature request tied to a renewal.</li><li>See the meeting where the objection came up.</li><li>See what changed before you follow up.</li></ul>
           <p className="section-close">The stage says where the deal is. The history says why.</p>
           <p className="section-close"><a className="btn-link" href="/products/crm">Explore CRM<LinkArrow /></a></p>
@@ -101,7 +101,7 @@ export default function ProductPage() {
 
       <section id="knowledge">
         <div className="wrap">
-          <SectionHead eyebrow="Knowledge that stays current" title="The Quill agent keeps your docs current." lede="Turn unanswered questions and product changes into proposed guide updates. Add clearer steps and fresh visuals, then review and publish." />
+          <SectionHead eyebrow="Knowledge that stays current" title="The Quill agent keeps your docs current" lede="Turn unanswered questions and product changes into proposed guide updates. Add clearer steps and fresh visuals, then review and publish." />
           <ul className="steps big"><li>See which articles customers used.</li><li>Find unanswered questions.</li><li>Create documentation from repeated conversations.</li><li>Update docs when the product changes.</li><li>Give agents the same knowledge your team uses.</li></ul>
           <p className="section-close"><a className="btn-link" href="/products/knowledge">Explore Knowledge<LinkArrow /></a></p>
         </div>
@@ -109,7 +109,7 @@ export default function ProductPage() {
 
       <section id="agents">
         <div className="wrap">
-          <SectionHead eyebrow="Agents with context" title="Choose a job. Give an agent the tools for it."
+          <SectionHead eyebrow="Agents with context" title="Choose a job. Give an agent the tools for it"
             lede="Start an agent yourself or from a supported event or schedule. Choose its tools and approval rules, then follow the work in Helpin." />
           <div className="six">
             {AGENTS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
@@ -121,7 +121,7 @@ export default function ProductPage() {
 
       <section id="developers">
         <div className="wrap">
-          <SectionHead eyebrow="Built to be extended" title="Connect Helpin to the rest of your stack."
+          <SectionHead eyebrow="Built to be extended" title="Connect Helpin to the rest of your stack"
             lede="Add support to your app, connect your AI tools and use product events to start the next step." />
           <div className="six">
             {DEVELOPERS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
@@ -133,7 +133,7 @@ export default function ProductPage() {
       <section>
         <div className="wrap">
           <div className="final">
-            <h2>Start with one useful agent workflow.</h2>
+            <h2>Start with one useful agent workflow</h2>
             <CtaRow />
           </div>
         </div>

@@ -8,13 +8,13 @@ import { usePathname } from 'next/navigation';
 const GROUPS = [
   '.sec-head', '.record-intro', '.ask-agent-intro', '.final',
   '.record-bento-copy', '.ask-agent-capabilities > article', '.ctrl-copy',
-  '.self-host-features', '.developer-features', '.developer-cli-copy',
+  '.run-options', '.developer-features', '.developer-cli-copy',
   '.pm-items', '.six', '.steps.big', '.footer-nav', '.support-features',
   '.cmp-choose', '.cmp-strength-grid', '.cmp-card-grid',
 ];
 const SINGLE_ITEMS = [
   '.ask-agent-screenshot', '.control-screenshot', '.developer-visual',
-  '.self-host-intro .links', '.self-host-license', '.ask-agent-links',
+  '.ask-agent-links',
   '.section-close', '.rs-close', '.footer-brand', '.footer-community', '.footer-bottom',
   '.support-context-card', '.support-work-card',
 ];

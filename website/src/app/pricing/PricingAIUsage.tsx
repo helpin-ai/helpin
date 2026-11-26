@@ -22,7 +22,7 @@ export function AIUsage() {
       <div className="wrap">
         <SectionHead
           eyebrow="AI usage"
-          title="AI usage is included in every Cloud plan."
+          title="AI usage is included in every Cloud plan"
           lede="Run agent tasks with the AI allowance included in your plan. You do not need separate provider keys to get started, and you control whether paid usage can go beyond the allowance."
         />
         <div className="pricing-ai-routes">

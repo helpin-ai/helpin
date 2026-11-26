@@ -584,7 +584,7 @@ export function CRMPipeline({ embedded = false }: { embedded?: boolean }) {
 const SIGNALS = [
   {
     label: "Buying intent", Icon: Sparkles,
-    title: "A pricing request with a buying window.",
+    title: "A pricing request with a buying window",
     quote: "Can you send pricing for 30 users? We’d like to decide this month.",
     source: "Daniel Park · Harbor Metrics · Customer email", initials: "DP", avatar: null,
     context: "Daniel has asked for pricing and named a decision window. Requirements and purchasing approval still need confirmation.",
@@ -594,7 +594,7 @@ const SIGNALS = [
   },
   {
     label: "Renewal risk", Icon: ShieldCheck,
-    title: "An issue to address before the renewal conversation.",
+    title: "An issue to address before the renewal conversation",
     quote: "Before we discuss renewing, can you confirm when full exports will work?",
     source: "Maya Chen · Northstar Labs · Customer email", initials: "MC", avatar: "maya",
     context: "Maya wants an update before discussing the next term. The linked export task is still in review.",
@@ -604,7 +604,7 @@ const SIGNALS = [
   },
   {
     label: "Expansion", Icon: Building2,
-    title: "Another team wants to join.",
+    title: "Another team wants to join",
     quote: "Our customer success team would like to use this too. Can we discuss adding them?",
     source: "Nina Brooks · Forma · Customer conversation", initials: "NB", avatar: null,
     context: "There is interest from another team. The number of users, timing, and requirements still need to be discussed.",
