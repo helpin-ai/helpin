@@ -256,8 +256,28 @@ func bindSlackTask(ctx context.Context, tx *gorm.DB, thread model.SlackThread, i
 		return nil
 	} // DMs have no shared task discussion.
 	var route model.SlackRoute
-	if err := tx.Where("account_id=? AND channel_id=?", thread.AccountID, thread.Channel).Limit(1).Find(&route).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("account_id=? AND channel_id=?", thread.AccountID, thread.Channel).Limit(1).Find(&route).Error; err != nil {
 		return err
+	}
+	if thread.InboxConversationID != "" {
+		if route.Purpose != "inbox" {
+			return errors.New("the Slack inbox route changed during review")
+		}
+		// A linked support task gets a single receipt. Only PM routes create shared discussions.
+		receipt := tx.Exec(`INSERT INTO support_inbound_jobs(id,kind,workspace_id,channel_account_id,payload,status,available_at)
+ SELECT gen_random_uuid(),'slack_pm_delivery',c.workspace_id,t.account_id,
+ json_build_object('inbox',t.id,'task',?::text)::text,'pending',now()
+ FROM slack_feed_threads t JOIN support_conversations c ON c.id=t.conversation_id
+ WHERE t.active AND t.account_id=? AND t.channel_id=? AND t.root_ts=? AND c.id=?
+ AND c.status<>'spam' AND c.anonymized_at IS NULL AND c.merged_into_id IS NULL
+ AND EXISTS(SELECT 1 FROM slack_feed_inboxes f WHERE f.account_id=t.account_id AND f.channel_id=t.channel_id AND f.inbox_key=coalesce(c.mailbox_id::text,'shared'))`, id, thread.AccountID, thread.Channel, thread.Root, thread.InboxConversationID)
+		if receipt.Error != nil {
+			return receipt.Error
+		}
+		if receipt.RowsAffected != 1 {
+			return errors.New("the Slack inbox conversation changed during review")
+		}
+		return nil
 	}
 	if route.Purpose != "pm" {
 		return nil

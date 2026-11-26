@@ -2181,6 +2181,11 @@ func (r *SupportConversationRepository) GetByIDForUser(ctx context.Context, work
 
 // Create creates a new conversation with auto-allocated display_id.
 func (r *SupportConversationRepository) Create(ctx context.Context, conversation *model.SupportConversation) error {
+	return r.CreateWithOpeningNote(ctx, conversation, nil)
+}
+
+// CreateWithOpeningNote commits a staff-created ticket and its source note together.
+func (r *SupportConversationRepository) CreateWithOpeningNote(ctx context.Context, conversation *model.SupportConversation, note *model.SupportMessage) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Advisory lock on workspace to prevent duplicate display_id under concurrency.
 		r.maybeAcquireWorkspaceDisplayIDLock(tx, conversation.WorkspaceID)
@@ -2192,6 +2197,10 @@ func (r *SupportConversationRepository) Create(ctx context.Context, conversation
 
 		if err := tx.Create(conversation).Error; err != nil {
 			return fmt.Errorf("create conversation: %w", err)
+		}
+		if note != nil {
+			note.WorkspaceID, note.ConversationID = conversation.WorkspaceID, conversation.ID
+			return NewSupportMessageRepository(tx).Create(ctx, note)
 		}
 		return nil
 	})

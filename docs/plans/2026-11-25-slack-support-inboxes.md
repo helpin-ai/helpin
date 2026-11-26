@@ -95,6 +95,13 @@ Use [Slack action dispatch](../../server/internal/service/slack_pm.go), [action 
 
 The service suite ran against migrated disposable PostgreSQL for Community and hosted builds. Public and internal threads, callbacks and delivery retries used a simulated Slack API. Slack validated 16 real payload shapes from those fictional conversations through its nonposting validator.
 
+## Creating work from an inbox channel
+
+- A teammate can mention `@Helpin create a ticket for the export failure` or choose **Create support request** from a message’s shortcuts. The review uses the selected text and lets the teammate edit the subject, internal description and destination. A single eligible inbox is preselected.
+- Inside a shared conversation, **create a ticket** offers **Create linked task** and **Open a separate support ticket**. An explicit bug or task request goes straight to a linked task draft. The task review can use the existing AI drafting and related-work suggestions. Ticket review works without AI.
+- Support tickets retain the selected Slack message permalink in the opening staff note. The originating thread receives a direct link. A linked task gets a thread confirmation when the audience can read the PM team. The requester also receives a private task link.
+- Verify both editions against PostgreSQL, including repeated submissions, permission and channel changes, thread-note routing and linked task creation. Check the ticket forms, private choice and receipts with Slack’s validator.
+
 ## Original implementation and evidence
 
 The sections below record the integration that already existed when this revision began.

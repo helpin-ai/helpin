@@ -36,6 +36,14 @@ func (r *SlackRepository) FeedByRoot(ctx context.Context, account, channel, root
 	}
 	return &row, err
 }
+func (r *SlackRepository) FeedByConversation(ctx context.Context, account, channel, conversation string) (*FeedThread, error) {
+	var row FeedThread
+	err := r.feedThreads(ctx).Where("t.account_id=? AND t.channel_id=? AND t.conversation_id=?", account, channel, conversation).Limit(1).Scan(&row).Error
+	if row.ID == "" || err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
 func (r *SlackRepository) FeedPermalink(ctx context.Context, workspace, conv string) (string, error) {
 	var link string
 	err := r.db.WithContext(ctx).Raw(`SELECT t.permalink FROM slack_feed_threads t JOIN support_channel_accounts a ON a.id=t.account_id JOIN support_conversations c ON c.id=t.conversation_id JOIN slack_feed_inboxes f ON f.account_id=t.account_id AND f.channel_id=t.channel_id AND f.inbox_key=coalesce(c.mailbox_id::text,'shared') WHERE a.workspace_id=? AND t.conversation_id=? AND a.disabled_at IS NULL AND t.active AND c.anonymized_at IS NULL AND c.merged_into_id IS NULL AND t.permalink IS NOT NULL LIMIT 1`, workspace, conv).Scan(&link).Error

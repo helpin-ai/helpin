@@ -110,8 +110,8 @@ func (s *SlackService) channelAudience(ctx context.Context, a *model.SupportChan
 
 func (s *SlackService) deliverDiscussion(ctx context.Context, j *model.SupportInboundJob) error {
 	var p struct {
-		Channel, Root, Task, Comment, Support string
-		Completed                             bool
+		Channel, Root, Task, Comment, Support, Inbox string
+		Completed                                    bool
 	}
 	if err := json.Unmarshal([]byte(j.Payload), &p); err != nil {
 		return err
@@ -119,6 +119,9 @@ func (s *SlackService) deliverDiscussion(ctx context.Context, j *model.SupportIn
 	a, err := s.channels.accounts.GetForWebhook(ctx, "slack", *j.ChannelAccountID)
 	if err != nil || a == nil {
 		return err
+	}
+	if p.Inbox != "" {
+		return s.deliverInboxTaskReceipt(ctx, a, p.Inbox, p.Task, j.ID)
 	}
 	if p.Support != "" {
 		return s.notifySupportOwner(ctx, a, p.Support, p.Task)
