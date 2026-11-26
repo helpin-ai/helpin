@@ -7,6 +7,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -50,14 +53,16 @@ func (a feedSpeaker) header() map[string]any {
 	} else if a.name != "" {
 		elements = append(elements, slackText(supportTranscriptAvatarText(a.name, false)))
 	}
+	label := "*" + a.role + "*"
 	if a.name != "" && !strings.EqualFold(a.name, a.role) {
 		if strings.ContainsAny(a.name, "*_~`<>&@:\\") {
 			elements = append(elements, slackText(a.name))
+			label = "· " + label
 		} else {
-			elements = append(elements, map[string]any{"type": "mrkdwn", "text": "*" + a.name + "*", "verbatim": true})
+			label = "*" + a.name + "* · " + label
 		}
 	}
-	elements = append(elements, map[string]any{"type": "mrkdwn", "text": "*" + a.role + "*", "verbatim": true})
+	elements = append(elements, map[string]any{"type": "mrkdwn", "text": label, "verbatim": true})
 	return map[string]any{"type": "context", "elements": elements}
 }
 
@@ -126,11 +131,39 @@ func (f *feedContext) feedAuthor(m *model.SupportMessage) feedSpeaker {
 	return a
 }
 
+// Use two-space Markdown hard breaks for Slack. Only rewrite breaks parsed as prose,
+// so code samples and escaped literal backslashes survive intact.
+func feedMarkdownLineBreaks(body string) string {
+	if !strings.Contains(body, "\\\n") && !strings.Contains(body, "\\\r\n") {
+		return body
+	}
+	doc := supportTranscriptMarkdownRenderer.Parser().Parse(text.NewReader([]byte(body)))
+	var out strings.Builder
+	start := 0
+	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if t, ok := n.(*ast.Text); entering && ok && t.HardLineBreak() {
+			end := t.Segment.Stop
+			if end < len(body) && body[end] == '\\' {
+				out.WriteString(body[start:end])
+				out.WriteString("  ")
+				start = end + 1
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if start == 0 {
+		return body
+	}
+	out.WriteString(body[start:])
+	return out.String()
+}
+
 func feedReplyBody(body string, formatted bool) ([]any, bool) {
 	if strings.TrimSpace(body) == "" {
 		return nil, false
 	}
 	if formatted {
+		body = feedMarkdownLineBreaks(body)
 		return []any{slackMarkdown(body)}, utf8.RuneCountInString(body) > 12000
 	}
 	runes := []rune(body)

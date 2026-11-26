@@ -280,6 +280,23 @@ func feedButton(id, label, value string) map[string]any {
 	return map[string]any{"type": "button", "action_id": id, "text": slackText(label), "value": value}
 }
 
+func (f *feedContext) threadReplyButtons(messageID string) []any {
+	c := f.conv
+	if c.Status == "spam" || (len(feedOptions(c)) == 0 && c.ChannelIdentityID == nil && c.MergeRevision == 0) {
+		return nil
+	}
+	label := "Reply to conversation"
+	if c.MergeRevision == 0 && c.ChannelIdentityID == nil {
+		recipient := firstNonEmptyString(feedOneLine(derefString(c.CustomerName)), feedOneLine(derefString(c.CustomerEmail)))
+		if recipient != "" {
+			label = truncate("Reply to "+recipient, 75)
+		} else {
+			label = f.replyLabel()
+		}
+	}
+	return []any{feedButton("feed_reply", label, f.thread.ID+":"+messageID)}
+}
+
 func feedOpenButton(threadID, link string) map[string]any {
 	open := feedButton("open_support", "Open in Helpin", threadID)
 	open["url"] = link
@@ -453,6 +470,7 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 			}
 		}
 	}
+	var statuses []string
 	var delivery *model.SupportChannelDelivery
 	if m.SenderType != "customer" && !m.IsInternal {
 		rows, err := s.channels.outbox.ListByMessageIDs(ctx, f.account.WorkspaceID, []string{m.ID})
@@ -461,14 +479,15 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 		}
 		if len(rows) > 0 {
 			delivery = channelDeliveryView(rows[0])
-			body += "\n" + delivery.Provider + " · " + delivery.Status
+			status := delivery.Provider + " · " + delivery.Status
 			if delivery.Status == "unconfirmed" {
-				body += " · Check the original destination before resending."
+				status += " · Check the original destination before resending."
 			}
+			statuses = append(statuses, status)
 		}
 	}
 	if meta.EmailStatus != "" {
-		body += "\nEmail · " + meta.EmailStatus
+		statuses = append(statuses, "Email · "+meta.EmailStatus)
 	}
 	blocks := []any{author.header()}
 	formatted := rich || !m.IsInternal && author.role == "AI reply"
@@ -477,14 +496,24 @@ func (s *SlackService) mirrorFeedMessage(ctx context.Context, f *feedContext, m 
 	if formatted {
 		body = supportTranscriptPlainText(renderSupportTranscriptMessageHTML(body))
 	}
+	if len(statuses) > 0 {
+		status := strings.Join(statuses, "\n")
+		blocks = append(blocks, map[string]any{"type": "context", "elements": []any{slackText(status)}})
+		body += "\n" + status
+	}
 	var buttons []any
+	if m.MessageType != "system" {
+		buttons = f.threadReplyButtons(m.ID)
+	}
 	if delivery != nil && delivery.Status == "failed" {
 		buttons = append(buttons, feedButton("feed_retry", "Retry delivery", f.thread.ID+":"+m.ID))
 	}
-	if clipped || email {
+	if clipped || m.MessageType != "system" {
 		link := f.conversationURL + "#message-" + m.ID
 		buttons = append(buttons, feedOpenButton(f.thread.ID, link))
-		body = truncate(body, 3500) + "\n" + link
+		if clipped || email {
+			body = truncate(body, 3500) + "\n" + link
+		}
 	}
 	if len(buttons) > 0 {
 		blocks = append(blocks, slackButtons(buttons...))

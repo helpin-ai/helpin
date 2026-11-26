@@ -35,6 +35,63 @@ func TestSlackInboxFeedAuthor(t *testing.T) {
 	}
 }
 
+func TestSlackInboxFeedTeamLineBreaks(t *testing.T) {
+	s := &SlackService{channels: &SupportChannelService{inbox: &SupportInboxService{}}}
+	stored := "Hi there,\\\n\\\nThanks for the **details**.\\\nSee C:\\Docs"
+	want := "Hi there,  \n  \nThanks for the **details**.  \nSee C:\\Docs"
+	// A backslash in a code block is part of the teammate's example.
+	code := "\n\n```sh\nrun \\\n  next\n```"
+	for _, channel := range []string{"widget", "email"} {
+		f := &feedContext{conv: &model.SupportConversation{Channel: channel}}
+		msg := &model.SupportMessage{SenderType: "user", MessageType: "reply", Content: stored + code}
+		body, rich, _, err := s.feedContent(context.Background(), f, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		blocks, _ := feedReplyBody(body, rich)
+		if len(blocks) != 1 {
+			t.Fatalf("%s: got %d body blocks", channel, len(blocks))
+		}
+		block, ok := blocks[0].(map[string]string)
+		if !ok || block["type"] != "markdown" || block["text"] != want+code {
+			t.Errorf("%s: team reply = %#v", channel, blocks[0])
+		}
+	}
+	for _, msg := range []model.SupportMessage{
+		{SenderType: "customer", MessageType: "reply", Content: stored},
+		{SenderType: "user", MessageType: "reply", Content: stored, ExternalMessageKey: strPtr("incoming")},
+		{SenderType: "user", MessageType: "reply", Content: stored, Metadata: `{"via":"slack"}`},
+	} {
+		f := &feedContext{conv: &model.SupportConversation{Channel: "widget"}}
+		if body, rich, _, err := s.feedContent(context.Background(), f, &msg); err != nil || rich || body != stored {
+			t.Errorf("literal %s message = %q, rich=%v, err=%v", msg.SenderType, body, rich, err)
+		}
+	}
+}
+
+func TestSlackInboxFeedSpeakerHeader(t *testing.T) {
+	for _, tc := range []struct{ name, role, want string }{
+		{"Maya Patel", "Team reply", "*Maya Patel* · *Team reply*"},
+		{"Sam", "📝 Internal note", "*Sam* · *📝 Internal note*"},
+		{"<@U123>", "Visitor", "· *Visitor*"},
+		{"", "Visitor", "*Visitor*"},
+		{"Visitor", "Visitor", "*Visitor*"},
+	} {
+		speaker := feedSpeaker{name: tc.name, role: tc.role}
+		elements := speaker.header()["elements"].([]any)
+		last := elements[len(elements)-1].(map[string]any)
+		if last["text"] != tc.want {
+			t.Errorf("visible header for %q = %q, want %q", tc.name, last["text"], tc.want)
+		}
+		if tc.name == "<@U123>" {
+			name := elements[len(elements)-2].(map[string]string)
+			if name["type"] != "plain_text" || name["text"] != tc.name {
+				t.Errorf("unsafe display name rendered as %#v", name)
+			}
+		}
+	}
+}
+
 func TestSlackInboxFeedHTMLReply(t *testing.T) {
 	raw := `<div style="display: none">Tracking preheader</div><p>Please <strong>reset</strong> my account.</p><div class="gmail_quote">Old conversation</div>`
 	md := feedHTMLReply(raw)

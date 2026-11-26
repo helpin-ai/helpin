@@ -30,6 +30,36 @@ func feedOptions(c *model.SupportConversation) []map[string]any {
 	}
 	return options
 }
+func (s *SlackService) defaultFeedDestination(ctx context.Context, c *model.SupportConversation, clicked string, options []map[string]any) (string, error) {
+	if len(options) == 1 {
+		only := options[0]["value"].(string)
+		if only == "email" && c.PrimaryRecipientState == model.SupportPrimaryRecipientStateUnconfirmed {
+			return "", nil
+		}
+		return only, nil
+	}
+	channel, origin, err := s.repo.FeedReplyOrigin(ctx, c.WorkspaceID, c.ID, clicked)
+	if err != nil {
+		return "", err
+	}
+	if channel == "" && c.MergeRevision == 0 {
+		channel, origin = c.Channel, c.ID
+	}
+	if model.SupportChannelHasChatSession(channel) {
+		channel = "widget"
+	}
+	if channel == "email" && c.PrimaryRecipientState == model.SupportPrimaryRecipientStateUnconfirmed {
+		return "", nil
+	}
+	for _, opt := range options {
+		value := opt["value"].(string)
+		if value == channel || value == channel+":"+origin {
+			return value, nil
+		}
+	}
+	return "", nil
+}
+
 func feedDestination(c *model.SupportConversation, selected string, req *model.CreateMessageRequest) error {
 	for _, opt := range feedOptions(c) {
 		if opt["value"] != selected {
@@ -105,8 +135,12 @@ func (s *SlackService) feedForm(ctx context.Context, f *feedContext, p *feedActi
 			blocks = append(blocks, map[string]any{"type": "section", "text": slackText("Email also reaches the merged recipients: " + truncate(strings.Join(c.MergeEmailRecipients, ", "), 2200))})
 		}
 		selected := p.Destination
-		if selected == "" && len(options) == 1 {
-			selected = options[0]["value"].(string)
+		if selected == "" && !p.Submit {
+			var err error
+			selected, err = s.defaultFeedDestination(ctx, c, p.Message, options)
+			if err != nil {
+				return nil, err
+			}
 		}
 		blocks = append(blocks, feedSelectBlock("destination", "Send via", options, selected, false))
 		if c.CustomerEmail != nil && !c.EmailUnsubscribed {
@@ -122,6 +156,9 @@ func (s *SlackService) feedForm(ctx context.Context, f *feedContext, p *feedActi
 			blocks = append(blocks, toField, ccField)
 		}
 		body := inputBlock("body", "Reply", p.Body, true)
+		if selected != "" && !p.Submit {
+			body["element"].(map[string]any)["focus_on_load"] = true
+		}
 		if p.Body != "" {
 			body["element"].(map[string]any)["initial_value"] = p.Body
 		}
