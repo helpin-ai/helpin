@@ -113,6 +113,9 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !slices.Contains(strings.Split(u.Query().Get("scope"), ","), "reactions:write") {
+		t.Fatal("Slack installation must request permission for resolved reactions")
+	}
 	state := u.Query().Get("state")
 	if err = s.CompleteInstall(ctx, f.workspace, f.userID, state, "code"); err != nil {
 		t.Fatal(err)
@@ -586,12 +589,28 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	s.SetPM(nil, nil, authorization.NewAuthzService(f.db, slackFixtureMember{f.userID}, nil), nil, nil, "https://helpin.example")
 	owner := authorization.WithActor(ctx, &authorization.Actor{WorkspaceID: f.workspace, Role: "owner", UserID: f.userID})
 	member, external := false, false
+	var reactionCalls []string
+	var reactionError string
 	var posts, updates, views []map[string]any
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/conversations.info":
 			fmt.Fprintf(w, `{"ok":true,"channel":{"id":"Cdesk","name":"support-desk","is_member":%t,"is_ext_shared":%t}}`, member, external)
+		case "/reactions.add", "/reactions.remove":
+			var payload struct{ Channel, Timestamp, Name string }
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			if payload.Channel != "Cdesk" || payload.Timestamp != "1.000001" || payload.Name != "white_check_mark" {
+				t.Errorf("wrong reaction target: %+v", payload)
+			}
+			reactionCalls = append(reactionCalls, r.URL.Path)
+			if reactionError != "" {
+				fmt.Fprintf(w, `{"ok":false,"error":%q}`, reactionError)
+			} else {
+				io.WriteString(w, `{"ok":true}`)
+			}
 		case "/conversations.join":
 			member = true
 			io.WriteString(w, `{"ok":true}`)
@@ -757,10 +776,35 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	if err := f.db.Where("conversation_id=? AND content=? AND NOT is_internal", conv, "The checkout fix is ready.").Find(&replies).Error; err != nil || len(replies) != 1 || !strings.Contains(replies[0].Metadata, "slack_permalink") {
 		t.Fatalf("public reply provenance: %+v %v", replies, err)
 	}
-	mustExec(t, f.db, "UPDATE support_conversations SET status='resolved' WHERE id=?", conv)
+	setStatus := func(status string) {
+		t.Helper()
+		mustExec(t, f.db, "UPDATE support_conversations SET status=? WHERE id=?", status, conv)
+		deliver(nil)
+	}
+	reactionError = "already_reacted"
+	setStatus("resolved")
 	deliver(nil)
-	if len(updates) == 0 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]), "resolved") {
-		t.Fatal("status did not update parent")
+	if !slices.Equal(reactionCalls, []string{"/reactions.add"}) || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
+		t.Fatalf("resolve or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
+	}
+	reactionError = "no_reaction"
+	setStatus("open")
+	deliver(nil)
+	if !slices.Equal(reactionCalls, []string{"/reactions.add", "/reactions.remove"}) || strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
+		t.Fatalf("reopen or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
+	}
+	reactionError = "missing_scope"
+	setStatus("resolved")
+	deliver(nil)
+	if len(reactionCalls) != 3 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
+		t.Fatalf("legacy Slack grant: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
+	}
+	// Reauthorization renews the installation. The next refresh should retry even if the card is unchanged.
+	mustExec(t, f.db, "UPDATE support_channel_accounts SET updated_at=updated_at+interval '1 second' WHERE id=?", f.account.ID)
+	reactionError = ""
+	deliver(nil)
+	if len(reactionCalls) != 4 || reactionCalls[3] != "/reactions.add" {
+		t.Fatalf("renewed grant: %v", reactionCalls)
 	}
 	external = true
 	next := f.reply(t, conv, "customer", "Sensitive follow-up")
