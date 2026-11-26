@@ -20,15 +20,18 @@ import (
 
 const SlackInboxFeedJob = "slack_inbox_feed"
 
-func slackFeedAllowsChannel(ch SlackChannel, visibility string) bool {
-	return !ch.IsArchived && !ch.IsShared && !ch.PendingShared && (ch.IsPrivate || visibility == "workspace")
+func slackFeedAllowsChannel(ch SlackChannel, inbox string, publicTeamInboxes bool) bool {
+	return !ch.IsArchived && !ch.IsShared && !ch.PendingShared && (ch.IsPrivate || inbox == "shared" || publicTeamInboxes)
 }
-func (s *SlackService) validateFeedSelection(ctx context.Context, a *model.SupportChannelAccount, token string, ch SlackChannel, ids []string) error {
-	if len(ids) == 0 {
+func (s *SlackService) validateFeedSelection(ctx context.Context, a *model.SupportChannelAccount, token string, ch SlackChannel, route model.SlackRoute) error {
+	if len(route.MailboxIDs) == 0 {
 		return fmt.Errorf("%w: select at least one inbox", ErrChannelInvalid)
 	}
+	if ch.IsShared || ch.PendingShared {
+		return fmt.Errorf("%w: choose an internal Slack channel for sharing inboxes", ErrChannelInvalid)
+	}
 	seen := map[string]bool{}
-	for _, id := range ids {
+	for _, id := range route.MailboxIDs {
 		if seen[id] {
 			return fmt.Errorf("%w: duplicate inbox", ErrChannelInvalid)
 		}
@@ -37,23 +40,25 @@ func (s *SlackService) validateFeedSelection(ctx context.Context, a *model.Suppo
 			if _, err := s.channels.mailboxSelection(ctx, a.WorkspaceID, &id); err != nil {
 				return err
 			}
+			if route.PublicTeamInboxes && !s.channels.inbox.isMailboxAccessible(ctx, a.WorkspaceID, &id) {
+				return fmt.Errorf("%w: choose a team inbox you can access", ErrChannelInvalid)
+			}
 		}
-		ok, err := s.feedAudience(ctx, a, token, ch, id)
+		ok, err := s.feedAudience(ctx, a, token, ch, id, route.PublicTeamInboxes)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			return fmt.Errorf("%w: use an internal channel. For a team inbox, invite Helpin to a private channel where each member has linked their Helpin account and can read that inbox", ErrChannelInvalid)
+			if !ch.IsPrivate {
+				return fmt.Errorf("%w: this Slack channel is public. Reload the page to review the channel and save the rule", ErrChannelInvalid)
+			}
+			return fmt.Errorf("%w: each private channel member must link their Helpin account and have access to the selected inboxes", ErrChannelInvalid)
 		}
 	}
 	return nil
 }
-func (s *SlackService) feedAudience(ctx context.Context, a *model.SupportChannelAccount, token string, ch SlackChannel, key string) (bool, error) {
-	visibility := "members_only"
-	if key == "shared" {
-		visibility = "workspace"
-	}
-	if !slackFeedAllowsChannel(ch, visibility) {
+func (s *SlackService) feedAudience(ctx context.Context, a *model.SupportChannelAccount, token string, ch SlackChannel, key string, publicTeamInboxes bool) (bool, error) {
+	if !slackFeedAllowsChannel(ch, key, publicTeamInboxes) {
 		return false, nil
 	}
 	if !ch.IsPrivate {
@@ -158,7 +163,7 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 	if info.Channel.ID != route.CurrentChannelID || !info.Channel.IsMember {
 		return nil, nil
 	}
-	ok, err := s.feedAudience(ctx, a, token, info.Channel, key)
+	ok, err := s.feedAudience(ctx, a, token, info.Channel, key, route.PublicTeamInboxes)
 	if !ok || err != nil {
 		return nil, err
 	}

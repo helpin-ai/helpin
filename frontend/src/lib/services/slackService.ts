@@ -8,6 +8,7 @@ export interface SlackRoute {
   crm_company_id?: string | null
   purpose: SlackPurpose
   mailbox_ids?: string[]
+  public_team_inboxes?: boolean
   mailbox_id: string | null
   team_id: string | null
   epic_id: string | null

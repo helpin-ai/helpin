@@ -229,12 +229,14 @@ func (s *SlackService) Configure(ctx context.Context, workspace string, row mode
 		return fmt.Errorf("%w: invite @Helpin to an active channel first", ErrChannelInvalid)
 	}
 	preserveCompany := false
+	// A rule saved for a private channel must not publish team inboxes if the channel later becomes public.
+	row.PublicTeamInboxes = row.PublicTeamInboxes && row.Purpose == "inbox" && !info.Channel.IsPrivate
 	switch row.Purpose {
 	case "inbox":
 		if !s.authz.Can(actor, authorization.PermSupportAdmin) {
 			return fmt.Errorf("%w: support admin permission is required", ErrChannelInvalid)
 		}
-		if err = s.validateFeedSelection(ctx, a, token, info.Channel, row.MailboxIDs); err != nil {
+		if err = s.validateFeedSelection(ctx, a, token, info.Channel, row); err != nil {
 			return err
 		}
 		row.MailboxID, row.TeamID, row.EpicID, row.CRMCompanyID = nil, nil, nil, nil

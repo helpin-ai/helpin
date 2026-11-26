@@ -132,19 +132,22 @@ func TestSlackInboxFeedHTMLReply(t *testing.T) {
 
 func TestSlackInboxFeedVisibility(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		ch         SlackChannel
-		visibility string
-		want       bool
+		name              string
+		ch                SlackChannel
+		inbox             string
+		publicTeamInboxes bool
+		want              bool
 	}{
-		{"public workspace inbox", SlackChannel{}, "workspace", true},
-		{"private restricted inbox", SlackChannel{IsPrivate: true}, "members_only", true},
-		{"public restricted inbox", SlackChannel{}, "members_only", false},
-		{"externally shared", SlackChannel{IsShared: true, IsPrivate: true}, "workspace", false},
-		{"pending external share", SlackChannel{PendingShared: true}, "workspace", false},
+		{"public main inbox", SlackChannel{}, "shared", false, true},
+		{"private team inbox", SlackChannel{IsPrivate: true}, "billing", false, true},
+		{"public team inbox", SlackChannel{}, "billing", true, true},
+		{"private rule became public", SlackChannel{}, "billing", false, false},
+		{"externally shared", SlackChannel{IsShared: true}, "billing", true, false},
+		{"pending external share", SlackChannel{PendingShared: true}, "billing", true, false},
+		{"archived", SlackChannel{IsArchived: true}, "billing", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := slackFeedAllowsChannel(tc.ch, tc.visibility); got != tc.want {
+			if got := slackFeedAllowsChannel(tc.ch, tc.inbox, tc.publicTeamInboxes); got != tc.want {
 				t.Fatalf("eligible = %v", got)
 			}
 		})

@@ -656,8 +656,26 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 	if err != nil || len(routes) != 1 || len(routes[0].MailboxIDs) != 1 || routes[0].MailboxIDs[0] != "shared" {
 		t.Fatalf("rule round trip: %+v %v", routes, err)
 	}
+	for _, name := range []string{"Billing", "Returns"} {
+		box := model.SupportMailbox{WorkspaceID: f.workspace, Name: name, Handle: strings.ToLower(name), CreatedByID: f.userID}
+		if err = f.db.Create(&box).Error; err != nil {
+			t.Fatal(err)
+		}
+		cfg.MailboxIDs = append(cfg.MailboxIDs, box.ID)
+	}
+	if err := s.Configure(owner, f.workspace, cfg); !errors.Is(err, ErrChannelInvalid) {
+		t.Fatalf("team inboxes published without a public rule: %v", err)
+	}
+	cfg.PublicTeamInboxes = true
+	if err := s.Configure(owner, f.workspace, cfg); err != nil {
+		t.Fatalf("save public team inboxes: %v", err)
+	}
+	routes, err = s.repo.Routes(ctx, f.account.ID)
+	if err != nil || len(routes) != 1 || !routes[0].PublicTeamInboxes || len(routes[0].MailboxIDs) != 3 {
+		t.Fatalf("public inbox rule round trip: %+v %v", routes, err)
+	}
 	conv := uuid.NewString()
-	mustExec(t, f.db, `INSERT INTO support_conversations(id,workspace_id,display_id,subject,status,channel,source) VALUES(?,?,88,'Checkout issue','open','widget','widget')`, conv, f.workspace)
+	mustExec(t, f.db, `INSERT INTO support_conversations(id,workspace_id,mailbox_id,display_id,subject,status,channel,source) VALUES(?,?,?,88,'Checkout issue','open','widget','widget')`, conv, f.workspace, cfg.MailboxIDs[1])
 	msg := f.reply(t, conv, "customer", "Checkout failed.")
 	deliver := func(messageID *string) {
 		t.Helper()

@@ -146,7 +146,7 @@ func (r *SlackRepository) SetRoute(ctx context.Context, row model.SlackRoute, pr
 			return err
 		}
 		row.ChannelID = id.RoutingID
-		columns := []string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id"}
+		columns := []string{"channel_name", "purpose", "mailbox_id", "team_id", "epic_id", "public_team_inboxes"}
 		if preserveCompany {
 			row.CRMCompanyID = nil
 		} else {

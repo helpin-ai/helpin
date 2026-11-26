@@ -302,7 +302,7 @@ func (s *SlackService) ticketInboxOptions(ctx context.Context, a *model.SupportC
 			}
 			label = box.Name
 		}
-		ok, err := s.feedAudience(ctx, a, token, info.Channel, key)
+		ok, err := s.feedAudience(ctx, a, token, info.Channel, key, route.PublicTeamInboxes)
 		if err != nil {
 			return nil, err
 		}
