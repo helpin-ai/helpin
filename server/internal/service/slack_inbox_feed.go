@@ -201,15 +201,19 @@ func renderFeedStopNotice(parts ...slackNoticePart) (string, map[string]any) {
 }
 
 func (s *SlackService) feedStopNotice(ctx context.Context, conv *model.SupportConversation, key string, followed []string) (string, map[string]any) {
+	id := slackNoticePart{text: conv.ID, bold: true}
+	if conv.DisplayID > 0 {
+		id.text = fmt.Sprintf("#%d", conv.DisplayID)
+	}
 	switch {
 	case conv.AnonymizedAt != nil:
 		return renderFeedStopNotice(
 			slackNoticePart{text: "Personal details were removed", bold: true},
-			slackNoticePart{text: " from this conversation in Helpin."},
+			slackNoticePart{text: " from "}, id, slackNoticePart{text: " in Helpin."},
 		)
 	case conv.MergedIntoID != nil:
 		return renderFeedStopNotice(
-			slackNoticePart{text: "This conversation was "},
+			id, slackNoticePart{text: " was "},
 			slackNoticePart{text: "merged", bold: true},
 			slackNoticePart{text: " into another conversation in Helpin."},
 		)
@@ -241,9 +245,9 @@ func (s *SlackService) feedStopNotice(ctx context.Context, conv *model.SupportCo
 			actor = "A routing rule"
 		}
 	}
-	parts := []slackNoticePart{{text: "This conversation is in "}}
+	parts := []slackNoticePart{id, {text: " is in "}}
 	if actor != "" {
-		parts = []slackNoticePart{{text: actor, bold: true}, {text: " moved this conversation to "}}
+		parts = []slackNoticePart{{text: actor, bold: true}, {text: " moved "}, id, {text: " to "}}
 	}
 	parts = append(parts, slackNoticePart{text: destination, bold: true}, slackNoticePart{text: afterDestination})
 	return renderFeedStopNotice(parts...)

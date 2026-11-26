@@ -899,13 +899,13 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 		t.Helper()
 		update := updates[len(updates)-1]
 		body := fmt.Sprint(update["blocks"])
-		prefix := "This conversation is in"
+		prefix := "#88 is in"
 		var wantBold []string
 		if actor != "" {
-			prefix = actor + " moved this conversation to"
+			prefix = actor + " moved #88 to"
 			wantBold = append(wantBold, actor)
 		}
-		wantBold = append(wantBold, "“"+box.Name+"”")
+		wantBold = append(wantBold, "#88", "“"+box.Name+"”")
 		notice := fmt.Sprintf("%s “%s”, which this channel doesn’t follow. Updates have stopped in this thread.", prefix, box.Name)
 		if update["ts"] != trow.RootTS || update["text"] != notice+"\n"+link || update["mrkdwn"] != false {
 			t.Fatalf("wrong root notice: %+v", update)
@@ -1037,22 +1037,52 @@ func testSlackFeedEmailPresentation(t *testing.T, f *outboxFixture, conv, id str
 	t.Helper()
 	f.inbox.emailLogRepo = repository.NewSupportEmailLogRepository(f.db)
 	mustExec(t, f.db, "UPDATE support_messages SET via_channel='email',content='Old fallback' WHERE id=?", id)
-	log := model.SupportEmailLog{WorkspaceID: f.workspace, ConversationID: conv, Direction: "inbound", MessageIDs: model.DocsStringArray{id}, FromEmail: "maya@example.com", FromDisplayName: "Maya Chen", HTMLBody: `<div style="display:none">Hidden preheader</div><p>My <b>export</b> is stuck.</p><div class="gmail_quote">Old quote</div>`}
+	log := model.SupportEmailLog{WorkspaceID: f.workspace, ConversationID: conv, Direction: "inbound", MessageIDs: model.DocsStringArray{id}, FromEmail: "maya@example.com", FromDisplayName: "Maya Chen", HTMLBody: `<div style="display:none">Hidden preheader</div><p>My <b>export</b> is stuck.</p><div class="gmail_signature">Office address</div><div class="gmail_quote">Old quote</div>`}
 	if err := f.db.Create(&log).Error; err != nil {
 		t.Fatal(err)
 	}
 	deliver(nil)
+	checkEmail := func() {
+		t.Helper()
+		for _, field := range []string{"blocks", "text"} {
+			value := fmt.Sprint(lastUpdate()[field])
+			for _, hidden := range []string{"Office address", "Old quote", "preheader"} {
+				if strings.Contains(value, hidden) {
+					t.Fatalf("%s contains hidden email content %q", field, hidden)
+				}
+			}
+		}
+	}
+	checkEmail()
 	card := fmt.Sprint(lastUpdate()["blocks"])
-	if !strings.Contains(card, "My export is stuck.") || strings.Contains(card, "Old quote") || strings.Contains(card, "preheader") {
+	if !strings.Contains(card, "My export is stuck.") {
 		t.Fatalf("email excerpt: %s", card)
 	}
 	deliver(&id)
+	checkEmail()
 	reply := fmt.Sprint(lastUpdate()["blocks"])
-	if !strings.Contains(reply, "**export**") || !strings.Contains(reply, "Maya Chen") || !strings.Contains(reply, "#message-"+id) || strings.Contains(reply, "Old quote") {
+	if !strings.Contains(reply, "**export**") || !strings.Contains(reply, "Maya Chen") || !strings.Contains(reply, "#message-"+id) {
 		t.Fatalf("email thread: %s", reply)
 	}
+	// A teammate can reply from their mail client privately or with the customer copied.
+	for _, capture := range []struct {
+		direction, status string
+		internal          bool
+	}{
+		{"inbound", "sent", true},
+		{"outbound", "external", false},
+	} {
+		mustExec(t, f.db, "UPDATE support_messages SET sender_type='user',is_internal=? WHERE id=?", capture.internal, id)
+		mustExec(t, f.db, "UPDATE support_email_logs SET direction=?,status=?,html_body=? WHERE id=?", capture.direction, capture.status,
+			`<p>Teammate email</p><div class="gmail_signature">Office address</div><div class="gmail_quote">Old quote</div>`, log.ID)
+		deliver(&id)
+		checkEmail()
+		if text := fmt.Sprint(lastUpdate()["text"]); !strings.Contains(text, "Teammate email") {
+			t.Fatalf("%s email reply: %s", capture.status, text)
+		}
+	}
 	mustExec(t, f.db, "DELETE FROM support_email_logs WHERE id=?", log.ID)
-	mustExec(t, f.db, "UPDATE support_messages SET content='',via_channel='widget' WHERE id=?", id)
+	mustExec(t, f.db, "UPDATE support_messages SET content='',via_channel='widget',sender_type='customer' WHERE id=?", id)
 	mustExec(t, f.db, "INSERT INTO support_attachments(workspace_id,message_id,file_name,file_size,content_type,is_uploaded,uploaded_by_type) VALUES(?,?,'invoice.pdf',115,'application/pdf',true,'customer')", f.workspace, id)
 	deliver(nil)
 	if text := fmt.Sprint(lastUpdate()["blocks"]); !strings.Contains(text, "📎 Attachment: invoice.pdf") {

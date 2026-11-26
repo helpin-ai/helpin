@@ -154,14 +154,19 @@ func applyForwardedEmailProjection(projection *inboundEmailProjection, visibleTe
 }
 
 func cleanForwardedEmailProjectionText(content string) string {
+	note, body := forwardedEmailProjectionParts(content)
+	return strings.Join(nonEmptyForwardedEmailParts(note, body), "\n\n")
+}
+
+func forwardedEmailProjectionParts(content string) (note, body string) {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
 	markerIndex, _ := firstForwardedEmailMarker(lines)
 	if markerIndex < 0 {
-		return strings.TrimSpace(content)
+		return "", strings.TrimSpace(content)
 	}
 
-	note := strings.TrimSpace(strings.Join(lines[:markerIndex], "\n"))
+	note = strings.TrimSpace(strings.Join(lines[:markerIndex], "\n"))
 	bodyStart := -1
 	firstNonMetadata := -1
 	sawMetadata := false
@@ -188,9 +193,9 @@ func cleanForwardedEmailProjectionText(content string) string {
 	}
 	if bodyStart < 0 {
 		if note != "" {
-			return note
+			return note, ""
 		}
-		return strings.TrimSpace(content)
+		return "", strings.TrimSpace(content)
 	}
 
 	bodyEnd := len(lines)
@@ -200,8 +205,7 @@ func cleanForwardedEmailProjectionText(content string) string {
 			break
 		}
 	}
-	body := strings.TrimSpace(strings.Join(lines[bodyStart:bodyEnd], "\n"))
-	return strings.TrimSpace(strings.Join(nonEmptyForwardedEmailParts(note, body), "\n\n"))
+	return note, strings.TrimSpace(strings.Join(lines[bodyStart:bodyEnd], "\n"))
 }
 
 func isForwardedEmailMetadataLine(line string) bool {
