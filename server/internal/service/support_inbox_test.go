@@ -1425,8 +1425,8 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 	if deliveries[0].Channel != "in_app" || deliveries[0].Status != "delivered" {
 		t.Fatalf("first delivery = %+v, want delivered in_app", deliveries[0])
 	}
-	if deliveries[1].Channel != "support_reply_email" || deliveries[1].Status != "pending" {
-		t.Fatalf("second delivery = %+v, want pending support_reply_email", deliveries[1])
+	if deliveries[1].Channel != "support_reply_email" || deliveries[1].Status != "skipped" {
+		t.Fatalf("second delivery = %+v, want customer reply email skipped by default", deliveries[1])
 	}
 	if len(emailer.sent) != 0 {
 		t.Fatalf("sent email count = %d, want 0", len(emailer.sent))

@@ -174,8 +174,9 @@ func TestEmit_UpdatesExistingNotificationAndAddsEvent(t *testing.T) {
 	}
 
 	deliveries := loadNotificationServiceDeliveries(t, db)
-	if len(deliveries) != 1 || deliveries[0].Channel != "in_app" || deliveries[0].Status != "delivered" {
-		t.Fatalf("deliveries = %+v, want one delivered in_app row", deliveries)
+	if len(deliveries) != 2 || deliveries[0].Channel != "email" || deliveries[0].Status != "skipped" ||
+		deliveries[1].Channel != "in_app" || deliveries[1].Status != "delivered" {
+		t.Fatalf("deliveries = %+v, want skipped status email and delivered in-app update", deliveries)
 	}
 }
 
@@ -286,8 +287,9 @@ func TestEmit_SkipFollowersLimitsDeliveryToExplicitRecipients(t *testing.T) {
 	}
 }
 
-func TestEmit_SupportReplyCreatesPendingDelayedEmailDelivery(t *testing.T) {
+func TestEmit_SupportReplyOptInCreatesPendingDelayedEmailDelivery(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 
@@ -340,6 +342,7 @@ func TestEmit_SupportReplyCreatesPendingDelayedEmailDelivery(t *testing.T) {
 
 func TestProcessPendingSupportReplyEmails_SendsAfterDelay(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	dueAt := now.Add(-4 * time.Minute)
@@ -387,6 +390,7 @@ func TestProcessPendingSupportReplyEmails_SendsAfterDelay(t *testing.T) {
 
 func TestProcessPendingSupportReplyEmails_SkipsHandledNotifications(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	dueAt := now.Add(-4 * time.Minute)
@@ -437,6 +441,7 @@ func TestProcessPendingSupportReplyEmails_SkipsHandledNotifications(t *testing.T
 
 func TestProcessPendingSupportReplyEmails_BatchesToLatestPendingReply(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	older := now.Add(-5 * time.Minute)
@@ -753,6 +758,16 @@ func newNotificationServiceTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func enableSupportReplyEmail(t *testing.T, db *gorm.DB, workspaceID, userID string) {
+	t.Helper()
+	err := repository.NewNotificationPreferenceRepository(db).UpdateWorkspace(t.Context(), userID, workspaceID, model.UpdateNotificationPreferenceRequest{
+		ChannelChanges: map[string]map[string]bool{model.NotifCategorySupportReplies: {"email": true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedNotificationServiceUser(t *testing.T, db *gorm.DB, userID, email, fullName string, now time.Time) {
 	t.Helper()
 	mustExecNotificationService(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -847,31 +862,41 @@ func TestSupportAssignmentChannelsWithoutSlack(t *testing.T) {
 func TestModuleNotificationRoutingAndDefaults(t *testing.T) {
 	rule := model.JSONB{"automation_rule_id": "rule"}
 	for _, tc := range []struct {
-		event, category string
-		meta            model.JSONB
-		inApp           bool
+		event, category       string
+		meta                  model.JSONB
+		inApp, desktop, email bool
 	}{
-		{"support_conversation.assigned", "support.assignments", nil, true},
-		{"crm.assigned", "crm.assignments", nil, true},
-		{"task.assigned", "crm.assignments", model.JSONB{"crm_follow_up": true}, true},
-		{"crm.mention", "crm.mentions", nil, true},
-		{"task.agent_attention_required", "automation.attention", rule, true},
-		{"task.agent_attention_required", "agent_attention", nil, true},
-		{"external_mcp.reauthorization_required", "integrations", nil, true},
-		{"doc.updated", "docs.updates", nil, false},
-		{"crm.deal_updated", "crm.updates", nil, false},
-		{"agent_run.started", "agents.activity", nil, false},
-		{"agent_run.finished", "automation.activity", rule, false},
-		{"automation_rule.activity", "automation.activity", nil, false},
-		{"automation_rule.failed", "automation.failures", nil, true},
+		{"support_conversation.assigned", "support.assignments", nil, true, true, false},
+		{"crm.assigned", "crm.assignments", nil, true, false, true},
+		{"task.assigned", "crm.assignments", model.JSONB{"crm_follow_up": true}, true, false, true},
+		{"crm.mention", "crm.mentions", nil, true, true, true},
+		{"task.agent_attention_required", "automation.attention", rule, true, true, true},
+		{"task.agent_attention_required", "agent_attention", nil, true, true, true},
+		{"external_mcp.reauthorization_required", "integrations", nil, true, false, true},
+		{"doc.updated", "docs.updates", nil, true, false, false},
+		{"crm.deal_updated", "crm.updates", nil, true, false, false},
+		{"agent_run.started", "agents.activity", nil, false, false, false},
+		{"agent_run.finished", "automation.activity", rule, false, false, false},
+		{"automation_rule.activity", "automation.activity", nil, false, false, false},
+		{"automation_rule.failed", "automation.failures", nil, true, true, true},
+		{"task.status_changed", "status_changes", nil, true, false, false},
+		{"task.assigned", "assignments", nil, true, true, true},
+		{"task.comment", "comments", nil, true, false, true},
+		{"task.mention", "mentions", nil, true, true, true},
+		{"doc.mention", "mentions", nil, true, true, true},
+		{"support_conversation.customer_reply", "support_replies", nil, true, true, false},
+		{"support_conversation.mentioned", "support_mentions", nil, true, true, true},
+		{"crm.signal_ready", "crm_signals", nil, true, false, true},
+		{"task.created", "subscriptions", nil, true, false, false},
+		{"sprint.updated", "sprints", nil, true, false, false},
 	} {
 		event := model.NotificationEventInput{EventType: tc.event, Metadata: tc.meta}
 		var payload notificationWSData
 		if err := json.Unmarshal(buildNotificationWSData("owner", event, "normal", "unread"), &payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload.Category != tc.category || model.NotificationChannelDefault(payload.Category, "in_app") != tc.inApp || model.NotificationChannelDefault(payload.Category, "email") || model.NotificationChannelDefault(payload.Category, "desktop") != (tc.category == model.NotifCategoryAgentAttention) {
-			t.Errorf("%s routed to %q with unexpected defaults (want %q, in-app %t, email off)", tc.event, payload.Category, tc.category, tc.inApp)
+		if payload.Category != tc.category || model.NotificationChannelDefault(payload.Category, "in_app") != tc.inApp || model.NotificationChannelDefault(payload.Category, "email") != tc.email || model.NotificationChannelDefault(payload.Category, "desktop") != tc.desktop {
+			t.Errorf("%s routed to %q, want %q with in-app=%t, desktop=%t, email=%t", tc.event, payload.Category, tc.category, tc.inApp, tc.desktop, tc.email)
 		}
 	}
 }

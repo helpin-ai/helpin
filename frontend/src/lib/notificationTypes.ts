@@ -90,6 +90,7 @@ export interface NotificationPreferences {
   workspace_id: string
   mute_workspace: boolean
   channel_preferences: Record<string, { in_app?: boolean; email?: boolean; desktop?: boolean }>
+  channel_defaults?: Record<string, { in_app: boolean; email: boolean; desktop: boolean }>
   // Backward compat: account-level fields overlaid by backend
   do_not_disturb: boolean
   dnd_until?: string | null
@@ -114,9 +115,10 @@ export function isChannelEnabled(prefs: NotificationPreferences | undefined, cat
   const choices = prefs?.channel_preferences
   const override = choices?.[category]?.[channel]
   if (override !== undefined) return override
-  if (channel === 'in_app' && category === 'crm.assignments') return choices?.assignments?.in_app ?? true
-  if (channel === 'in_app' && category === 'automation.attention') return choices?.agent_attention?.in_app ?? true
-  return !optionalActivity.has(category) && (channel !== 'email' || !optionalEmail.has(category))
+  const inherited = channel === 'in_app' && category === 'crm.assignments' ? choices?.assignments?.in_app
+    : channel === 'in_app' && category === 'automation.attention' ? choices?.agent_attention?.in_app : undefined
+  return inherited ?? prefs?.channel_defaults?.[category]?.[channel]
+    ?? (!optionalActivity.has(category) && (channel !== 'email' || !optionalEmail.has(category)))
 }
 
 export interface EntityFollower {
@@ -151,7 +153,7 @@ export const SUPPORT_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   {
     key: 'support_replies',
     label: 'Customer replies',
-    description: 'Unread replies on conversations assigned to you',
+    description: 'Customer messages on conversations assigned to you or routed to you by the inbox',
   },
   {
     key: 'support_mentions',

@@ -33,9 +33,15 @@ describe('desktop notification policy', () => {
     expect(desktopCategoryEnabled({ ...preferences, channel_preferences: { [category]: { desktop: true } } }, category)).toBe(false)
     expect(desktopCategoryEnabled({ ...preferences, channel_preferences: { [category]: { in_app: true, desktop: true } } }, category)).toBe(true)
   })
-  it('defaults only direct attention categories on', () => {
+  it('uses the older desktop defaults when the API does not provide them', () => {
     for (const category of ['assignments', 'mentions', 'agent_attention', 'support_replies', 'support_mentions']) expect(desktopCategoryEnabled(preferences, category)).toBe(true)
     for (const category of ['comments', 'status_changes', 'subscriptions', 'sprints', 'crm_signals', 'integrations', 'unknown']) expect(desktopCategoryEnabled(preferences, category)).toBe(false)
+  })
+  it('inherits the server default for untouched switches and preserves a saved opt-out', () => {
+    const category = 'automation.failures'
+    const inherited = { ...preferences, channel_defaults: { [category]: { in_app: true, desktop: true, email: true } } }
+    expect(desktopCategoryEnabled(inherited, category)).toBe(true)
+    expect(desktopCategoryEnabled({ ...inherited, channel_preferences: { [category]: { desktop: false } } }, category)).toBe(false)
   })
   it('respects explicit category choices and disabled in-app delivery', () => {
     expect(desktopCategoryEnabled({ ...preferences, channel_preferences: { comments: { desktop: true } } }, 'comments')).toBe(true)

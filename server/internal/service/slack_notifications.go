@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -107,7 +106,7 @@ func (s *NotificationService) slackDestination(ctx context.Context, recipient st
 	if err != nil || !pref.CategoryEnabled(slackPreferenceKey(event)) {
 		return nil, err
 	}
-	enabled, err := s.prefRepo.ShouldNotify(ctx, recipient, event.WorkspaceID, event.EventType, "slack", event.TeamID)
+	enabled, err := s.prefRepo.ShouldNotifyWithMetadata(ctx, recipient, event.WorkspaceID, event.EventType, "slack", event.TeamID, event.Metadata)
 	if err != nil || !enabled {
 		return nil, err
 	}
@@ -172,43 +171,41 @@ func (s *SlackService) deliverNotification(ctx context.Context, job *model.Suppo
 	if job.WorkspaceID == nil || job.ChannelAccountID == nil {
 		return ErrChannelInvalid
 	}
-	event := model.NotificationEventInput{WorkspaceID: *job.WorkspaceID, EventType: p.EventType, EntityType: p.EntityType, EntityID: p.EntityID, TeamID: p.TeamID, Metadata: p.Metadata}
-	dest, err := s.notifications.slackDestination(ctx, p.UserID, event)
-	if err != nil || dest == nil || dest.AccountID != *job.ChannelAccountID || dest.SlackUser != p.SlackUser {
-		return err
-	}
-	allowed, err := s.notifications.canReceive(ctx, p.UserID, event)
-	if err != nil || !allowed {
-		return err
-	}
-	pending, err := s.repo.NotificationActionPending(ctx, p.UserID, event)
-	if err != nil || !pending {
-		return err
-	}
-	ws, err := s.notifications.workspaceRepo.GetByID(ctx, event.WorkspaceID)
+	workspace := *job.WorkspaceID
+	ws, err := s.notifications.workspaceRepo.GetByID(ctx, workspace)
 	if err != nil || ws == nil {
 		return err
 	}
-	account, err := s.repo.Installation(ctx, event.WorkspaceID)
-	if err != nil || account == nil || account.ID != dest.AccountID {
+	account, err := s.repo.Installation(ctx, workspace)
+	if err != nil || account == nil || account.ID != *job.ChannelAccountID {
 		return err
 	}
 	token, err := s.channels.decryptToken(account)
 	if err != nil {
 		return err
 	}
-	link := buildEntityURL(s.notifications.appBaseURL, ws.Slug, p.EntityType, p.EntityID, p.Metadata)
-	message := map[string]any{
-		"channel": dest.SlackUser, "client_msg_id": job.ID, "text": p.Title, "mrkdwn": false,
-		"unfurl_links": false, "unfurl_media": false,
-	}
-	if link != "" {
-		settings := strings.TrimRight(s.notifications.appBaseURL, "/") + "/w/" + url.PathEscape(ws.Slug) + "/settings/notifications?slack=" + url.QueryEscape(slackPreferenceKey(event))
-		message["text"] = p.Title + "\n" + link + "\nManage Slack notifications: " + settings
-		message["blocks"] = []map[string]any{
-			{"type": "section", "text": map[string]string{"type": "plain_text", "text": p.Title}},
-			{"type": "context", "elements": []map[string]string{{"type": "mrkdwn", "text": "<" + link + "|Open in Helpin> · <" + settings + "|Manage Slack notifications>"}}},
+	return s.repo.WithDMWindow(ctx, account.ID, p.UserID, p.SlackUser, func(raw []byte) ([]byte, error) {
+		ctx := withNotificationAccessCache(ctx)
+		ok, err := s.personalDMAllowed(ctx, workspace, account.ID, p)
+		if err != nil || !ok {
+			return nil, err
 		}
+		return s.sendPersonalDM(ctx, raw, job.ID, ws, account.ID, token, p)
+	})
+}
+
+func (p slackNotification) event(workspace string) model.NotificationEventInput {
+	return model.NotificationEventInput{WorkspaceID: workspace, EventType: p.EventType, EntityType: p.EntityType, EntityID: p.EntityID, TeamID: p.TeamID, Metadata: p.Metadata}
+}
+
+func (s *SlackService) personalDMAllowed(ctx context.Context, workspace, account string, p slackNotification) (bool, error) {
+	event := p.event(workspace)
+	dest, err := s.notifications.slackDestination(ctx, p.UserID, event)
+	if err != nil || dest == nil || dest.AccountID != account || dest.SlackUser != p.SlackUser {
+		return false, err
 	}
-	return s.api.Call(ctx, token, "chat.postMessage", message, nil)
+	if allowed, err := s.notifications.canReceive(ctx, p.UserID, event); err != nil || !allowed {
+		return false, err
+	}
+	return s.repo.NotificationActionPending(ctx, p.UserID, event)
 }

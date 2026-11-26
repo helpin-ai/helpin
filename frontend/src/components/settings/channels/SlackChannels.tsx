@@ -394,7 +394,6 @@ function RouteDialog({
             onChange={channel_id => setRoute({ ...route, channel_id })} />
         } />
         {channels.isError && <p role="alert" className="text-xs text-destructive">{errorText(channels.error)}</p>}
-        {route.purpose === 'inbox' && <p className="text-xs text-muted-foreground">Thread replies become internal notes. Use “Reply to customer” to send a response.</p>}
         {showWarning && (
           <div id={warningId} role="status" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
             <Alert01Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />

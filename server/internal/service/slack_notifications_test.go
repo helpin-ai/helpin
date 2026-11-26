@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -20,7 +22,7 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	now := time.Now()
 	db := newNotificationServiceTestDB(t)
 	mustExecNotificationService(t, db, "CREATE TABLE support_channel_accounts (id TEXT PRIMARY KEY, workspace_id TEXT, provider TEXT, disabled_at DATETIME, handle TEXT, external_account_id TEXT, token_encrypted TEXT)")
-	mustExecNotificationService(t, db, "CREATE TABLE slack_members (account_id TEXT, user_id TEXT, slack_user TEXT, notify_assignments BOOLEAN DEFAULT false, notify_mentions BOOLEAN DEFAULT false, notify_categories TEXT DEFAULT '{}', PRIMARY KEY(account_id,user_id))")
+	mustExecNotificationService(t, db, "CREATE TABLE slack_members (account_id TEXT, user_id TEXT, slack_user TEXT, notify_assignments BOOLEAN DEFAULT false, notify_mentions BOOLEAN DEFAULT false, notify_categories TEXT DEFAULT '{}', dm_window TEXT NOT NULL DEFAULT '[]', PRIMARY KEY(account_id,user_id))")
 	if err := db.AutoMigrate(&model.SupportInboundJob{}); err != nil {
 		t.Fatal(err)
 	}
@@ -40,18 +42,29 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	n := NewNotificationService(repository.NewNotificationRepository(db), repository.NewNotificationPreferenceRepository(db), repository.NewUserNotificationSettingsRepository(db), repository.NewFollowerRepository(db), repository.NewUserRepository(db), repository.NewWorkspaceRepository(db), nil, nil, "https://helpin.example")
 	n.SetSlackNotifications(repo, jobs)
 	var sent []map[string]any
+	var edits []map[string]any
+	var failNextEdit bool
 	api := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/chat.postMessage" {
-			t.Errorf("unexpected method %s", r.URL.Path)
-		}
 		var message map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&message); err != nil {
 			t.Error(err)
 		}
-		sent = append(sent, message)
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true,"ts":"1.2"}`))}, nil
+		switch r.URL.Path {
+		case "/chat.postMessage":
+			sent = append(sent, message)
+		case "/chat.update":
+			if failNextEdit {
+				failNextEdit = false
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":false,"error":"internal_error"}`))}, nil
+			}
+			edits = append(edits, message)
+		default:
+			t.Errorf("unexpected method %s", r.URL.Path)
+		}
+		response := fmt.Sprintf(`{"ok":true,"channel":"DM","ts":"%d.1"}`, len(sent))
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response))}, nil
 	})}
-	s := &SlackService{repo: repo, notifications: n, channels: &SupportChannelService{cfg: SupportChannelConfig{EncryptionKey: key}}, api: &slack.Client{BaseURL: "https://slack.example/", HTTP: api}}
+	s := &SlackService{repo: repo, notifications: n, channels: &SupportChannelService{cfg: SupportChannelConfig{EncryptionKey: key}, now: func() time.Time { return now }}, api: &slack.Client{BaseURL: "https://slack.example/", HTTP: api}}
 	emit := func(kind string) {
 		t.Helper()
 		err := n.Emit(ctx, model.NotificationEventInput{WorkspaceID: "ws", ActorID: "actor", ActorSnapshot: model.JSONB{"name": "Alex"}, EventType: kind, EntityType: "objective", EntityID: "item", Title: "updated <@U2>", ExplicitRecipients: []string{"member", "actor"}})
@@ -103,6 +116,10 @@ func TestPersonalSlackNotifications(t *testing.T) {
 	off := false
 	if err := s.SetNotificationPreferences(ctx, "ws", "member", model.UpdateSlackNotificationPreferences{Assignments: &off, Mentions: &on}); err != nil {
 		t.Fatal(err)
+	}
+	stored, err := repo.NotificationPreferences(ctx, "ws", "member")
+	if err != nil || stored.Overrides["support.assignments"] != false || stored.Overrides["docs.mentions"] != true {
+		t.Fatalf("expected explicit family switches to survive future default changes: %+v, %v", stored.Overrides, err)
 	}
 	if err := s.deliverNotification(ctx, job); err != nil {
 		t.Fatal(err)
@@ -218,6 +235,74 @@ func TestPersonalSlackNotifications(t *testing.T) {
 		}
 		countJobs(tc.jobs)
 	}
+	t.Run("personal DM bursts", func(t *testing.T) {
+		try := func(jobID, item string) error {
+			t.Helper()
+			payload, err := json.Marshal(slackNotification{UserID: "actor", SlackUser: "U3", EntityType: "objective", EntityID: item, EventType: "objective.assigned", Title: "Assignment " + item})
+			if err != nil {
+				t.Fatal(err)
+			}
+			j := model.SupportInboundJob{ID: jobID, WorkspaceID: strPtr("ws"), ChannelAccountID: strPtr("install"), Payload: string(payload)}
+			return s.deliverNotification(ctx, &j)
+		}
+		deliver := func(jobID, item string) {
+			t.Helper()
+			if err := try(jobID, item); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before := len(sent)
+		for i := 1; i <= 8; i++ {
+			item := fmt.Sprintf("item-%d", i)
+			deliver(item, item)
+		}
+		deliver("replay", "item-1")
+		if len(sent)-before != 5 || len(edits) == 0 {
+			t.Fatalf("burst created %d new DMs and %d edits", len(sent)-before, len(edits))
+		}
+		last := edits[len(edits)-1]
+		content := fmt.Sprint(last["text"])
+		for _, item := range []string{"item-5", "item-6", "item-7", "item-8"} {
+			if !strings.Contains(content, "/pm/objectives/"+item) {
+				t.Errorf("grouped DM omitted the link to %s", item)
+			}
+		}
+		if last["channel"] != "DM" || last["ts"] != fmt.Sprintf("%d.1", before+5) {
+			t.Fatalf("edit targeted the wrong DM: %+v", last)
+		}
+		n.SetAccessChecker(notificationAccessFunc(func(_ context.Context, _ string, event model.NotificationEventInput) (bool, error) {
+			return event.EntityID != "item-6", nil
+		}))
+		failNextEdit = true
+		if err := try("retry", "ninth"); err == nil {
+			t.Fatal("Slack edit failure was swallowed")
+		}
+		deliver("retry", "ninth")
+		deliver("retry", "ninth")
+		content = fmt.Sprint(edits[len(edits)-1]["text"])
+		if strings.Contains(content, "/item-6") || !strings.Contains(content, "/ninth") || len(sent)-before != 5 || len(edits) != 4 {
+			t.Fatalf("retried edit lost an alert, exposed a revoked item or pinged again: %s", content)
+		}
+		n.SetAccessChecker(nil)
+		now = now.Add(time.Hour)
+		deliver("next-hour", "item-1")
+		if len(sent)-before != 6 {
+			t.Fatal("expected a new DM when the rolling hour expired")
+		}
+		for i := 1; i < maxItemsPerDM*maxPersonalDMsPerHour; i++ {
+			item := fmt.Sprintf("bulk-%d", i)
+			deliver(item, item)
+		}
+		var wait *personalDMDeferred
+		if err := try("overflow", "last-item"); !errors.As(err, &wait) || !wait.until.Equal(now.Add(time.Hour)) {
+			t.Fatalf("expected the full window to defer the extra item until capacity returns, got %v", err)
+		}
+		now = wait.until
+		deliver("overflow", "last-item")
+		if len(sent)-before != 11 || !strings.Contains(fmt.Sprint(sent[len(sent)-1]["text"]), "/last-item") {
+			t.Fatal("deferred item did not arrive when capacity returned")
+		}
+	})
 	mustExecNotificationService(t, db, "UPDATE support_channel_accounts SET disabled_at=? WHERE id='install'", now)
 	emit("objective.mention")
 	countJobs(9)
@@ -232,14 +317,25 @@ func TestSlackModuleRouting(t *testing.T) {
 		direct            bool
 	}{
 		{"task.assigned", "task", "projects.assignments", true},
+		{"task.status_changed", "task", "projects.status_changes", false},
+		{"task.comment", "task", "projects.comments", false},
+		{"task.mention", "task", "projects.mentions", true},
+		{"task.created", "task", "projects.subscriptions", false},
+		{"sprint.updated", "sprint", "projects.sprints", false},
 		{"comment.mention", "document", "docs.mentions", true},
 		{"doc.updated", "document", "docs.updates", false},
-		{"automation_rule.failed", "automation_rule", "automation.failures", false},
+		{"automation_rule.failed", "automation_rule", "automation.failures", true},
 		{"crm.assigned", "crm_company", "crm.assignments", true},
 		{"crm.mention", "crm_contact", "crm.mentions", true},
 		{"crm.signal_ready", "crm_signal", "crm.signals", false},
+		{"crm.deal_updated", "crm_deal", "crm.updates", false},
+		{"support_conversation.assigned", "support_conversation", "support.assignments", true},
+		{"support_conversation.mentioned", "support_conversation", "support.mentions", true},
 		{"support_conversation.customer_reply", "support_conversation", "support.replies", false},
+		{"support_conversation.linked_task_completed", "support_conversation", "support.replies", false},
 		{"task.agent_attention_required", "agent_run", "agents.attention", true},
+		{"agent_run.started", "agent_run", "agents.activity", false},
+		{"automation_rule.activity", "automation_rule", "automation.activity", false},
 		{"external_mcp.reauthorization_required", "external_mcp_server", "integrations.connection", true},
 		{"new.event", "task", "", false},
 	} {
@@ -247,6 +343,15 @@ func TestSlackModuleRouting(t *testing.T) {
 		pref := model.SlackNotificationPreferences{Linked: true, Assignments: true, Mentions: true}
 		if key := slackPreferenceKey(event); key != tc.row || pref.CategoryEnabled(key) != tc.direct {
 			t.Errorf("%s: row %q, enabled %t", tc.kind, key, pref.CategoryEnabled(key))
+		}
+	}
+}
+
+func TestSlackCustomerReplyHonorsSavedChoice(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		pref := model.SlackNotificationPreferences{Linked: true, Overrides: model.JSONB{"support.replies": enabled}}
+		if pref.CategoryEnabled("support.replies") != enabled {
+			t.Fatalf("did not honor saved Slack customer reply setting %t", enabled)
 		}
 	}
 }

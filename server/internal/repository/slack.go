@@ -480,9 +480,10 @@ func (r *SlackRepository) UpdateNotificationPreferences(ctx context.Context, wor
 				continue
 			}
 			updates["notify_"+family] = *value
-			for key := range row.Overrides {
-				if model.SlackCategoryDefaults[key] == family {
-					delete(row.Overrides, key)
+			// A choice made through the older family switch is explicit for each of its rows.
+			for key, group := range model.SlackCategoryDefaults {
+				if group == family {
+					row.Overrides[key] = *value
 				}
 			}
 		}
@@ -493,6 +494,24 @@ func (r *SlackRepository) UpdateNotificationPreferences(ctx context.Context, wor
 		return tx.Table("slack_members").Where("account_id=? AND user_id=?", row.AccountID, user).Updates(updates).Error
 	})
 	return found, err
+}
+
+// WithDMWindow serializes Slack sends for the linked recipient, including across worker replicas.
+// Update the receipt only after Slack accepts the post or edit.
+func (r *SlackRepository) WithDMWindow(ctx context.Context, account, user, slackUser string, send func([]byte) ([]byte, error)) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		member := tx.Table("slack_members").Where("account_id=? AND user_id=? AND slack_user=?", account, user, slackUser)
+		var row struct{ DMWindow []byte }
+		result := member.Session(&gorm.Session{}).Select("dm_window").Clauses(clause.Locking{Strength: "UPDATE"}).Limit(1).Find(&row)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		next, err := send(row.DMWindow)
+		if err != nil || next == nil {
+			return err
+		}
+		return member.UpdateColumn("dm_window", string(next)).Error
+	})
 }
 
 // Actionable DMs may wait in the retry queue while the user resolves the request.

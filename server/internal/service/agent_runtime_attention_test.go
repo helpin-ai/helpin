@@ -176,7 +176,7 @@ func TestWorkflowFailureAlertsOwnerOncePerFailedRun(t *testing.T) {
 	if len(items) != 1 || items[0].RecipientID != "workflow-owner" || items[0].EventCount != 2 || items[0].EntityID != "rule" || items[0].EventType != "automation_rule.failed" {
 		t.Fatalf("workflow failures: %+v", items)
 	}
-	if err := db.Exec("INSERT INTO notification_preferences(user_id,workspace_id,mute_workspace,channel_preferences) VALUES ('workflow-owner','ws',false,?)", []byte(`{"automation.failures":{"in_app":false},"automation.activity":{"in_app":true}}`)).Error; err != nil {
+	if err := db.Exec("INSERT INTO notification_preferences(user_id,workspace_id,mute_workspace,channel_preferences) VALUES ('workflow-owner','ws',false,?)", []byte(`{"automation.failures":{"in_app":false,"email":false},"automation.activity":{"in_app":true}}`)).Error; err != nil {
 		t.Fatal(err)
 	}
 	run.ID = "silenced"

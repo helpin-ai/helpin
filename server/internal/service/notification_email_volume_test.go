@@ -11,6 +11,26 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
+func TestNotificationAssignmentEmailOnlyGoesToAssignee(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	now := time.Now().UTC()
+	for _, user := range []string{"assignee", "follower"} {
+		seedNotificationServiceUser(t, db, user, user+"@example.com", user, now)
+		seedNotificationServiceUserSettings(t, db, user, true, "immediate", nil, now)
+	}
+	mustExecNotificationService(t, db, "INSERT INTO entity_followers (user_id,workspace_id,entity_type,entity_id) VALUES ('follower','ws','objective','work')")
+	svc := newCRUDNotificationService(db)
+	mailer := &stubEmailSender{}
+	svc.emailClient = mailer
+	if err := svc.Emit(t.Context(), model.NotificationEventInput{WorkspaceID: "ws", EventType: "objective.assigned", EntityType: "objective", EntityID: "work", Title: "You were assigned an objective", ExplicitRecipients: []string{"assignee"}}); err != nil {
+		t.Fatal(err)
+	}
+	assertNotificationServiceCount(t, db, "notifications", 2)
+	if len(mailer.sent) != 1 || mailer.sent[0].to != "assignee@example.com" {
+		t.Fatalf("expected only the assignee to receive email, got %d emails", len(mailer.sent))
+	}
+}
+
 func TestNotificationEmailVolume(t *testing.T) {
 	for _, tc := range []struct {
 		name, eventType, frequency string
@@ -95,6 +115,7 @@ func TestNotificationOverflowDigestHonorsReadAndFrequency(t *testing.T) {
 
 func TestNotificationSupportEmailsShareVolumeLimit(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws", "user")
 	ctx := context.Background()
 	now := time.Now().UTC()
 	seedNotificationServiceUser(t, db, "user", "user@example.com", "Recipient", now)
