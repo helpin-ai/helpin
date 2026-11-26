@@ -27,7 +27,7 @@ Each cell is the default for one member in one workspace. Slack means a personal
 | Docs · Mentions | On · return to the exact discussion | On · an author needs your attention | On · follow up asynchronously | On · reach the named reviewer |
 | Docs · Document updates | On · catch up on followed documents | Off · edits can arrive in bursts | Off · successive drafts add little email value | Off · avoid a DM per edit |
 | Support · Assignments | On · keep a handoff in your inbox | On · pick up new work promptly | Off · frequent handoffs create mail volume | On · reach the assigned responder |
-| Support · Customer replies | On · keep the conversation visible | On · a customer is waiting | On · follow up if the reply stays unread and unanswered | On · reach the selected responder |
+| Support · Customer replies | On · keep the conversation visible | On · prompt the responder on an opted-in device | Off · routine replies can fill a responder’s mailbox, even during AI handling | Off · a personal DM can duplicate the shared inbox thread |
 | Support · Teammate mentions | On · return to the internal note | On · a teammate needs help | On · catch the request while away | On · prompt the teammate named |
 | CRM · Record assignments | On · track the new owner’s work | Off · most ownership changes can wait | On · review new responsibilities | On · alert the individual taking ownership |
 | CRM · Note mentions | On · find the note again | On · a colleague requested attention | On · keep the follow-up available while away | On · reach the person named |
@@ -41,6 +41,8 @@ Each cell is the default for one member in one workspace. Slack means a personal
 | Integrations · Connection issues | On · keep the reconnection task | Off · a browser interruption adds little | On · the account owner can return to reconnect | On · reach the person who can restore access |
 
 Saved on and off choices apply per switch. Untouched switches inherit these defaults in existing and new workspaces. Older Slack assignment and mention switches stored an automatic off and a manually chosen off identically. Those stored values take precedence to protect opt-outs.
+
+A customer message can trigger this alert even when it opens a conversation or Helpin AI is handling it. Helpin selects at most one eligible teammate per message. It tries the assignee, then the last teammate who replied if the conversation has stayed in that inbox, then an eligible inbox responder.
 
 Desktop alerts require local opt-in, browser permission and an enabled in-app category. Email respects account delivery settings. Mentions and input requests can be emailed promptly. Customer reply email waits at least three minutes and checks whether the conversation still needs attention. Mobile push for customer replies and support mentions follows their in-app setting. Projects and Docs share their mention setting for in-app, desktop and email. Each has its own Slack mention switch. The support customer reply switch also covers a linked task completing when the conversation owner needs to update the customer.
 

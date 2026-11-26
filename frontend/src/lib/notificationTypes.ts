@@ -153,7 +153,7 @@ export const SUPPORT_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   {
     key: 'support_replies',
     label: 'Customer replies',
-    description: 'Unread replies on conversations assigned to you',
+    description: 'Customer messages on conversations assigned to you or routed to you by the inbox',
   },
   {
     key: 'support_mentions',

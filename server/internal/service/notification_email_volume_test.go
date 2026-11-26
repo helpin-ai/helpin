@@ -95,6 +95,7 @@ func TestNotificationOverflowDigestHonorsReadAndFrequency(t *testing.T) {
 
 func TestNotificationSupportEmailsShareVolumeLimit(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws", "user")
 	ctx := context.Background()
 	now := time.Now().UTC()
 	seedNotificationServiceUser(t, db, "user", "user@example.com", "Recipient", now)

@@ -281,7 +281,7 @@ var WorkspaceNotificationDefaults = map[string]NotificationChannels{
 	NotifCategorySprints:         {InApp: true},
 	"docs.updates":               {InApp: true},
 	"support.assignments":        {InApp: true, Desktop: true},
-	NotifCategorySupportReplies:  {InApp: true, Desktop: true, Email: true},
+	NotifCategorySupportReplies:  {InApp: true, Desktop: true},
 	NotifCategorySupportMentions: {InApp: true, Desktop: true, Email: true},
 	"crm.assignments":            {InApp: true, Email: true},
 	"crm.mentions":               {InApp: true, Desktop: true, Email: true},

@@ -250,7 +250,8 @@ func TestSlackModuleRouting(t *testing.T) {
 		{"crm.deal_updated", "crm_deal", "crm.updates", false},
 		{"support_conversation.assigned", "support_conversation", "support.assignments", true},
 		{"support_conversation.mentioned", "support_conversation", "support.mentions", true},
-		{"support_conversation.customer_reply", "support_conversation", "support.replies", true},
+		{"support_conversation.customer_reply", "support_conversation", "support.replies", false},
+		{"support_conversation.linked_task_completed", "support_conversation", "support.replies", false},
 		{"task.agent_attention_required", "agent_run", "agents.attention", true},
 		{"agent_run.started", "agent_run", "agents.activity", false},
 		{"automation_rule.activity", "automation_rule", "automation.activity", false},
@@ -261,6 +262,15 @@ func TestSlackModuleRouting(t *testing.T) {
 		pref := model.SlackNotificationPreferences{Linked: true, Assignments: true, Mentions: true}
 		if key := slackPreferenceKey(event); key != tc.row || pref.CategoryEnabled(key) != tc.direct {
 			t.Errorf("%s: row %q, enabled %t", tc.kind, key, pref.CategoryEnabled(key))
+		}
+	}
+}
+
+func TestSlackCustomerReplyHonorsSavedChoice(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		pref := model.SlackNotificationPreferences{Linked: true, Overrides: model.JSONB{"support.replies": enabled}}
+		if pref.CategoryEnabled("support.replies") != enabled {
+			t.Fatalf("did not honor saved Slack customer reply setting %t", enabled)
 		}
 	}
 }

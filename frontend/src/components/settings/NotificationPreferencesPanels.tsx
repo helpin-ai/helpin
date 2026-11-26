@@ -275,7 +275,7 @@ export function NotificationCategoriesCard({
               <div className="flex min-w-0 items-center gap-1">
                 <span className="text-sm">{category.label}</span>
                 <PreferenceHelp title={category.label}>
-                  {category.description + (category.key === 'support_replies' ? '. Email alerts arrive after 3 minutes if the conversation is still unread and unanswered.' : '.')}
+                  {category.description + (category.key === 'support_replies' ? '. If you turn on email, Helpin alerts you only if the reply is still unread and unanswered after 3 minutes.' : '.')}
                 </PreferenceHelp>
               </div>
               <div className="flex justify-center">

@@ -287,8 +287,9 @@ func TestEmit_SkipFollowersLimitsDeliveryToExplicitRecipients(t *testing.T) {
 	}
 }
 
-func TestEmit_SupportReplyCreatesPendingDelayedEmailDelivery(t *testing.T) {
+func TestEmit_SupportReplyOptInCreatesPendingDelayedEmailDelivery(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 
@@ -341,6 +342,7 @@ func TestEmit_SupportReplyCreatesPendingDelayedEmailDelivery(t *testing.T) {
 
 func TestProcessPendingSupportReplyEmails_SendsAfterDelay(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	dueAt := now.Add(-4 * time.Minute)
@@ -388,6 +390,7 @@ func TestProcessPendingSupportReplyEmails_SendsAfterDelay(t *testing.T) {
 
 func TestProcessPendingSupportReplyEmails_SkipsHandledNotifications(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	dueAt := now.Add(-4 * time.Minute)
@@ -438,6 +441,7 @@ func TestProcessPendingSupportReplyEmails_SkipsHandledNotifications(t *testing.T
 
 func TestProcessPendingSupportReplyEmails_BatchesToLatestPendingReply(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
+	enableSupportReplyEmail(t, db, "ws-1", "user-1")
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	older := now.Add(-5 * time.Minute)
@@ -754,6 +758,16 @@ func newNotificationServiceTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func enableSupportReplyEmail(t *testing.T, db *gorm.DB, workspaceID, userID string) {
+	t.Helper()
+	err := repository.NewNotificationPreferenceRepository(db).UpdateWorkspace(t.Context(), userID, workspaceID, model.UpdateNotificationPreferenceRequest{
+		ChannelChanges: map[string]map[string]bool{model.NotifCategorySupportReplies: {"email": true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedNotificationServiceUser(t *testing.T, db *gorm.DB, userID, email, fullName string, now time.Time) {
 	t.Helper()
 	mustExecNotificationService(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -870,7 +884,7 @@ func TestModuleNotificationRoutingAndDefaults(t *testing.T) {
 		{"task.comment", "comments", nil, true, false, true},
 		{"task.mention", "mentions", nil, true, true, true},
 		{"doc.mention", "mentions", nil, true, true, true},
-		{"support_conversation.customer_reply", "support_replies", nil, true, true, true},
+		{"support_conversation.customer_reply", "support_replies", nil, true, true, false},
 		{"support_conversation.mentioned", "support_mentions", nil, true, true, true},
 		{"crm.signal_ready", "crm_signals", nil, true, false, true},
 		{"task.created", "subscriptions", nil, true, false, false},
