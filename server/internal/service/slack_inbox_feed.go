@@ -149,7 +149,7 @@ func (s *SlackService) loadFeed(ctx context.Context, a *model.SupportChannelAcco
 				return nil, err
 			}
 			if err == nil {
-				if err := s.syncFeedResolvedReaction(ctx, a, t, token, route.CurrentChannelID, false); err != nil {
+				if err := s.removeLegacyResolvedReaction(ctx, a, t, token, route.CurrentChannelID); err != nil {
 					return nil, err
 				}
 			}
@@ -282,7 +282,7 @@ func (s *SlackService) deliverInboxFeed(ctx context.Context, j *model.SupportInb
 				return err
 			}
 		}
-		return s.syncFeedResolvedReaction(ctx, a, t, f.token, f.channel, f.conv.Status == model.SupportConversationStatusResolved)
+		return s.removeLegacyResolvedReaction(ctx, a, t, f.token, f.channel)
 	})
 }
 
@@ -297,44 +297,32 @@ func (s *SlackService) deliverFeedMessage(ctx context.Context, f *feedContext, i
 	return s.mirrorFeedMessage(ctx, f, m)
 }
 
-// The feed lock serializes status changes. Record an add before calling Slack so
-// a reopen can remove it even if the original acknowledgement was lost.
-func (s *SlackService) syncFeedResolvedReaction(ctx context.Context, a *model.SupportChannelAccount, t *repository.FeedThread, token, channel string, resolved bool) error {
+// Older releases recorded a receipt before adding Helpin's check mark to the thread.
+func (s *SlackService) removeLegacyResolvedReaction(ctx context.Context, a *model.SupportChannelAccount, t *repository.FeedThread, token, channel string) error {
 	const key = "resolved_reaction"
 	previous, err := s.repo.FeedReceipt(ctx, t.ID, key)
-	if err != nil {
+	if err != nil || previous == "" {
 		return err
 	}
-	desired := ""
-	method := "reactions.remove"
-	if resolved {
-		desired, method = t.RootTS, "reactions.add"
-	}
-	// Reauthorization updates the installation. Older grants can still deliver
-	// the status label and replies without repeatedly requesting a denied reaction.
+	// Retry a denied removal only after the Slack installation changes.
 	missingScope := "missing_scope:" + a.UpdatedAt.UTC().Format(time.RFC3339Nano)
-	if previous == desired || previous == missingScope {
+	if previous == missingScope {
 		return nil
 	}
-	if resolved && previous != "adding" {
-		if err := s.repo.SaveFeedReceipt(ctx, t.ID, key, "adding"); err != nil {
-			return err
-		}
-	}
-	err = s.api.Call(ctx, token, method, map[string]string{"channel": channel, "timestamp": t.RootTS, "name": "white_check_mark"}, nil)
+	err = s.api.Call(ctx, token, "reactions.remove", map[string]string{"channel": channel, "timestamp": t.RootTS, "name": "white_check_mark"}, nil)
 	var apiErr *slack.APIError
 	if errors.As(err, &apiErr) {
-		switch {
-		case apiErr.Code == "missing_scope":
+		switch apiErr.Code {
+		case "missing_scope":
 			return s.repo.SaveFeedReceipt(ctx, t.ID, key, missingScope)
-		case resolved && apiErr.Code == "already_reacted", !resolved && apiErr.Code == "no_reaction":
+		case "no_reaction":
 			err = nil
 		}
 	}
 	if err != nil {
 		return err
 	}
-	return s.repo.SaveFeedReceipt(ctx, t.ID, key, desired)
+	return s.repo.SaveFeedReceipt(ctx, t.ID, key, "")
 }
 
 func feedButton(id, label, value string) map[string]any {
