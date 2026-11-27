@@ -2194,6 +2194,36 @@ func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.R
 	writeJSONWithETag(w, r, http.StatusOK, article)
 }
 
+// PublicRecordArticleView counts one view of a published article. The public
+// page calls it after rendering, because rendered pages are served from cache
+// and article reads no longer count views.
+func (h *DocsHandler) PublicRecordArticleView(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	locale := ""
+	if chi.URLParam(r, "locale") != "" {
+		resolved, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+		if !ok {
+			return
+		}
+		locale = resolved
+	}
+	err := h.helpcenterSvc.RecordPublicArticleView(r.Context(), cfg.WorkspaceID, locale, chi.URLParam(r, "articleKey"))
+	if errors.Is(err, service.ErrPublicArticleNotFound) {
+		writeError(w, http.StatusNotFound, "article not found")
+		return
+	}
+	if err != nil {
+		slog.WarnContext(r.Context(), "record help center article view failed", "error", err, "workspace_id", cfg.WorkspaceID)
+		writeError(w, http.StatusNotFound, "article not found")
+		return
+	}
+	setHelpcenterCacheHeader(w, helpcenterCacheNoStore)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // PublicResolvePath resolves a legacy or imported URL path to a redirect target.
 func (h *DocsHandler) PublicResolvePath(w http.ResponseWriter, r *http.Request) {
 	cfg := h.resolveSubdomain(w, r)

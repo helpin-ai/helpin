@@ -1,8 +1,29 @@
 import { createHash } from 'node:crypto'
+import fs from 'node:fs'
 import { createClient } from 'redis'
 
 const redisDataPrefix = 'hc:d:'
 const redisTagPrefix = 'hc:t:'
+
+// buildFingerprint identifies this client build from its hashed asset file
+// names. Cached HTML references those files, so pages rendered by another
+// build must never be served: a deploy removes the files they point at.
+export function buildFingerprint(assetsDir) {
+  let names = []
+  try {
+    names = fs.readdirSync(assetsDir).sort()
+  } catch {
+    return 'unknown'
+  }
+  return createHash('sha256').update(names.join('\n')).digest('hex').slice(0, 12)
+}
+
+// Only canonical URLs go to the shared cache. Query strings (tracking tags,
+// cache busters, search terms) would each store a full page for the whole
+// TTL; they stay in the short per-process cache instead.
+export function isSharedCacheable(url) {
+  return url.search === ''
+}
 
 export function renderCacheKey(cacheKey) {
   const digest = createHash('sha256').update(cacheKey).digest('hex')

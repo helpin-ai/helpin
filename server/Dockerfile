@@ -22,6 +22,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/recover-missed-support-emails ./cmd/recover-missed-support-emails
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/reindex-helpcenter-search ./cmd/reindex-helpcenter-search
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/repair-helpcenter-artifacts ./cmd/repair-helpcenter-artifacts
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/backfill-helpcenter-mirrors ./cmd/backfill-helpcenter-mirrors
 
 # ---- Minimal runtime base ----
 FROM alpine:3.19 AS runtime-base
@@ -42,6 +43,7 @@ COPY --from=builder /app/reconcile-git-pr-status .
 COPY --from=builder /app/recover-missed-support-emails .
 COPY --from=builder /app/reindex-helpcenter-search .
 COPY --from=builder /app/repair-helpcenter-artifacts .
+COPY --from=builder /app/backfill-helpcenter-mirrors .
 RUN chown -R app:app /app
 
 USER app:app

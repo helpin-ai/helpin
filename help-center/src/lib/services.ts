@@ -192,6 +192,24 @@ export const helpCenterService = {
       payload,
     ),
 
+  // Rendered pages are served from cache, so the page reports each view
+  // itself; the response has no body and failures are ignored.
+  recordArticleView: (
+    subdomain: string,
+    locale: string,
+    articleKey: string,
+    multilingualEnabled: boolean,
+  ) =>
+    api.post(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/articles/${articleKey}/view`,
+        `/articles/${articleKey}/view`,
+      ),
+    ),
+
   getPreview: (subdomain: string, docId: string, token: string) =>
     api.get<PreviewArticleDetail>(
       `/hc/${subdomain}/preview/${docId}?token=${encodeURIComponent(token)}`,

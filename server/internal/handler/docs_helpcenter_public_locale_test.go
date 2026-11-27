@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +53,15 @@ func newDocsHelpcenterPublicHandlerForTest(db *gorm.DB) *DocsHandler {
 	}
 }
 
+// backfillHelpcenterMirrorsForHandlerTest writes the default-locale mirrors
+// that service writes create for real data; the fixtures seed tables directly.
+func backfillHelpcenterMirrorsForHandlerTest(t *testing.T, h *DocsHandler) {
+	t.Helper()
+	if err := h.translationSvc.EnsureDefaultLocaleMirrorsForWorkspace(context.Background(), "ws-handler-i18n"); err != nil {
+		t.Fatalf("backfill help center mirrors: %v", err)
+	}
+}
+
 func TestDocsHelpcenterPublicLocale_DisabledLocaleRedirectsToDefault(t *testing.T) {
 	t.Parallel()
 
@@ -91,6 +101,7 @@ func TestDocsHelpcenterPublicLocale_SingleLocaleSpacesDoesNotRedirect(t *testing
 		t.Fatalf("restrict help center to single locale: %v", err)
 	}
 	h := newDocsHelpcenterPublicHandlerForTest(db)
+	backfillHelpcenterMirrorsForHandlerTest(t, h)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/hc/handler-i18n/spaces", nil)
 	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{
@@ -228,7 +239,9 @@ func TestDocsHelpcenterPublicLocale_ConfigFiltersInvalidFeaturedCollectionCards(
 	}
 }
 
-func TestDocsHelpcenterPublicLocale_NavigationBackfillsMissingCollectionSlug(t *testing.T) {
+// Public reads no longer write mirrors; the write-path backfill repairs a
+// collection with no slug, and navigation then serves it.
+func TestDocsHelpcenterPublicLocale_MirrorBackfillRepairsMissingCollectionSlug(t *testing.T) {
 	t.Parallel()
 
 	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
@@ -248,6 +261,7 @@ func TestDocsHelpcenterPublicLocale_NavigationBackfillsMissingCollectionSlug(t *
 		t.Fatalf("clear collection translation slug: %v", err)
 	}
 	h := newDocsHelpcenterPublicHandlerForTest(db)
+	backfillHelpcenterMirrorsForHandlerTest(t, h)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/hc/handler-i18n/spaces/getting-started/navigation", nil)
 	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{
@@ -498,6 +512,7 @@ func TestDocsHelpcenterPublicBootstrap_ReturnsLocaleConfigAndSpaces(t *testing.T
 	now := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
 	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
 	h := newDocsHelpcenterPublicHandlerForTest(db)
+	backfillHelpcenterMirrorsForHandlerTest(t, h)
 
 	req := httptest.NewRequest(
 		http.MethodGet,

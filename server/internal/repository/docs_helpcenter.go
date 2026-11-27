@@ -281,6 +281,29 @@ func (r *DocsHelpcenterRepository) GetArticle(ctx context.Context, documentID st
 	return &art, nil
 }
 
+// ListArticlePublicIDsByDocumentIDs maps document IDs to their help center
+// article public IDs in one query. Documents without an article are absent.
+func (r *DocsHelpcenterRepository) ListArticlePublicIDsByDocumentIDs(ctx context.Context, documentIDs []string) (map[string]string, error) {
+	result := make(map[string]string, len(documentIDs))
+	if len(documentIDs) == 0 {
+		return result, nil
+	}
+	var rows []struct {
+		DocumentID string
+		PublicID   string
+	}
+	if err := r.db.WithContext(ctx).Model(&model.DocsHelpcenterArticle{}).
+		Select("document_id", "public_id").
+		Where("document_id IN ?", documentIDs).
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list helpcenter article public ids: %w", err)
+	}
+	for _, row := range rows {
+		result[row.DocumentID] = row.PublicID
+	}
+	return result, nil
+}
+
 // DeleteArticlesByDocumentIDs hard-deletes help center article extensions.
 func (r *DocsHelpcenterRepository) DeleteArticlesByDocumentIDs(ctx context.Context, documentIDs []string) error {
 	if len(documentIDs) == 0 {
