@@ -56,6 +56,9 @@ func TestEmitTaskContextPersonalizesEachRecipient(t *testing.T) {
 	for _, id := range []string{"requester", "owner", "follower"} {
 		seedNotificationServiceUser(t, db, id, id+"@example.com", id, now)
 		seedNotificationServiceUserSettings(t, db, id, true, "daily", nil, now)
+		// Status-change email is off by default; opt in so the digest is built.
+		mustExecNotificationService(t, db, `INSERT INTO notification_preferences (id,user_id,workspace_id,mute_workspace,channel_preferences) VALUES (?,?,?,?,?)`,
+			"pref-"+id, id, "ws-1", false, `{"status_changes":{"email":true}}`)
 	}
 	for _, query := range []string{
 		`CREATE TABLE workspace_members (id TEXT, workspace_id TEXT, user_id TEXT)`,
