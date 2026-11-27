@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Menu } from 'lucide-react'
 import { useArticle, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
@@ -14,6 +14,7 @@ import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { getArticlePager } from '@/lib/navigation'
 import { ArticleActions } from '@/components/article/ArticleActions'
+import { helpCenterService } from '@/lib/services'
 
 interface ArticleRouteViewProps {
   locale: string
@@ -56,6 +57,12 @@ export function ArticleRouteView({
   )
 
   useDocumentTitle(article?.title)
+
+  const viewedArticleId = article?.id
+  useEffect(() => {
+    if (!viewedArticleId || !subdomain) return
+    void helpCenterService.recordArticleView(subdomain, locale, articleKey, multilingualEnabled)
+  }, [viewedArticleId, subdomain, locale, articleKey, multilingualEnabled])
 
   if (isLoading) return <LoadingState />
   if (error || !article) {

@@ -27,7 +27,12 @@ import {
   negotiateEncoding,
 } from './serverCompression.mjs'
 
-import { createSharedRenderCache, helpcenterIdentifierTag } from './serverRenderCache.mjs'
+import {
+  buildFingerprint,
+  createSharedRenderCache,
+  helpcenterIdentifierTag,
+  isSharedCacheable,
+} from './serverRenderCache.mjs'
 import { createPortalMount, isPortalPagePath, portalApiSlug } from './portalMount.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
@@ -101,10 +106,12 @@ const REDIRECT_CACHE_TTL_MS = Number.parseInt(
   10,
 )
 
+// Writes invalidate shared pages by host tag, so the TTL is only a backstop.
 const SHARED_HTML_CACHE_TTL_SECONDS = Number.parseInt(
-  process.env.SHARED_HTML_CACHE_TTL_SECONDS || '300',
+  process.env.SHARED_HTML_CACHE_TTL_SECONDS || '86400',
   10,
 )
+const BUILD_FINGERPRINT = buildFingerprint(path.join(CLIENT_DIR, 'assets'))
 const htmlCache = new Map()
 const redirectCache = new Map()
 
@@ -243,6 +250,7 @@ function getCacheKey(url, request, hcContext) {
     url.host
 
   return [
+    BUILD_FINGERPRINT,
     request.method,
     host,
     hcContext?.subdomain || '',
@@ -842,7 +850,7 @@ async function handleRequest(request, response) {
         await writeCachedResponse(request, response, cached)
         return
       }
-      if (sharedRenderCache) {
+      if (sharedRenderCache && isSharedCacheable(url)) {
         const shared = await sharedRenderCache.get(cacheKey)
         if (shared) {
           shared.expiresAt = Date.now() + HTML_CACHE_TTL_MS
@@ -903,7 +911,7 @@ async function handleRequest(request, response) {
           status: fetchResponse.status,
         }
         setCachedResponse(cacheKey, cacheEntry)
-        if (sharedRenderCache) {
+        if (sharedRenderCache && isSharedCacheable(url)) {
           await sharedRenderCache.set(cacheKey, cacheEntry, hcContext.subdomain)
         }
       }

@@ -1557,7 +1557,10 @@ func TestDocsHelpcenterPublicLocale_ListSpacesUsesLocaleTranslations(t *testing.
 	}
 }
 
-func TestDocsHelpcenterPublicLocale_ListPublicSpacesSelfHealsMissingDefaultMirrors(t *testing.T) {
+// Public reads must not write mirror rows: that backfill made cold reads of
+// large help centers take many seconds. Missing mirrors come back through the
+// write-path backfill instead.
+func TestDocsHelpcenterPublicLocale_ReadsDoNotWriteMirrorsAndBackfillRestoresThem(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -1644,6 +1647,7 @@ func TestDocsHelpcenterPublicLocale_ListPublicSpacesSelfHealsMissingDefaultMirro
 	seedDocsHelpcenterTranslationServiceArticle(t, db, model.DocsHelpcenterArticle{
 		ID:                "article-hc-public-heal",
 		DocumentID:        documentID,
+		PublicID:          "a1b2c3d4",
 		Slug:              "start-here",
 		PublicPublishedAt: &now,
 		CreatedAt:         now,
@@ -1651,20 +1655,60 @@ func TestDocsHelpcenterPublicLocale_ListPublicSpacesSelfHealsMissingDefaultMirro
 	})
 
 	svc := newDocsHelpcenterPublicServiceForTest(db)
+	countMirrors := func() int64 {
+		t.Helper()
+		var total int64
+		for _, table := range []string{
+			"docs_helpcenter_space_translations",
+			"docs_helpcenter_collection_translations",
+			"docs_helpcenter_article_translations",
+		} {
+			var n int64
+			if err := db.WithContext(ctx).Table(table).Count(&n).Error; err != nil {
+				t.Fatalf("count %s: %v", table, err)
+			}
+			total += n
+		}
+		return total
+	}
+
 	spaces, err := svc.ListPublicSpaces(ctx, workspaceID, "en")
 	if err != nil {
 		t.Fatalf("ListPublicSpaces: %v", err)
 	}
-	if len(spaces) != 1 {
-		t.Fatalf("len(spaces) = %d, want 1", len(spaces))
+	if len(spaces) != 0 {
+		t.Fatalf("len(spaces) before backfill = %d, want 0", len(spaces))
 	}
-	if spaces[0].Slug != "help-center" {
-		t.Fatalf("space slug = %q, want help-center", spaces[0].Slug)
+	if _, err := svc.GetSpaceNavigation(ctx, workspaceID, "en", "help-center"); err == nil {
+		t.Fatal("GetSpaceNavigation before backfill: want space not found")
+	}
+	if _, err := svc.GetPublicArticleByLocalizedCanonicalPath(ctx, workspaceID, "en", "basics", "start-here"); err == nil {
+		t.Fatal("GetPublicArticleByLocalizedCanonicalPath before backfill: want not found")
+	}
+	if got := countMirrors(); got != 0 {
+		t.Fatalf("public reads wrote %d mirror rows, want 0", got)
 	}
 
-	var stored model.DocsHelpcenterSpaceTranslation
-	if err := db.WithContext(ctx).Where("space_id = ? AND locale = ?", spaceID, "en").First(&stored).Error; err != nil {
-		t.Fatalf("load self-healed space translation: %v", err)
+	if err := svc.translationSvc.EnsureDefaultLocaleMirrorsForWorkspace(ctx, workspaceID); err != nil {
+		t.Fatalf("EnsureDefaultLocaleMirrorsForWorkspace: %v", err)
+	}
+
+	spaces, err = svc.ListPublicSpaces(ctx, workspaceID, "en")
+	if err != nil {
+		t.Fatalf("ListPublicSpaces after backfill: %v", err)
+	}
+	if len(spaces) != 1 || spaces[0].Slug != "help-center" {
+		t.Fatalf("spaces after backfill = %+v, want one help-center space", spaces)
+	}
+	nav, err := svc.GetSpaceNavigation(ctx, workspaceID, "en", "help-center")
+	if err != nil {
+		t.Fatalf("GetSpaceNavigation after backfill: %v", err)
+	}
+	if len(nav) != 1 || len(nav[0].Articles) != 1 || nav[0].Articles[0].Slug != "start-here" {
+		t.Fatalf("nav after backfill = %+v, want basics/start-here", nav)
+	}
+	if got := nav[0].Articles[0].PublicID; got != "a1b2c3d4" {
+		t.Fatalf("nav article public id = %q, want a1b2c3d4", got)
 	}
 }
 

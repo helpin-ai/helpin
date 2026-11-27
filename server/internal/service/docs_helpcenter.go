@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,10 @@ type DocsHelpcenterService struct {
 	translationSvc  *DocsHelpcenterTranslationService
 	wsPublisher     *websocket.Publisher
 	hcCache         cache.Cache
+	// Debounced second invalidation per workspace; see hcReinvalidateDelay.
+	hcReinvalidateMu     sync.Mutex
+	hcReinvalidateTimers map[string]*time.Timer
+	hcReinvalidateDelay  time.Duration
 	// domainVerification, when set, verifies custom domains before they serve.
 	domainVerification *helpcenterDomainVerification
 	// brandImporter reads branding from public sites; created on first use.
@@ -462,6 +467,11 @@ func (s *DocsHelpcenterService) UpdateArticleSlug(ctx context.Context, workspace
 	if err := s.hcRepo.SetSlug(ctx, documentID, slug); err != nil {
 		return err
 	}
+	if s.translationSvc != nil {
+		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter article mirror after slug change", "document_id", documentID, "error", err)
+		}
+	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, workspaceID, "")
 	s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
 	return nil
@@ -589,6 +599,11 @@ func (s *DocsHelpcenterService) UpdateArticleMetadata(ctx context.Context, works
 	updated, err := s.hcRepo.UpdateArticleMetadata(ctx, documentID, updates)
 	if err != nil {
 		return nil, err
+	}
+	if s.translationSvc != nil {
+		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter article mirror after metadata change", "document_id", documentID, "error", err)
+		}
 	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, workspaceID, "")
 	s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
@@ -1491,68 +1506,8 @@ func (s *DocsHelpcenterService) getPublicLocaleConfig(ctx context.Context, works
 	return cfg, defaultHelpcenterLocale(cfg), nil
 }
 
-func (s *DocsHelpcenterService) ensureDefaultLocaleMirrors(ctx context.Context, workspaceID string) error {
-	if s.translationSvc == nil {
-		return nil
-	}
-	return s.translationSvc.EnsureDefaultLocaleMirrorsForWorkspace(ctx, workspaceID)
-}
-
-func (s *DocsHelpcenterService) ensureDefaultLocaleCollectionMirrorsForSpace(ctx context.Context, spaceID string) error {
-	if s.translationSvc == nil {
-		return nil
-	}
-
-	collections, err := s.collectionRepo.ListBySpace(ctx, spaceID)
-	if err != nil {
-		return err
-	}
-
-	for _, collection := range collections {
-		if err := s.translationSvc.RefreshCollectionSource(ctx, collection.ID); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *DocsHelpcenterService) ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx context.Context, workspaceID string) error {
-	if s.translationSvc == nil {
-		return nil
-	}
-
-	spaces, err := s.spaceRepo.ListByWorkspace(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
-
-	for _, space := range spaces {
-		if space.Type != model.SpaceTypeExternalCapable {
-			continue
-		}
-		if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, space.ID); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (s *DocsHelpcenterService) resolvePublicSpaceTranslationBySlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, workspaceID, requestedLocale, slug string) (*model.DocsHelpcenterSpaceTranslation, string, bool, error) {
 	translation, err := s.hcRepo.GetPublicSpaceTranslationBySlug(ctx, workspaceID, requestedLocale, slug)
-	if err != nil {
-		return nil, "", false, err
-	}
-	if translation != nil {
-		return translation, requestedLocale, false, nil
-	}
-
-	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
-		return nil, "", false, err
-	}
-
-	translation, err = s.hcRepo.GetPublicSpaceTranslationBySlug(ctx, workspaceID, requestedLocale, slug)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1584,24 +1539,10 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx con
 		if coll == nil || coll.SpaceID != spaceID {
 			return nil, "", false, fmt.Errorf("collection not found")
 		}
-		return s.resolvePublicCollectionTranslationByID(ctx, cfg, coll.ID, requestedLocale, func() error {
-			return s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceID)
-		})
+		return s.resolvePublicCollectionTranslationByID(ctx, cfg, coll.ID, requestedLocale)
 	}
 
 	translation, err := s.hcRepo.GetPublicCollectionTranslationBySlug(ctx, spaceID, requestedLocale, slug)
-	if err != nil {
-		return nil, "", false, err
-	}
-	if translation != nil {
-		return translation, requestedLocale, false, nil
-	}
-
-	if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceID); err != nil {
-		return nil, "", false, err
-	}
-
-	translation, err = s.hcRepo.GetPublicCollectionTranslationBySlug(ctx, spaceID, requestedLocale, slug)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1640,24 +1581,10 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByCanonicalSlu
 		if space == nil || space.Type != model.SpaceTypeExternalCapable || space.HelpcenterAudience != model.HelpcenterAudiencePublic {
 			return nil, "", false, fmt.Errorf("collection not found")
 		}
-		return s.resolvePublicCollectionTranslationByID(ctx, cfg, coll.ID, requestedLocale, func() error {
-			return s.ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx, workspaceID)
-		})
+		return s.resolvePublicCollectionTranslationByID(ctx, cfg, coll.ID, requestedLocale)
 	}
 
 	translation, err := s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, requestedLocale, slug)
-	if err != nil {
-		return nil, "", false, err
-	}
-	if translation != nil {
-		return translation, requestedLocale, false, nil
-	}
-
-	if err := s.ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx, workspaceID); err != nil {
-		return nil, "", false, err
-	}
-
-	translation, err = s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, requestedLocale, slug)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1680,22 +1607,8 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByCanonicalSlu
 	return fallback, defaultLocale, true, nil
 }
 
-func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByID(ctx context.Context, cfg *model.DocsHelpcenterConfig, collectionID, requestedLocale string, ensureDefaultMirrors func() error) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
+func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByID(ctx context.Context, cfg *model.DocsHelpcenterConfig, collectionID, requestedLocale string) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
 	translation, err := s.hcRepo.GetPublicCollectionTranslationByCollectionID(ctx, collectionID, requestedLocale)
-	if err != nil {
-		return nil, "", false, err
-	}
-	if translation != nil {
-		return translation, requestedLocale, false, nil
-	}
-
-	if ensureDefaultMirrors != nil {
-		if err := ensureDefaultMirrors(); err != nil {
-			return nil, "", false, err
-		}
-	}
-
-	translation, err = s.hcRepo.GetPublicCollectionTranslationByCollectionID(ctx, collectionID, requestedLocale)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1754,30 +1667,13 @@ func (s *DocsHelpcenterService) listPublicSpacesUncached(ctx context.Context, wo
 		return nil, err
 	}
 
-	loadRequestedTranslations := func() (map[string]model.DocsHelpcenterSpaceTranslation, int, error) {
-		requestedTranslations, err := s.hcRepo.ListPublicSpaceTranslations(ctx, workspaceID, requestedLocale)
-		if err != nil {
-			return nil, 0, err
-		}
-		requestedBySpaceID := make(map[string]model.DocsHelpcenterSpaceTranslation, len(requestedTranslations))
-		for _, translation := range requestedTranslations {
-			requestedBySpaceID[translation.SpaceID] = translation
-		}
-		return requestedBySpaceID, len(requestedTranslations), nil
-	}
-
-	requestedBySpaceID, requestedCount, err := loadRequestedTranslations()
+	requestedTranslations, err := s.hcRepo.ListPublicSpaceTranslations(ctx, workspaceID, requestedLocale)
 	if err != nil {
 		return nil, err
 	}
-	if requestedCount == 0 {
-		if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
-			return nil, err
-		}
-		requestedBySpaceID, _, err = loadRequestedTranslations()
-		if err != nil {
-			return nil, err
-		}
+	requestedBySpaceID := make(map[string]model.DocsHelpcenterSpaceTranslation, len(requestedTranslations))
+	for _, translation := range requestedTranslations {
+		requestedBySpaceID[translation.SpaceID] = translation
 	}
 
 	fallbackBySpaceID := map[string]model.DocsHelpcenterSpaceTranslation{}
@@ -1820,16 +1716,8 @@ func (s *DocsHelpcenterService) getSpaceNavigationUncached(ctx context.Context, 
 		return nil, err
 	}
 
-	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
-		return nil, err
-	}
-
 	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceTranslation.SpaceID); err != nil {
 		return nil, err
 	}
 
@@ -2052,10 +1940,6 @@ func (s *DocsHelpcenterService) getPublicArticleUncached(ctx context.Context, wo
 
 	publishedAt := formatPublicPublishedAt(translation.PublishedAt)
 
-	go func() {
-		_ = s.hcRepo.IncrementTranslatedViewCount(ctx, translation.DocumentID, resolvedLocale)
-	}()
-
 	var collectionSlugValue *string
 	var collectionPublicIDValue *string
 	if resolvedColl != nil {
@@ -2212,10 +2096,6 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached
 		return nil, err
 	}
 
-	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
-		return nil, err
-	}
-
 	collectionTranslation, _, _, err := s.resolvePublicCollectionTranslationByCanonicalSlug(ctx, cfg, workspaceID, requestedLocale, collectionSlug)
 	if err != nil {
 		return nil, err
@@ -2297,10 +2177,6 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached
 		publishedAt = &formatted
 	}
 
-	go func() {
-		_ = s.hcRepo.IncrementTranslatedViewCount(ctx, translation.DocumentID, resolvedLocale)
-	}()
-
 	return &model.PublicArticleResponse{
 		ID:                 doc.ID,
 		Title:              translation.Title,
@@ -2339,10 +2215,6 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(
 
 	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
 		return nil, err
 	}
 
@@ -2428,10 +2300,6 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(
 		formatted := translation.PublishedAt.Format(time.RFC3339)
 		publishedAt = &formatted
 	}
-
-	go func() {
-		_ = s.hcRepo.IncrementTranslatedViewCount(ctx, translation.DocumentID, resolvedLocale)
-	}()
 
 	publicIDValue := ""
 	if articleExt != nil {
@@ -2530,12 +2398,6 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalPathUncached(ctx cont
 		publishedAt = &s
 	}
 
-	// Increment view count asynchronously.
-	go func() {
-		defer func() { recover() }()
-		_ = s.hcRepo.IncrementViewCount(ctx, doc.ID)
-	}()
-
 	return &model.PublicArticleResponse{
 		ID:                 doc.ID,
 		Title:              doc.Title,
@@ -2612,11 +2474,6 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalKeyUncached(ctx conte
 		formatted := ha.PublicPublishedAt.Format(time.RFC3339)
 		publishedAt = &formatted
 	}
-
-	go func() {
-		defer func() { recover() }()
-		_ = s.hcRepo.IncrementViewCount(ctx, doc.ID)
-	}()
 
 	return &model.PublicArticleResponse{
 		ID:                 doc.ID,
@@ -2917,13 +2774,14 @@ func formatPublicPublishedAt(value *time.Time) *string {
 }
 
 func (s *DocsHelpcenterService) loadHelpcenterPublicIDs(ctx context.Context, docs []model.DocsDocument) map[string]string {
-	result := make(map[string]string, len(docs))
+	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {
-		article, err := s.hcRepo.GetArticle(ctx, doc.ID)
-		if err != nil || article == nil {
-			continue
-		}
-		result[doc.ID] = article.PublicID
+		ids = append(ids, doc.ID)
+	}
+	result, err := s.hcRepo.ListArticlePublicIDsByDocumentIDs(ctx, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "load helpcenter public ids failed", "error", err)
+		return map[string]string{}
 	}
 	return result
 }
