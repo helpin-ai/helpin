@@ -1193,6 +1193,7 @@ func main() {
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsHelpcenterService.SetTranslationService(docsHelpcenterTranslationService)
 	docsHelpcenterTranslationService.SetHelpcenterCacheInvalidator(docsHelpcenterService.InvalidateHelpcenterCacheForWorkspace)
+	go runStartupHelpcenterMirrorBackfill(docsHelpcenterTranslationService, docsHelpcenterService, redisClient, podID)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsDeletionDeps := service.DocsDocumentDeletionDependencies{
 		ContentRepo:     docsContentRepo,

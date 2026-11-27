@@ -45,8 +45,31 @@ func TestHelpcenterColdNavigationPostgres(t *testing.T) {
 		FROM generate_series(1, 210) g`)
 
 	svc := newDocsHelpcenterPublicServiceForTest(db)
-	if err := svc.translationSvc.EnsureDefaultLocaleMirrorsForWorkspace(ctx, workspaceID); err != nil {
-		t.Fatalf("backfill mirrors: %v", err)
+
+	// The backfill (startup and command) finds the gaps with PostgreSQL SQL,
+	// repairs them, and reports each repaired workspace for cache clearing.
+	dryRun, err := svc.translationSvc.BackfillMissingDefaultLocaleMirrors(ctx, "", false, nil)
+	if err != nil {
+		t.Fatalf("backfill dry run: %v", err)
+	}
+	if len(dryRun.Gaps) != 1 || dryRun.Gaps[0].Spaces != 1 || dryRun.Gaps[0].Collections != 40 || dryRun.Gaps[0].Articles != 210 {
+		t.Fatalf("dry run gaps = %+v, want 1 space, 40 collections, 210 articles", dryRun.Gaps)
+	}
+	var repaired []string
+	if _, err := svc.translationSvc.BackfillMissingDefaultLocaleMirrors(ctx, "", true, func(_ context.Context, id string) {
+		repaired = append(repaired, id)
+	}); err != nil {
+		t.Fatalf("backfill apply: %v", err)
+	}
+	if len(repaired) != 1 || repaired[0] != workspaceID {
+		t.Fatalf("repaired workspaces = %v, want [%s]", repaired, workspaceID)
+	}
+	after, err := svc.translationSvc.BackfillMissingDefaultLocaleMirrors(ctx, "", false, nil)
+	if err != nil {
+		t.Fatalf("backfill recheck: %v", err)
+	}
+	if len(after.Gaps) != 0 {
+		t.Fatalf("gaps after backfill = %+v, want none", after.Gaps)
 	}
 
 	var statements, writes atomic.Int64
