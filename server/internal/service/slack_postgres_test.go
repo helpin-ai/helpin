@@ -114,7 +114,7 @@ func TestSlackTwoWaySupportPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Contains(strings.Split(u.Query().Get("scope"), ","), "reactions:write") {
-		t.Fatal("Slack installation must request permission for resolved reactions")
+		t.Fatal("Slack installation is missing the reactions:write permission")
 	}
 	state := u.Query().Get("state")
 	if err = s.CompleteInstall(ctx, f.workspace, f.userID, state, "code"); err != nil {
@@ -856,7 +856,6 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 		mustExec(t, f.db, "UPDATE support_conversations SET status=? WHERE id=?", status, conv)
 		deliver(nil)
 	}
-	reactionError = "already_reacted"
 	setStatus("resolved")
 	resolvedUpdate := updates[len(updates)-1]
 	resolvedBlocks := resolvedUpdate["blocks"].([]any)
@@ -878,30 +877,43 @@ func TestSlackInboxFeedPostgres(t *testing.T) {
 		}
 	}
 	deliver(nil)
-	if !slices.Equal(reactionCalls, []string{"/reactions.add"}) || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
+	if len(reactionCalls) != 0 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
 		t.Fatalf("resolve or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
 	}
-	reactionError = "no_reaction"
 	setStatus("open")
 	reopened := updates[len(updates)-1]
 	if reopened["ts"] != trow.RootTS || !strings.Contains(fmt.Sprint(reopened["blocks"]), "rich_text_quote") || !strings.Contains(fmt.Sprint(reopened["blocks"]), "feed_resolve") {
 		t.Fatalf("expected full card on the reopened thread: %+v", reopened)
 	}
 	deliver(nil)
-	if !slices.Equal(reactionCalls, []string{"/reactions.add", "/reactions.remove"}) || strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
+	if len(reactionCalls) != 0 || strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
 		t.Fatalf("reopen or replay: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
 	}
-	reactionError = "missing_scope"
+	// Older releases recorded the root timestamp when Helpin added a check mark.
+	if err := s.repo.SaveFeedReceipt(ctx, trow.ID, "resolved_reaction", trow.RootTS); err != nil {
+		t.Fatal(err)
+	}
 	setStatus("resolved")
 	deliver(nil)
-	if len(reactionCalls) != 3 || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
+	if !slices.Equal(reactionCalls, []string{"/reactions.remove"}) || !strings.Contains(fmt.Sprint(updates[len(updates)-1]["blocks"]), "✅ Resolved") {
+		t.Fatalf("legacy check mark: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
+	}
+	// "adding" means Slack may have applied the reaction before the worker stopped.
+	if err := s.repo.SaveFeedReceipt(ctx, trow.ID, "resolved_reaction", "adding"); err != nil {
+		t.Fatal(err)
+	}
+	reactionError = "missing_scope"
+	deliver(nil)
+	deliver(nil)
+	if !slices.Equal(reactionCalls, []string{"/reactions.remove", "/reactions.remove"}) {
 		t.Fatalf("legacy Slack grant: calls=%v, card=%v", reactionCalls, updates[len(updates)-1]["blocks"])
 	}
 	// Reauthorization renews the installation. The next refresh should retry even if the card is unchanged.
 	mustExec(t, f.db, "UPDATE support_channel_accounts SET updated_at=updated_at+interval '1 second' WHERE id=?", f.account.ID)
-	reactionError = ""
+	reactionError = "no_reaction"
 	deliver(nil)
-	if len(reactionCalls) != 4 || reactionCalls[3] != "/reactions.add" {
+	deliver(nil)
+	if !slices.Equal(reactionCalls, []string{"/reactions.remove", "/reactions.remove", "/reactions.remove"}) {
 		t.Fatalf("renewed grant: %v", reactionCalls)
 	}
 	external = true
