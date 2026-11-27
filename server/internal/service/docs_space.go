@@ -452,7 +452,15 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 		}
 	}
 
-	if shouldRefreshTranslations && s.translationSvc != nil {
+	becameExternal := originalType != model.SpaceTypeExternalCapable &&
+		space.Type == model.SpaceTypeExternalCapable
+	if becameExternal && s.translationSvc != nil {
+		// Public reads no longer backfill mirrors, so a space turning external
+		// needs its collection and article mirrors written here.
+		if err := s.translationSvc.EnsureDefaultLocaleMirrorsForSpace(ctx, space); err != nil {
+			slog.WarnContext(ctx, "failed to write helpcenter mirrors after space became external", "space_id", id, "error", err)
+		}
+	} else if shouldRefreshTranslations && s.translationSvc != nil {
 		if err := s.translationSvc.RefreshSpaceSource(ctx, id); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter space translation source after update", "space_id", id, "error", err)
 		}

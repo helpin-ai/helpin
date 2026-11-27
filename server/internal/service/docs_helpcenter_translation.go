@@ -998,52 +998,65 @@ func (s *DocsHelpcenterTranslationService) RefreshCollectionSource(ctx context.C
 	return err
 }
 
+// EnsureDefaultLocaleMirrorsForWorkspace writes the default-locale mirror rows
+// for every external-capable space in a workspace. It is a write-path backfill
+// (locale changes, the backfill command); public reads must never call it.
 func (s *DocsHelpcenterTranslationService) EnsureDefaultLocaleMirrorsForWorkspace(ctx context.Context, workspaceID string) error {
 	spaces, err := s.spaceRepo.ListByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return err
 	}
 
+	for i := range spaces {
+		if err := s.EnsureDefaultLocaleMirrorsForSpace(ctx, &spaces[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// EnsureDefaultLocaleMirrorsForSpace writes the default-locale mirror rows for
+// one external-capable space, its collections and its published articles.
+func (s *DocsHelpcenterTranslationService) EnsureDefaultLocaleMirrorsForSpace(ctx context.Context, space *model.DocsSpace) error {
+	if space == nil || space.Type != model.SpaceTypeExternalCapable {
+		return nil
+	}
+
+	if err := s.RefreshSpaceSource(ctx, space.ID); err != nil {
+		return err
+	}
+
+	collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
+	if err != nil {
+		return err
+	}
+	for _, collection := range collections {
+		if err := s.RefreshCollectionSource(ctx, collection.ID); err != nil {
+			return err
+		}
+	}
+
 	status := model.DocStatusPublished
-	for _, space := range spaces {
-		if space.Type != model.SpaceTypeExternalCapable {
+	docs, err := s.docRepo.List(ctx, space.WorkspaceID, &space.ID, nil, &status, nil, "", false)
+	if err != nil {
+		return err
+	}
+	for _, doc := range docs {
+		article, err := s.hcRepo.GetArticle(ctx, doc.ID)
+		if err != nil {
+			return err
+		}
+		if article == nil || article.Slug == "" || article.PublicPublishedAt == nil {
 			continue
 		}
 
-		if err := s.RefreshSpaceSource(ctx, space.ID); err != nil {
-			return err
-		}
-
-		collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
-		if err != nil {
-			return err
-		}
-		for _, collection := range collections {
-			if err := s.RefreshCollectionSource(ctx, collection.ID); err != nil {
-				return err
-			}
-		}
-
-		docs, err := s.docRepo.List(ctx, workspaceID, &space.ID, nil, &status, nil, "", false)
-		if err != nil {
-			return err
-		}
-		for _, doc := range docs {
-			article, err := s.hcRepo.GetArticle(ctx, doc.ID)
-			if err != nil {
-				return err
-			}
-			if article == nil || article.Slug == "" || article.PublicPublishedAt == nil {
+		if err := s.RefreshArticleSource(ctx, doc.ID); err != nil {
+			if isArticleTranslationSlugConflict(err) {
+				slog.WarnContext(ctx, "skipping conflicting public helpcenter article mirror during backfill", "workspace_id", space.WorkspaceID, "document_id", doc.ID, "error", err)
 				continue
 			}
-
-			if err := s.RefreshArticleSource(ctx, doc.ID); err != nil {
-				if isArticleTranslationSlugConflict(err) {
-					slog.WarnContext(ctx, "skipping conflicting public helpcenter article mirror during workspace backfill", "workspace_id", workspaceID, "document_id", doc.ID, "error", err)
-					continue
-				}
-				return err
-			}
+			return err
 		}
 	}
 
