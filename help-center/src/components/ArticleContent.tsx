@@ -78,8 +78,8 @@ export function ArticleContent({ html }: ArticleContentProps) {
   )
 }
 
-// Exported for tests. Runs during SSR too, so phones get the fixed layout on first paint.
-export function enhanceArticleHtml(html: string) {
+// Runs during SSR too, so phones get the fixed layout on first paint.
+function enhanceArticleHtml(html: string) {
   return wrapTables(addImageLoadingHints(html))
 }
 
