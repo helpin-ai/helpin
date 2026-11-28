@@ -428,17 +428,32 @@
   margin-top: 2rem;
 }
 
+.hc-prose .hc-table-scroll {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
 .hc-prose table {
   width: 100%;
   border-collapse: collapse;
   margin: 1.5rem 0;
   font-size: 0.875rem;
 }
+.hc-prose .hc-table-scroll > table {
+  margin: 0;
+}
 .hc-prose th,
 .hc-prose td {
   @apply border border-border;
   padding: 0.5rem 0.75rem;
   text-align: left;
+}
+/* Long URLs wrap instead of stretching the column; ordinary words stay whole. */
+.hc-prose td a,
+.hc-prose th a {
+  overflow-wrap: anywhere;
+}
+.hc-prose .hc-image-link {
+  cursor: zoom-in;
 }
 .hc-prose th {
   @apply bg-secondary text-foreground;
