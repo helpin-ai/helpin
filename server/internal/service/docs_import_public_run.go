@@ -365,6 +365,7 @@ func (r *publicImportRun) createArticle(ctx context.Context, summary publichelp.
 	if err != nil {
 		return "", &publicArticleContentError{reason: err.Error()}
 	}
+	copyDocumentAttachments(&doc, func(source string) string { return r.copyAttachment(ctx, source, article.Title, &failedImages) })
 	content, err := doc.ToJSON()
 	if err != nil {
 		return "", fmt.Errorf("encode article %s: %w", article.ID, err)
