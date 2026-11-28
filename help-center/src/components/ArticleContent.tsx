@@ -13,7 +13,7 @@ export function ArticleContent({ html }: ArticleContentProps) {
   // Keep scroll-spy updates from replacing image nodes and resetting reader state.
   const renderedContent = useMemo(
     () => ({
-      __html: addImageLoadingHints(rewriteInternalHelpCenterLinks(html ?? '', basepath)),
+      __html: enhanceArticleHtml(rewriteInternalHelpCenterLinks(html ?? '', basepath)),
     }),
     [html, basepath],
   )
@@ -78,9 +78,29 @@ export function ArticleContent({ html }: ArticleContentProps) {
   )
 }
 
+// Exported for tests. Runs during SSR too, so phones get the fixed layout on first paint.
+export function enhanceArticleHtml(html: string) {
+  return wrapTables(addImageLoadingHints(html))
+}
+
+// Wide tables scroll inside their own box instead of widening the whole page on phones.
+function wrapTables(html: string) {
+  return html
+    .replace(/<table\b/gi, '<div class="hc-table-scroll"><table')
+    .replace(/<\/table>/gi, '</table></div>')
+}
+
+// Adds loading hints and links each image to its full-size file, so readers on
+// phones can tap a scaled-down screenshot to read it. Images already inside a
+// link keep that link.
 function addImageLoadingHints(html: string) {
   let imageIndex = 0
-  return html.replace(/<img\b([^>]*)>/gi, (_tag, attributes: string) => {
+  let linkDepth = 0
+  return html.replace(/<a\b[^>]*>|<\/a\s*>|<img\b([^>]*)>/gi, (tag, attributes?: string) => {
+    if (attributes === undefined) {
+      linkDepth = tag[1] === '/' ? Math.max(0, linkDepth - 1) : linkDepth + 1
+      return tag
+    }
     const isFirst = imageIndex === 0
     imageIndex += 1
     let next = attributes
@@ -89,7 +109,12 @@ function addImageLoadingHints(html: string) {
       next += isFirst ? ' loading="eager"' : ' loading="lazy"'
     }
     if (isFirst && !/\bfetchpriority\s*=/i.test(next)) next += ' fetchpriority="high"'
-    return `<img${next}>`
+    const img = `<img${next}>`
+    const src = /\bsrc\s*=\s*"([^"]+)"/i.exec(attributes)?.[1]
+    if (linkDepth > 0 || !src || !/^(https?:)?\//i.test(src)) return img
+    const hasAlt = /\balt\s*=\s*"[^"]*\S[^"]*"/i.test(attributes)
+    const label = hasAlt ? '' : ' aria-label="Open full-size image"'
+    return `<a class="hc-image-link" href="${src}" target="_blank" rel="noopener noreferrer"${label}>${img}</a>`
   })
 }
 

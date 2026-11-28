@@ -180,6 +180,40 @@ describe('ArticleContent', () => {
     expect(screen.getByRole('button', { name: 'Copy code' })).not.toBeNull()
   })
 
+  it('puts tables in their own scroll box so wide ones do not widen the page', () => {
+    const { container } = renderWithDocsContext(
+      <ArticleContent html="<table><tr><td>a</td></tr></table><p>after</p><table><tr><td>b</td></tr></table>" />,
+    )
+    const scrollers = container.querySelectorAll('.hc-table-scroll')
+    expect(scrollers).toHaveLength(2)
+    scrollers.forEach((scroller) => expect(scroller.firstElementChild?.tagName).toBe('TABLE'))
+    expect(screen.getByText('after').parentElement?.classList.contains('hc-table-scroll')).toBe(false)
+  })
+
+  it('links each image to its full-size file unless it is already in a link', () => {
+    renderWithDocsContext(
+      <ArticleContent
+        html={`
+          <div class="docs-image-block"><img src="https://cdn.example.com/shot.png" alt=""></div>
+          <img src="https://cdn.example.com/chart.png" alt="Usage chart">
+          <a href="https://example.com/pricing"><img src="https://cdn.example.com/badge.png" alt="Pricing"></a>
+          <img src="data:image/png;base64,AAAA" alt="Inline">
+        `}
+      />,
+    )
+    const unnamed = screen.getByRole('link', { name: 'Open full-size image' })
+    expect(unnamed.getAttribute('href')).toBe('https://cdn.example.com/shot.png')
+    expect(unnamed.getAttribute('target')).toBe('_blank')
+    expect(unnamed.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(screen.getByAltText('Usage chart').closest('a')?.getAttribute('href')).toBe(
+      'https://cdn.example.com/chart.png',
+    )
+    expect(screen.getByAltText('Usage chart').closest('a')?.hasAttribute('aria-label')).toBe(false)
+    expect(screen.getByAltText('Pricing').closest('a')?.getAttribute('href')).toBe('https://example.com/pricing')
+    expect(screen.getByAltText('Pricing').closest('a')?.parentElement?.closest('a')).toBeNull()
+    expect(screen.getByAltText('Inline').closest('a')).toBeNull()
+  })
+
   it('uses the shared block contract for published toggle sections', () => {
     const { container } = renderWithDocsContext(
       <ArticleContent
